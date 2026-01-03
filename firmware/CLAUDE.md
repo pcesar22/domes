@@ -1,0 +1,204 @@
+# Firmware Development Guidelines
+
+## Project Context
+
+DOMES (Distributed Open-source Motion & Exercise System) is a reaction training pod system. Each pod has LEDs, audio, haptics, touch sensing, and communicates via ESP-NOW + BLE.
+
+**Reference Documents:**
+- `research/SOFTWARE_ARCHITECTURE.md` - Full firmware design spec
+- `research/SYSTEM_ARCHITECTURE.md` - Hardware architecture, pin mappings
+- `research/DEVELOPMENT_ROADMAP.md` - Milestone definitions, task dependencies
+
+---
+
+## Technical Stack
+
+| Aspect | Choice |
+|--------|--------|
+| MCU | ESP32-S3-WROOM-1-N16R8 (16MB flash, 8MB PSRAM) |
+| Framework | ESP-IDF v5.x (NOT Arduino) |
+| RTOS | FreeRTOS (bundled with ESP-IDF) |
+| Language | C++20 for application, C for low-level drivers |
+| Build | CMake via `idf.py` |
+
+---
+
+## Code Style
+
+### C++20 Features to Use
+- `std::optional`, `std::variant`, `std::string_view`, `std::span`
+- `constexpr` for compile-time constants
+- `enum class` for type safety
+- Structured bindings: `auto [success, value] = func();`
+- RAII wrappers for hardware resources
+
+### What to Avoid
+- `<iostream>` - adds 200KB, use `ESP_LOG*` macros instead
+- Exceptions - disabled by default
+- RTTI - disabled by default
+- Heavy STL in ISRs - use fixed-size buffers
+- Global singletons - use dependency injection
+
+### Logging
+```cpp
+#include "esp_log.h"
+static const char* TAG = "module_name";
+
+ESP_LOGE(TAG, "Error: %s", esp_err_to_name(err));
+ESP_LOGW(TAG, "Warning message");
+ESP_LOGI(TAG, "Info message");
+ESP_LOGD(TAG, "Debug message");
+```
+
+---
+
+## Architecture Rules
+
+### Driver Abstraction
+All drivers MUST have an abstract interface for testability:
+
+```cpp
+// interfaces/i_haptic_driver.hpp
+class IHapticDriver {
+public:
+    virtual ~IHapticDriver() = default;
+    virtual esp_err_t init() = 0;
+    virtual esp_err_t playEffect(uint8_t effect_id) = 0;
+};
+```
+
+Real implementations go in `drivers/`, mocks go in `test/mocks/`.
+
+### Dependency Injection
+Services receive driver interfaces via constructor, not globals:
+
+```cpp
+class FeedbackService {
+public:
+    FeedbackService(IHapticDriver& haptic, IAudioDriver& audio);
+};
+```
+
+### Task Pinning
+- Core 0: WiFi, BLE, ESP-NOW (protocol stack tasks)
+- Core 1: Audio, game logic (user-responsive tasks)
+- Either core: LED updates, touch polling
+
+---
+
+## Directory Structure
+
+```
+firmware/
+├── CMakeLists.txt
+├── sdkconfig.defaults
+├── partitions.csv
+├── main/
+│   ├── CMakeLists.txt
+│   ├── main.cpp
+│   ├── config.hpp              # Pin definitions, constants
+│   ├── interfaces/             # Abstract base classes
+│   ├── drivers/                # Hardware drivers
+│   ├── services/               # Business logic services
+│   ├── game/                   # Game engine, drills
+│   └── utils/                  # Helpers, error codes
+├── components/                 # Reusable ESP-IDF components
+└── test/
+    ├── mocks/                  # Mock implementations
+    └── test_*.cpp              # Unit tests
+```
+
+---
+
+## Hardware Interfaces
+
+| Peripheral | Interface | Driver IC | Notes |
+|------------|-----------|-----------|-------|
+| LEDs | RMT | SK6812 RGBW | 16 LEDs in ring |
+| Audio | I2S | MAX98357A | 23mm speaker |
+| Haptic | I2C | DRV2605L | LRA motor |
+| Touch | ESP32 touch peripheral | - | Capacitive sense |
+| IMU | I2C | LIS2DW12 | Tap detection |
+| Power | ADC | - | Battery voltage |
+
+Pin assignments are in `research/SYSTEM_ARCHITECTURE.md`.
+
+---
+
+## Testing Strategy
+
+### Unit Tests (Host)
+- Run on Linux target: `idf.py --preview set-target linux`
+- Use CMock for driver mocks
+- Test business logic without hardware
+
+### Smoke Tests (Device)
+- Built into firmware, triggered by button hold
+- Validates each peripheral individually
+- Used for hardware bring-up and CI
+
+---
+
+## Error Handling
+
+Use ESP-IDF error codes. Check and propagate errors:
+
+```cpp
+esp_err_t init() {
+    esp_err_t err = hardware_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    return ESP_OK;
+}
+```
+
+Do NOT silently ignore errors. Every `esp_err_t` must be checked.
+
+---
+
+## Validation Before Commit
+
+Before considering any task complete:
+
+1. **Compiles** - `idf.py build` succeeds with no warnings
+2. **No hardcoded values** - Use `config.hpp` for pins, constants
+3. **Interface exists** - Every driver has an abstract interface
+4. **Mock exists** - Every interface has a mock for testing
+5. **Logs present** - Key operations have `ESP_LOGI`/`ESP_LOGD`
+6. **Errors handled** - No unchecked `esp_err_t` returns
+
+---
+
+## Common Pitfalls
+
+| Pitfall | Solution |
+|---------|----------|
+| DMA buffers in PSRAM | Use `MALLOC_CAP_DMA` for I2S/SPI buffers |
+| WiFi + BLE conflicts | Enable coexistence: `ESP_COEX_PREFER_BALANCE` |
+| Stack overflow | Monitor with `uxTaskGetStackHighWaterMark()` |
+| Watchdog timeout | Call `esp_task_wdt_reset()` in long loops |
+| Flash write in ISR | Queue data, write in task context |
+
+---
+
+## Key Constants
+
+```cpp
+// From SYSTEM_ARCHITECTURE.md
+constexpr uint8_t LED_COUNT = 16;
+constexpr uint32_t ESPNOW_LATENCY_TARGET_US = 2000;  // P95 < 2ms
+constexpr size_t AUDIO_SAMPLE_RATE = 16000;
+constexpr size_t OTA_PARTITION_SIZE = 0x400000;  // 4MB
+```
+
+---
+
+## When in Doubt
+
+1. Check `research/SOFTWARE_ARCHITECTURE.md` for design decisions
+2. Check `research/SYSTEM_ARCHITECTURE.md` for hardware specs
+3. Check `research/DEVELOPMENT_ROADMAP.md` for task dependencies
+4. Prefer explicit over clever
+5. Prefer tested over fast
