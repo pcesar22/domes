@@ -1,0 +1,25 @@
+Category,Reference,Description,Quantity,Package,Specifications,Manufacturer Part,LCSC Part,Unit Cost (Est),Notes
+MCU,U1,ESP32-S3 Module,1,Module,16MB Flash / 8MB PSRAM / PCB Antenna,ESP32-S3-WROOM-1-N16R8,C2913202,$3.50,Core microcontroller
+LED,D1-D16,RGBW Addressable LED,16,3535,SK6812 compatible / 5050 also acceptable,SK6812MINI-E,C5149201,$0.10,Ring of 16 around perimeter
+IMU,U2,3-Axis Accelerometer,1,LGA-12,I2C / Tap detection / Low power,LIS2DW12TR,C2843509,$0.90,Tap detection interrupt to wake MCU
+Haptic Driver,U3,Haptic Motor Driver,1,DFN-10,I2C / LRA+ERM support / Built-in effects,DRV2605LDGSR,C94790,$1.50,123 built-in haptic effects
+Haptic Motor,M1,LRA Motor,1,10mm,Linear resonant actuator / 3V,G1040003D,--,$1.50,Crisp haptic feel - source from Alibaba/DigiKey
+Audio Amp,U4,I2S Audio Amplifier,1,QFN-16,I2S input / 3.2W Class D / Filterless,MAX98357AETE+T,C2682619,$1.00,Direct digital audio from ESP32
+Speaker,SP1,Micro Speaker,1,23mm,8 ohm / 1W / 300Hz-10kHz,--,--,$1.00,Source from speaker suppliers
+Charge IC,U5,LiPo Charge Controller,1,SOP-8,1A charge current / Status LEDs,TP4056,C725790,$0.20,Simple single-cell charger
+Battery Protection,U6,Battery Protection IC,1,SOT-23-6,Overcurrent / Overdischarge / Overcharge,DW01A,C351410,$0.10,Paired with FS8205A
+Battery MOSFET,Q1,Dual MOSFET,1,TSSOP-8,Battery protection switch,FS8205A,C32254,$0.10,Paired with DW01A
+LDO,U7,3.3V LDO Regulator,1,SOT-23-5,500mA / Low quiescent / Low dropout,SPX3819M5-L-3-3/TR,C9055,$0.30,Powers MCU and peripherals
+USB Connector,J1,USB Type-C Receptacle,1,SMD,USB 2.0 / 16-pin / Mid-mount,TYPE-C-31-M-12,C165948,$0.30,For charging and programming
+USB ESD,U8,USB ESD Protection,1,SOT-23-6,TVS diode array,USBLC6-2SC6,C7519,$0.15,Protects USB data lines
+Pogo Pins,J2-J3,Pogo Pin Connector,2,Through-hole,Spring-loaded / 5V + GND + ID,--,--,$0.50,For charging base - source separately
+Magnets,--,Neodymium Magnets,6,6x3mm,N52 grade / Nickel plated,--,--,$0.10,Alignment and stacking - source separately
+Crystal,Y1,32.768kHz Crystal,1,3215,RTC crystal (if needed),--,C125797,$0.10,Optional - ESP32 has internal RC
+Capacitor,C1-C10,Decoupling Capacitors,10,0603,100nF / 10V / X7R,--,C14663,$0.01,Various decoupling
+Capacitor,C11-C15,Bulk Capacitors,5,0805,10uF / 10V / X5R,--,C15850,$0.02,Power rail bulk
+Capacitor,C16-C17,USB Capacitors,2,0402,5.1K / 1% (for CC lines),--,--,$0.01,USB-C CC pull-down
+Resistor,R1-R10,Various Resistors,10,0603,Various values / 1%,--,--,$0.01,Pull-ups/pull-downs/current sense
+Inductor,L1,Ferrite Bead,1,0603,100 ohm @ 100MHz,--,C76662,$0.02,Power filtering
+LED Status,D17-D18,Status LEDs,2,0603,Red + Green / 2mA,--,--,$0.02,Charge status indication
+Battery,BT1,LiPo Battery,1,Pouch,3.7V / 1200mAh / 103040 size,--,--,$4.00,Source from battery suppliers
+PCB,--,4-Layer PCB,1,80mm round,FR4 / ENIG / 1.6mm,--,--,$2.00,JLCPCB fabrication
