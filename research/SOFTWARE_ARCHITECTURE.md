@@ -442,6 +442,982 @@ graph TB
     TOUCH_DRV --> HAL
 ```
 
+---
+
+## 5A. FIRMWARE API BOUNDARY SPECIFICATION
+
+### 5A.1 Design Philosophy
+
+The firmware is split into two distinct deliverables with a **formal API boundary**:
+
+| Component | Scope | Stability | Updateability |
+|-----------|-------|-----------|---------------|
+| **Base Firmware** | Platform + Drivers + Services + System API | Stable, versioned | Infrequent updates |
+| **Application Firmware** | Game Engine, Drills, Profiles | Evolves rapidly | Frequent OTA updates |
+
+**Key Principle**: Application development can proceed in parallel with hardware bring-up by developing against the System API. The API is designed around **user intent** (what to do) not **hardware capability** (how to do it).
+
+### 5A.2 Layered Architecture with API Boundary
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        APPLICATION FIRMWARE                                  │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                     Application Layer                                │   │
+│  │  • Game Engine          • Drill Definitions                         │   │
+│  │  • User Profiles        • Scoring Logic                             │   │
+│  │  • UI State Machines    • Custom Sound Themes                       │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+├═══════════════════════════════════════════════════════════════════════════╡
+│                     ▲▲▲  SYSTEM API BOUNDARY  ▲▲▲                         │
+│                        (Stable, Versioned, Mockable)                       │
+├═══════════════════════════════════════════════════════════════════════════╡
+│                          BASE FIRMWARE                                      │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                      System API Layer                                │   │
+│  │  • IPodControl       • IPodEvents         • INetwork                │   │
+│  │  • ITiming           • ISystemStatus      • IAudioLibrary           │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                      Service Layer                                   │   │
+│  │  • Feedback Service    • Communication Service                       │   │
+│  │  • Timing Service      • Config Service                              │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                      Driver Layer                                    │   │
+│  │  • LED Driver     • Audio Driver    • Haptic Driver                 │   │
+│  │  • Touch Driver   • IMU Driver      • Power Driver                  │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                      Platform Layer                                  │   │
+│  │  • FreeRTOS       • ESP-IDF APIs    • Hardware Abstraction          │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 5A.3 System API Components
+
+The System API consists of 6 interface groups:
+
+| Interface | Purpose | Thread Safety |
+|-----------|---------|---------------|
+| `IPodControl` | Control pod outputs (LED, audio, haptic) | Thread-safe |
+| `IPodEvents` | Subscribe to input events (touch, motion) | Callback on dedicated task |
+| `INetwork` | Pod-to-pod and pod-to-phone communication | Thread-safe |
+| `ITiming` | Synchronized timestamps and scheduling | Thread-safe |
+| `ISystemStatus` | Battery, connection, device info | Thread-safe |
+| `IAudioLibrary` | Manage sound samples and playback | Thread-safe |
+
+---
+
+### 5A.4 IPodControl Interface
+
+Controls all pod outputs with high-level, intent-based commands.
+
+```cpp
+// interfaces/i_pod_control.hpp
+
+#pragma once
+#include <cstdint>
+#include <optional>
+#include "types.hpp"
+
+namespace domes {
+
+/// High-level pod control interface
+/// Application layer uses this to control pod outputs
+class IPodControl {
+public:
+    virtual ~IPodControl() = default;
+
+    // ─────────────────────────────────────────────────────────────
+    // LED Control
+    // ─────────────────────────────────────────────────────────────
+
+    /// Set the pod's LED color
+    /// @param color RGBW color value
+    /// @param transition_ms Fade duration (0 = instant)
+    virtual void setColor(Color color, uint16_t transition_ms = 0) = 0;
+
+    /// Play a predefined LED animation
+    /// @param pattern Animation pattern ID
+    /// @param speed Playback speed multiplier (1.0 = normal)
+    virtual void playPattern(LedPattern pattern, float speed = 1.0f) = 0;
+
+    /// Clear all LEDs immediately
+    virtual void clearLeds() = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Audio Control
+    // ─────────────────────────────────────────────────────────────
+
+    /// Play a sound effect by ID
+    /// @param sound_id Registered sound effect ID
+    /// @param volume Volume level 0.0-1.0
+    /// @return true if playback started
+    virtual bool playSound(SoundId sound_id, float volume = 1.0f) = 0;
+
+    /// Play a tone at specified frequency
+    /// @param frequency_hz Tone frequency
+    /// @param duration_ms Tone duration
+    /// @param volume Volume level 0.0-1.0
+    virtual void playTone(uint16_t frequency_hz, uint16_t duration_ms,
+                          float volume = 1.0f) = 0;
+
+    /// Stop any currently playing audio
+    virtual void stopAudio() = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Haptic Control
+    // ─────────────────────────────────────────────────────────────
+
+    /// Play a haptic effect
+    /// @param effect Haptic effect type
+    /// @param intensity Intensity 0.0-1.0
+    virtual void playHaptic(HapticEffect effect, float intensity = 1.0f) = 0;
+
+    /// Play a custom haptic pattern
+    /// @param pattern Array of on/off durations in ms
+    virtual void playHapticPattern(std::span<const uint16_t> pattern) = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Composite Feedback
+    // ─────────────────────────────────────────────────────────────
+
+    /// Play coordinated multi-modal feedback
+    /// Combines LED + audio + haptic for consistent UX
+    /// @param type The type of feedback event
+    /// @param intensity 0.0-1.0, affects all modalities
+    virtual void giveFeedback(FeedbackType type, float intensity = 1.0f) = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Arming (Touch Detection)
+    // ─────────────────────────────────────────────────────────────
+
+    /// Arm the pod for touch detection
+    /// @param timeout_ms Maximum time to wait (0 = indefinite)
+    /// @param sensitivity Touch sensitivity level
+    /// @return Arm ID for tracking this arm session
+    virtual ArmId arm(uint32_t timeout_ms = 0,
+                      TouchSensitivity sensitivity = TouchSensitivity::Medium) = 0;
+
+    /// Disarm the pod, canceling touch detection
+    virtual void disarm() = 0;
+
+    /// Check if pod is currently armed
+    virtual bool isArmed() const = 0;
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Supporting Types
+// ─────────────────────────────────────────────────────────────────
+
+struct Color {
+    uint8_t r, g, b, w;
+
+    static constexpr Color Red()    { return {255, 0, 0, 0}; }
+    static constexpr Color Green()  { return {0, 255, 0, 0}; }
+    static constexpr Color Blue()   { return {0, 0, 255, 0}; }
+    static constexpr Color White()  { return {0, 0, 0, 255}; }
+    static constexpr Color Off()    { return {0, 0, 0, 0}; }
+    static constexpr Color Yellow() { return {255, 255, 0, 0}; }
+};
+
+enum class LedPattern : uint8_t {
+    SolidOn,
+    Pulse,
+    Breathe,
+    Rainbow,
+    Chase,
+    Countdown,
+    Celebration,
+    Error,
+};
+
+enum class HapticEffect : uint8_t {
+    StrongClick,
+    SoftClick,
+    DoubleTap,
+    Success,
+    Error,
+    Countdown,
+    Pulse,
+};
+
+enum class FeedbackType : uint8_t {
+    // Touch response feedback
+    TouchFast,      // Excellent reaction (<200ms)
+    TouchMedium,    // Good reaction (200-400ms)
+    TouchSlow,      // Slow reaction (>400ms)
+    TouchMiss,      // Timeout without touch
+
+    // Drill lifecycle
+    DrillStart,
+    DrillEnd,
+    DrillSuccess,
+    DrillFailed,
+
+    // Streaks and combos
+    Combo2,
+    Combo3,
+    Combo5,
+    ComboBreak,
+    PersonalBest,
+
+    // System
+    PowerOn,
+    PowerOff,
+    Connected,
+    Disconnected,
+    LowBattery,
+    Error,
+};
+
+enum class TouchSensitivity : uint8_t {
+    Low,        // Requires firm press
+    Medium,     // Normal touch
+    High,       // Light touch triggers
+    Proximity,  // Near-field detection (if supported)
+};
+
+using ArmId = uint32_t;
+using SoundId = uint16_t;
+
+} // namespace domes
+```
+
+---
+
+### 5A.5 IPodEvents Interface
+
+Event subscription for pod inputs. All callbacks execute on a dedicated event task.
+
+```cpp
+// interfaces/i_pod_events.hpp
+
+#pragma once
+#include <functional>
+#include "types.hpp"
+
+namespace domes {
+
+/// Event subscription interface for pod inputs
+class IPodEvents {
+public:
+    virtual ~IPodEvents() = default;
+
+    // ─────────────────────────────────────────────────────────────
+    // Touch Events
+    // ─────────────────────────────────────────────────────────────
+
+    using TouchCallback = std::function<void(const TouchEvent&)>;
+    using TimeoutCallback = std::function<void(ArmId arm_id)>;
+
+    /// Subscribe to touch events
+    /// @param callback Called when touch is detected while armed
+    /// @return Subscription ID (use to unsubscribe)
+    virtual SubscriptionId onTouch(TouchCallback callback) = 0;
+
+    /// Subscribe to timeout events
+    /// @param callback Called when arm timeout expires
+    virtual SubscriptionId onTimeout(TimeoutCallback callback) = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Motion Events
+    // ─────────────────────────────────────────────────────────────
+
+    using MotionCallback = std::function<void(const MotionEvent&)>;
+
+    /// Subscribe to motion/impact events from IMU
+    /// @param callback Called on significant motion detection
+    virtual SubscriptionId onMotion(MotionCallback callback) = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Subscription Management
+    // ─────────────────────────────────────────────────────────────
+
+    /// Remove a subscription
+    virtual void unsubscribe(SubscriptionId id) = 0;
+
+    /// Remove all subscriptions
+    virtual void unsubscribeAll() = 0;
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Event Types
+// ─────────────────────────────────────────────────────────────────
+
+struct TouchEvent {
+    ArmId arm_id;                   // Which arm session triggered this
+    uint64_t timestamp_us;          // Synchronized microsecond timestamp
+    uint32_t reaction_time_us;      // Time from arm() to touch
+    uint8_t strength;               // Touch strength 0-255
+    TouchType type;                 // Touch classification
+};
+
+enum class TouchType : uint8_t {
+    Tap,            // Quick touch
+    Press,          // Sustained contact
+    Impact,         // Hard hit (IMU-assisted detection)
+};
+
+struct MotionEvent {
+    uint64_t timestamp_us;
+    float acceleration_g;           // Peak acceleration magnitude
+    MotionType type;
+};
+
+enum class MotionType : uint8_t {
+    Tap,            // Single tap on surface
+    DoubleTap,      // Double tap
+    Shake,          // Shaking motion
+    Drop,           // Free-fall detected
+    Impact,         // Hard impact
+};
+
+using SubscriptionId = uint32_t;
+
+} // namespace domes
+```
+
+---
+
+### 5A.6 INetwork Interface
+
+Pod-to-pod and pod-to-phone communication.
+
+```cpp
+// interfaces/i_network.hpp
+
+#pragma once
+#include <functional>
+#include <span>
+#include <vector>
+#include "types.hpp"
+
+namespace domes {
+
+/// Network communication interface
+/// Abstracts ESP-NOW (pod-to-pod) and BLE (pod-to-phone)
+class INetwork {
+public:
+    virtual ~INetwork() = default;
+
+    // ─────────────────────────────────────────────────────────────
+    // Pod Discovery
+    // ─────────────────────────────────────────────────────────────
+
+    /// Get list of currently visible pods
+    virtual std::vector<PodInfo> getPeers() const = 0;
+
+    /// Get this pod's network identity
+    virtual PodInfo getSelf() const = 0;
+
+    /// Check if this pod is the current master
+    virtual bool isMaster() const = 0;
+
+    /// Request to become master (auto-negotiated)
+    virtual void requestMasterRole() = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Messaging
+    // ─────────────────────────────────────────────────────────────
+
+    /// Send message to specific pod
+    /// @param target Target pod ID
+    /// @param type Message type for routing
+    /// @param payload Message data
+    /// @return true if send queued successfully
+    virtual bool send(PodId target, MessageType type,
+                      std::span<const uint8_t> payload) = 0;
+
+    /// Broadcast message to all pods
+    /// @param type Message type for routing
+    /// @param payload Message data
+    /// @return Number of pods message was sent to
+    virtual size_t broadcast(MessageType type,
+                             std::span<const uint8_t> payload) = 0;
+
+    /// Send message to phone (via BLE)
+    /// @param type Message type
+    /// @param payload Message data
+    /// @return true if send succeeded
+    virtual bool sendToPhone(MessageType type,
+                             std::span<const uint8_t> payload) = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Message Reception
+    // ─────────────────────────────────────────────────────────────
+
+    using MessageCallback = std::function<void(const Message&)>;
+
+    /// Subscribe to messages of a specific type
+    virtual SubscriptionId onMessage(MessageType type,
+                                     MessageCallback callback) = 0;
+
+    /// Subscribe to all messages
+    virtual SubscriptionId onAnyMessage(MessageCallback callback) = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Connection Events
+    // ─────────────────────────────────────────────────────────────
+
+    using ConnectionCallback = std::function<void(const ConnectionEvent&)>;
+
+    /// Subscribe to connection state changes
+    virtual SubscriptionId onConnection(ConnectionCallback callback) = 0;
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Network Types
+// ─────────────────────────────────────────────────────────────────
+
+using PodId = uint8_t;
+constexpr PodId BROADCAST_ID = 0xFF;
+constexpr PodId MASTER_ID = 0x00;
+
+struct PodInfo {
+    PodId id;
+    uint8_t mac[6];
+    int8_t rssi;                    // Signal strength
+    bool is_master;
+    uint8_t battery_percent;
+    uint32_t last_seen_ms;          // Time since last message
+};
+
+enum class MessageType : uint8_t {
+    // Game control (Master → Pods)
+    DrillStart = 0x01,
+    DrillStop = 0x02,
+    ArmPod = 0x03,
+    DisarmPod = 0x04,
+    SetColor = 0x05,
+    PlaySound = 0x06,
+    PlayHaptic = 0x07,
+
+    // Game events (Pods → Master)
+    TouchEvent = 0x10,
+    TimeoutEvent = 0x11,
+    StatusReport = 0x12,
+
+    // Timing
+    SyncClock = 0x20,
+    SyncResponse = 0x21,
+
+    // System
+    Ping = 0x30,
+    Pong = 0x31,
+    OtaBegin = 0x40,
+    OtaData = 0x41,
+    OtaEnd = 0x42,
+
+    // Custom (for application layer)
+    Custom = 0x80,
+};
+
+struct Message {
+    PodId sender;
+    MessageType type;
+    uint64_t timestamp_us;
+    std::span<const uint8_t> payload;
+};
+
+struct ConnectionEvent {
+    ConnectionEventType type;
+    PodId pod_id;                   // For pod events
+    bool phone_connected;           // For phone events
+};
+
+enum class ConnectionEventType : uint8_t {
+    PodJoined,
+    PodLeft,
+    PhoneConnected,
+    PhoneDisconnected,
+    BecameMaster,
+    LostMaster,
+};
+
+} // namespace domes
+```
+
+---
+
+### 5A.7 ITiming Interface
+
+Synchronized timing across the pod network.
+
+```cpp
+// interfaces/i_timing.hpp
+
+#pragma once
+#include <functional>
+#include "types.hpp"
+
+namespace domes {
+
+/// Synchronized timing interface
+/// Provides network-synchronized timestamps and scheduling
+class ITiming {
+public:
+    virtual ~ITiming() = default;
+
+    // ─────────────────────────────────────────────────────────────
+    // Timestamps
+    // ─────────────────────────────────────────────────────────────
+
+    /// Get current synchronized timestamp in microseconds
+    /// Synchronized across all pods in the network
+    virtual uint64_t getSyncedTimeUs() const = 0;
+
+    /// Get local timestamp (not synchronized)
+    virtual uint64_t getLocalTimeUs() const = 0;
+
+    /// Get estimated clock offset from master in microseconds
+    virtual int64_t getClockOffsetUs() const = 0;
+
+    /// Check if clock is currently synchronized
+    virtual bool isSynchronized() const = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Reaction Time Measurement
+    // ─────────────────────────────────────────────────────────────
+
+    /// Calculate reaction time between two events
+    /// Handles clock skew between pods
+    /// @param arm_time_us When the pod was armed (synced time)
+    /// @param touch_time_us When touch was detected (synced time)
+    /// @return Reaction time in microseconds
+    virtual uint32_t measureReactionTimeUs(uint64_t arm_time_us,
+                                           uint64_t touch_time_us) const = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Scheduled Execution
+    // ─────────────────────────────────────────────────────────────
+
+    using ScheduledCallback = std::function<void()>;
+
+    /// Schedule a callback at a specific synchronized time
+    /// @param target_time_us Synchronized time to execute
+    /// @param callback Function to call
+    /// @return Schedule ID (use to cancel)
+    virtual ScheduleId scheduleAt(uint64_t target_time_us,
+                                  ScheduledCallback callback) = 0;
+
+    /// Schedule a callback after a delay
+    /// @param delay_us Delay in microseconds
+    /// @param callback Function to call
+    virtual ScheduleId scheduleAfter(uint32_t delay_us,
+                                     ScheduledCallback callback) = 0;
+
+    /// Cancel a scheduled callback
+    virtual void cancel(ScheduleId id) = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Synchronization Control
+    // ─────────────────────────────────────────────────────────────
+
+    /// Force a clock synchronization cycle
+    /// Normally automatic, but can be forced before precision-critical ops
+    virtual void syncNow() = 0;
+
+    /// Get synchronization quality metrics
+    virtual SyncMetrics getSyncMetrics() const = 0;
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Timing Types
+// ─────────────────────────────────────────────────────────────────
+
+using ScheduleId = uint32_t;
+
+struct SyncMetrics {
+    uint32_t offset_stddev_us;      // Standard deviation of offset measurements
+    uint32_t last_sync_age_ms;      // Time since last sync
+    uint8_t sync_quality;           // 0-100 quality score
+    bool is_master;                 // True if this pod is timing master
+};
+
+} // namespace domes
+```
+
+---
+
+### 5A.8 ISystemStatus Interface
+
+Device status and power management.
+
+```cpp
+// interfaces/i_system_status.hpp
+
+#pragma once
+#include <string_view>
+#include "types.hpp"
+
+namespace domes {
+
+/// System status and power management interface
+class ISystemStatus {
+public:
+    virtual ~ISystemStatus() = default;
+
+    // ─────────────────────────────────────────────────────────────
+    // Power Status
+    // ─────────────────────────────────────────────────────────────
+
+    /// Get battery charge percentage (0-100)
+    virtual uint8_t getBatteryPercent() const = 0;
+
+    /// Get battery voltage in millivolts
+    virtual uint16_t getBatteryVoltageMv() const = 0;
+
+    /// Check if currently charging
+    virtual bool isCharging() const = 0;
+
+    /// Check if battery is critically low
+    virtual bool isBatteryLow() const = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Power Management
+    // ─────────────────────────────────────────────────────────────
+
+    /// Enter low-power standby mode
+    /// Wakes on touch, button, or network message
+    virtual void enterStandby() = 0;
+
+    /// Enter deep sleep mode
+    /// Only wakes on touch or button
+    virtual void enterDeepSleep() = 0;
+
+    /// Request system reboot
+    virtual void reboot() = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Device Info
+    // ─────────────────────────────────────────────────────────────
+
+    /// Get unique device ID (MAC-based)
+    virtual uint64_t getDeviceId() const = 0;
+
+    /// Get firmware version string
+    virtual std::string_view getFirmwareVersion() const = 0;
+
+    /// Get System API version
+    virtual uint16_t getApiVersion() const = 0;
+
+    /// Get hardware revision
+    virtual uint8_t getHardwareRevision() const = 0;
+
+    // ─────────────────────────────────────────────────────────────
+    // Diagnostics
+    // ─────────────────────────────────────────────────────────────
+
+    /// Get free heap memory in bytes
+    virtual size_t getFreeHeap() const = 0;
+
+    /// Get CPU temperature in degrees Celsius
+    virtual float getCpuTemperature() const = 0;
+
+    /// Get uptime in milliseconds
+    virtual uint32_t getUptimeMs() const = 0;
+
+    /// Run built-in hardware self-test
+    /// @return Bitmask of passed tests (all 1s = all passed)
+    virtual uint32_t runSelfTest() = 0;
+};
+
+} // namespace domes
+```
+
+---
+
+### 5A.9 Mock Implementation for Application Development
+
+The System API enables application development without hardware through mock implementations:
+
+```cpp
+// test/mocks/mock_pod_control.hpp
+
+#pragma once
+#include "interfaces/i_pod_control.hpp"
+#include <vector>
+#include <queue>
+
+namespace domes::mocks {
+
+/// Mock implementation of IPodControl for testing
+class MockPodControl : public IPodControl {
+public:
+    // IPodControl implementation
+    void setColor(Color color, uint16_t transition_ms) override {
+        last_color_ = color;
+        color_history_.push_back({color, transition_ms});
+    }
+
+    void playPattern(LedPattern pattern, float speed) override {
+        last_pattern_ = pattern;
+    }
+
+    void clearLeds() override {
+        last_color_ = Color::Off();
+    }
+
+    bool playSound(SoundId sound_id, float volume) override {
+        sounds_played_.push_back({sound_id, volume});
+        return true;
+    }
+
+    void playTone(uint16_t freq, uint16_t duration, float volume) override {}
+    void stopAudio() override {}
+
+    void playHaptic(HapticEffect effect, float intensity) override {
+        haptics_played_.push_back({effect, intensity});
+    }
+
+    void playHapticPattern(std::span<const uint16_t> pattern) override {}
+
+    void giveFeedback(FeedbackType type, float intensity) override {
+        feedback_given_.push_back({type, intensity});
+    }
+
+    ArmId arm(uint32_t timeout_ms, TouchSensitivity sens) override {
+        armed_ = true;
+        return ++arm_counter_;
+    }
+
+    void disarm() override { armed_ = false; }
+    bool isArmed() const override { return armed_; }
+
+    // ─────────────────────────────────────────────────────────────
+    // Test Helpers
+    // ─────────────────────────────────────────────────────────────
+
+    /// Simulate a touch event
+    void simulateTouch(uint32_t reaction_time_us, uint8_t strength = 128);
+
+    /// Simulate a timeout
+    void simulateTimeout();
+
+    /// Get recorded feedback for assertions
+    const auto& getFeedbackHistory() const { return feedback_given_; }
+    const auto& getColorHistory() const { return color_history_; }
+    const auto& getSoundHistory() const { return sounds_played_; }
+
+    /// Reset all recorded state
+    void reset();
+
+private:
+    Color last_color_{};
+    LedPattern last_pattern_{};
+    bool armed_ = false;
+    ArmId arm_counter_ = 0;
+
+    std::vector<std::pair<FeedbackType, float>> feedback_given_;
+    std::vector<std::pair<Color, uint16_t>> color_history_;
+    std::vector<std::pair<SoundId, float>> sounds_played_;
+    std::vector<std::pair<HapticEffect, float>> haptics_played_;
+};
+
+} // namespace domes::mocks
+```
+
+**Usage in Tests:**
+
+```cpp
+// test/test_game_engine.cpp
+
+#include "game/game_engine.hpp"
+#include "mocks/mock_pod_control.hpp"
+#include "mocks/mock_pod_events.hpp"
+#include "mocks/mock_timing.hpp"
+
+TEST(GameEngine, FastReactionGivesPositiveFeedback) {
+    mocks::MockPodControl pod;
+    mocks::MockPodEvents events;
+    mocks::MockTiming timing;
+
+    GameEngine engine(pod, events, timing);
+
+    // Start a simple drill
+    engine.startDrill(DrillType::SingleTarget);
+
+    // Simulate fast touch (100ms reaction)
+    events.simulateTouch(100'000); // 100,000 us = 100ms
+
+    // Verify positive feedback was given
+    auto feedback = pod.getFeedbackHistory();
+    ASSERT_EQ(feedback.size(), 1);
+    EXPECT_EQ(feedback[0].first, FeedbackType::TouchFast);
+}
+
+TEST(GameEngine, SlowReactionGivesNegativeFeedback) {
+    mocks::MockPodControl pod;
+    mocks::MockPodEvents events;
+    mocks::MockTiming timing;
+
+    GameEngine engine(pod, events, timing);
+    engine.startDrill(DrillType::SingleTarget);
+
+    // Simulate slow touch (500ms reaction)
+    events.simulateTouch(500'000);
+
+    auto feedback = pod.getFeedbackHistory();
+    EXPECT_EQ(feedback[0].first, FeedbackType::TouchSlow);
+}
+```
+
+---
+
+### 5A.10 API Versioning
+
+The System API is versioned to ensure compatibility:
+
+```cpp
+// api_version.hpp
+
+#pragma once
+
+namespace domes {
+
+/// System API version
+/// Increment MAJOR for breaking changes
+/// Increment MINOR for backward-compatible additions
+constexpr uint16_t API_VERSION_MAJOR = 1;
+constexpr uint16_t API_VERSION_MINOR = 0;
+
+/// Encoded as (MAJOR << 8) | MINOR
+constexpr uint16_t API_VERSION = (API_VERSION_MAJOR << 8) | API_VERSION_MINOR;
+
+/// Minimum API version required by application
+/// Applications should check: getApiVersion() >= MIN_REQUIRED_VERSION
+constexpr uint16_t MIN_REQUIRED_VERSION = 0x0100; // v1.0
+
+} // namespace domes
+```
+
+**Compatibility Rules:**
+1. **MAJOR version change**: Application MUST be recompiled
+2. **MINOR version change**: Application continues to work, may not have access to new features
+3. Base firmware reports its API version via `ISystemStatus::getApiVersion()`
+4. Application checks version at startup and fails gracefully if incompatible
+
+---
+
+### 5A.11 Parallel Development Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     PARALLEL DEVELOPMENT ENABLED BY API                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   FIRMWARE TEAM                         APPLICATION TEAM                     │
+│   ─────────────                         ────────────────                     │
+│                                                                              │
+│   Week 1-4:                             Week 1-4:                            │
+│   ├─ RF Stack Validation                ├─ Game engine design               │
+│   ├─ Driver development                 ├─ Drill definitions                │
+│   ├─ Service layer impl                 ├─ Unit tests w/ mocks              │
+│   └─ Hardware bring-up                  └─ UI state machines                │
+│                                                                              │
+│   Week 4: System API v1.0 Released                                          │
+│            ───────────────────────                                           │
+│                     │                                                        │
+│                     ▼                                                        │
+│   Week 5-8:                             Week 5-8:                            │
+│   ├─ Bug fixes                          ├─ Integration testing              │
+│   ├─ Performance tuning                 ├─ Polish feedback feel             │
+│   └─ OTA system                         └─ Add drills/themes                │
+│                                                                              │
+│   Week 8: Integration Testing                                                │
+│            ──────────────────                                                │
+│                     │                                                        │
+│                     ▼                                                        │
+│            ┌─────────────────┐                                               │
+│            │  M8: 6-Pod Demo │                                               │
+│            └─────────────────┘                                               │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Benefit**: Application team is not blocked by hardware issues. They develop and test against mocks, then integrate with real firmware once it's stable.
+
+---
+
+### 5A.12 Directory Structure with API Boundary
+
+```
+firmware/
+├── CMakeLists.txt
+├── sdkconfig.defaults
+├── partitions.csv
+│
+├── main/
+│   ├── CMakeLists.txt
+│   ├── main.cpp
+│   │
+│   ├── api/                           # ← PUBLIC SYSTEM API
+│   │   ├── interfaces/                #    Interface definitions
+│   │   │   ├── i_pod_control.hpp
+│   │   │   ├── i_pod_events.hpp
+│   │   │   ├── i_network.hpp
+│   │   │   ├── i_timing.hpp
+│   │   │   ├── i_system_status.hpp
+│   │   │   └── i_audio_library.hpp
+│   │   ├── types.hpp                  #    Shared types
+│   │   └── api_version.hpp            #    Version info
+│   │
+│   ├── impl/                          # ← PRIVATE IMPLEMENTATION
+│   │   ├── pod_control_impl.hpp/cpp
+│   │   ├── pod_events_impl.hpp/cpp
+│   │   ├── network_impl.hpp/cpp
+│   │   ├── timing_impl.hpp/cpp
+│   │   └── system_status_impl.hpp/cpp
+│   │
+│   ├── drivers/                       # ← PRIVATE (below API)
+│   │   ├── led_driver.hpp/cpp
+│   │   ├── audio_driver.hpp/cpp
+│   │   ├── haptic_driver.hpp/cpp
+│   │   ├── touch_driver.hpp/cpp
+│   │   ├── imu_driver.hpp/cpp
+│   │   └── power_driver.hpp/cpp
+│   │
+│   ├── services/                      # ← PRIVATE (below API)
+│   │   ├── feedback_service.hpp/cpp
+│   │   ├── comm_service.hpp/cpp
+│   │   ├── timing_service.hpp/cpp
+│   │   └── config_service.hpp/cpp
+│   │
+│   ├── app/                           # ← APPLICATION LAYER
+│   │   ├── game_engine.hpp/cpp
+│   │   ├── drill_manager.hpp/cpp
+│   │   ├── drill_definitions/
+│   │   │   ├── basic_reaction.cpp
+│   │   │   ├── sequence_memory.cpp
+│   │   │   └── ...
+│   │   └── sound_themes/
+│   │       ├── default_theme.hpp
+│   │       └── ...
+│   │
+│   └── utils/
+│       ├── logging.hpp
+│       └── error_codes.hpp
+│
+├── test/
+│   ├── mocks/                         # ← MOCK IMPLEMENTATIONS
+│   │   ├── mock_pod_control.hpp/cpp
+│   │   ├── mock_pod_events.hpp/cpp
+│   │   ├── mock_network.hpp/cpp
+│   │   └── mock_timing.hpp/cpp
+│   │
+│   ├── test_game_engine.cpp           # ← APPLICATION TESTS
+│   ├── test_drill_manager.cpp
+│   └── test_scoring.cpp
+│
+└── components/
+    └── ...
+```
+
+**Rule**: The `app/` directory ONLY depends on `api/`. It never imports from `impl/`, `drivers/`, or `services/`.
+
 ### 5.2 Directory Structure
 
 ```
