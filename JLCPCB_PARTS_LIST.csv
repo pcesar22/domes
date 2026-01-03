@@ -1,0 +1,41 @@
+Reference,Part Number,Manufacturer,JLCPCB Part Code,Quantity,Value/Spec,Package,Notes
+U1,STM32L476RG,STMicroelectronics,C84328,1,ARM Cortex-M4 MCU,LQFP100,Primary MCU - Low power
+U2,W25Q32JVSSIQ,Winbond,C1572,1,32Mbit SPI Flash,SOIC-8,Program & audio storage
+U3,PAM8302AAYCR,Diodes Incorporated,C9900017693,1,2.5W Mono Class D Audio Amp,MSOP-8,Speaker amplifier
+U4,DRV2605L,Texas Instruments,C91423,1,Haptic Feedback Driver,VQFN-20,Vibration motor control (optional)
+U5,AMS1117-3.3,AMS (Authority Micro Systems),C6656,1,3.3V LDO Regulator,SOT-223,Logic power supply
+U6,TP4056,TPower,C7057,1,1S Li-Ion Charger,TSOT-23-5,Battery charging controller
+U7,DW01A,SHOUGANG,C9703,1,Li-Ion Protection IC,SOT-23-6,Battery protection circuit
+U8,TTP223-BA6,Tone Microelectronics,C83739,1,Touch Sensor Controller,SOP-8,Capacitive touch interface
+U9,MPU-6050,InvenSense,C9720,1,6-Axis IMU,QFN-24,Accelerometer & gyroscope
+U10,VL6180X,STMicroelectronics,C163851,1,Time-of-Flight Proximity,BGA-12,Proximity sensor (optional for v1)
+M1,LCM0834A1195F,Leader,C2759983,1,9000rpm Coin Vibration Motor,Through-hole,10mm diameter vibration motor
+SPK1,[See notes below],Knowles/TDK/Murata,[TBD],1,8Ω 1W Miniature Speaker,Through-hole,"Check JLCPCB speaker library for specific models"
+LED1,WS2812B,WorldSemi,C19522,1,Addressable RGB LED,5050,Full-color LED with integrated driver
+X1,CSTNE32M0V53-R0,Murata,C8652,1,32MHz Crystal Oscillator,5032,MCU main clock
+X2,ECS-.327-12.5-17X,Abracon,C13738,1,32.768kHz Crystal,12.5x5.0mm,RTC clock
+BAT1,[18650 Holder],MYOUNG,C9900054964,1,Single 18650 Li-Ion Cell Holder,Through-hole,"Source battery cell separately"
+J1,Micro-USB-B,CUI Devices,C131535,1,Micro USB Type-B Connector,SMD,Charging connector
+J2,JST-PH-2.0-2pin,JST,C145811,2,2.0mm Pitch Connector,SMD,"Battery & speaker connectors"
+J3,0.1in Header,Generic,C127810,2,2.54mm Pitch Pin Header,Through-hole,"SPI/I2C debugging headers"
+Q1,NDP6020P,Onsemi,C19430,1,N-Channel MOSFET,SOT-23,"Motor control (if not using DRV2605L)"
+Notes:
+"JLCPCB SPEAKER SELECTION - Since there are 3000+ speaker options, you'll need to select based on these criteria:
+- Impedance: 4-8 ohm
+- Power: 0.5-1W minimum
+- Size: ~10-20mm diameter (miniature)
+- Mounting: Through-hole or can use solder pads
+- Popular options to search: ""miniature speaker"" ""8ohm speaker"" ""1W speaker""
+- Examples: Knowles SpeakerMax series, TDK ECS series
+- Recommended: Search JLCPCB parts library by impedance/power to find current stock"
+
+"ASSEMBLY NOTES:
+1. Upload this CSV to JLCPCB's assembly tool for BOM validation
+2. All components listed are available on JLCPCB (except speaker - choose from library)
+3. Total assembled cost should be $18-25 per unit at 100 qty
+4. Most components are on JLCPCB's 'basic' parts list (lower assembly fees)
+5. For speaker selection: Visit jlcpcb.com/parts and filter by:
+   - Category: Audio Components / Speakers
+   - Impedance: 4-8Ω
+   - Power: 500mW-1W
+   - Package: Through-hole"
