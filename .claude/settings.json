@@ -1,0 +1,12 @@
+{
+  "skills": {
+    "firmware-coder": {
+      "path": ".claude/skills/firmware-coder.md",
+      "description": "Expert firmware developer for ESP32-S3 C++20 code following DOMES project conventions. Use for writing drivers, services, interfaces, and firmware components.",
+      "autoTrigger": {
+        "paths": ["firmware/**"],
+        "keywords": ["driver", "esp32", "esp-idf", "firmware", "haptic", "led", "audio", "touch", "i2c", "spi", "gpio", "freertos"]
+      }
+    }
+  }
+}
