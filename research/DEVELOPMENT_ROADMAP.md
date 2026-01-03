@@ -8,10 +8,54 @@
 | Aspect | Decision |
 |--------|----------|
 | **Strategy** | Parallel dev: Claude writes firmware while you design PCB |
-| **Dev Boards** | Minimal - only for ESP-NOW/RF validation (can't unit test) |
+| **Dev Boards** | Required for system validation + ESP-NOW/RF testing |
 | **Breadboarding** | Skip - go straight to PCB |
-| **Testing** | POSIX unit tests with CMock, not emulators |
-| **CI** | Host-based unit tests only (no hardware CI) |
+| **Testing** | System validation on DevKit FIRST, then POSIX unit tests |
+| **CI** | Host unit tests + target compile (every PR) + DevKit smoke (nightly) |
+
+---
+
+## MILESTONE SEQUENCE
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         MILESTONE SEQUENCE                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   M1: Target Compiles                                                        │
+│         │                                                                    │
+│         ▼                                                                    │
+│   M2: DevKit Boots ─────────────────┐                                        │
+│         │                           │                                        │
+│         ▼                           │ System Firmware                        │
+│   M3: Debug Infrastructure          │ Validation                             │
+│         │                           │ (MUST pass before                      │
+│         ▼                           │  investing in unit tests)              │
+│   M4: RF Stacks Validated ──────────┘                                        │
+│         │                                                                    │
+│         ▼                                                                    │
+│   M5: Unit Tests Pass (host)                                                 │
+│         │                                                                    │
+│         ▼                                                                    │
+│   M6: ESP-NOW Latency Validated                                              │
+│         │                                                                    │
+│         ▼                                                                    │
+│   M7: Dev PCB Works                                                          │
+│         │                                                                    │
+│         ▼                                                                    │
+│   M8: 6-Pod Demo                                                             │
+│         │                                                                    │
+│         ▼                                                                    │
+│   M9: Demo Ready                                                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Rationale for Sequence:**
+1. RF stacks (WiFi/BT) are highest risk - validate first
+2. Debug infrastructure is foundational - every future bug depends on it
+3. Unit tests are more valuable when target is proven to work
+4. CI catches regressions only if foundation is solid
 
 ---
 
@@ -19,11 +63,10 @@
 
 ```mermaid
 graph TD
-    subgraph "Parallel Track A: Hardware (You)"
+    subgraph "Track A: Hardware (You)"
         A1[Order Dev Boards<br/>3x ESP32-S3]
         A2[Order PCB Components<br/>Full BOM]
         A3[Design Schematic]
-        A4[Validate ESP-NOW<br/>on Dev Boards]
         A5[Design PCB Layout]
         A6[Order Dev PCB]
         A7[Assemble Dev Units<br/>6x pods]
@@ -32,374 +75,605 @@ graph TD
         A10[Assemble Final Units]
     end
 
-    subgraph "Parallel Track B: Firmware (Claude)"
+    subgraph "Track B: System Validation (Claude + DevKit)"
         B1[Set Up ESP-IDF Project]
-        B2[Write Driver Abstractions]
-        B3[Set Up Unit Test Framework]
-        B4[Write LED Driver]
-        B5[Write Audio Driver]
-        B6[Write Haptic Driver]
-        B7[Write Touch Driver]
-        B8[Write IMU Driver]
-        B9[Write ESP-NOW Service]
-        B10[Write BLE Service]
-        B11[Write Protocol Layer]
-        B12[Write Game Engine]
-        B13[Write Feedback Service]
-        B14[Write OTA System]
-        B15[Write Smoke Tests]
+        B2[Flash Hello World]
+        B3[Validate UART Output]
+        B4[Validate GDB Debugging]
+        B5[Validate Core Dump]
+        B6[Init WiFi Stack]
+        B7[Init BLE Stack]
+        B8[Validate Coexistence]
+        B9[ESP-NOW Latency Test]
     end
 
-    subgraph "Integration Track"
-        C1[Flash Firmware to Dev PCB]
-        C2[Debug GPIO/Timing Issues]
-        C3[Calibrate Touch/Haptic/Audio]
-        C4[Multi-Pod Integration Test]
-        C5[Flash to Form-Factor]
-        C6[Final Validation]
+    subgraph "Track C: Unit Tests (Claude + Host)"
+        C1[Write Driver Interfaces]
+        C2[Set Up CMock Framework]
+        C3[Write Mock Drivers]
+        C4[Write Unit Tests]
+        C5[Set Up CI Pipeline]
+    end
+
+    subgraph "Track D: Drivers (Claude)"
+        D1[LED Driver - SK6812]
+        D2[Audio Driver - MAX98357A]
+        D3[Haptic Driver - DRV2605L]
+        D4[Touch Driver]
+        D5[IMU Driver - LIS2DW12]
+        D6[Power Driver]
+    end
+
+    subgraph "Track E: Application (Claude)"
+        E1[ESP-NOW Service]
+        E2[BLE Service]
+        E3[Protocol Layer]
+        E4[Game Engine]
+        E5[Feedback Service]
+        E6[OTA System]
+        E7[Smoke Test Suite]
+    end
+
+    subgraph "Track F: Integration (Claude + Custom PCB)"
+        F1[Flash to Dev PCB]
+        F2[Debug GPIO/Timing]
+        F3[Calibrate Sensors]
+        F4[Multi-Pod Test]
+        F5[Flash Form-Factor]
+        F6[Final Validation]
     end
 
     subgraph "Milestones"
-        M1((ESP-NOW<br/>Validated))
-        M2((Firmware<br/>Compiles))
-        M3((Unit Tests<br/>Pass))
-        M4((Dev PCB<br/>Works))
-        M5((6-Pod<br/>Demo))
-        M6((Demo<br/>Ready))
+        M1((M1: Target<br/>Compiles))
+        M2((M2: DevKit<br/>Boots))
+        M3((M3: Debug<br/>Infra))
+        M4((M4: RF<br/>Validated))
+        M5((M5: Unit<br/>Tests))
+        M6((M6: ESP-NOW<br/>Latency))
+        M7((M7: Dev PCB<br/>Works))
+        M8((M8: 6-Pod<br/>Demo))
+        M9((M9: Demo<br/>Ready))
     end
 
-    %% Hardware dependencies
-    A1 --> A4
-    A2 --> A7
-    A3 --> A5
-    A5 --> A6
-    A6 --> A7
-    A4 --> M1
-    A7 --> C1
-    A8 --> A9
-    A9 --> A10
-    C4 --> A8
-
-    %% Firmware dependencies
-    B1 --> B2
+    %% System Validation sequence (critical path)
+    B1 --> M1
+    M1 --> B2
+    A1 --> B2
     B2 --> B3
-    B2 --> B4
-    B2 --> B5
-    B2 --> B6
-    B2 --> B7
-    B2 --> B8
-    B3 --> M3
-    B4 --> B9
-    B5 --> B13
-    B6 --> B13
-    B7 --> B12
-    B8 --> B12
-    B9 --> B11
-    B10 --> B11
-    B11 --> B12
-    B12 --> B13
-    B13 --> B14
-    B14 --> B15
-    B1 --> M2
+    B3 --> M2
+    M2 --> B4
+    B4 --> B5
+    B5 --> M3
+    M3 --> B6
+    B6 --> B7
+    B7 --> B8
+    B8 --> M4
 
-    %% Integration dependencies
-    M1 --> C1
-    B15 --> C1
-    A7 --> C1
+    %% Unit Tests (after system validation)
+    M4 --> C1
     C1 --> C2
     C2 --> C3
     C3 --> C4
-    C4 --> M4
-    M4 --> M5
-    A10 --> C5
-    C5 --> C6
-    C6 --> M6
+    C4 --> M5
+    M5 --> C5
 
-    %% Cross-track dependencies
-    M1 -.->|Validates architecture| B9
+    %% Drivers (after unit test framework)
+    C1 --> D1
+    C1 --> D2
+    C1 --> D3
+    C1 --> D4
+    C1 --> D5
+    C1 --> D6
+
+    %% ESP-NOW latency (after RF validated)
+    M4 --> B9
+    B9 --> M6
+
+    %% Application layer
+    M5 --> E1
+    M6 --> E1
+    D1 --> E1
+    E1 --> E2
+    E2 --> E3
+    D4 --> E4
+    D5 --> E4
+    E3 --> E4
+    D2 --> E5
+    D3 --> E5
+    E4 --> E5
+    E5 --> E6
+    E6 --> E7
+
+    %% Hardware track
+    A3 --> A5
+    A5 --> A6
+    A2 --> A7
+    A6 --> A7
+
+    %% Integration
+    A7 --> F1
+    E7 --> F1
+    F1 --> F2
+    F2 --> F3
+    F3 --> F4
+    F4 --> M7
+    M7 --> M8
+    M8 --> A8
+    A8 --> A9
+    A9 --> A10
+    A10 --> F5
+    F5 --> F6
+    F6 --> M9
 ```
+
+---
+
+## MILESTONE DEFINITIONS
+
+### M1: Target Compiles
+
+| Check | Method | Pass Criteria |
+|-------|--------|---------------|
+| ESP-IDF installed | `idf.py --version` | Version 5.x |
+| Project scaffolding | Directory structure | Per SOFTWARE_ARCHITECTURE.md |
+| Cross-compile | `idf.py build` | Exit code 0, no errors |
+| Binary size | Check .bin | < 4MB (fits OTA partition) |
+
+**Owner:** Claude
+**Depends On:** Nothing
+**Blocks:** M2
+
+---
+
+### M2: DevKit Boots
+
+| Check | Method | Pass Criteria |
+|-------|--------|---------------|
+| Flash succeeds | `idf.py flash` | Exit code 0 |
+| Boot completes | UART monitor | `app_main` log within 5s |
+| UART parseable | Log regex | Timestamps + levels parse correctly |
+| No crash loops | Monitor 60s | No repeated boot messages |
+| Heap OK | `heap_caps_get_info()` | Free heap > 100KB |
+| PSRAM OK | Log check | `Octal SPI RAM enabled` |
+
+**Owner:** Claude (requires DevKit from You)
+**Depends On:** M1, A1 (dev boards ordered/received)
+**Blocks:** M3
+
+---
+
+### M3: Debug Infrastructure
+
+| Check | Method | Pass Criteria |
+|-------|--------|---------------|
+| OpenOCD connects | `openocd -f board/esp32s3-builtin.cfg` | "Listening on port 3333" |
+| GDB connects | `target remote :3333` | Connected, no errors |
+| Breakpoint works | Set BP on `app_main` | Hits breakpoint |
+| Step works | `next`, `step` | Executes, shows source |
+| Variable inspect | `print variable` | Shows correct value |
+| Core dump to flash | Trigger panic via code | Core dump saved |
+| Core dump decode | `idf.py coredump-info` | Stack trace readable |
+
+**Owner:** Claude
+**Depends On:** M2
+**Blocks:** M4
+
+---
+
+### M4: RF Stacks Validated
+
+| Check | Method | Pass Criteria |
+|-------|--------|---------------|
+| WiFi init | UART log | `wifi:mode : sta`, no errors |
+| WiFi scan | Code | Finds nearby APs |
+| BLE init | UART log | `NimBLE: GAP` init, no errors |
+| BLE advertise | nRF Connect app | Device visible |
+| Coexistence mode | UART log | `coex: enabled`, no errors |
+| Both active | Simultaneous | WiFi scan + BLE advertise work together |
+| No RF errors | 5 min soak | No `coex` warnings/errors |
+| Memory stable | heap check | No leak after WiFi+BLE init |
+
+**Owner:** Claude
+**Depends On:** M3
+**Blocks:** M5, M6
+
+---
+
+### M5: Unit Tests Pass
+
+| Check | Method | Pass Criteria |
+|-------|--------|---------------|
+| CMock integrated | Build system | Compiles with mocks |
+| Host build works | `idf.py --preview set-target linux` | Exit code 0 |
+| Tests run | `./build/test_app` | All tests execute |
+| All pass | Test output | 0 failures |
+| Coverage > 70% | `gcov` | Line coverage ≥ 70% |
+| CI pipeline | GitHub Actions | Runs on every PR |
+
+**Owner:** Claude
+**Depends On:** M4
+**Blocks:** Application development
+
+---
+
+### M6: ESP-NOW Latency Validated
+
+| Check | Method | Pass Criteria |
+|-------|--------|---------------|
+| ESP-NOW init | UART log | `ESPNOW: initialized` |
+| Peer discovery | 2 DevKits | Devices find each other |
+| Ping-pong test | 1000 iterations | All packets received |
+| Latency P50 | Measurement | < 1ms |
+| Latency P95 | Measurement | < 2ms |
+| Latency P99 | Measurement | < 5ms |
+| Coex impact | BLE active | Latency still < 5ms P99 |
+
+**Owner:** Claude (requires 2+ DevKits)
+**Depends On:** M4
+**Blocks:** E1 (ESP-NOW Service)
+
+---
+
+### M7: Dev PCB Works
+
+| Check | Method | Pass Criteria |
+|-------|--------|---------------|
+| Flash succeeds | `idf.py flash` | Exit code 0 |
+| All GPIOs correct | Smoke test | LEDs, audio, haptic respond |
+| Touch works | Smoke test | Touch detected |
+| IMU works | Smoke test | Acceleration reads |
+| Power circuit | Multimeter | 3.3V stable, battery charges |
+| Full smoke test | Built-in suite | All 8 tests pass |
+
+**Owner:** Claude + You
+**Depends On:** A7 (assembled PCB), E7 (smoke tests)
+**Blocks:** M8
+
+---
+
+### M8: 6-Pod Demo
+
+| Check | Method | Pass Criteria |
+|-------|--------|---------------|
+| 6 pods boot | UART | All 6 show `app_main` |
+| All connect | ESP-NOW | Master sees 6 peers |
+| Drill runs | Trigger drill | LEDs light in sequence |
+| Touch response | Hit each pod | < 50ms visual feedback |
+| Audio sync | Listen | No noticeable delay |
+| 10 min soak | Run drills | No crashes, no desyncs |
+
+**Owner:** Claude + You
+**Depends On:** M7
+**Blocks:** M9, A8 (form-factor design)
+
+---
+
+### M9: Demo Ready
+
+| Check | Method | Pass Criteria |
+|-------|--------|---------------|
+| Form-factor boots | Flash | Exit code 0 |
+| Enclosure fits | Physical | PCB in shell |
+| Battery life | Runtime test | > 10 hours standby |
+| OTA works | Push update | New version boots |
+| Demo script | Run through | Looks professional |
+
+**Owner:** Claude + You
+**Depends On:** A10 (final assembly)
+**Blocks:** External demos
+
+---
+
+## CI PIPELINE STRATEGY
+
+### Pipeline Tiers
+
+| Tier | Trigger | Hardware | Tests | Duration |
+|------|---------|----------|-------|----------|
+| **Tier 1** | Every PR | None (GitHub-hosted) | Host unit tests | < 2 min |
+| **Tier 2** | Every PR | None (GitHub-hosted) | Target compile check | < 5 min |
+| **Tier 3** | Nightly | Self-hosted + DevKit | DevKit smoke test | < 10 min |
+| **Tier 4** | Manual/Release | Self-hosted + DevKit | Full validation suite | < 30 min |
+
+### Tier 1: Host Unit Tests (Every PR)
+
+```yaml
+# .github/workflows/unit-tests.yml
+name: Unit Tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.2
+      - name: Build for Linux target
+        run: |
+          cd firmware
+          idf.py --preview set-target linux
+          idf.py build
+      - name: Run tests
+        run: ./firmware/build/test_app
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+```
+
+### Tier 2: Target Compile (Every PR)
+
+```yaml
+# .github/workflows/build.yml
+name: Build
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+      - name: Build for ESP32-S3
+        run: |
+          cd firmware
+          idf.py set-target esp32s3
+          idf.py build
+      - name: Check binary size
+        run: |
+          SIZE=$(stat -c%s firmware/build/domes.bin)
+          if [ $SIZE -gt 4194304 ]; then
+            echo "Binary too large: $SIZE bytes (max 4MB)"
+            exit 1
+          fi
+```
+
+### Tier 3: DevKit Smoke Test (Nightly)
+
+```yaml
+# .github/workflows/devkit-smoke.yml
+name: DevKit Smoke Test
+on:
+  schedule:
+    - cron: '0 3 * * *'  # 3 AM daily
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, devkit]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Flash firmware
+        run: |
+          cd firmware
+          idf.py flash -p /dev/ttyUSB0
+      - name: Capture UART (30s)
+        run: |
+          timeout 30 cat /dev/ttyUSB0 > uart_log.txt || true
+      - name: Validate boot
+        run: |
+          grep -q "app_main" uart_log.txt || exit 1
+          grep -q "wifi:mode" uart_log.txt || exit 1
+          grep -q "NimBLE" uart_log.txt || exit 1
+          ! grep -q "Guru Meditation" uart_log.txt || exit 1
+      - name: GDB sanity check
+        run: |
+          # Start OpenOCD in background
+          openocd -f board/esp32s3-builtin.cfg &
+          sleep 2
+          # Connect GDB and verify
+          echo -e "target remote :3333\ninfo reg\nquit" | \
+            xtensa-esp32s3-elf-gdb -batch firmware/build/domes.elf
+          killall openocd
+      - name: Upload logs
+        uses: actions/upload-artifact@v3
+        with:
+          name: uart-logs
+          path: uart_log.txt
+```
+
+### Self-Hosted Runner Setup
+
+```bash
+# On your CI machine with DevKit connected:
+
+# 1. Install GitHub Actions runner
+mkdir actions-runner && cd actions-runner
+curl -o actions-runner-linux-x64.tar.gz -L https://github.com/actions/runner/releases/download/v2.311.0/actions-runner-linux-x64.tar.gz
+tar xzf actions-runner-linux-x64.tar.gz
+./config.sh --url https://github.com/your-org/domes --token YOUR_TOKEN --labels devkit
+
+# 2. Grant USB access
+sudo usermod -aG dialout $USER
+sudo chmod 666 /dev/ttyUSB0
+
+# 3. Start runner as service
+sudo ./svc.sh install
+sudo ./svc.sh start
+```
+
+---
+
+## TASK BREAKDOWN BY OWNER
+
+### Track A: Hardware (You)
+
+| Task | Depends On | Blocks |
+|------|------------|--------|
+| **A1: Order Dev Boards** (3x ESP32-S3-DevKitC) | - | M2 |
+| **A2: Order PCB Components** | - | A7 |
+| **A3: Design Schematic** | - | A5 |
+| **A5: Design PCB Layout** | A3 | A6 |
+| **A6: Order Dev PCB** | A5 | A7 |
+| **A7: Assemble Dev Units** | A2, A6 | M7 |
+| **A8: Design Form-Factor PCB** | M8 | A9 |
+| **A9: Order Form-Factor PCB** | A8 | A10 |
+| **A10: Assemble Final Units** | A9 | M9 |
+
+### Track B: System Validation (Claude + DevKit)
+
+| Task | Depends On | Blocks | Validation Method |
+|------|------------|--------|-------------------|
+| **B1: Set Up ESP-IDF Project** | - | M1 | `idf.py build` succeeds |
+| **B2: Flash Hello World** | M1, A1 | B3 | Binary runs on DevKit |
+| **B3: Validate UART Output** | B2 | M2 | Logs parse correctly |
+| **B4: Validate GDB Debugging** | M2 | B5 | Breakpoints work |
+| **B5: Validate Core Dump** | B4 | M3 | Panic decoded correctly |
+| **B6: Init WiFi Stack** | M3 | B7 | `wifi:mode` in logs |
+| **B7: Init BLE Stack** | B6 | B8 | `NimBLE` init OK |
+| **B8: Validate Coexistence** | B7 | M4 | Both stacks active |
+| **B9: ESP-NOW Latency Test** | M4 | M6 | P95 < 2ms |
+
+### Track C: Unit Tests (Claude + Host)
+
+| Task | Depends On | Blocks |
+|------|------------|--------|
+| **C1: Write Driver Interfaces** | M4 | C2, D1-D6 |
+| **C2: Set Up CMock Framework** | C1 | C3 |
+| **C3: Write Mock Drivers** | C2 | C4 |
+| **C4: Write Unit Tests** | C3 | M5 |
+| **C5: Set Up CI Pipeline** | M5 | - |
+
+### Track D: Drivers (Claude)
+
+| Task | Depends On | Blocks |
+|------|------------|--------|
+| **D1: LED Driver** | C1 | E1 |
+| **D2: Audio Driver** | C1 | E5 |
+| **D3: Haptic Driver** | C1 | E5 |
+| **D4: Touch Driver** | C1 | E4 |
+| **D5: IMU Driver** | C1 | E4 |
+| **D6: Power Driver** | C1 | E7 |
+
+### Track E: Application (Claude)
+
+| Task | Depends On | Blocks |
+|------|------------|--------|
+| **E1: ESP-NOW Service** | M5, M6, D1 | E2 |
+| **E2: BLE Service** | E1 | E3 |
+| **E3: Protocol Layer** | E2 | E4 |
+| **E4: Game Engine** | D4, D5, E3 | E5 |
+| **E5: Feedback Service** | D2, D3, E4 | E6 |
+| **E6: OTA System** | E5 | E7 |
+| **E7: Smoke Test Suite** | E6, D6 | M7 |
+
+### Track F: Integration (Claude + Custom PCB)
+
+| Task | Depends On | Blocks |
+|------|------------|--------|
+| **F1: Flash to Dev PCB** | A7, E7 | F2 |
+| **F2: Debug GPIO/Timing** | F1 | F3 |
+| **F3: Calibrate Sensors** | F2 | F4 |
+| **F4: Multi-Pod Test** | F3 | M7 |
+| **F5: Flash Form-Factor** | A10, M8 | F6 |
+| **F6: Final Validation** | F5 | M9 |
 
 ---
 
 ## CRITICAL PATH
 
-The **critical path** determines minimum time to completion:
-
 ```
-Order Dev Boards → Validate ESP-NOW → Order Dev PCB → Assemble → Flash → Debug → Demo
-       ↓                                                           ↑
-   [Claude writes firmware in parallel, ready when PCB arrives] ───┘
+A1 (Order DevKits) ──► B2 (Flash) ──► B3-B8 (System Validation) ──► M4
+                                                                      │
+┌─────────────────────────────────────────────────────────────────────┘
+│
+▼
+C1-C4 (Unit Tests) ──► M5 ──► E1-E7 (Application) ──► F1 ◄── A7 (Assemble)
+                                                        │
+                                                        ▼
+                                                   F2-F4 ──► M7 ──► M8
+                                                                     │
+                                                                     ▼
+                                                              A8-A10 ──► M9
 ```
 
 **Bottlenecks:**
-1. PCB fabrication lead time
-2. Component shipping
-3. Hardware debugging (unpredictable)
-
-**Not on critical path:** All firmware development (can happen in parallel with PCB)
+1. A1 (Dev boards) - blocks all hardware validation
+2. M4 (RF validated) - gates unit test development
+3. A7 (PCB assembly) - blocks integration
 
 ---
 
-## TASK BREAKDOWN
-
-### Track A: Hardware (You)
-
-| Task | Depends On | Blocks | Parallelizable With |
-|------|------------|--------|---------------------|
-| **A1: Order Dev Boards** | - | A4 | B1-B15 |
-| **A2: Order PCB Components** | - | A7 | Everything |
-| **A3: Design Schematic** | - | A5 | B1-B15, A1, A2 |
-| **A4: Validate ESP-NOW** | A1 | M1 | A3, B1-B15 |
-| **A5: Design PCB Layout** | A3 | A6 | B1-B15 |
-| **A6: Order Dev PCB** | A5 | A7 | B1-B15 |
-| **A7: Assemble Dev Units** | A2, A6 | C1 | B14, B15 |
-| **A8: Design Form-Factor PCB** | M4 | A9 | - |
-| **A9: Order Form-Factor PCB** | A8 | A10 | - |
-| **A10: Assemble Final Units** | A9 | C5 | - |
-
-### Track B: Firmware (Claude)
-
-| Task | Depends On | Blocks | Notes |
-|------|------------|--------|-------|
-| **B1: Set Up ESP-IDF Project** | - | B2, M2 | First task |
-| **B2: Write Driver Abstractions** | B1 | B3-B8 | Enables mocking |
-| **B3: Set Up Unit Test Framework** | B2 | M3 | CMock + Unity |
-| **B4: Write LED Driver** | B2 | B9 | SK6812 via RMT |
-| **B5: Write Audio Driver** | B2 | B13 | I2S + MAX98357A |
-| **B6: Write Haptic Driver** | B2 | B13 | I2C + DRV2605L |
-| **B7: Write Touch Driver** | B2 | B12 | ESP32 touch peripheral |
-| **B8: Write IMU Driver** | B2 | B12 | I2C + LIS2DW12 |
-| **B9: Write ESP-NOW Service** | B4 | B11 | After M1 validates arch |
-| **B10: Write BLE Service** | B2 | B11 | NimBLE stack |
-| **B11: Write Protocol Layer** | B9, B10 | B12 | Message encoding |
-| **B12: Write Game Engine** | B7, B8, B11 | B13 | State machine, drills |
-| **B13: Write Feedback Service** | B5, B6, B12 | B14 | Coordinated output |
-| **B14: Write OTA System** | B13 | B15 | Partition, rollback |
-| **B15: Write Smoke Tests** | B14 | C1 | Hardware validation suite |
-
-### Track C: Integration
-
-| Task | Depends On | Blocks | Notes |
-|------|------------|--------|-------|
-| **C1: Flash Firmware to Dev PCB** | A7, B15, M1 | C2 | First real HW test |
-| **C2: Debug GPIO/Timing Issues** | C1 | C3 | Expect surprises |
-| **C3: Calibrate Touch/Haptic/Audio** | C2 | C4 | Tune thresholds |
-| **C4: Multi-Pod Integration Test** | C3 | M4, M5 | 6 pods working |
-| **C5: Flash to Form-Factor** | A10, M5 | C6 | Final hardware |
-| **C6: Final Validation** | C5 | M6 | Demo ready |
-
----
-
-## MILESTONES
-
-| Milestone | Definition of Done | Unlocks |
-|-----------|-------------------|---------|
-| **M1: ESP-NOW Validated** | 95th percentile RTT < 2ms on dev boards | Confidence in architecture |
-| **M2: Firmware Compiles** | Clean build for ESP32-S3 target | Development velocity |
-| **M3: Unit Tests Pass** | >70% coverage, all tests green | Quality gate |
-| **M4: Dev PCB Works** | Single pod: touch→LED+sound+haptic | Integration confidence |
-| **M5: 6-Pod Demo** | Synchronized drill across 6 pods | Core product works |
-| **M6: Demo Ready** | Form-factor prototypes functional | External demos |
-
----
-
-## PARALLEL EXECUTION MODEL
+## PARALLEL EXECUTION
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     PARALLEL EXECUTION                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│   YOU                                 CLAUDE                            │
-│   ───                                 ──────                            │
-│                                                                          │
-│   A1: Order dev boards ─────────────► B1: Project setup                 │
-│   A2: Order components                B2: Driver abstractions           │
-│   A3: Schematic ◄──────────────────── B3: Unit test framework           │
-│           │                           B4-B8: All drivers                │
-│           │                                  │                          │
-│           ▼                                  │                          │
-│   A4: Validate ESP-NOW ══════════════════════╪═══► M1                   │
-│           │                                  │                          │
-│           ▼                                  ▼                          │
-│   A5: PCB Layout                      B9-B11: Comms layer               │
-│           │                           B12: Game engine                  │
-│           ▼                           B13: Feedback service             │
-│   A6: Order PCB                       B14: OTA system                   │
-│           │                           B15: Smoke tests                  │
-│           ▼                                  │                          │
-│   [PCB Fabrication]                          │                          │
-│           │                                  │                          │
-│           ▼                                  ▼                          │
-│   A7: Assemble ──────────────────────► C1: Flash & Debug                │
-│                                              │                          │
-│                                              ▼                          │
-│                                        C2-C4: Integration               │
-│                                              │                          │
-│                                              ▼                          │
-│   A8: Form-factor PCB ◄──────────────────── M5: 6-Pod Demo              │
-│           │                                                             │
-│           ▼                                                             │
-│   A9-A10: Final assembly ────────────► C5-C6: Final validation          │
-│                                              │                          │
-│                                              ▼                          │
-│                                        M6: Demo Ready                   │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
+YOU                              CLAUDE
+───                              ──────
 
-Legend:
-  ─────►  Enables/unblocks
-  ════►   Critical dependency (on critical path)
-  ◄─────  Feedback/iteration
+A1: Order dev boards ──────────► [Wait for delivery]
+A2: Order components                    │
+A3: Design schematic                    │
+        │                               │
+        │                    [DevKit arrives]
+        │                               │
+        │                        B1: Project setup
+        │                        B2: Flash hello world
+        │                        B3: Validate UART
+        │                        B4: Validate GDB
+        │                        B5: Validate core dump
+        │                        B6-B8: RF stacks ────► M4
+        │                               │
+        ▼                               ▼
+A5: PCB Layout               C1-C4: Unit tests ────► M5
+        │                               │
+        ▼                               ▼
+A6: Order PCB                D1-D6: Drivers
+        │                    E1-E7: Application
+        ▼                               │
+[PCB fabrication]                       │
+        │                               │
+        ▼                               ▼
+A7: Assemble ──────────────────► F1: Flash
+                                 F2-F4: Integration
+                                        │
+                                        ▼
+                                  M7: Dev PCB Works
+                                        │
+                                        ▼
+                                  M8: 6-Pod Demo
+                                        │
+A8: Form-factor design ◄────────────────┘
+A9: Order
+A10: Assemble ─────────────────► F5-F6 ──► M9
 ```
-
----
-
-## WHAT NEEDS REAL HARDWARE?
-
-Only things that **cannot** be unit tested:
-
-| Validation | Why Real HW? | Depends On |
-|------------|--------------|------------|
-| **ESP-NOW latency** | RF timing is physics | A1 (dev boards) |
-| **BLE + ESP-NOW coexistence** | RF arbitration | A1 (dev boards) |
-| **Touch through diffuser** | Material properties | A7 (assembled PCB) |
-
-**Everything else** (game logic, protocol, state machines, OTA) → Unit tests
-
----
-
-## WHY NO EMULATOR?
-
-| Option | Verdict | Reason |
-|--------|---------|--------|
-| **Wokwi** | ❌ Skip | No support for DRV2605L, LIS2DW12, custom audio |
-| **QEMU** | ❌ Skip | Limited peripheral emulation, complex setup |
-| **Renode** | ❌ Skip | ESP32-S3 support incomplete |
-| **POSIX Unit Tests** | ✅ Use | Fast, mock hardware, test business logic |
-
-**Bottom line**: Emulators can't emulate our specific peripherals. Unit tests with mocked drivers give us 80% coverage. Real hardware validation for the remaining 20%.
-
----
-
-## TESTING STRATEGY
-
-### Unit Tests (Run on Host)
-
-```
-firmware/
-├── test/
-│   ├── test_protocol.cpp      # Message encoding
-│   ├── test_state_machine.cpp # Pod states
-│   ├── test_drill_engine.cpp  # Game logic
-│   ├── test_timing.cpp        # Clock sync
-│   └── mocks/
-│       ├── mock_led_driver.cpp
-│       ├── mock_audio_driver.cpp
-│       └── ...
-```
-
-**Run tests:**
-```bash
-cd firmware
-idf.py --preview set-target linux
-idf.py build
-./build/test_app
-```
-
-### Hardware Smoke Tests (Run on Device)
-
-```cpp
-// Built into firmware, triggered by button hold or BLE command
-void runSmokeTests() {
-    TEST(led_ring_all_colors);
-    TEST(audio_play_tone);
-    TEST(haptic_click);
-    TEST(touch_detection);
-    TEST(espnow_ping);
-    TEST(ble_advertise);
-    TEST(nvs_read_write);
-    TEST(battery_voltage);
-}
-```
-
----
-
-## MINIMAL PROCUREMENT
-
-### Dev Boards
-
-| Item | Qty | Purpose |
-|------|-----|---------|
-| ESP32-S3-DevKitC-1-N16R8 | 3 | ESP-NOW validation only |
-
-**That's it.** No breakout boards - going straight to PCB.
-
-### PCB Components
-
-Order full BOM per System Architecture document.
 
 ---
 
 ## DECISION GATES
 
-### Gate 1: After M1 (ESP-NOW Validated)
-**Question:** Does ESP-NOW meet latency requirements?
-- ✅ Yes → Continue with current architecture
-- ❌ No → Fallback to BLE-only (higher latency but works)
+### Gate 1: After M4 (RF Validated)
+**Question:** Do WiFi/BLE/ESP-NOW coexist reliably?
+- ✅ Yes → Proceed with unit tests and drivers
+- ❌ No → Debug RF issues before investing in more code
 
-### Gate 2: After M4 (Dev PCB Works)
-**Question:** Does single pod work end-to-end?
+### Gate 2: After M6 (ESP-NOW Latency)
+**Question:** Is ESP-NOW latency acceptable (P95 < 2ms)?
+- ✅ Yes → Use ESP-NOW for pod-to-pod comms
+- ❌ No → Fallback to BLE mesh (higher latency but works)
+
+### Gate 3: After M7 (Dev PCB Works)
+**Question:** Does custom PCB work end-to-end?
 - ✅ Yes → Proceed to multi-pod testing
-- ❌ No → Debug, potentially respin dev PCB
+- ❌ No → Debug, potentially respin PCB
 
-### Gate 3: After M5 (6-Pod Demo)
-**Question:** Do 6 pods work together reliably?
-- ✅ Yes → Proceed to form-factor
-- ❌ No → Fix issues before investing in form-factor
-
----
-
-## CLAUDE'S TASK SEQUENCE
-
-### Phase 1: Foundation
-1. **B1: Project setup** - ESP-IDF, CMake, directory structure
-2. **B2: Driver abstractions** - Interfaces that can be mocked
-3. **B3: Unit test framework** - CMock integration
-
-### Phase 2: Drivers
-4. **B4: LED driver** - SK6812 via RMT
-5. **B5: Audio driver** - I2S + sample playback
-6. **B6: Haptic driver** - DRV2605L via I2C
-7. **B7: Touch driver** - ESP32 touch peripheral
-8. **B8: IMU driver** - LIS2DW12 via I2C
-
-### Phase 3: Communication
-9. **B9: ESP-NOW service** - Pod-to-pod messaging
-10. **B10: BLE service** - Phone connection
-11. **B11: Protocol layer** - Message encoding/decoding
-
-### Phase 4: Application
-12. **B12: Game engine** - State machine, drill logic
-13. **B13: Feedback service** - Coordinated LED/audio/haptic
-14. **B14: OTA system** - Partition management, rollback
-15. **B15: Smoke tests** - Hardware validation suite
-
-### Phase 5: Integration (after PCB arrives)
-16. **C1-C4:** Flash, debug, calibrate, multi-pod test
+### Gate 4: After M8 (6-Pod Demo)
+**Question:** Do 6 pods work reliably together?
+- ✅ Yes → Proceed to form-factor design
+- ❌ No → Fix issues before form-factor investment
 
 ---
 
 ## RISKS & MITIGATIONS
 
-| Risk | Mitigation |
-|------|------------|
-| ESP-NOW latency too high | Validate early (M1); fallback to BLE |
-| PCB layout errors | Careful review; dev PCB is throwaway |
-| Touch through diffuser fails | Test materials; add MPR121 if needed |
-| Component availability | Order early; identify alternates |
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| RF coexistence fails | Low | High | Early M4 validation; fallback to BLE-only |
+| DevKit delayed | Medium | Medium | Order from multiple suppliers |
+| PCB layout errors | Medium | Medium | Careful review; dev PCB is throwaway |
+| CI DevKit flaky | Medium | Low | Retry logic; manual fallback |
+| Touch through diffuser | Low | Medium | Test materials early |
 
 ---
 
-*Document Created: 2026-01-03*
+*Document Updated: 2026-01-03*
 *Project: DOMES*
