@@ -1,0 +1,95 @@
+menu "DOMES Configuration"
+
+    choice DOMES_PLATFORM
+        prompt "Target Platform"
+        default DOMES_PLATFORM_DEVKIT
+        help
+            Select the target hardware platform for the build.
+
+        config DOMES_PLATFORM_DEVKIT
+            bool "ESP32-S3 DevKit"
+            help
+                Build for ESP32-S3-DevKitC-1 or similar development board.
+                Use this for initial development before custom PCB.
+
+        config DOMES_PLATFORM_PCB_V1
+            bool "DOMES PCB v1"
+            help
+                Build for the first revision of the custom DOMES PCB.
+
+    endchoice
+
+    config DOMES_LED_COUNT
+        int "Number of LEDs in ring"
+        default 16
+        range 1 64
+        help
+            Number of SK6812 RGBW LEDs in the LED ring.
+
+    config DOMES_HAS_HAPTIC
+        bool "Enable haptic motor driver"
+        default y
+        help
+            Enable support for DRV2605L haptic motor driver.
+            Disable if the hardware does not have a haptic motor.
+
+    config DOMES_HAS_AUDIO
+        bool "Enable audio output"
+        default y
+        help
+            Enable support for MAX98357A I2S audio amplifier.
+            Disable if the hardware does not have a speaker.
+
+    config DOMES_HAS_IMU
+        bool "Enable IMU (accelerometer)"
+        default y
+        help
+            Enable support for LIS2DW12 accelerometer.
+            Disable if the hardware does not have an IMU.
+
+    config DOMES_TOUCH_CHANNELS
+        int "Number of touch channels"
+        default 4
+        range 1 14
+        help
+            Number of capacitive touch channels to use.
+            ESP32-S3 supports up to 14 touch-capable GPIOs.
+
+    menu "Network Configuration"
+
+        config DOMES_MAX_PODS
+            int "Maximum number of pods"
+            default 24
+            range 2 32
+            help
+                Maximum number of pods that can be connected in a network.
+
+        config DOMES_ESPNOW_CHANNEL
+            int "ESP-NOW WiFi channel"
+            default 1
+            range 1 14
+            help
+                WiFi channel for ESP-NOW communication.
+                All pods must use the same channel.
+
+    endmenu
+
+    menu "Debug Configuration"
+
+        config DOMES_ENABLE_SMOKE_TEST
+            bool "Enable hardware smoke tests"
+            default y
+            help
+                Build in hardware self-test routines.
+                Hold button during boot to trigger.
+
+        config DOMES_LOG_LEVEL_VERBOSE
+            bool "Enable verbose logging"
+            default n
+            help
+                Enable ESP_LOGV verbose log messages.
+                Increases binary size and log output.
+
+    endmenu
+
+endmenu

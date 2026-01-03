@@ -1,0 +1,11 @@
+# DOMES Firmware Partition Table
+# 16MB Flash Layout for ESP32-S3
+#
+# Name,       Type, SubType,  Offset,    Size,   Flags
+nvs,          data, nvs,      0x9000,    24K,
+otadata,      data, ota,      0xf000,    8K,
+phy_init,     data, phy,      0x11000,   4K,
+ota_0,        app,  ota_0,    0x20000,   4M,
+ota_1,        app,  ota_1,    0x420000,  4M,
+audio,        data, spiffs,   0x820000,  6M,
+factory,      app,  factory,  0xE20000,  2M,

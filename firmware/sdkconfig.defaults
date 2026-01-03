@@ -1,0 +1,107 @@
+# DOMES Firmware - Default SDK Configuration
+# Target: ESP32-S3-WROOM-1-N16R8
+
+# ============================================
+# Target Selection
+# ============================================
+CONFIG_IDF_TARGET="esp32s3"
+
+# ============================================
+# Flash Configuration (16MB)
+# ============================================
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# ============================================
+# PSRAM Configuration (8MB)
+# ============================================
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# ============================================
+# Partition Table
+# ============================================
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# ============================================
+# CPU Configuration
+# ============================================
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# ============================================
+# FreeRTOS Configuration
+# ============================================
+CONFIG_FREERTOS_HZ=1000
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=n
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=3072
+
+# ============================================
+# C++ Configuration
+# ============================================
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
+# ============================================
+# Logging Configuration
+# ============================================
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+CONFIG_LOG_COLORS=y
+
+# ============================================
+# USB Configuration (Native USB)
+# ============================================
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# ============================================
+# WiFi Configuration
+# ============================================
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=10
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=32
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=y
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=y
+
+# ============================================
+# Bluetooth Configuration
+# ============================================
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=3
+
+# ============================================
+# ESP-NOW Configuration
+# ============================================
+CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM=7
+
+# ============================================
+# Touch Sensor Configuration
+# ============================================
+CONFIG_ESP32_ULP_COPROC_ENABLED=y
+
+# ============================================
+# Power Management
+# ============================================
+CONFIG_PM_ENABLE=y
+CONFIG_PM_DFS_INIT_AUTO=y
+
+# ============================================
+# Watchdog Configuration
+# ============================================
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=y
+
+# ============================================
+# DOMES Custom Configuration (defaults)
+# ============================================
+CONFIG_DOMES_PLATFORM_DEVKIT=y
+CONFIG_DOMES_LED_COUNT=16
+CONFIG_DOMES_HAS_HAPTIC=y
+CONFIG_DOMES_HAS_AUDIO=y
+CONFIG_DOMES_HAS_IMU=y
