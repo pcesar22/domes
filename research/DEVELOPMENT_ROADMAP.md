@@ -1,5 +1,5 @@
 # DOMES Development Roadmap
-## Accelerated Bring-Up Strategy
+## Dependency-Based Execution Plan
 
 ---
 
@@ -8,7 +8,6 @@
 | Aspect | Decision |
 |--------|----------|
 | **Strategy** | Parallel dev: Claude writes firmware while you design PCB |
-| **Timeline** | ~6-8 weeks to functional multi-pod prototype |
 | **Dev Boards** | Minimal - only for ESP-NOW/RF validation (can't unit test) |
 | **Breadboarding** | Skip - go straight to PCB |
 | **Testing** | POSIX unit tests with CMock, not emulators |
@@ -16,46 +15,257 @@
 
 ---
 
-## DEVELOPMENT MODEL
+## DEPENDENCY GRAPH
+
+```mermaid
+graph TD
+    subgraph "Parallel Track A: Hardware (You)"
+        A1[Order Dev Boards<br/>3x ESP32-S3]
+        A2[Order PCB Components<br/>Full BOM]
+        A3[Design Schematic]
+        A4[Validate ESP-NOW<br/>on Dev Boards]
+        A5[Design PCB Layout]
+        A6[Order Dev PCB]
+        A7[Assemble Dev Units<br/>6x pods]
+        A8[Design Form-Factor PCB]
+        A9[Order Form-Factor PCB]
+        A10[Assemble Final Units]
+    end
+
+    subgraph "Parallel Track B: Firmware (Claude)"
+        B1[Set Up ESP-IDF Project]
+        B2[Write Driver Abstractions]
+        B3[Set Up Unit Test Framework]
+        B4[Write LED Driver]
+        B5[Write Audio Driver]
+        B6[Write Haptic Driver]
+        B7[Write Touch Driver]
+        B8[Write IMU Driver]
+        B9[Write ESP-NOW Service]
+        B10[Write BLE Service]
+        B11[Write Protocol Layer]
+        B12[Write Game Engine]
+        B13[Write Feedback Service]
+        B14[Write OTA System]
+        B15[Write Smoke Tests]
+    end
+
+    subgraph "Integration Track"
+        C1[Flash Firmware to Dev PCB]
+        C2[Debug GPIO/Timing Issues]
+        C3[Calibrate Touch/Haptic/Audio]
+        C4[Multi-Pod Integration Test]
+        C5[Flash to Form-Factor]
+        C6[Final Validation]
+    end
+
+    subgraph "Milestones"
+        M1((ESP-NOW<br/>Validated))
+        M2((Firmware<br/>Compiles))
+        M3((Unit Tests<br/>Pass))
+        M4((Dev PCB<br/>Works))
+        M5((6-Pod<br/>Demo))
+        M6((Demo<br/>Ready))
+    end
+
+    %% Hardware dependencies
+    A1 --> A4
+    A2 --> A7
+    A3 --> A5
+    A5 --> A6
+    A6 --> A7
+    A4 --> M1
+    A7 --> C1
+    A8 --> A9
+    A9 --> A10
+    C4 --> A8
+
+    %% Firmware dependencies
+    B1 --> B2
+    B2 --> B3
+    B2 --> B4
+    B2 --> B5
+    B2 --> B6
+    B2 --> B7
+    B2 --> B8
+    B3 --> M3
+    B4 --> B9
+    B5 --> B13
+    B6 --> B13
+    B7 --> B12
+    B8 --> B12
+    B9 --> B11
+    B10 --> B11
+    B11 --> B12
+    B12 --> B13
+    B13 --> B14
+    B14 --> B15
+    B1 --> M2
+
+    %% Integration dependencies
+    M1 --> C1
+    B15 --> C1
+    A7 --> C1
+    C1 --> C2
+    C2 --> C3
+    C3 --> C4
+    C4 --> M4
+    M4 --> M5
+    A10 --> C5
+    C5 --> C6
+    C6 --> M6
+
+    %% Cross-track dependencies
+    M1 -.->|Validates architecture| B9
+```
+
+---
+
+## CRITICAL PATH
+
+The **critical path** determines minimum time to completion:
+
+```
+Order Dev Boards → Validate ESP-NOW → Order Dev PCB → Assemble → Flash → Debug → Demo
+       ↓                                                           ↑
+   [Claude writes firmware in parallel, ready when PCB arrives] ───┘
+```
+
+**Bottlenecks:**
+1. PCB fabrication lead time
+2. Component shipping
+3. Hardware debugging (unpredictable)
+
+**Not on critical path:** All firmware development (can happen in parallel with PCB)
+
+---
+
+## TASK BREAKDOWN
+
+### Track A: Hardware (You)
+
+| Task | Depends On | Blocks | Parallelizable With |
+|------|------------|--------|---------------------|
+| **A1: Order Dev Boards** | - | A4 | B1-B15 |
+| **A2: Order PCB Components** | - | A7 | Everything |
+| **A3: Design Schematic** | - | A5 | B1-B15, A1, A2 |
+| **A4: Validate ESP-NOW** | A1 | M1 | A3, B1-B15 |
+| **A5: Design PCB Layout** | A3 | A6 | B1-B15 |
+| **A6: Order Dev PCB** | A5 | A7 | B1-B15 |
+| **A7: Assemble Dev Units** | A2, A6 | C1 | B14, B15 |
+| **A8: Design Form-Factor PCB** | M4 | A9 | - |
+| **A9: Order Form-Factor PCB** | A8 | A10 | - |
+| **A10: Assemble Final Units** | A9 | C5 | - |
+
+### Track B: Firmware (Claude)
+
+| Task | Depends On | Blocks | Notes |
+|------|------------|--------|-------|
+| **B1: Set Up ESP-IDF Project** | - | B2, M2 | First task |
+| **B2: Write Driver Abstractions** | B1 | B3-B8 | Enables mocking |
+| **B3: Set Up Unit Test Framework** | B2 | M3 | CMock + Unity |
+| **B4: Write LED Driver** | B2 | B9 | SK6812 via RMT |
+| **B5: Write Audio Driver** | B2 | B13 | I2S + MAX98357A |
+| **B6: Write Haptic Driver** | B2 | B13 | I2C + DRV2605L |
+| **B7: Write Touch Driver** | B2 | B12 | ESP32 touch peripheral |
+| **B8: Write IMU Driver** | B2 | B12 | I2C + LIS2DW12 |
+| **B9: Write ESP-NOW Service** | B4 | B11 | After M1 validates arch |
+| **B10: Write BLE Service** | B2 | B11 | NimBLE stack |
+| **B11: Write Protocol Layer** | B9, B10 | B12 | Message encoding |
+| **B12: Write Game Engine** | B7, B8, B11 | B13 | State machine, drills |
+| **B13: Write Feedback Service** | B5, B6, B12 | B14 | Coordinated output |
+| **B14: Write OTA System** | B13 | B15 | Partition, rollback |
+| **B15: Write Smoke Tests** | B14 | C1 | Hardware validation suite |
+
+### Track C: Integration
+
+| Task | Depends On | Blocks | Notes |
+|------|------------|--------|-------|
+| **C1: Flash Firmware to Dev PCB** | A7, B15, M1 | C2 | First real HW test |
+| **C2: Debug GPIO/Timing Issues** | C1 | C3 | Expect surprises |
+| **C3: Calibrate Touch/Haptic/Audio** | C2 | C4 | Tune thresholds |
+| **C4: Multi-Pod Integration Test** | C3 | M4, M5 | 6 pods working |
+| **C5: Flash to Form-Factor** | A10, M5 | C6 | Final hardware |
+| **C6: Final Validation** | C5 | M6 | Demo ready |
+
+---
+
+## MILESTONES
+
+| Milestone | Definition of Done | Unlocks |
+|-----------|-------------------|---------|
+| **M1: ESP-NOW Validated** | 95th percentile RTT < 2ms on dev boards | Confidence in architecture |
+| **M2: Firmware Compiles** | Clean build for ESP32-S3 target | Development velocity |
+| **M3: Unit Tests Pass** | >70% coverage, all tests green | Quality gate |
+| **M4: Dev PCB Works** | Single pod: touch→LED+sound+haptic | Integration confidence |
+| **M5: 6-Pod Demo** | Synchronized drill across 6 pods | Core product works |
+| **M6: Demo Ready** | Form-factor prototypes functional | External demos |
+
+---
+
+## PARALLEL EXECUTION MODEL
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                     PARALLEL DEVELOPMENT STREAMS                         │
+│                     PARALLEL EXECUTION                                   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│   YOU (PM/EM + Hardware)              CLAUDE (Firmware)                 │
-│   ─────────────────────               ─────────────────                 │
+│   YOU                                 CLAUDE                            │
+│   ───                                 ──────                            │
 │                                                                          │
-│   Week 1:                             Week 1:                           │
-│   • Order dev boards (3x)             • Set up ESP-IDF project          │
-│   • Order PCB components              • Write driver layer (mocked)     │
-│   • Start schematic                   • Write unit test framework       │
-│                                                                          │
-│   Week 2:                             Week 2:                           │
-│   • Validate ESP-NOW (2 hrs)          • Write communication layer       │
-│   • Continue schematic                • Write game engine               │
-│   • Start PCB layout                  • Write protocol handlers         │
-│                                                                          │
-│   Week 3:                             Week 3:                           │
-│   • Finish PCB layout                 • Write OTA system                │
-│   • Order dev PCB                     • Write smoke tests               │
-│   • Order enclosure prints            • Expand unit test coverage       │
-│                                                                          │
-│   Week 4-5:                           Week 4-5:                         │
-│   • PCB arrives                       • Flash & debug on real HW        │
-│   • Assemble 6 units                  • Fix hardware-specific issues    │
-│   • Integration testing               • Multi-pod testing               │
-│                                                                          │
-│   Week 6-7:                           Week 6-7:                         │
-│   • Form-factor PCB design            • Feature completion              │
-│   • Enclosure refinement              • BLE app integration             │
-│                                                                          │
-│   Week 8:                             Week 8:                           │
-│   • Form-factor assembly              • Final polish                    │
-│   • Demo-ready prototypes             • Documentation                   │
+│   A1: Order dev boards ─────────────► B1: Project setup                 │
+│   A2: Order components                B2: Driver abstractions           │
+│   A3: Schematic ◄──────────────────── B3: Unit test framework           │
+│           │                           B4-B8: All drivers                │
+│           │                                  │                          │
+│           ▼                                  │                          │
+│   A4: Validate ESP-NOW ══════════════════════╪═══► M1                   │
+│           │                                  │                          │
+│           ▼                                  ▼                          │
+│   A5: PCB Layout                      B9-B11: Comms layer               │
+│           │                           B12: Game engine                  │
+│           ▼                           B13: Feedback service             │
+│   A6: Order PCB                       B14: OTA system                   │
+│           │                           B15: Smoke tests                  │
+│           ▼                                  │                          │
+│   [PCB Fabrication]                          │                          │
+│           │                                  │                          │
+│           ▼                                  ▼                          │
+│   A7: Assemble ──────────────────────► C1: Flash & Debug                │
+│                                              │                          │
+│                                              ▼                          │
+│                                        C2-C4: Integration               │
+│                                              │                          │
+│                                              ▼                          │
+│   A8: Form-factor PCB ◄──────────────────── M5: 6-Pod Demo              │
+│           │                                                             │
+│           ▼                                                             │
+│   A9-A10: Final assembly ────────────► C5-C6: Final validation          │
+│                                              │                          │
+│                                              ▼                          │
+│                                        M6: Demo Ready                   │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
+
+Legend:
+  ─────►  Enables/unblocks
+  ════►   Critical dependency (on critical path)
+  ◄─────  Feedback/iteration
 ```
+
+---
+
+## WHAT NEEDS REAL HARDWARE?
+
+Only things that **cannot** be unit tested:
+
+| Validation | Why Real HW? | Depends On |
+|------------|--------------|------------|
+| **ESP-NOW latency** | RF timing is physics | A1 (dev boards) |
+| **BLE + ESP-NOW coexistence** | RF arbitration | A1 (dev boards) |
+| **Touch through diffuser** | Material properties | A7 (assembled PCB) |
+
+**Everything else** (game logic, protocol, state machines, OTA) → Unit tests
 
 ---
 
@@ -72,167 +282,9 @@
 
 ---
 
-## WHAT NEEDS REAL HARDWARE VALIDATION?
-
-Only things that **cannot** be unit tested:
-
-| Validation | Why Real HW? | Time Required |
-|------------|--------------|---------------|
-| **ESP-NOW latency** | RF timing is physics | 2 hours |
-| **BLE + ESP-NOW coexistence** | RF arbitration | 1 hour |
-| **Touch through diffuser** | Material properties | 1 hour |
-
-**Everything else** (game logic, protocol, state machines, OTA) → Unit tests
-
----
-
-## PHASE 1: SETUP & PARALLEL START (Week 1)
-
-### You: Procurement + Schematic
-
-**Order immediately:**
-- 3× ESP32-S3-DevKitC-1-N16R8 ($45)
-- PCB components (per BOM in System Architecture)
-- 3D print filament for enclosure prototypes
-
-**Start schematic** using System Architecture as reference.
-
-### Claude: Firmware Foundation
-
-**Deliverables:**
-1. ESP-IDF project structure (per Software Architecture)
-2. CMake build system with host-target support
-3. Driver layer with hardware abstraction:
-   - `led_driver.hpp` - SK6812 control (mocked for tests)
-   - `audio_driver.hpp` - I2S audio (mocked for tests)
-   - `haptic_driver.hpp` - DRV2605L (mocked for tests)
-   - `touch_driver.hpp` - Capacitive touch (mocked for tests)
-   - `imu_driver.hpp` - LIS2DW12 (mocked for tests)
-4. Unit test framework (CMock + Unity)
-5. First passing unit tests
-
-**Architecture for testability:**
-```cpp
-// Hardware abstraction allows mocking
-class ILedDriver {
-public:
-    virtual void setColor(uint8_t index, Color c) = 0;
-    virtual void show() = 0;
-};
-
-class Sk6812Driver : public ILedDriver { /* Real implementation */ };
-class MockLedDriver : public ILedDriver { /* For unit tests */ };
-```
-
----
-
-## PHASE 2: CORE DEVELOPMENT (Week 2-3)
-
-### You: Hardware Validation + PCB
-
-**ESP-NOW Validation (Week 2, ~2 hours):**
-```
-Setup: 3× ESP32-S3 dev boards
-
-Test 1: Latency
-- Flash Claude's espnow_latency_test firmware
-- Run 10,000 ping-pong packets
-- Success: 95th percentile RTT < 2ms
-
-Test 2: BLE Coexistence
-- Flash ble_espnow_coex_test firmware
-- Connect phone via BLE
-- Send commands while ESP-NOW running
-- Success: No packet loss, stable connection
-
-Test 3: Touch (optional, can do on PCB)
-- Copper tape + acrylic sheet
-- Flash touch_test firmware
-- Success: Reliable detection through 2mm plastic
-```
-
-**PCB Design (Week 2-3):**
-- Complete schematic
-- Layout per ID requirements (hexagonal)
-- Order from JLCPCB with assembly
-
-### Claude: Feature Development
-
-**Week 2 Deliverables:**
-1. Communication layer:
-   - `espnow_service.cpp` - Pod-to-pod messaging
-   - `ble_service.cpp` - Phone connection
-   - `protocol.cpp` - Message encoding/decoding
-2. Timing service:
-   - Clock synchronization
-   - Microsecond timestamps
-3. Unit tests for all communication logic
-
-**Week 3 Deliverables:**
-1. Game engine:
-   - `state_machine.cpp` - Pod states
-   - `drill_engine.cpp` - Drill logic
-   - `feedback_service.cpp` - Coordinated LED/audio/haptic
-2. OTA system:
-   - Partition management
-   - Rollback logic
-3. Smoke test suite
-4. >70% unit test coverage
-
----
-
-## PHASE 3: INTEGRATION (Week 4-5)
-
-### You: PCB Assembly
-
-- PCBs arrive (~1 week from order)
-- Assemble 6 units
-- Basic power-on test
-
-### Claude: Hardware Bring-Up
-
-**On real hardware:**
-1. Flash firmware
-2. Debug hardware-specific issues:
-   - GPIO assignments
-   - I2C addresses
-   - Timing adjustments
-3. Tune parameters:
-   - Touch thresholds
-   - Haptic calibration
-   - Audio levels
-4. Multi-pod testing:
-   - 6-pod synchronized drills
-   - Reaction time measurement
-   - Stress testing
-
-**Deliverable:** Working 6-pod demo
-
----
-
-## PHASE 4: FORM-FACTOR (Week 6-8)
-
-### You: Form-Factor Hardware
-
-- Hexagonal PCB layout
-- LED ring integration
-- Enclosure 3D prints
-- Charging base
-
-### Claude: Polish & Features
-
-- BLE app integration (basic)
-- Additional drills
-- Power optimization
-- Documentation
-
-**Deliverable:** Demo-ready prototypes
-
----
-
 ## TESTING STRATEGY
 
-### Unit Tests (Run on Host - Linux/Mac)
+### Unit Tests (Run on Host)
 
 ```
 firmware/
@@ -271,118 +323,83 @@ void runSmokeTests() {
 }
 ```
 
-### No Hardware CI
-
-**Why not:**
-- Overkill for early development
-- Complex setup (physical devices, flashing)
-- Unit tests catch 80% of bugs
-- Manual hardware testing is fine for 6-8 week timeline
-
-**Later (post-prototype):** Consider hardware-in-loop CI with dedicated test fixtures.
-
 ---
 
 ## MINIMAL PROCUREMENT
 
-### Dev Boards (Order Week 1)
+### Dev Boards
 
-| Item | Qty | Cost | Source |
-|------|-----|------|--------|
-| ESP32-S3-DevKitC-1-N16R8 | 3 | $45 | Digikey |
+| Item | Qty | Purpose |
+|------|-----|---------|
+| ESP32-S3-DevKitC-1-N16R8 | 3 | ESP-NOW validation only |
 
-**That's it.** No breakout boards needed - you're going straight to PCB.
+**That's it.** No breakout boards - going straight to PCB.
 
-### PCB Components (Order Week 1)
+### PCB Components
 
-Order full BOM for 10 units per System Architecture document.
-
----
-
-## TIMELINE SUMMARY
-
-```
-Week:  1     2     3     4     5     6     7     8
-       │     │     │     │     │     │     │     │
-YOU:   │─────┼─────┼─────┼─────┼─────┼─────┼─────┤
-       │Order│Valid│ PCB │ PCB │Assem│Form │Form │Demo
-       │Parts│ESP- │Layou│Order│ble  │Fact │Fact │Ready
-       │Schem│NOW  │t    │     │     │PCB  │Print│
-       │     │(2hr)│     │     │     │     │     │
-       │     │     │     │     │     │     │     │
-CLAUDE:│─────┼─────┼─────┼─────┼─────┼─────┼─────┤
-       │Proj │Comms│Game │     │HW   │     │     │
-       │Setup│Layer│Engin│ OTA │Debug│Feats│Polish│
-       │Drivr│Proto│State│Tests│Tune │BLE  │Docs │
-       │Tests│     │     │     │     │     │     │
-       │     │     │     │     │     │     │     │
-       ▼     ▼     ▼     ▼     ▼     ▼     ▼     ▼
-    Firmware  ESP-NOW   PCB    PCB    6-Pod  Form   Demo
-    Compiles  Valid     Order  Arrive Demo   Factor Ready
-```
+Order full BOM per System Architecture document.
 
 ---
 
 ## DECISION GATES
 
-### Gate 1: End of Week 2
+### Gate 1: After M1 (ESP-NOW Validated)
 **Question:** Does ESP-NOW meet latency requirements?
-- ✅ Yes → Continue
+- ✅ Yes → Continue with current architecture
 - ❌ No → Fallback to BLE-only (higher latency but works)
 
-### Gate 2: End of Week 5
-**Question:** Do 6 pods work together?
-- ✅ Yes → Proceed to form-factor
-- ❌ No → Debug, iterate on dev PCB
+### Gate 2: After M4 (Dev PCB Works)
+**Question:** Does single pod work end-to-end?
+- ✅ Yes → Proceed to multi-pod testing
+- ❌ No → Debug, potentially respin dev PCB
 
-### Gate 3: End of Week 8
-**Question:** Is product demo-ready?
-- ✅ Yes → User testing, investor demos
-- ❌ No → Additional iteration
+### Gate 3: After M5 (6-Pod Demo)
+**Question:** Do 6 pods work together reliably?
+- ✅ Yes → Proceed to form-factor
+- ❌ No → Fix issues before investing in form-factor
 
 ---
 
-## CLAUDE'S DEVELOPMENT PRIORITIES
+## CLAUDE'S TASK SEQUENCE
 
-### Week 1 Focus
-1. **Project setup** - ESP-IDF, CMake, directory structure
-2. **Driver abstractions** - Interfaces that can be mocked
-3. **Unit test framework** - CMock integration
-4. **LED driver** - First real driver implementation
+### Phase 1: Foundation
+1. **B1: Project setup** - ESP-IDF, CMake, directory structure
+2. **B2: Driver abstractions** - Interfaces that can be mocked
+3. **B3: Unit test framework** - CMock integration
 
-### Week 2 Focus
-1. **ESP-NOW wrapper** - Clean C++ API over ESP-IDF
-2. **BLE service** - Basic connection and commands
-3. **Protocol layer** - Message types, encoding
+### Phase 2: Drivers
+4. **B4: LED driver** - SK6812 via RMT
+5. **B5: Audio driver** - I2S + sample playback
+6. **B6: Haptic driver** - DRV2605L via I2C
+7. **B7: Touch driver** - ESP32 touch peripheral
+8. **B8: IMU driver** - LIS2DW12 via I2C
 
-### Week 3 Focus
-1. **Game engine** - State machine, drill logic
-2. **Feedback service** - Coordinated LED/audio/haptic
-3. **OTA system** - Basic update flow
+### Phase 3: Communication
+9. **B9: ESP-NOW service** - Pod-to-pod messaging
+10. **B10: BLE service** - Phone connection
+11. **B11: Protocol layer** - Message encoding/decoding
 
-### Week 4-5 Focus
-1. **Hardware debugging** - GPIO, timing, calibration
-2. **Integration testing** - Multi-pod scenarios
-3. **Bug fixes** - From real hardware testing
+### Phase 4: Application
+12. **B12: Game engine** - State machine, drill logic
+13. **B13: Feedback service** - Coordinated LED/audio/haptic
+14. **B14: OTA system** - Partition management, rollback
+15. **B15: Smoke tests** - Hardware validation suite
 
-### Week 6-8 Focus
-1. **Feature completion** - All planned drills
-2. **BLE app basics** - Minimum viable app
-3. **Documentation** - For handoff/continuity
+### Phase 5: Integration (after PCB arrives)
+16. **C1-C4:** Flash, debug, calibrate, multi-pod test
 
 ---
 
 ## RISKS & MITIGATIONS
 
-| Risk | Likelihood | Mitigation |
-|------|------------|------------|
-| ESP-NOW latency too high | Low | Validate Week 2; fallback to BLE |
-| PCB layout errors | Medium | Careful review; dev PCB is throwaway |
-| Touch through diffuser | Medium | Test materials; add MPR121 if needed |
-| Timeline slip | Medium | Parallel streams reduce critical path |
+| Risk | Mitigation |
+|------|------------|
+| ESP-NOW latency too high | Validate early (M1); fallback to BLE |
+| PCB layout errors | Careful review; dev PCB is throwaway |
+| Touch through diffuser fails | Test materials; add MPR121 if needed |
+| Component availability | Order early; identify alternates |
 
 ---
 
 *Document Created: 2026-01-03*
-*Last Updated: 2026-01-03*
 *Project: DOMES*
