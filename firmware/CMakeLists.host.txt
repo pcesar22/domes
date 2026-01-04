@@ -1,0 +1,55 @@
+# DOMES Firmware - Host Test Environment
+# Standalone CMake build for running unit tests on Linux/macOS
+
+cmake_minimum_required(VERSION 3.16)
+project(domes-firmware-tests CXX C)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Compiler warnings
+add_compile_options(-Wall -Wextra -Werror -Wno-missing-field-initializers)
+
+# Define we're building for host (not ESP32)
+add_compile_definitions(HOST_BUILD=1)
+
+# Unity Test Framework
+add_library(unity STATIC
+    test/unity/unity.c
+)
+target_include_directories(unity PUBLIC test/unity)
+
+# Mock ESP-IDF headers
+include_directories(test/mocks/esp_idf)
+
+# Main component sources (interfaces, utils - no hardware code)
+include_directories(
+    main
+    main/config
+    main/platform
+    main/interfaces
+    main/utils
+)
+
+# Test executable
+add_executable(run_tests
+    test/host/test_main.cpp
+    test/host/test_constants.cpp
+    test/host/test_expected.cpp
+    test/host/test_color.cpp
+)
+
+target_link_libraries(run_tests unity)
+
+# Enable running tests with ctest
+enable_testing()
+add_test(NAME unit_tests COMMAND run_tests)
+
+# Custom target for running tests
+add_custom_target(test_run
+    COMMAND run_tests
+    DEPENDS run_tests
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Running unit tests..."
+)
