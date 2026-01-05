@@ -2,14 +2,7 @@
 
 ## AI Agent Instructions
 
-Load this file when:
-- Looking up pin assignments
-- Checking NVS key names
-- Finding error codes
-- Referencing timing constants
-- Checking audio format specs
-
-This file is a quick-reference lookup table. Load specific sections as needed.
+Load this file for quick lookups: pins, NVS keys, error codes, timing constants.
 
 ---
 
@@ -19,94 +12,45 @@ This file is a quick-reference lookup table. Load specific sections as needed.
 
 | Function | GPIO | Peripheral | Notes |
 |----------|------|------------|-------|
-| **LEDs** |
-| LED Data | GPIO48 | RMT Ch0 | SK6812 data line |
-| **Audio** |
-| I2S BCLK | GPIO15 | I2S0 | Bit clock |
-| I2S LRCLK | GPIO16 | I2S0 | Word select |
-| I2S DOUT | GPIO17 | I2S0 | Data out |
-| **I2C Bus** |
-| I2C SDA | GPIO1 | I2C0 | Shared: IMU + Haptic |
-| I2C SCL | GPIO2 | I2C0 | Shared: IMU + Haptic |
-| **Haptic** |
-| Haptic EN | GPIO7 | GPIO | DRV2605L enable |
-| **IMU** |
-| IMU INT1 | GPIO6 | GPIO | Tap detection interrupt |
-| **Touch** |
-| Touch Pad | GPIO4 | Touch4 | Capacitive sense |
-| **Power** |
-| Battery ADC | GPIO5 | ADC1_CH4 | Voltage divider input |
-| Charge Status | GPIO8 | GPIO | TP4056 CHRG pin |
-| **USB** |
-| USB D+ | GPIO20 | USB | Built-in USB-JTAG |
-| USB D- | GPIO19 | USB | Built-in USB-JTAG |
+| LED Data | 48 | RMT Ch0 | SK6812 data |
+| I2S BCLK | 15 | I2S0 | Bit clock |
+| I2S LRCLK | 16 | I2S0 | Word select |
+| I2S DOUT | 17 | I2S0 | Data out |
+| I2C SDA | 1 | I2C0 | Shared bus |
+| I2C SCL | 2 | I2C0 | Shared bus |
+| IMU INT1 | 6 | GPIO | Tap interrupt |
+| Haptic EN | 7 | GPIO | DRV2605L enable |
+| Touch Pad | 4 | Touch4 | Capacitive |
+| Battery ADC | 5 | ADC1_CH4 | Voltage divider |
+| Charge Status | 8 | GPIO | TP4056 CHRG |
+| USB D+ | 20 | USB | Built-in JTAG |
+| USB D- | 19 | USB | Built-in JTAG |
 
 ### PCB v1 (Custom Board)
 
 | Function | GPIO | Notes |
 |----------|------|-------|
-| LED Data | GPIO38 | Moved for layout |
-| I2S BCLK | GPIO35 | |
-| I2S LRCLK | GPIO36 | |
-| I2S DOUT | GPIO37 | |
-| I2C SDA | GPIO15 | |
-| I2C SCL | GPIO16 | |
-| Touch Pad | GPIO14 | Touch14 |
-| Battery ADC | GPIO4 | ADC1_CH3 |
-| IMU INT1 | GPIO18 | |
-| Haptic EN | GPIO17 | |
-
-### Pin Configuration Code
-
-```cpp
-// platform/pins_devkit.hpp
-#pragma once
-#include "driver/gpio.h"
-
-namespace domes::pins {
-
-// LEDs
-constexpr gpio_num_t kLedData = GPIO_NUM_48;
-
-// Audio (I2S)
-constexpr gpio_num_t kI2sBclk = GPIO_NUM_15;
-constexpr gpio_num_t kI2sLrclk = GPIO_NUM_16;
-constexpr gpio_num_t kI2sDout = GPIO_NUM_17;
-
-// I2C
-constexpr gpio_num_t kI2cSda = GPIO_NUM_1;
-constexpr gpio_num_t kI2cScl = GPIO_NUM_2;
-constexpr i2c_port_t kI2cPort = I2C_NUM_0;
-
-// IMU
-constexpr gpio_num_t kImuInt1 = GPIO_NUM_6;
-
-// Haptic
-constexpr gpio_num_t kHapticEn = GPIO_NUM_7;
-
-// Touch
-constexpr gpio_num_t kTouchPad = GPIO_NUM_4;
-constexpr touch_pad_t kTouchChannel = TOUCH_PAD_NUM4;
-
-// Power
-constexpr gpio_num_t kBatteryAdc = GPIO_NUM_5;
-constexpr adc_channel_t kBatteryAdcChannel = ADC_CHANNEL_4;
-constexpr gpio_num_t kChargeStatus = GPIO_NUM_8;
-
-}  // namespace domes::pins
-```
+| LED Data | 38 | Moved for layout |
+| I2S BCLK | 35 | |
+| I2S LRCLK | 36 | |
+| I2S DOUT | 37 | |
+| I2C SDA | 15 | |
+| I2C SCL | 16 | |
+| Touch Pad | 14 | Touch14 |
+| Battery ADC | 4 | ADC1_CH3 |
+| IMU INT1 | 18 | |
+| Haptic EN | 17 | |
 
 ---
 
-## I2C Device Addresses
+## I2C Devices
 
-| Device | Address (7-bit) | Address (8-bit R) | Address (8-bit W) |
-|--------|-----------------|-------------------|-------------------|
-| DRV2605L (Haptic) | 0x5A | 0xB5 | 0xB4 |
-| LIS2DW12 (IMU) | 0x18 or 0x19 | 0x31/0x33 | 0x30/0x32 |
-| MAX98357A | N/A | N/A | I2S only |
-
-**Note:** LIS2DW12 address depends on SA0 pin: 0x18 (SA0=GND), 0x19 (SA0=VCC)
+| Device | 7-bit Addr | 8-bit Write | 8-bit Read | Notes |
+|--------|------------|-------------|------------|-------|
+| DRV2605L (Haptic) | 0x5A | 0xB4 | 0xB5 | Fixed |
+| LIS2DW12 (IMU) | 0x18 | 0x30 | 0x31 | SA0=GND |
+| LIS2DW12 (IMU) | 0x19 | 0x32 | 0x33 | SA0=VCC |
+| MAX98357A | N/A | N/A | N/A | I2S only |
 
 ---
 
@@ -114,196 +58,91 @@ constexpr gpio_num_t kChargeStatus = GPIO_NUM_8;
 
 ### Namespace: `config`
 
-| Key | Type | Size | Description | Default |
-|-----|------|------|-------------|---------|
-| `pod_id` | u8 | 1 | Unique pod identifier (0-255) | 0 |
-| `led_brightness` | u8 | 1 | Default LED brightness (0-255) | 128 |
-| `haptic_intensity` | u8 | 1 | Default vibration (0-255) | 200 |
-| `audio_volume` | u8 | 1 | Default volume (0-255) | 180 |
-| `touch_threshold` | u16 | 2 | Capacitive threshold | 500 |
-| `is_master` | u8 | 1 | Master pod flag (0/1) | 0 |
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `pod_id` | u8 | 0 | Pod identifier (0-255) |
+| `led_brightness` | u8 | 128 | Default brightness |
+| `haptic_intensity` | u8 | 200 | Vibration level |
+| `audio_volume` | u8 | 180 | Sound volume |
+| `touch_threshold` | u16 | 500 | Capacitive threshold |
+| `is_master` | u8 | 0 | Master flag (0/1) |
 
 ### Namespace: `network`
 
 | Key | Type | Size | Description |
 |-----|------|------|-------------|
-| `master_mac` | blob | 6 | Master pod MAC address |
-| `channel` | u8 | 1 | WiFi/ESP-NOW channel (1-13) |
-| `peer_count` | u8 | 1 | Number of known peers |
-| `peers` | blob | 120 | Up to 20 peer MACs (6 bytes each) |
+| `master_mac` | blob | 6 | Master MAC address |
+| `channel` | u8 | 1 | WiFi/ESP-NOW channel |
+| `peer_count` | u8 | 1 | Known peer count |
+| `peers` | blob | 120 | Up to 20 peer MACs |
 
 ### Namespace: `calibration`
 
-| Key | Type | Size | Description |
-|-----|------|------|-------------|
-| `imu_offset_x` | i16 | 2 | X-axis offset (mg) |
-| `imu_offset_y` | i16 | 2 | Y-axis offset (mg) |
-| `imu_offset_z` | i16 | 2 | Z-axis offset (mg) |
-| `touch_baseline` | u16 | 2 | Touch baseline reading |
+| Key | Type | Description |
+|-----|------|-------------|
+| `imu_offset_x` | i16 | X-axis offset (mg) |
+| `imu_offset_y` | i16 | Y-axis offset (mg) |
+| `imu_offset_z` | i16 | Z-axis offset (mg) |
+| `touch_baseline` | u16 | Touch baseline |
 
 ### Namespace: `stats`
 
-| Key | Type | Size | Description |
-|-----|------|------|-------------|
-| `boot_count` | u32 | 4 | Total boot count |
-| `total_touches` | u32 | 4 | Lifetime touch count |
-| `total_runtime` | u32 | 4 | Runtime in seconds |
-| `last_error` | u32 | 4 | Last error code |
-
-### NVS Usage Example
-
-```cpp
-#include "nvs_flash.h"
-#include "nvs.h"
-
-esp_err_t loadConfig() {
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(
-        nvs_open("config", NVS_READONLY, &handle),
-        kTag, "NVS open failed"
-    );
-
-    uint8_t brightness = 128;  // Default
-    nvs_get_u8(handle, "led_brightness", &brightness);
-
-    uint16_t threshold = 500;  // Default
-    nvs_get_u16(handle, "touch_threshold", &threshold);
-
-    nvs_close(handle);
-    return ESP_OK;
-}
-
-esp_err_t saveConfig() {
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(
-        nvs_open("config", NVS_READWRITE, &handle),
-        kTag, "NVS open failed"
-    );
-
-    nvs_set_u8(handle, "led_brightness", currentBrightness);
-    nvs_set_u16(handle, "touch_threshold", currentThreshold);
-
-    nvs_commit(handle);
-    nvs_close(handle);
-    return ESP_OK;
-}
-```
+| Key | Type | Description |
+|-----|------|-------------|
+| `boot_count` | u32 | Total boots |
+| `total_touches` | u32 | Lifetime touches |
+| `total_runtime` | u32 | Runtime (seconds) |
+| `last_error` | u32 | Last error code |
 
 ---
 
 ## Error Codes
 
-### Project-Specific Errors
-
-```cpp
-// utils/error_codes.hpp
-#pragma once
-#include "esp_err.h"
-
-namespace domes {
-
-// Base for project errors (ESP-IDF uses 0x0000-0x0FFF)
-constexpr esp_err_t kErrBase = 0x10000;
-
-// Driver errors (0x10000-0x100FF)
-constexpr esp_err_t kErrDriverNotInit      = kErrBase + 0x01;
-constexpr esp_err_t kErrDriverAlreadyInit  = kErrBase + 0x02;
-constexpr esp_err_t kErrDriverBusy         = kErrBase + 0x03;
-constexpr esp_err_t kErrDriverTimeout      = kErrBase + 0x04;
-constexpr esp_err_t kErrDriverHwFault      = kErrBase + 0x05;
-
-// Communication errors (0x10100-0x101FF)
-constexpr esp_err_t kErrEspNowPeerNotFound = kErrBase + 0x100;
-constexpr esp_err_t kErrEspNowSendFailed   = kErrBase + 0x101;
-constexpr esp_err_t kErrEspNowQueueFull    = kErrBase + 0x102;
-constexpr esp_err_t kErrBleNotConnected    = kErrBase + 0x110;
-constexpr esp_err_t kErrBleNotifyFailed    = kErrBase + 0x111;
-
-// Game errors (0x10200-0x102FF)
-constexpr esp_err_t kErrDrillInvalidState  = kErrBase + 0x200;
-constexpr esp_err_t kErrDrillTimeout       = kErrBase + 0x201;
-constexpr esp_err_t kErrDrillAborted       = kErrBase + 0x202;
-
-// OTA errors (0x10300-0x103FF)
-constexpr esp_err_t kErrOtaInProgress      = kErrBase + 0x300;
-constexpr esp_err_t kErrOtaVerifyFailed    = kErrBase + 0x301;
-constexpr esp_err_t kErrOtaRollback        = kErrBase + 0x302;
-
-const char* domesErrToName(esp_err_t err);
-
-}  // namespace domes
-```
+| Range | Category | Examples |
+|-------|----------|----------|
+| 0x10001-0x100FF | Driver | Not init, already init, busy, timeout, HW fault |
+| 0x10100-0x101FF | ESP-NOW | Peer not found, send failed, queue full |
+| 0x10110-0x1011F | BLE | Not connected, notify failed |
+| 0x10200-0x102FF | Game | Invalid state, timeout, aborted |
+| 0x10300-0x103FF | OTA | In progress, verify failed, rollback |
 
 ---
 
 ## Timing Constants
 
-### System Timing
+### System
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| FreeRTOS tick | 1ms | `CONFIG_FREERTOS_HZ=1000` |
+| FreeRTOS tick | 1ms | CONFIG_FREERTOS_HZ=1000 |
 | Watchdog timeout | 10s | Task watchdog |
 | Boot timeout | 5s | Max boot time |
-| Heartbeat interval | 1s | Status LED blink |
+| Heartbeat | 1s | Status LED blink |
 
-### Communication Timing
+### Communication
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| ESP-NOW P50 latency | < 1ms | Target median |
-| ESP-NOW P95 latency | < 2ms | Target 95th percentile |
+| ESP-NOW P50 | < 1ms | Median latency |
+| ESP-NOW P95 | < 2ms | 95th percentile |
 | BLE conn interval | 30-50ms | Responsive mode |
 | BLE conn interval | 100-200ms | Power save mode |
 | Clock sync interval | 100ms | Master broadcasts |
 
-### Game Timing
+### Game
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| Touch debounce | 50ms | Ignore rapid touches |
-| Reaction timeout | 3-5s | Max wait for touch |
+| Touch debounce | 50ms | Ignore rapid |
+| Reaction timeout | 3-5s | Max wait |
 | Feedback duration | 200ms | LED/haptic pulse |
 | Min random delay | 500ms | Before arming |
 | Max random delay | 2000ms | Before arming |
-
-### Constants in Code
-
-```cpp
-// config/timing.hpp
-#pragma once
-#include <cstdint>
-
-namespace domes::timing {
-
-// System
-constexpr uint32_t kWatchdogTimeoutS = 10;
-constexpr uint32_t kHeartbeatIntervalMs = 1000;
-
-// Communication
-constexpr uint32_t kEspNowLatencyTargetUs = 2000;   // P95
-constexpr uint32_t kClockSyncIntervalMs = 100;
-constexpr uint32_t kBleConnIntervalMinMs = 30;
-constexpr uint32_t kBleConnIntervalMaxMs = 50;
-
-// Game
-constexpr uint32_t kTouchDebounceMs = 50;
-constexpr uint32_t kDefaultReactionTimeoutMs = 3000;
-constexpr uint32_t kFeedbackDurationMs = 200;
-constexpr uint32_t kMinRandomDelayMs = 500;
-constexpr uint32_t kMaxRandomDelayMs = 2000;
-
-// Accuracy target
-constexpr uint32_t kTimeSyncAccuracyUs = 1000;  // ±1ms
-
-}  // namespace domes::timing
-```
+| Time sync accuracy | ±1ms | Target |
 
 ---
 
 ## Audio Format
-
-### Specification
 
 | Parameter | Value |
 |-----------|-------|
@@ -312,92 +151,58 @@ constexpr uint32_t kTimeSyncAccuracyUs = 1000;  // ±1ms
 | Bit depth | 16-bit signed |
 | Channels | Mono |
 | Byte order | Little-endian |
-| Max duration | ~10s per file (320KB) |
+| Max duration | ~10s (320KB) |
 
-### File Structure
+**Conversion:** `ffmpeg -i input.mp3 -f s16le -ar 16000 -ac 1 output.raw`
+
+### Sound Files
 
 ```
-spiffs/
-└── sounds/
-    ├── feedback/
-    │   ├── hit_success.raw     # Touch registered
-    │   ├── hit_fail.raw        # Wrong pod / timeout
-    │   └── countdown_beep.raw  # Countdown tick
-    ├── system/
-    │   ├── boot.raw            # Startup sound
-    │   ├── connected.raw       # BLE connected
-    │   ├── low_battery.raw     # Battery warning
-    │   └── ota_complete.raw    # Update finished
-    └── drills/
-        ├── go.raw              # Start signal
-        └── complete.raw        # Drill finished
-```
-
-### Conversion Command
-
-```bash
-# Convert any audio to correct format
-ffmpeg -i input.mp3 \
-    -f s16le \
-    -acodec pcm_s16le \
-    -ar 16000 \
-    -ac 1 \
-    output.raw
-
-# Check file info
-ffprobe -f s16le -ar 16000 -ac 1 -i sound.raw
-```
-
-### Audio Playback
-
-```cpp
-void playRawAudio(const char* path) {
-    FILE* f = fopen(path, "rb");
-    if (!f) return;
-
-    int16_t buffer[256];
-    size_t bytesWritten;
-
-    while (fread(buffer, sizeof(int16_t), 256, f) > 0) {
-        i2s_write(I2S_NUM_0, buffer, sizeof(buffer),
-                  &bytesWritten, portMAX_DELAY);
-    }
-
-    fclose(f);
-}
+spiffs/sounds/
+├── feedback/
+│   ├── hit_success.raw
+│   ├── hit_fail.raw
+│   └── countdown_beep.raw
+├── system/
+│   ├── boot.raw
+│   ├── connected.raw
+│   └── low_battery.raw
+└── drills/
+    ├── go.raw
+    └── complete.raw
 ```
 
 ---
 
 ## Memory Budget
 
-### SRAM Usage (~512KB total)
+### SRAM (~512KB)
 
-| Component | Estimated | Notes |
-|-----------|-----------|-------|
-| WiFi stack | 40KB | Static + buffers |
-| BLE stack | 40KB | NimBLE |
-| FreeRTOS | 20KB | Kernel + idle tasks |
-| Task stacks | 32KB | 8 tasks × 4KB avg |
-| Static data | 16KB | Global variables |
-| Heap (app) | 100KB | Available for app |
-| **Reserved** | ~250KB | For ESP-IDF internals |
-
-### PSRAM Usage (8MB total)
-
-| Component | Allocated | Notes |
-|-----------|-----------|-------|
-| Audio buffers | 64KB | Double-buffered playback |
-| Large data | As needed | Heap overflow |
-| **Available** | ~7.9MB | For future use |
-
-### Flash Usage (16MB total)
-
-| Partition | Size | Notes |
+| Component | Size | Notes |
 |-----------|------|-------|
+| WiFi stack | 40KB | Static + buffers |
+| BLE (NimBLE) | 40KB | |
+| FreeRTOS | 20KB | Kernel + idle |
+| Task stacks | 32KB | 8 tasks avg |
+| Static data | 16KB | Globals |
+| App heap | 100KB | Available |
+| ESP-IDF | ~250KB | Reserved |
+
+### PSRAM (8MB)
+
+| Component | Size | Notes |
+|-----------|------|-------|
+| Audio buffers | 64KB | Double-buffered |
+| Large data | As needed | Heap overflow |
+| Available | ~7.9MB | Future use |
+
+### Flash (16MB)
+
+| Partition | Size | Purpose |
+|-----------|------|---------|
 | Bootloader | 32KB | |
 | Partition table | 4KB | |
-| NVS | 24KB | Config storage |
+| NVS | 24KB | Config |
 | OTA data | 8KB | Boot selection |
 | OTA_0 | 4MB | Firmware A |
 | OTA_1 | 4MB | Firmware B |
@@ -410,9 +215,9 @@ void playRawAudio(const char* path) {
 
 ### Service
 
-| Name | UUID (16-bit) | UUID (128-bit) |
-|------|---------------|----------------|
-| DOMES Service | 0x1234 | 00001234-0000-1000-8000-00805F9B34FB |
+| Name | UUID (16-bit) |
+|------|---------------|
+| DOMES Service | 0x1234 |
 
 ### Characteristics
 
@@ -427,19 +232,4 @@ void playRawAudio(const char* path) {
 
 ---
 
-## ESP-IDF Component Versions
-
-```ini
-# Recommended versions (in idf_component.yml or managed manually)
-esp_wifi: "^5.0"
-nvs_flash: "^5.0"
-esp_timer: "^5.0"
-driver: "^5.0"
-bt: "^5.0"  # NimBLE
-spiffs: "^5.0"
-```
-
----
-
-*This reference document is for quick lookups.*
-*See specific architecture docs for detailed implementation.*
+*Quick reference document. See specific architecture docs for details.*

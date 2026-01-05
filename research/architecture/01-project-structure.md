@@ -2,10 +2,7 @@
 
 ## AI Agent Instructions
 
-Load this file when:
-- Creating new source files
-- Unsure about naming conventions
-- Adding new modules or components
+Load this file when creating new source files or adding modules.
 
 Prerequisites: `00-getting-started.md` completed
 
@@ -29,72 +26,38 @@ firmware/
 │   ├── interfaces/             # Abstract base classes
 │   │   ├── i_led_driver.hpp
 │   │   ├── i_audio_driver.hpp
-│   │   ├── i_haptic_driver.hpp
-│   │   ├── i_touch_driver.hpp
-│   │   ├── i_imu_driver.hpp
-│   │   └── i_power_driver.hpp
+│   │   └── ...
 │   │
-│   ├── drivers/                # Hardware driver implementations
-│   │   ├── led_driver.hpp
-│   │   ├── led_driver.cpp
-│   │   ├── audio_driver.hpp
-│   │   ├── audio_driver.cpp
-│   │   ├── haptic_driver.hpp
-│   │   ├── haptic_driver.cpp
-│   │   ├── touch_driver.hpp
-│   │   ├── touch_driver.cpp
-│   │   ├── imu_driver.hpp
-│   │   ├── imu_driver.cpp
-│   │   ├── power_driver.hpp
-│   │   └── power_driver.cpp
+│   ├── drivers/                # Hardware implementations
+│   │   ├── led_driver.hpp/.cpp
+│   │   ├── audio_driver.hpp/.cpp
+│   │   └── ...
 │   │
-│   ├── services/               # Business logic services
-│   │   ├── feedback_service.hpp
-│   │   ├── feedback_service.cpp
-│   │   ├── comm_service.hpp
-│   │   ├── comm_service.cpp
-│   │   ├── timing_service.hpp
-│   │   ├── timing_service.cpp
-│   │   ├── config_service.hpp
-│   │   └── config_service.cpp
+│   ├── services/               # Business logic
+│   │   ├── feedback_service.hpp/.cpp
+│   │   ├── comm_service.hpp/.cpp
+│   │   └── ...
 │   │
 │   ├── game/                   # Game logic
-│   │   ├── game_engine.hpp
-│   │   ├── game_engine.cpp
-│   │   ├── drill_manager.hpp
-│   │   ├── drill_manager.cpp
-│   │   ├── state_machine.hpp
-│   │   ├── state_machine.cpp
-│   │   ├── protocol.hpp
-│   │   └── protocol.cpp
+│   │   ├── game_engine.hpp/.cpp
+│   │   ├── state_machine.hpp/.cpp
+│   │   └── protocol.hpp/.cpp
 │   │
-│   ├── platform/               # Platform-specific code
-│   │   ├── pins.hpp            # Pin abstraction
-│   │   ├── pins_devkit.hpp     # DevKit pin assignments
-│   │   └── pins_pcb_v1.hpp     # PCB v1 pin assignments
+│   ├── platform/               # Platform-specific
+│   │   ├── pins_devkit.hpp
+│   │   └── pins_pcb_v1.hpp
 │   │
 │   └── utils/                  # Utilities
 │       ├── error_codes.hpp
-│       ├── ring_buffer.hpp
-│       └── expected.hpp        # tl::expected backport
+│       └── ring_buffer.hpp
 │
-├── components/                 # Reusable ESP-IDF components
+├── components/                 # Reusable components
 │   ├── etl/                    # Embedded Template Library
-│   └── esp_now_wrapper/        # ESP-NOW C++ wrapper
+│   └── esp_now_wrapper/
 │
-├── test/
-│   ├── CMakeLists.txt
-│   ├── mocks/                  # Mock implementations
-│   │   ├── mock_led_driver.hpp
-│   │   ├── mock_audio_driver.hpp
-│   │   └── ...
-│   ├── test_led_driver.cpp
-│   ├── test_audio_driver.cpp
-│   └── ...
-│
-└── tools/
-    ├── flash_factory.sh
-    └── generate_samples.py
+└── test/
+    ├── mocks/
+    └── test_*.cpp
 ```
 
 ---
@@ -105,241 +68,105 @@ firmware/
 
 | Type | Convention | Example |
 |------|------------|---------|
-| Source files | snake_case | `led_driver.cpp` |
-| Header files | snake_case | `led_driver.hpp` |
-| Interfaces | `i_` prefix | `i_led_driver.hpp` |
-| Mocks | `mock_` prefix | `mock_led_driver.hpp` |
-| Tests | `test_` prefix | `test_led_driver.cpp` |
-| Platform configs | `_platform` suffix | `pins_devkit.hpp` |
+| Source | snake_case | `led_driver.cpp` |
+| Header | snake_case | `led_driver.hpp` |
+| Interface | `i_` prefix | `i_led_driver.hpp` |
+| Mock | `mock_` prefix | `mock_led_driver.hpp` |
+| Test | `test_` prefix | `test_led_driver.cpp` |
 
 ### Code Elements
 
 | Element | Convention | Example |
 |---------|------------|---------|
-| Classes | PascalCase | `LedDriver` |
-| Interfaces | `I` prefix + PascalCase | `ILedDriver` |
-| Methods | camelCase | `playEffect()` |
-| Variables | camelCase | `reactionTime` |
-| Member variables | camelCase + `_` suffix | `ledDriver_` |
-| Constants | `k` prefix + PascalCase | `kMaxBrightness` |
-| Namespaces | lowercase | `domes`, `pins` |
-| Macros | SCREAMING_SNAKE | `CONFIG_DOMES_LED_COUNT` |
+| Class | PascalCase | `LedDriver` |
+| Interface | `I` + PascalCase | `ILedDriver` |
+| Method | camelCase | `playEffect()` |
+| Variable | camelCase | `reactionTime` |
+| Member | camelCase + `_` | `ledDriver_` |
+| Constant | `k` + PascalCase | `kMaxBrightness` |
+| Namespace | lowercase | `domes` |
+| Macro | SCREAMING_SNAKE | `CONFIG_LED_COUNT` |
 
 ---
 
-## File Templates
+## Interface Pattern
 
-### Interface Header Template
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         INTERFACE → IMPLEMENTATION                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   interfaces/i_example.hpp        drivers/example_driver.hpp                 │
+│   ────────────────────────        ──────────────────────────                 │
+│   ┌─────────────────────┐         ┌─────────────────────────┐               │
+│   │   IExampleDriver    │         │    ExampleDriver        │               │
+│   │   (abstract)        │◄────────│    : public IExample    │               │
+│   ├─────────────────────┤         ├─────────────────────────┤               │
+│   │ + init()            │         │ + init() override       │               │
+│   │ + doAction()        │         │ + doAction() override   │               │
+│   │ + isInit() const    │         │ - pin_                  │               │
+│   └─────────────────────┘         │ - initialized_          │               │
+│                                   └─────────────────────────┘               │
+│                                                                              │
+│   test/mocks/mock_example.hpp                                                │
+│   ────────────────────────────                                               │
+│   ┌─────────────────────────┐                                               │
+│   │    MockExampleDriver    │     For unit testing                          │
+│   │    : public IExample    │     Records calls, configurable returns       │
+│   └─────────────────────────┘                                               │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Minimal Interface Template
 
 ```cpp
-// interfaces/i_example_driver.hpp
-#pragma once
+// EXAMPLE: Interface pattern - adapt for each driver
 
-#include "esp_err.h"
-#include <cstdint>
-
-namespace domes {
-
-/**
- * @brief Abstract interface for Example driver
- *
- * Implementations:
- * - ExampleDriver: Real hardware implementation
- * - MockExampleDriver: Test mock
- */
 class IExampleDriver {
 public:
     virtual ~IExampleDriver() = default;
-
-    /**
-     * @brief Initialize the driver
-     * @return ESP_OK on success
-     */
     virtual esp_err_t init() = 0;
-
-    /**
-     * @brief Check if driver is ready
-     * @return true if initialized
-     */
+    virtual esp_err_t doAction(ParamType param) = 0;
     virtual bool isInitialized() const = 0;
 };
-
-}  // namespace domes
-```
-
-### Driver Header Template
-
-```cpp
-// drivers/example_driver.hpp
-#pragma once
-
-#include "interfaces/i_example_driver.hpp"
-#include <cstdint>
-
-namespace domes {
-
-/**
- * @brief Hardware implementation of Example driver
- */
-class ExampleDriver final : public IExampleDriver {
-public:
-    /**
-     * @brief Construct driver with pin configuration
-     * @param pin GPIO pin number
-     */
-    explicit ExampleDriver(gpio_num_t pin);
-
-    // IExampleDriver interface
-    esp_err_t init() override;
-    bool isInitialized() const override;
-
-private:
-    static constexpr const char* kTag = "example";
-
-    gpio_num_t pin_;
-    bool initialized_ = false;
-};
-
-}  // namespace domes
-```
-
-### Driver Implementation Template
-
-```cpp
-// drivers/example_driver.cpp
-#include "example_driver.hpp"
-#include "esp_log.h"
-
-namespace domes {
-
-ExampleDriver::ExampleDriver(gpio_num_t pin)
-    : pin_(pin) {
-}
-
-esp_err_t ExampleDriver::init() {
-    if (initialized_) {
-        ESP_LOGW(kTag, "Already initialized");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    // TODO: Initialize hardware
-
-    initialized_ = true;
-    ESP_LOGI(kTag, "Initialized on GPIO %d", static_cast<int>(pin_));
-    return ESP_OK;
-}
-
-bool ExampleDriver::isInitialized() const {
-    return initialized_;
-}
-
-}  // namespace domes
-```
-
-### Mock Template
-
-```cpp
-// test/mocks/mock_example_driver.hpp
-#pragma once
-
-#include "interfaces/i_example_driver.hpp"
-
-namespace domes {
-
-/**
- * @brief Mock implementation for testing
- */
-class MockExampleDriver : public IExampleDriver {
-public:
-    esp_err_t init() override {
-        initCalled = true;
-        return initReturnValue;
-    }
-
-    bool isInitialized() const override {
-        return initialized;
-    }
-
-    // Test control
-    bool initCalled = false;
-    esp_err_t initReturnValue = ESP_OK;
-    bool initialized = false;
-};
-
-}  // namespace domes
 ```
 
 ---
 
 ## Include Order
 
-Follow this order in all source files:
-
-```cpp
-// 1. Corresponding header (for .cpp files)
-#include "example_driver.hpp"
-
-// 2. ESP-IDF headers
-#include "driver/gpio.h"
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
-// 3. Standard library headers
-#include <cstdint>
-#include <cstring>
-
-// 4. ETL headers
-#include "etl/vector.h"
-#include "etl/string.h"
-
-// 5. Project headers (interfaces first)
-#include "interfaces/i_other_driver.hpp"
-#include "utils/error_codes.hpp"
-```
+1. Corresponding header (for .cpp)
+2. ESP-IDF headers (`esp_log.h`, `driver/gpio.h`)
+3. Standard library (`<cstdint>`, `<cstring>`)
+4. ETL headers (`etl/vector.h`)
+5. Project headers (interfaces first)
 
 ---
 
 ## Component Boundaries
 
-### When to Create a New Component (in `components/`)
+**Create separate component when:**
+- Reusable across projects
+- Has own dependencies (Kconfig)
+- Third-party library
 
-Create a separate component when:
-- Code is reusable across projects
-- Has its own dependencies (Kconfig, etc.)
-- Third-party library (ETL, etc.)
-
-### What Stays in `main/`
-
-Keep in main when:
-- Project-specific implementation
-- Single-use utilities
-- Platform-specific code
+**Keep in main/ when:**
+- Project-specific
+- Single-use utility
+- Platform-specific
 
 ---
 
 ## Namespace Usage
 
-```cpp
-// All project code in 'domes' namespace
-namespace domes {
-
-class LedDriver { ... };
-
-}  // namespace domes
-
-// Platform-specific in nested namespace
-namespace domes::pins {
-
-constexpr gpio_num_t kLedData = GPIO_NUM_48;
-
-}  // namespace domes::pins
-
-// Using in main.cpp
-using namespace domes;
-
-LedDriver led(pins::kLedData);
-```
+| Scope | Namespace | Example |
+|-------|-----------|---------|
+| All project code | `domes` | `domes::LedDriver` |
+| Pin definitions | `domes::pins` | `pins::kLedData` |
+| Timing constants | `domes::timing` | `timing::kDebounceMs` |
 
 ---
 
