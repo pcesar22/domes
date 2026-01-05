@@ -21,6 +21,7 @@ This folder contains modular architecture documentation. **Load only the files r
 | Master/follower roles, network topology | `10-master-election.md` |
 | Timing sync, reaction measurement | `11-clock-sync.md` |
 | I2C management, memory, error handling | `12-system-policies.md` |
+| Milestone validation, test hooks | `13-validation-test-hooks.md` |
 | Architecture review and gaps | `ARCHITECTURE_REVIEW.md` |
 
 ---
@@ -125,6 +126,7 @@ This folder contains modular architecture documentation. **Load only the files r
 | `10-master-election.md` | Master election protocol, failover | ~500 |
 | `11-clock-sync.md` | RTT-based clock synchronization | ~400 |
 | `12-system-policies.md` | I2C mgr, memory, error recovery, mocks | ~700 |
+| `13-validation-test-hooks.md` | Milestone validation, serial/BLE test hooks | ~1000 |
 | `ARCHITECTURE_REVIEW.md` | Expert review, gaps, recommendations | ~1000 |
 
 ---
