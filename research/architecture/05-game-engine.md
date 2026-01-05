@@ -17,36 +17,68 @@ Prerequisites: `03-driver-development.md`, `04-communication.md`
 ### Pod States
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      POD STATE MACHINE                       │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│    ┌────────────┐                                            │
-│    │Initializing│                                            │
-│    └─────┬──────┘                                            │
-│          │ init complete                                     │
-│          ▼                                                   │
-│    ┌────────────┐  BLE connect   ┌────────────┐              │
-│    │    Idle    │───────────────►│ Connected  │              │
-│    └─────┬──────┘                └─────┬──────┘              │
-│          │ long press                  │ START_DRILL         │
-│          ▼                             ▼                     │
-│    ┌────────────┐              ┌────────────┐                │
-│    │ Standalone │              │   Armed    │◄───────┐       │
-│    └────────────┘              └─────┬──────┘        │       │
-│                                      │ touch         │       │
-│                                      ▼               │       │
-│                                ┌────────────┐        │       │
-│                                │ Triggered  │        │       │
-│                                └─────┬──────┘        │       │
-│                                      │ send event    │       │
-│                                      ▼               │       │
-│                                ┌────────────┐        │       │
-│                                │  Feedback  │────────┘       │
-│                                └────────────┘  complete      │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                           POD STATE MACHINE                               │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                           │
+│    ┌──────────────┐                                                       │
+│    │ Initializing │                                                       │
+│    └──────┬───────┘                                                       │
+│           │ init complete                                                 │
+│           ▼                                                               │
+│    ┌──────────────┐   BLE connect    ┌──────────────┐                     │
+│    │     Idle     │─────────────────►│  Connected   │◄──────────────┐     │
+│    └──────┬───────┘                  └──────┬───────┘               │     │
+│           │                                 │                       │     │
+│      long │                                 │ START_DRILL           │     │
+│     press │                                 ▼                       │     │
+│           │                          ┌──────────────┐               │     │
+│           ▼                          │    Armed     │◄──────┐       │     │
+│    ┌──────────────┐                  └──────┬───────┘       │       │     │
+│    │  Standalone  │                         │ touch         │       │     │
+│    └──────────────┘                         ▼               │       │     │
+│                                      ┌──────────────┐       │       │     │
+│                                      │  Triggered   │       │       │     │
+│           ┌──────────────────────────┴──────┬───────┘       │       │     │
+│           │ comm failure                    │ send event    │       │     │
+│           ▼                                 ▼               │       │     │
+│    ┌──────────────┐                  ┌──────────────┐       │       │     │
+│    │    Error     │◄─────────────────│   Feedback   │───────┘       │     │
+│    └──────┬───────┘                  └──────────────┘ complete      │     │
+│           │ recovery                                                │     │
+│           └─────────────────────────────────────────────────────────┘     │
+│                                                                           │
+│    ┌──────────────┐   (from any state except Initializing)               │
+│    │  LowBattery  │◄────────────────────────────────────────             │
+│    └──────────────┘   battery < threshold                                 │
+│                                                                           │
+│    ┌──────────────┐   (from Connected only)                              │
+│    │OtaInProgress │◄────────────────────────────────────────             │
+│    └──────────────┘   OTA_BEGIN received                                  │
+│                                                                           │
+│    ┌──────────────┐   (from Connected only)                              │
+│    │ Calibrating  │◄────────────────────────────────────────             │
+│    └──────────────┘   CALIBRATE command                                   │
+│                                                                           │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
+
+### State Descriptions
+
+| State | Description | Entry Condition | Exit Condition |
+|-------|-------------|-----------------|----------------|
+| `kInitializing` | Hardware init, driver setup | Boot | Init complete |
+| `kIdle` | No network connection, waiting | Init done, disconnected | BLE connect, long press |
+| `kConnecting` | BLE/ESP-NOW connection in progress | Connection attempt | Connected, timeout |
+| `kConnected` | Network connected, ready for commands | Connection established | Drill start, disconnect |
+| `kArmed` | Waiting for touch event | Drill started | Touch, timeout |
+| `kTriggered` | Touch detected, processing | Touch event | Event sent |
+| `kFeedback` | Playing success/fail feedback | Event processed | Feedback complete |
+| `kStandalone` | Offline mode, local drills only | Long press from idle | BLE connect |
+| `kLowBattery` | Battery critical, limited operation | Battery < threshold | Charging, shutdown |
+| `kOtaInProgress` | Receiving firmware update | OTA begin | OTA complete/fail |
+| `kCalibrating` | Sensor calibration mode | Calibrate command | Calibration done |
+| `kError` | Recoverable error state | Hardware/comm failure | Recovery action |
 
 ### State Implementation
 
@@ -56,31 +88,54 @@ Prerequisites: `03-driver-development.md`, `04-communication.md`
 
 #include <cstdint>
 #include <functional>
+#include "esp_err.h"
 
 namespace domes {
 
 enum class PodState : uint8_t {
-    kInitializing,
-    kIdle,
-    kConnecting,
-    kConnected,
-    kArmed,
-    kTriggered,
-    kFeedback,
-    kStandalone,
-    kError,
+    kInitializing = 0,
+    kIdle = 1,
+    kConnecting = 2,
+    kConnected = 3,
+    kArmed = 4,
+    kTriggered = 5,
+    kFeedback = 6,
+    kStandalone = 7,
+    kLowBattery = 8,
+    kOtaInProgress = 9,
+    kCalibrating = 10,
+    kError = 11,
+    kCount  // For array sizing
 };
 
 const char* stateToString(PodState state);
 
+/**
+ * @brief Error type for error state
+ */
+enum class ErrorType : uint8_t {
+    kNone = 0,
+    kHardwareFailure,
+    kCommunicationTimeout,
+    kProtocolError,
+    kResourceExhausted,
+    kInvalidState,
+};
+
+/**
+ * @brief Context data for current state
+ */
 struct StateContext {
-    uint32_t enteredAtUs;    // When we entered this state
+    uint64_t enteredAtUs;    // When we entered this state (64-bit for long uptime)
     uint32_t timeoutMs;      // State timeout (0 = no timeout)
     uint8_t retryCount;      // For retry logic
+    ErrorType lastError;     // Error type if in error state
+    PodState previousState;  // State before current (for recovery)
 };
 
 using StateHandler = std::function<void(StateContext&)>;
 using TransitionCallback = std::function<void(PodState from, PodState to)>;
+using ErrorCallback = std::function<void(ErrorType error, PodState fromState)>;
 
 class StateMachine {
 public:
@@ -95,19 +150,67 @@ public:
     bool transitionTo(PodState newState, uint32_t timeoutMs = 0);
 
     /**
+     * @brief Force transition (bypass validation - use for error recovery)
+     * @param newState Target state
+     */
+    void forceTransition(PodState newState);
+
+    /**
+     * @brief Transition to error state
+     * @param error Error type
+     */
+    void enterError(ErrorType error);
+
+    /**
+     * @brief Attempt recovery from error state
+     * @return true if recovery transition succeeded
+     */
+    bool attemptRecovery();
+
+    /**
      * @brief Get current state
      */
     PodState currentState() const { return state_; }
 
     /**
+     * @brief Get previous state (before current)
+     */
+    PodState previousState() const { return context_.previousState; }
+
+    /**
      * @brief Get time in current state (microseconds)
      */
-    uint32_t timeInStateUs() const;
+    uint64_t timeInStateUs() const;
 
     /**
      * @brief Check if state has timed out
      */
     bool isTimedOut() const;
+
+    /**
+     * @brief Check if currently in an error state
+     */
+    bool isInError() const { return state_ == PodState::kError; }
+
+    /**
+     * @brief Get last error type
+     */
+    ErrorType lastError() const { return context_.lastError; }
+
+    /**
+     * @brief Get retry count in current state
+     */
+    uint8_t retryCount() const { return context_.retryCount; }
+
+    /**
+     * @brief Increment retry count
+     */
+    void incrementRetry() { context_.retryCount++; }
+
+    /**
+     * @brief Reset retry count
+     */
+    void resetRetry() { context_.retryCount = 0; }
 
     /**
      * @brief Register state entry handler
@@ -125,21 +228,342 @@ public:
     void onTransition(TransitionCallback callback);
 
     /**
+     * @brief Register error callback
+     */
+    void onError(ErrorCallback callback);
+
+    /**
      * @brief Process state (call in main loop)
+     * Handles timeouts and periodic state maintenance.
      */
     void tick();
+
+    /**
+     * @brief Check if transition is valid
+     */
+    bool isValidTransition(PodState from, PodState to) const;
+
+    // Timeout constants
+    static constexpr uint32_t kDefaultTimeoutMs = 0;  // No timeout
+    static constexpr uint32_t kConnectingTimeoutMs = 10000;
+    static constexpr uint32_t kArmedTimeoutMs = 5000;
+    static constexpr uint32_t kTriggeredTimeoutMs = 1000;
+    static constexpr uint32_t kFeedbackTimeoutMs = 500;
+    static constexpr uint32_t kOtaTimeoutMs = 60000;
+    static constexpr uint32_t kCalibrationTimeoutMs = 30000;
+    static constexpr uint8_t kMaxRetries = 3;
 
 private:
     PodState state_;
     StateContext context_{};
     TransitionCallback transitionCb_;
+    ErrorCallback errorCb_;
 
-    static constexpr size_t kStateCount = 9;
+    static constexpr size_t kStateCount = static_cast<size_t>(PodState::kCount);
     StateHandler enterHandlers_[kStateCount]{};
     StateHandler exitHandlers_[kStateCount]{};
 
-    bool isValidTransition(PodState from, PodState to) const;
+    void handleTimeout();
+    PodState getRecoveryState() const;
 };
+
+}  // namespace domes
+```
+
+```cpp
+// game/state_machine.cpp (complete implementation)
+#include "state_machine.hpp"
+#include "esp_timer.h"
+#include "esp_log.h"
+
+namespace domes {
+
+namespace {
+    constexpr const char* kTag = "state";
+
+    constexpr const char* kStateNames[] = {
+        "Initializing", "Idle", "Connecting", "Connected",
+        "Armed", "Triggered", "Feedback", "Standalone",
+        "LowBattery", "OtaInProgress", "Calibrating", "Error"
+    };
+
+    constexpr const char* kErrorNames[] = {
+        "None", "HardwareFailure", "CommunicationTimeout",
+        "ProtocolError", "ResourceExhausted", "InvalidState"
+    };
+}
+
+const char* stateToString(PodState state) {
+    auto idx = static_cast<size_t>(state);
+    if (idx < sizeof(kStateNames) / sizeof(kStateNames[0])) {
+        return kStateNames[idx];
+    }
+    return "Unknown";
+}
+
+StateMachine::StateMachine(PodState initialState)
+    : state_(initialState) {
+    context_.enteredAtUs = esp_timer_get_time();
+    context_.previousState = initialState;
+}
+
+bool StateMachine::transitionTo(PodState newState, uint32_t timeoutMs) {
+    if (state_ == newState) {
+        return true;  // Already in state
+    }
+
+    if (!isValidTransition(state_, newState)) {
+        ESP_LOGW(kTag, "Invalid transition: %s -> %s",
+                 stateToString(state_), stateToString(newState));
+        return false;
+    }
+
+    PodState oldState = state_;
+
+    // Exit current state
+    auto exitIdx = static_cast<size_t>(oldState);
+    if (exitIdx < kStateCount && exitHandlers_[exitIdx]) {
+        exitHandlers_[exitIdx](context_);
+    }
+
+    // Update state
+    context_.previousState = state_;
+    state_ = newState;
+    context_.enteredAtUs = esp_timer_get_time();
+    context_.timeoutMs = timeoutMs;
+    context_.retryCount = 0;
+    if (newState != PodState::kError) {
+        context_.lastError = ErrorType::kNone;
+    }
+
+    ESP_LOGI(kTag, "State: %s -> %s (timeout=%lums)",
+             stateToString(oldState), stateToString(newState), timeoutMs);
+
+    // Notify callback
+    if (transitionCb_) {
+        transitionCb_(oldState, newState);
+    }
+
+    // Enter new state
+    auto enterIdx = static_cast<size_t>(newState);
+    if (enterIdx < kStateCount && enterHandlers_[enterIdx]) {
+        enterHandlers_[enterIdx](context_);
+    }
+
+    return true;
+}
+
+void StateMachine::forceTransition(PodState newState) {
+    ESP_LOGW(kTag, "Force transition: %s -> %s",
+             stateToString(state_), stateToString(newState));
+
+    context_.previousState = state_;
+    state_ = newState;
+    context_.enteredAtUs = esp_timer_get_time();
+    context_.timeoutMs = 0;
+    context_.retryCount = 0;
+}
+
+void StateMachine::enterError(ErrorType error) {
+    ESP_LOGE(kTag, "Entering error state: %s (from %s)",
+             kErrorNames[static_cast<int>(error)], stateToString(state_));
+
+    context_.lastError = error;
+
+    if (errorCb_) {
+        errorCb_(error, state_);
+    }
+
+    forceTransition(PodState::kError);
+}
+
+bool StateMachine::attemptRecovery() {
+    if (state_ != PodState::kError) {
+        return false;
+    }
+
+    PodState recovery = getRecoveryState();
+    ESP_LOGI(kTag, "Attempting recovery to %s", stateToString(recovery));
+
+    forceTransition(recovery);
+    return true;
+}
+
+PodState StateMachine::getRecoveryState() const {
+    // Determine best recovery state based on error type and previous state
+    switch (context_.lastError) {
+        case ErrorType::kHardwareFailure:
+            // Hardware failed - try reinit via Idle
+            return PodState::kIdle;
+
+        case ErrorType::kCommunicationTimeout:
+            // Comm failed - back to connected if possible
+            return PodState::kConnected;
+
+        case ErrorType::kProtocolError:
+            // Protocol error - reset to connected
+            return PodState::kConnected;
+
+        default:
+            // Default: go to idle
+            return PodState::kIdle;
+    }
+}
+
+uint64_t StateMachine::timeInStateUs() const {
+    return esp_timer_get_time() - context_.enteredAtUs;
+}
+
+bool StateMachine::isTimedOut() const {
+    if (context_.timeoutMs == 0) return false;
+    return timeInStateUs() > (static_cast<uint64_t>(context_.timeoutMs) * 1000);
+}
+
+void StateMachine::onEnter(PodState state, StateHandler handler) {
+    auto idx = static_cast<size_t>(state);
+    if (idx < kStateCount) {
+        enterHandlers_[idx] = handler;
+    }
+}
+
+void StateMachine::onExit(PodState state, StateHandler handler) {
+    auto idx = static_cast<size_t>(state);
+    if (idx < kStateCount) {
+        exitHandlers_[idx] = handler;
+    }
+}
+
+void StateMachine::onTransition(TransitionCallback callback) {
+    transitionCb_ = callback;
+}
+
+void StateMachine::onError(ErrorCallback callback) {
+    errorCb_ = callback;
+}
+
+void StateMachine::tick() {
+    if (isTimedOut()) {
+        handleTimeout();
+    }
+}
+
+void StateMachine::handleTimeout() {
+    ESP_LOGW(kTag, "State %s timed out after %llums",
+             stateToString(state_), timeInStateUs() / 1000);
+
+    switch (state_) {
+        case PodState::kConnecting:
+            transitionTo(PodState::kIdle);
+            break;
+
+        case PodState::kArmed:
+            // Touch timeout - notify master and return to connected
+            ESP_LOGI(kTag, "Armed timeout - no touch detected");
+            transitionTo(PodState::kConnected);
+            break;
+
+        case PodState::kTriggered:
+            // Stuck in triggered - force to feedback or error
+            if (context_.retryCount < kMaxRetries) {
+                context_.retryCount++;
+                // Retry sending event
+            } else {
+                enterError(ErrorType::kCommunicationTimeout);
+            }
+            break;
+
+        case PodState::kFeedback:
+            // Feedback too long - skip and continue
+            transitionTo(PodState::kConnected);
+            break;
+
+        case PodState::kOtaInProgress:
+            // OTA timeout - serious error
+            enterError(ErrorType::kCommunicationTimeout);
+            break;
+
+        case PodState::kCalibrating:
+            // Calibration timeout
+            transitionTo(PodState::kConnected);
+            break;
+
+        case PodState::kError:
+            // Try recovery after timeout
+            attemptRecovery();
+            break;
+
+        default:
+            // Other states don't typically timeout
+            break;
+    }
+}
+
+bool StateMachine::isValidTransition(PodState from, PodState to) const {
+    // LowBattery can be entered from most states
+    if (to == PodState::kLowBattery) {
+        return from != PodState::kInitializing &&
+               from != PodState::kLowBattery;
+    }
+
+    // Error can be entered from any state
+    if (to == PodState::kError) {
+        return true;
+    }
+
+    switch (from) {
+        case PodState::kInitializing:
+            return to == PodState::kIdle;
+
+        case PodState::kIdle:
+            return to == PodState::kConnecting ||
+                   to == PodState::kStandalone;
+
+        case PodState::kConnecting:
+            return to == PodState::kConnected ||
+                   to == PodState::kIdle;  // Timeout/failure
+
+        case PodState::kConnected:
+            return to == PodState::kArmed ||
+                   to == PodState::kIdle ||          // Disconnect
+                   to == PodState::kOtaInProgress ||
+                   to == PodState::kCalibrating;
+
+        case PodState::kArmed:
+            return to == PodState::kTriggered ||
+                   to == PodState::kConnected;  // Timeout/cancel
+
+        case PodState::kTriggered:
+            return to == PodState::kFeedback ||
+                   to == PodState::kConnected;  // Error fallback
+
+        case PodState::kFeedback:
+            return to == PodState::kArmed ||    // Next round
+                   to == PodState::kConnected;  // Drill complete
+
+        case PodState::kStandalone:
+            return to == PodState::kArmed ||    // Local drill
+                   to == PodState::kIdle ||     // Exit standalone
+                   to == PodState::kConnecting; // Network found
+
+        case PodState::kLowBattery:
+            return to == PodState::kIdle ||     // Battery recovered
+                   to == PodState::kConnected;  // Charging + connected
+
+        case PodState::kOtaInProgress:
+            return to == PodState::kConnected || // OTA complete
+                   to == PodState::kIdle;        // OTA failed, reboot
+
+        case PodState::kCalibrating:
+            return to == PodState::kConnected;
+
+        case PodState::kError:
+            return to == PodState::kIdle ||
+                   to == PodState::kConnected;
+
+        default:
+            return false;
+    }
+}
 
 }  // namespace domes
 ```

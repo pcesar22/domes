@@ -18,6 +18,10 @@ This folder contains modular architecture documentation. **Load only the files r
 | Debugging, logging, crash analysis | `07-debugging.md` |
 | OTA updates, partitions | `08-ota-updates.md` |
 | Pin maps, NVS keys, error codes | `09-reference.md` |
+| Master/follower roles, network topology | `10-master-election.md` |
+| Timing sync, reaction measurement | `11-clock-sync.md` |
+| I2C management, memory, error handling | `12-system-policies.md` |
+| Architecture review and gaps | `ARCHITECTURE_REVIEW.md` |
 
 ---
 
@@ -111,13 +115,17 @@ This folder contains modular architecture documentation. **Load only the files r
 | `00-getting-started.md` | Setup, hello world, first flash | ~200 |
 | `01-project-structure.md` | Directory layout, naming conventions | ~150 |
 | `02-build-system.md` | Build configs, targets, sdkconfig | ~180 |
-| `03-driver-development.md` | Interfaces, driver templates, DI | ~400 |
+| `03-driver-development.md` | Interfaces, driver templates, DI | ~900 |
 | `04-communication.md` | ESP-NOW, BLE, protocol messages | ~300 |
-| `05-game-engine.md` | State machine, drills, timing | ~250 |
+| `05-game-engine.md` | State machine, drills, timing | ~700 |
 | `06-testing.md` | Unity, CMock, mocks, CI pipeline | ~300 |
 | `07-debugging.md` | OpenOCD, GDB, logging, core dumps | ~200 |
 | `08-ota-updates.md` | OTA flow, partitions, rollback | ~150 |
 | `09-reference.md` | Pin maps, NVS schema, error codes | ~300 |
+| `10-master-election.md` | Master election protocol, failover | ~500 |
+| `11-clock-sync.md` | RTT-based clock synchronization | ~400 |
+| `12-system-policies.md` | I2C mgr, memory, error recovery, mocks | ~700 |
+| `ARCHITECTURE_REVIEW.md` | Expert review, gaps, recommendations | ~1000 |
 
 ---
 
