@@ -343,23 +343,4 @@ LedDriver led(pins::kLedData);
 
 ---
 
-## Verification
-
-After creating new files, verify:
-
-```bash
-# Check structure
-tree firmware/main -L 2
-
-# Check file compiles
-idf.py build
-
-# Check naming conventions
-# All .hpp/.cpp should be snake_case
-ls firmware/main/**/*.{hpp,cpp}
-```
-
----
-
-*Prerequisites: 00-getting-started.md*
-*Next: 02-build-system.md*
+*Related: `00-getting-started.md`, `02-build-system.md`*

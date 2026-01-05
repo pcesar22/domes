@@ -536,24 +536,4 @@ esp_err_t measureLatency(const uint8_t* peerMac, uint32_t* avgLatencyUs) {
 
 ---
 
-## Verification Commands
-
-```bash
-# Build with WiFi + BLE
-idf.py build
-
-# Flash and check RF init
-idf.py flash monitor
-# Expected: "ESP-NOW initialized" + "NimBLE" init logs
-
-# Verify BLE advertising (use nRF Connect app)
-# Device "DOMES Pod" should appear
-
-# Verify ESP-NOW (requires 2 devices)
-# Run latency test, check P95 < 2ms
-```
-
----
-
-*Prerequisites: 03-driver-development.md*
-*Related: 09-reference.md (message types)*
+*Related: `03-driver-development.md`, `09-reference.md` (message types)*
