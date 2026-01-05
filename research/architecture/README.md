@@ -74,6 +74,143 @@ This folder contains modular architecture documentation. **Load only the files r
 
 ---
 
+## Interface Map (Virtual Base Classes)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        INTERFACE RELATIONSHIPS                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  APPLICATION LAYER                                                           │
+│  ═══════════════                                                             │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  GameEngine / DrillManager / StateMachine                            │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│            │              │              │              │                    │
+│            │  uses        │  uses        │  uses        │  uses              │
+│            ▼              ▼              ▼              ▼                    │
+│  SERVICE LAYER                                                               │
+│  ═════════════                                                               │
+│                                                                              │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐                 │
+│  │ ICommService   │  │ ITimingService │  │ IElectionServ  │                 │
+│  │ ────────────── │  │ ────────────── │  │ ────────────── │                 │
+│  │ send()         │  │ getSyncedTime()│  │ isMaster()     │                 │
+│  │ broadcast()    │  │ localToNetwork │  │ forceBecome()  │                 │
+│  │ onReceive()    │  │ networkToLocal │  │ onMasterElect()│                 │
+│  │                │  │ isSynced()     │  │                │                 │
+│  │ Defined in:    │  │ Defined in:    │  │ Defined in:    │                 │
+│  │ 04-comm.md     │  │ 11-clock.md    │  │ 10-election.md │                 │
+│  └────────────────┘  └────────────────┘  └────────────────┘                 │
+│                                                                              │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐                 │
+│  │ IBleService    │  │ IOtaService    │  │ IErrorRecovery │                 │
+│  │ ────────────── │  │ ────────────── │  │ ────────────── │                 │
+│  │ init()         │  │ begin()        │  │ getAction()    │                 │
+│  │ startAdvert()  │  │ writeChunk()   │  │ execute()      │                 │
+│  │ notify()       │  │ finish()       │  │                │                 │
+│  │ isConnected()  │  │ rollback()     │  │ Defined in:    │                 │
+│  │ Defined in:    │  │ Defined in:    │  │ 12-policies.md │                 │
+│  │ 04-comm.md     │  │ 08-ota.md      │  └────────────────┘                 │
+│  └────────────────┘  └────────────────┘                                     │
+│            │              │                                                  │
+│            │  uses        │  uses                                            │
+│            ▼              ▼                                                  │
+│  DRIVER LAYER                                                                │
+│  ════════════                                                                │
+│                                                                              │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐                 │
+│  │ ILedDriver     │  │ IAudioDriver   │  │ IHapticDriver  │                 │
+│  │ ────────────── │  │ ────────────── │  │ ────────────── │                 │
+│  │ setAll()       │  │ playTone()     │  │ playEffect()   │                 │
+│  │ setLed()       │  │ playSound()    │  │ stop()         │                 │
+│  │ refresh()      │  │ stop()         │  │ isPlaying()    │                 │
+│  │                │  │ isPlaying()    │  │                │                 │
+│  │ Hardware:      │  │ Hardware:      │  │ Hardware:      │                 │
+│  │ SK6812 (RMT)   │  │ MAX98357 (I2S) │  │ DRV2605L (I2C) │                 │
+│  └────────────────┘  └────────────────┘  └────────────────┘                 │
+│                                               │                              │
+│  ┌────────────────┐  ┌────────────────┐       │ uses I2C                    │
+│  │ ITouchDriver   │  │ IImuDriver     │       ▼                              │
+│  │ ────────────── │  │ ────────────── │  ┌────────────────┐                 │
+│  │ enable()       │  │ readAccel()    │  │ II2cManager    │                 │
+│  │ isTouched()    │  │ enableTap()    │  │ ────────────── │                 │
+│  │ onTouch()      │  │ wasTapDetected │  │ writeRead()    │                 │
+│  │                │  │                │  │ recover()      │                 │
+│  │ Hardware:      │  │ Hardware:      │  │                │                 │
+│  │ Touch GPIO     │  │ LIS2DW12 (I2C) │  │ Shared bus     │                 │
+│  │ + IImuDriver   │  │                │  │ mutex          │                 │
+│  └───────┬────────┘  └───────┬────────┘  └────────────────┘                 │
+│          │ uses              │ uses I2C         ▲                            │
+│          └───────────────────┴──────────────────┘                            │
+│                                                                              │
+│  ┌────────────────┐  ┌────────────────┐                                     │
+│  │ IPowerDriver   │  │ IPodIdentity   │                                     │
+│  │ ────────────── │  │ ────────────── │                                     │
+│  │ getBattery%()  │  │ podId()        │                                     │
+│  │ isCharging()   │  │ name()         │                                     │
+│  │ enterDeepSleep │  │ setPodId()     │                                     │
+│  │                │  │                │                                     │
+│  │ Hardware:      │  │ Storage:       │                                     │
+│  │ ADC (battery)  │  │ NVS            │                                     │
+│  └────────────────┘  └────────────────┘                                     │
+│                                                                              │
+│  All driver interfaces defined in: 03-driver-development.md                 │
+│  Policy interfaces defined in: 12-system-policies.md                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Interface Summary
+
+| Interface | Layer | Purpose | Defined In |
+|-----------|-------|---------|------------|
+| **ILedDriver** | Driver | LED ring control | 03-driver-development.md |
+| **IAudioDriver** | Driver | Sound/tone playback | 03-driver-development.md |
+| **IHapticDriver** | Driver | Vibration feedback | 03-driver-development.md |
+| **ITouchDriver** | Driver | Touch detection | 03-driver-development.md |
+| **IImuDriver** | Driver | Acceleration/tap | 03-driver-development.md |
+| **IPowerDriver** | Driver | Battery/sleep | 03-driver-development.md |
+| **II2cManager** | Driver | Shared I2C bus | 12-system-policies.md |
+| **ICommService** | Service | ESP-NOW messaging | 04-communication.md |
+| **IBleService** | Service | BLE GATT | 04-communication.md |
+| **ITimingService** | Service | Clock sync | 11-clock-sync.md |
+| **IElectionService** | Service | Master election | 10-master-election.md |
+| **IOtaService** | Service | Firmware update | 08-ota-updates.md |
+| **IPodIdentity** | Service | Pod ID/name | 12-system-policies.md |
+| **IErrorRecovery** | Service | Error handling | 12-system-policies.md |
+
+### Dependency Rules
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          DEPENDENCY RULES                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   Application Layer                                                          │
+│         │                                                                    │
+│         │  Can depend on: Service + Driver layers                           │
+│         ▼                                                                    │
+│   Service Layer                                                              │
+│         │                                                                    │
+│         │  Can depend on: Driver layer only                                 │
+│         ▼                                                                    │
+│   Driver Layer                                                               │
+│         │                                                                    │
+│         │  Can depend on: Platform layer only (ESP-IDF, FreeRTOS)           │
+│         ▼                                                                    │
+│   Platform Layer (ESP-IDF)                                                   │
+│                                                                              │
+│   ✗ NO circular dependencies                                                │
+│   ✗ NO skipping layers (App cannot directly use Platform)                  │
+│   ✓ All cross-layer access through interfaces                              │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Development Milestones
 
 | Milestone | Description | Verification | Docs |
