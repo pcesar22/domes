@@ -455,6 +455,18 @@ firmware/
 │   ├── main.cpp                # Entry point
 │   ├── config.hpp              # Pin definitions, constants
 │   │
+│   ├── infra/                      # Infrastructure services
+│   │   ├── logging.hpp             # ESP_LOG wrappers, log tags
+│   │   ├── nvsConfig.hpp/cpp       # NVS-backed configuration storage
+│   │   ├── taskConfig.hpp          # Task configuration (priority, stack, core)
+│   │   ├── taskManager.hpp/cpp     # FreeRTOS task lifecycle management
+│   │   └── watchdog.hpp/cpp        # Task Watchdog Timer (TWDT) management
+│   │
+│   ├── interfaces/                 # Abstract interfaces for dependency injection
+│   │   ├── iConfigStorage.hpp      # Configuration storage interface
+│   │   ├── iLedDriver.hpp          # LED driver interface
+│   │   └── iTaskRunner.hpp         # Runnable task interface
+│   │
 │   ├── drivers/
 │   │   ├── led_driver.hpp/cpp      # SK6812 control
 │   │   ├── audio_driver.hpp/cpp    # I2S audio
@@ -476,7 +488,7 @@ firmware/
 │   │   └── protocol.hpp/cpp        # Message encoding
 │   │
 │   └── utils/
-│       ├── logging.hpp             # ESP_LOG wrappers
+│       ├── mutex.hpp               # RAII FreeRTOS mutex wrapper
 │       ├── error_codes.hpp         # Error definitions
 │       └── ring_buffer.hpp         # Lock-free buffer
 │
