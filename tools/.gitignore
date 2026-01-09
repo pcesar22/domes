@@ -1,0 +1,10 @@
+# Node modules (install via npm install)
+**/node_modules/
+
+# Database files (download separately)
+**/*.sqlite3
+**/*.db
+
+# Python cache
+**/__pycache__/
+**/*.pyc
