@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "jlcpcb-parts": {
+      "command": "python",
+      "args": ["/home/pncosta/domes/tools/mcp/jlcpcb-parts-mcp/server.py"],
+      "env": {
+        "JLCPCB_DB_PATH": "/home/pncosta/domes/tools/mcp/jlcpcb-parts-mcp/data/jlcpcb-components.sqlite3"
+      }
+    }
+  }
+}

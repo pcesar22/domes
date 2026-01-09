@@ -1,0 +1,3 @@
+# Large database files - download separately
+*.sqlite3
+*.db
