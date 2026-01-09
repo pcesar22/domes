@@ -49,16 +49,27 @@ Design a 2-layer development board that serves as a carrier/breakout for an ESP3
 |-----|-------------|--------|---------|-----|
 | D1-D16 | SK6812MINI-E - Addressable RGBW LED | C5149201 | 3535 | 16 |
 
-### 2.3 Connectors
+### 2.3 Electromechanical Components (On-Board)
+
+| Ref | Description | LCSC # | Package | Qty |
+|-----|-------------|--------|---------|-----|
+| SPK1 | GSPK2307P-8R1W - 23mm 8Ω 1W Speaker | C530531 | 23mm round, wire leads | 1 |
+| MOT1 | LD0832AA-0099F - LRA Vibration Motor | C2682305 | 8×3.2mm, wire leads | 1 |
+
+**Note:** Speaker and LRA motor are mounted directly on-board for complete testing without external components.
+
+### 2.4 Connectors
 
 | Ref | Description | LCSC # | Package | Qty |
 |-----|-------------|--------|---------|-----|
 | J1 | Female header 1×20, 2.54mm pitch | C2905423 | Through-hole | 1 |
 | J2 | Female header 1×20, 2.54mm pitch | C2905423 | Through-hole | 1 |
-| J3 | JST XH 2-pin vertical | C158012 | Through-hole | 1 |
-| J4 | JST XH 2-pin vertical | C158012 | Through-hole | 1 |
+| J3 | JST XH 2-pin vertical (Speaker backup) | C158012 | Through-hole | 1 |
+| J4 | JST XH 2-pin vertical (LRA backup) | C158012 | Through-hole | 1 |
 
-### 2.4 Capacitors (0402, X5R)
+**Note:** J3 and J4 are backup connectors for testing alternative speakers/motors.
+
+### 2.5 Capacitors (0402, X5R)
 
 | Ref | Value | Voltage | LCSC # | Qty |
 |-----|-------|---------|--------|-----|
@@ -66,7 +77,7 @@ Design a 2-layer development board that serves as a carrier/breakout for an ESP3
 | C3 | 1µF | 10V | C52923 | 1 |
 | C5, C7 | 10µF | 10V | C15525 | 2 |
 
-### 2.5 Resistors (0402, 1%)
+### 2.6 Resistors (0402, 1%)
 
 | Ref | Value | LCSC # | Qty |
 |-----|-------|--------|-----|
@@ -199,9 +210,14 @@ Connections:
 Capacitors:
 - C3: 1µF between Pin 1 (REG) and GND, place <3mm from pin
 
-Motor connector J4:
-- 2-pin JST XH connector
-- For LRA (Linear Resonant Actuator) motor, ~3V rated
+On-board LRA Motor (MOT1):
+- Part: LD0832AA-0099F (LCSC C2682305)
+- Specs: 8×3.2mm Linear Resonant Actuator, 1.8V rated, 80mA
+- Mounting: Solder pads for wire leads, motor adhered to PCB
+
+Backup connector J4:
+- 2-pin JST XH connector for testing alternative motors
+- Parallels MOT1 - both can be connected simultaneously
 ```
 
 ---
@@ -262,9 +278,14 @@ SD_MODE behavior:
 - GPIO 7 LOW = shutdown mode
 - GPIO 7 HIGH or floating = active, outputs (L+R)/2 stereo mix
 
-Speaker connector J3:
-- 2-pin JST XH connector
-- For 4Ω-8Ω speaker, 0.5-1W
+On-board Speaker (SPK1):
+- Part: GSPK2307P-8R1W (LCSC C530531)
+- Specs: 23mm diameter, 8Ω, 1W
+- Mounting: Solder pads for wire leads, speaker mounted in center of LED ring
+
+Backup connector J3:
+- 2-pin JST XH connector for testing alternative speakers
+- Parallels SPK1 - both can be connected simultaneously
 ```
 
 ---
@@ -514,12 +535,14 @@ Header spacing: Match MCU board pin spacing (2.54mm pitch, ~46mm between rows)
     │                    LED RING (60mm diameter)                            │
     │                  ┌─────────────────────────┐                           │
     │                  │  D1  D2  D3  D4  D5     │                           │
-    │                  │D16              D6      │                           │
-    │                  │D15      ●       D7      │ Center: (50, 40)          │
-    │                  │D14              D8      │                           │
-    │                  │  D13 D12 D11 D10 D9     │                           │
+    │                  │D16   ┌─────────┐    D6  │                           │
+    │                  │D15   │  SPK1   │    D7  │ Center: (50, 40)          │
+    │                  │D14   │  23mm   │    D8  │ Speaker in ring center    │
+    │                  │  D13 └─D12─D11─┘ D10 D9 │                           │
     │                  └─────────────────────────┘                           │
-    │                                                                        │
+    │                          ┌───┐                                         │
+    │                          │MOT│ MOT1: 8×3.2mm LRA (50, 32)              │
+    │                          └───┘                                         │
     │   ┌────┐   ┌────┐   ┌────┐   ┌────┐                                   │
     │   │ U1 │   │ U2 │   │ U3 │   │ U4 │                                   │
     │   └────┘   └────┘   └────┘   └────┘                                   │
@@ -527,7 +550,7 @@ Header spacing: Match MCU board pin spacing (2.54mm pitch, ~46mm between rows)
     │                                                                        │
     │   ┌──────┐        ┌────┐  ┌────┐           ┌──────┐                   │
     │   │  T3  │        │ J3 │  │ J4 │           │  T4  │                   │
-    │   │      │        │SPK │  │MOT │           │      │                   │
+    │   │      │        │bkp │  │bkp │           │      │                   │
     │   └──────┘        └────┘  └────┘           └──────┘                   │
     │    (10,5)         (35,5)  (55,5)            (75,5)                    │
     │                                                                        │
@@ -535,6 +558,10 @@ Header spacing: Match MCU board pin spacing (2.54mm pitch, ~46mm between rows)
     └────────────────────────────────────────────────────────────────────────┘
 
     Coordinates in mm from bottom-left origin
+
+    SPEAKER (SPK1): 23mm speaker in center of LED ring, wire leads to pads near U3
+    LRA MOTOR (MOT1): 8×3.2mm motor below LED ring, wire leads to pads near U2
+    BACKUP CONNECTORS (J3, J4): For testing alternative speakers/motors
 ```
 
 ### 13.2 Layer Assignment

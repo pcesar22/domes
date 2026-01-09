@@ -102,16 +102,27 @@ All parts verified in stock at JLCPCB/LCSC as of 2026-01-09.
 | U4 | 74AHCT125PW Level Shifter | C7464 | NXP | TSSOP-14 | 1 | 46,283 | No |
 | D1-D16 | SK6812MINI-E RGBW LED | C5149201 | OPSCO | 3535 | 16 | 161,209 | No |
 
-### 2.2 Connectors
+### 2.2 Electromechanical Components (On-Board)
+
+| Ref | Description | LCSC Part # | Manufacturer | Package | Qty | Stock | Basic |
+|-----|-------------|-------------|--------------|---------|-----|-------|-------|
+| SPK1 | GSPK2307P-8R1W 23mm Speaker | C530531 | INGHAi | 23mm round, wire leads | 1 | 5,861 | No |
+| MOT1 | LD0832AA-0099F LRA Motor | C2682305 | Leader | 8x3.2mm, wire leads | 1 | 273 | No |
+
+**Note:** Speaker and LRA motor are mounted directly on-board for complete testing without external components.
+
+### 2.3 Connectors
 
 | Ref | Description | LCSC Part # | Package | Qty | Stock | Basic |
 |-----|-------------|-------------|---------|-----|-------|-------|
 | J1 | Female Header 1x20 2.54mm | C2905423 | TH | 1 | 9,345 | No |
 | J2 | Female Header 1x20 2.54mm | C2905423 | TH | 1 | 9,345 | No |
-| J3 | XH-2A 2P Vertical (Speaker) | C158012 | TH | 1 | 219,506 | No |
-| J4 | XH-2A 2P Vertical (LRA) | C158012 | TH | 1 | 219,506 | No |
+| J3 | XH-2A 2P Vertical (Speaker backup) | C158012 | TH | 1 | 219,506 | No |
+| J4 | XH-2A 2P Vertical (LRA backup) | C158012 | TH | 1 | 219,506 | No |
 
-### 2.3 Passive Components
+**Note:** J3 and J4 are backup connectors for testing alternative speakers/motors if needed.
+
+### 2.4 Passive Components
 
 | Ref | Description | LCSC Part # | Package | Qty | Stock | Basic |
 |-----|-------------|-------------|---------|-----|-------|-------|
@@ -128,18 +139,20 @@ All parts verified in stock at JLCPCB/LCSC as of 2026-01-09.
 | R3 | 330R 1% (LED data series) | C25105 | 0402 | 1 | 4.7M | **Yes** |
 | R4 | 1M 1% (SD_MODE pull-up) | C26083 | 0402 | 1 | 4.2M | **Yes** |
 
-### 2.4 Cost Summary
+### 2.5 Cost Summary
 
 | Category | Cost |
 |----------|------|
 | Active ICs (5 types) | ~$4.50 |
 | LEDs (16x SK6812) | ~$1.26 |
+| Speaker (GSPK2307P) | ~$0.75 |
+| LRA Motor (LD0832AA) | ~$0.90 |
 | Connectors (4x) | ~$0.50 |
 | Passives (16x) | ~$0.10 |
-| **Component Total** | **~$6.36** |
+| **Component Total** | **~$8.01** |
 | PCB (5 pcs, 2-layer) | ~$2.00 |
-| PCBA Assembly | ~$15.00 |
-| **Total per Board** | **~$23.00** |
+| PCBA Assembly | ~$18.00 |
+| **Total per Board** | **~$28.00** |
 
 ---
 
@@ -243,10 +256,19 @@ CRITICAL CONNECTIONS:
 - Pin 6 (EN): Connect to VDD for always-on. Connect to GPIO for power management.
 - Pins 2 and 8: Both are VDD - connect both to 3.3V.
 
-MOTOR CONNECTION (J4):
-- Pin 9 (OUT+) → J4 Pin 1
-- Pin 10 (OUT-) → J4 Pin 2
-- LRA Motor: 10mm diameter, ~3V rated, e.g., G1040003D
+MOTOR CONNECTION:
+- Pin 9 (OUT+) → MOT1+ (on-board LRA) and J4 Pin 1 (backup)
+- Pin 10 (OUT-) → MOT1- (on-board LRA) and J4 Pin 2 (backup)
+
+ON-BOARD LRA MOTOR (MOT1):
+- Part: LD0832AA-0099F (LCSC C2682305)
+- Specs: 8x3.2mm Linear Resonant Actuator, 1.8V rated, 80mA
+- Mounting: Solder pads for wire leads, motor adhered to PCB with double-sided tape
+- Location: Near U2, center of board for even haptic distribution
+
+BACKUP CONNECTOR (J4):
+- JST XH 2-pin for testing alternative motors
+- Directly parallels MOT1 - both can be connected simultaneously
 
 DECOUPLING:
 - C3: 1µF between Pin 1 (REG) and GND, place within 3mm of pin
@@ -293,10 +315,19 @@ CRITICAL CONNECTIONS:
 - Pins 4 and 13: Both are VDD - connect both to 5V.
 - Pins 3, 8, 9, 10, 11, 12, 14: All GND - connect all to ground plane.
 
-SPEAKER CONNECTION (J3):
-- Pin 15 (OUTP) → J3 Pin 1
-- Pin 16 (OUTN) → J3 Pin 2
-- Speaker: 4Ω minimum, 8Ω recommended, 0.5-1W, 23mm diameter
+SPEAKER CONNECTION:
+- Pin 15 (OUTP) → SPK1+ (on-board speaker) and J3 Pin 1 (backup)
+- Pin 16 (OUTN) → SPK1- (on-board speaker) and J3 Pin 2 (backup)
+
+ON-BOARD SPEAKER (SPK1):
+- Part: GSPK2307P-8R1W (LCSC C530531)
+- Specs: 23mm diameter, 8Ω, 1W
+- Mounting: Solder pads for wire leads, speaker mounted flat on PCB
+- Location: Near U3, away from touch pads to avoid acoustic interference
+
+BACKUP CONNECTOR (J3):
+- JST XH 2-pin for testing alternative speakers
+- Directly parallels SPK1 - both can be connected simultaneously
 
 DECOUPLING:
 - C5: 10uF between Pin 4 (VDD) and GND, place within 3mm of pin
@@ -536,12 +567,14 @@ GROUND POUR:
     │                    LED RING (60mm diameter)                            │
     │              ┌───────────────────────────────┐                         │
     │              │    D1   D2   D3   D4   D5     │                         │
-    │              │  D16                      D6  │                         │
-    │              │  D15         ●           D7  │ Center: (50, 50)         │
-    │              │  D14                      D8  │                         │
-    │              │    D13  D12  D11  D10  D9    │                         │
+    │              │  D16   ┌─────────┐        D6  │                         │
+    │              │  D15   │  SPK1   │        D7  │ Center: (50, 50)        │
+    │              │  D14   │  23mm   │        D8  │ Speaker inside ring     │
+    │              │    D13 └─D12─D11─┘ D10  D9    │                         │
     │              └───────────────────────────────┘                         │
-    │                                                                        │
+    │                          ┌───┐                                         │
+    │                          │MOT│ MOT1: 8x3.2mm LRA                       │
+    │                          └───┘ (50, 58)                                │
     │   ┌────┐   ┌────┐   ┌────┐   ┌────┐                                   │
     │   │ U1 │   │ U2 │   │ U3 │   │ U4 │        (ICs near bottom edge)    │
     │   │IMU │   │HAP │   │AMP │   │LVL │                                   │
@@ -550,7 +583,7 @@ GROUND POUR:
     │                                                                        │
     │   ┌──────┐        ┌────┐  ┌────┐           ┌──────┐                   │
     │   │  T3  │        │ J3 │  │ J4 │           │  T4  │                   │
-    │   │15x15 │        │SPK │  │LRA │           │15x15 │                   │
+    │   │15x15 │        │bkp │  │bkp │           │15x15 │                   │
     │   └──────┘        └────┘  └────┘           └──────┘                   │
     │  (10,70)         (35,72) (50,72)          (75,70)                     │
     │                                                                        │
@@ -558,6 +591,20 @@ GROUND POUR:
     └────────────────────────────────────────────────────────────────────────┘
 
 ALL COORDINATES IN MILLIMETERS FROM BOTTOM-LEFT ORIGIN
+
+SPEAKER (SPK1) PLACEMENT:
+- 23mm diameter speaker mounted in center of LED ring
+- Wire leads soldered to pads near U3
+- Speaker faces UP (toward user)
+
+LRA MOTOR (MOT1) PLACEMENT:
+- 8x3.2mm coin motor mounted below LED ring center
+- Wire leads soldered to pads near U2
+- Motor adhered with double-sided tape for vibration transfer
+
+BACKUP CONNECTORS (J3, J4):
+- Positioned near bottom edge for easy access
+- Allow testing alternative speakers/motors without desoldering
 ```
 
 ### 4.4 Critical Routing Requirements
