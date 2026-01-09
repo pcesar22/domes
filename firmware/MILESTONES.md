@@ -70,14 +70,33 @@ esp_err_t err = led_strip_new_spi_device(&strip_config, &spi_config, &led_strip)
 ---
 
 ## Phase 4: Infrastructure
-**Status:** Not Started
+**Status:** ✅ Complete
 **Goal:** Core firmware infrastructure
 
-- [ ] FreeRTOS task structure and pinning
-- [ ] Logging framework (ESP_LOG wrappers)
-- [ ] Configuration management (NVS)
-- [ ] Error handling patterns
-- [ ] Watchdog setup
+- [x] FreeRTOS task structure and pinning (`infra/taskManager`, `infra/taskConfig`)
+- [x] Logging framework (ESP_LOG wrappers in `infra/logging`)
+- [x] Configuration management (NVS via `infra/nvsConfig`)
+- [x] Error handling patterns (interfaces with `esp_err_t`)
+- [x] Watchdog setup (`infra/watchdog` with RAII guard)
+
+### Phase 4 Implementation Details
+
+**Files Created:**
+- `main/infra/taskConfig.hpp` - Task priorities, core affinity, stack sizes
+- `main/infra/taskManager.hpp/.cpp` - Managed task lifecycle with core pinning
+- `main/infra/watchdog.hpp/.cpp` - TWDT wrapper with WatchdogGuard RAII
+- `main/infra/nvsConfig.hpp/.cpp` - NVS configuration with namespaces
+- `main/infra/logging.hpp` - DOMES_LOG* macros and module tags
+- `main/utils/mutex.hpp` - RAII mutex wrapper
+- `main/interfaces/iTaskRunner.hpp` - Task abstraction interface
+- `main/interfaces/iConfigStorage.hpp` - Config storage interface
+
+**NVS Namespaces:**
+- `config` - User settings (brightness, volume, thresholds)
+- `stats` - Runtime statistics (boot count, uptime)
+- `calibration` - Sensor calibration data
+
+**Boot Counter:** Firmware now tracks and logs boot count on each startup
 
 ---
 
