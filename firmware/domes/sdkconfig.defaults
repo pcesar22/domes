@@ -1,5 +1,6 @@
 # DOMES Firmware Configuration Defaults
 # Target: ESP32-S3-DevKitC-1
+CONFIG_IDF_TARGET="esp32s3"
 
 # Console output via USB Serial/JTAG (native USB port)
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
