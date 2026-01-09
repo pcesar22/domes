@@ -1,0 +1,30 @@
+# DOMES Firmware Configuration Defaults
+# Target: ESP32-S3-DevKitC-1
+
+# Console output via USB Serial/JTAG (native USB port)
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Flash size (DevKitC-1 has 8MB, but we target 16MB for production)
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# Partition table
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# FreeRTOS settings
+CONFIG_FREERTOS_HZ=1000
+
+# Logging
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_COLORS=y
+
+# Watchdog
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+
+# C++ exceptions disabled (per guidelines)
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+
+# RTTI disabled (per guidelines)
+CONFIG_COMPILER_CXX_RTTI=n

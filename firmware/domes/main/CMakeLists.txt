@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS
+        "main.cpp"
+    INCLUDE_DIRS
+        "."
+        "interfaces"
+        "drivers"
+    REQUIRES
+        driver
+        esp_timer
+        led_strip
+)
