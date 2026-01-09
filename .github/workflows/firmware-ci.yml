@@ -1,0 +1,83 @@
+name: Firmware CI
+
+on:
+  push:
+    branches: [main, develop, 'feature/**']
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/firmware-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'firmware/**'
+
+jobs:
+  build:
+    name: Build ESP32-S3 Firmware
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # For git describe version
+
+      - name: Set up ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.2.2
+          target: esp32s3
+          path: firmware/domes
+
+      - name: Build firmware
+        run: |
+          cd firmware/domes
+          idf.py build
+
+      - name: Check binary size
+        run: |
+          SIZE=$(stat -c%s firmware/domes/build/domes.bin)
+          echo "Binary size: $SIZE bytes"
+
+          # DevKit OTA partition = 1.875MB = 1,966,080 bytes
+          MAX_SIZE=1966080
+
+          if [ $SIZE -gt $MAX_SIZE ]; then
+            echo "::error::Binary exceeds OTA partition size ($SIZE > $MAX_SIZE bytes)"
+            exit 1
+          fi
+
+          echo "Size OK: $SIZE / $MAX_SIZE bytes ($(( SIZE * 100 / MAX_SIZE ))%)"
+
+      - name: Generate firmware info
+        run: |
+          cd firmware/domes/build
+          sha256sum domes.bin > domes.bin.sha256
+          echo "SHA-256: $(cat domes.bin.sha256)"
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: domes-firmware-${{ github.sha }}
+          path: |
+            firmware/domes/build/domes.bin
+            firmware/domes/build/domes.bin.sha256
+          retention-days: 30
+
+  # Unit tests are currently disabled until Linux target support is added
+  # unit-tests:
+  #   name: Run Unit Tests
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Set up ESP-IDF
+  #       uses: espressif/esp-idf-ci-action@v1
+  #       with:
+  #         esp_idf_version: v5.2.2
+  #         target: linux
+  #     - name: Build and run tests
+  #       run: |
+  #         cd firmware/domes
+  #         idf.py --preview set-target linux
+  #         idf.py build
+  #         ./build/domes.elf -t version -t wifi -t ota

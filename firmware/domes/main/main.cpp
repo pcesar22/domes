@@ -1,12 +1,13 @@
 /**
  * @file main.cpp
- * @brief DOMES Firmware - Phase 4 Infrastructure
+ * @brief DOMES Firmware - Phase 4 Infrastructure + OTA
  *
  * Infrastructure layer validated on ESP32-S3-DevKitC-1 v1.1
  * - NVS configuration storage
  * - Task Watchdog Timer (TWDT)
  * - Managed task lifecycle
  * - LED demo using TaskManager
+ * - OTA self-test and rollback protection
  */
 
 #include "config.hpp"
@@ -15,6 +16,8 @@
 #include "infra/nvsConfig.hpp"
 #include "infra/taskManager.hpp"
 #include "interfaces/iTaskRunner.hpp"
+#include "services/githubClient.hpp"
+#include "services/otaManager.hpp"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -24,15 +27,26 @@
 #include <cstdint>
 #include <cstring>
 
+// Version string from CMake
+#ifndef DOMES_VERSION_STRING
+#define DOMES_VERSION_STRING "v0.0.0-unknown"
+#endif
+
 static constexpr const char* kTag = domes::infra::tag::kMain;
 
 using namespace domes::config;
+
+// GitHub configuration for OTA updates
+static constexpr const char* kGithubOwner = "pcesar22";
+static constexpr const char* kGithubRepo = "domes";
 
 // Global instances (static allocation per GUIDELINES.md)
 static led_strip_handle_t ledStrip = nullptr;
 static domes::infra::TaskManager taskManager;
 static domes::infra::NvsConfig configStorage;
 static domes::infra::NvsConfig statsStorage;
+static domes::GithubClient* githubClient = nullptr;
+static domes::OtaManager* otaManager = nullptr;
 
 /**
  * @brief LED demo task runner
@@ -101,6 +115,136 @@ private:
 
 // Static task runner instance
 static LedDemoRunner* ledDemoRunner = nullptr;
+
+/**
+ * @brief Perform post-OTA self-test
+ *
+ * Validates critical systems after an OTA update.
+ * If this fails, firmware will roll back to previous version.
+ *
+ * @return ESP_OK if all tests pass
+ */
+static esp_err_t performSelfTest() {
+    ESP_LOGI(kTag, "Running post-OTA self-test...");
+
+    // Test 1: Watchdog initialized
+    if (!domes::infra::Watchdog::isInitialized()) {
+        ESP_LOGE(kTag, "Self-test FAIL: Watchdog not initialized");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(kTag, "  [PASS] Watchdog initialized");
+
+    // Test 2: NVS accessible
+    domes::infra::NvsConfig testNvs;
+    esp_err_t err = testNvs.open(domes::infra::nvs_ns::kConfig);
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGE(kTag, "Self-test FAIL: NVS inaccessible");
+        return ESP_FAIL;
+    }
+    testNvs.close();
+    ESP_LOGI(kTag, "  [PASS] NVS accessible");
+
+    // Test 3: Heap is reasonable (>50KB free)
+    size_t freeHeap = esp_get_free_heap_size();
+    if (freeHeap < 50000) {
+        ESP_LOGE(kTag, "Self-test FAIL: Heap too low (%zu bytes)", freeHeap);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(kTag, "  [PASS] Heap OK (%zu bytes free)", freeHeap);
+
+    // Test 4: LED driver (if initialized)
+    if (ledStrip) {
+        err = led_strip_set_pixel(ledStrip, 0, 0, 255, 0);
+        if (err != ESP_OK) {
+            ESP_LOGE(kTag, "Self-test FAIL: LED driver error");
+            return ESP_FAIL;
+        }
+        led_strip_refresh(ledStrip);
+        ESP_LOGI(kTag, "  [PASS] LED driver OK");
+    }
+
+    ESP_LOGI(kTag, "Self-test PASSED");
+    return ESP_OK;
+}
+
+/**
+ * @brief Handle OTA verification after boot
+ *
+ * If running from a new OTA partition, performs self-test
+ * and either confirms the firmware or rolls back.
+ */
+static void handleOtaVerification() {
+    if (!otaManager) {
+        return;
+    }
+
+    if (!otaManager->isPendingVerification()) {
+        ESP_LOGI(kTag, "Firmware already verified");
+        return;
+    }
+
+    ESP_LOGW(kTag, "New OTA firmware - running verification");
+
+    esp_err_t selfTestResult = performSelfTest();
+
+    if (selfTestResult == ESP_OK) {
+        // Confirm new firmware is good
+        esp_err_t err = otaManager->confirmFirmware();
+        if (err == ESP_OK) {
+            ESP_LOGI(kTag, "OTA firmware confirmed successfully");
+
+            // Visual indication - green LED
+            if (ledStrip) {
+                led_strip_set_pixel(ledStrip, 0, 0, 255, 0);
+                led_strip_refresh(ledStrip);
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                led_strip_clear(ledStrip);
+            }
+        } else {
+            ESP_LOGE(kTag, "Failed to confirm firmware: %s", esp_err_to_name(err));
+        }
+    } else {
+        // Self-test failed - rollback
+        ESP_LOGE(kTag, "Self-test FAILED - rolling back to previous firmware");
+
+        // Visual indication - red LED
+        if (ledStrip) {
+            led_strip_set_pixel(ledStrip, 0, 255, 0, 0);
+            led_strip_refresh(ledStrip);
+            vTaskDelay(pdMS_TO_TICKS(2000));
+        }
+
+        otaManager->rollback();  // Never returns
+    }
+}
+
+/**
+ * @brief Initialize OTA subsystem
+ */
+static esp_err_t initOta() {
+    ESP_LOGI(kTag, "Initializing OTA subsystem");
+
+    // Create GitHub client (static allocation during init)
+    static domes::GithubClient github(kGithubOwner, kGithubRepo);
+    githubClient = &github;
+
+    // Create OTA manager
+    static domes::OtaManager ota(github);
+    otaManager = &ota;
+
+    esp_err_t err = otaManager->init();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "OTA init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    domes::FirmwareVersion ver = otaManager->getCurrentVersion();
+    ESP_LOGI(kTag, "Firmware version: %d.%d.%d (partition: %s)",
+             ver.major, ver.minor, ver.patch,
+             otaManager->getCurrentPartition());
+
+    return ESP_OK;
+}
 
 /**
  * @brief Initialize the LED strip hardware
@@ -178,8 +322,8 @@ static esp_err_t initInfrastructure() {
 extern "C" void app_main() {
     ESP_LOGI(kTag, "");
     ESP_LOGI(kTag, "========================================");
-    ESP_LOGI(kTag, "  DOMES Firmware - Phase 4");
-    ESP_LOGI(kTag, "  Infrastructure Layer");
+    ESP_LOGI(kTag, "  DOMES Firmware - %s", DOMES_VERSION_STRING);
+    ESP_LOGI(kTag, "  Infrastructure + OTA Layer");
     ESP_LOGI(kTag, "========================================");
     ESP_LOGI(kTag, "");
 
@@ -193,6 +337,14 @@ extern "C" void app_main() {
     // Initialize hardware drivers
     if (initLedStrip() != ESP_OK) {
         ESP_LOGW(kTag, "LED init failed, continuing without LED");
+    }
+
+    // Initialize OTA subsystem
+    if (initOta() != ESP_OK) {
+        ESP_LOGW(kTag, "OTA init failed, continuing without OTA support");
+    } else {
+        // Handle OTA verification (self-test + confirm/rollback)
+        handleOtaVerification();
     }
 
     // Quick RGB flash to confirm hardware
@@ -233,5 +385,6 @@ extern "C" void app_main() {
     ESP_LOGI(kTag, "");
     ESP_LOGI(kTag, "Initialization complete");
     ESP_LOGI(kTag, "Active tasks: %zu", taskManager.getActiveTaskCount());
+    ESP_LOGI(kTag, "Free heap: %lu bytes", static_cast<unsigned long>(esp_get_free_heap_size()));
     ESP_LOGI(kTag, "");
 }

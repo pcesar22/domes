@@ -1,0 +1,92 @@
+name: Firmware Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-release:
+    name: Build and Release Firmware
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building release: $VERSION"
+
+      - name: Set up ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.2.2
+          target: esp32s3
+          path: firmware/domes
+
+      - name: Build firmware
+        run: |
+          cd firmware/domes
+          idf.py build
+
+      - name: Verify binary size
+        run: |
+          SIZE=$(stat -c%s firmware/domes/build/domes.bin)
+          MAX_SIZE=1966080
+
+          if [ $SIZE -gt $MAX_SIZE ]; then
+            echo "::error::Binary exceeds OTA partition size"
+            exit 1
+          fi
+
+          echo "Binary size: $SIZE bytes ($(( SIZE * 100 / MAX_SIZE ))% of partition)"
+
+      - name: Generate checksums
+        run: |
+          cd firmware/domes/build
+          sha256sum domes.bin > domes.bin.sha256
+          SHA256=$(cat domes.bin.sha256 | cut -d' ' -f1)
+          echo "SHA256=$SHA256" >> $GITHUB_ENV
+          echo "SHA-256: $SHA256"
+
+      - name: Rename binary with version
+        run: |
+          cp firmware/domes/build/domes.bin firmware/domes/build/domes-${{ steps.version.outputs.version }}.bin
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            firmware/domes/build/domes.bin
+            firmware/domes/build/domes-${{ steps.version.outputs.version }}.bin
+            firmware/domes/build/domes.bin.sha256
+          body: |
+            ## DOMES Firmware ${{ steps.version.outputs.version }}
+
+            ### Checksums
+            ```
+            SHA-256: ${{ env.SHA256 }}
+            ```
+
+            ### Installation
+
+            #### OTA Update
+            If your device is already running DOMES firmware with WiFi configured, it will automatically detect and download this update.
+
+            #### Manual Flash
+            ```bash
+            esptool.py --port /dev/ttyUSB0 write_flash 0x20000 domes.bin
+            ```
+
+            ---
+            *Built with ESP-IDF v5.2.2*
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
