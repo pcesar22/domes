@@ -1,12 +1,19 @@
 idf_component_register(
     SRCS
         "main.cpp"
+        "infra/watchdog.cpp"
+        "infra/nvsConfig.cpp"
+        "infra/taskManager.cpp"
     INCLUDE_DIRS
         "."
         "interfaces"
         "drivers"
+        "infra"
+        "utils"
     REQUIRES
         driver
         esp_timer
         led_strip
+        nvs_flash
+        esp_system
 )
