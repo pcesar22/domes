@@ -9,6 +9,7 @@ idf_component_register(
         "services/otaManager.cpp"
         "transport/usbCdcTransport.cpp"
         "transport/serialOtaReceiver.cpp"
+        "transport/bleOtaService.cpp"
     INCLUDE_DIRS
         "."
         "interfaces"
@@ -31,4 +32,5 @@ idf_component_register(
         app_update
         mbedtls
         common
+        bt
 )
