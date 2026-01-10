@@ -1,0 +1,25 @@
+menu "DOMES Configuration"
+
+    config DOMES_OTA_AUTO_CHECK
+        bool "Enable automatic OTA update check on boot"
+        default n
+        help
+            When enabled, the firmware will automatically check GitHub
+            for new releases on boot (requires WiFi connection).
+
+            Disable this during development to avoid unexpected updates.
+
+            For production, OTA updates are delivered via BLE from the
+            phone app, not via WiFi auto-check.
+
+    config DOMES_WIFI_AUTO_CONNECT
+        bool "Enable automatic WiFi connection on boot"
+        default n
+        help
+            When enabled, the firmware will automatically connect to WiFi
+            using credentials stored in NVS or from secrets.hpp.
+
+            You must create main/secrets.hpp with your WiFi credentials.
+            See main/secrets.hpp.example for the template.
+
+endmenu

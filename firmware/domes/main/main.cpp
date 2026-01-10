@@ -1,14 +1,16 @@
 /**
  * @file main.cpp
- * @brief DOMES Firmware - Phase 4 Infrastructure
+ * @brief DOMES Firmware - Phase 4 Infrastructure + OTA
  *
  * Infrastructure layer validated on ESP32-S3-DevKitC-1 v1.1
  * - NVS configuration storage
  * - Task Watchdog Timer (TWDT)
  * - Managed task lifecycle
- * - LED demo using TaskManager
+ * - LED demo using TaskManager with smooth transitions
+ * - OTA self-test and rollback protection
  */
 
+#include "sdkconfig.h"  // Must be first for CONFIG_* macros
 #include "config.hpp"
 #include "infra/logging.hpp"
 #include "infra/watchdog.hpp"
@@ -17,6 +19,14 @@
 #include "interfaces/iTaskRunner.hpp"
 #include "drivers/ledStrip.hpp"
 #include "utils/ledAnimator.hpp"
+#include "services/githubClient.hpp"
+#include "services/otaManager.hpp"
+
+// WiFi manager and secrets are only needed when WiFi auto-connect is enabled
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+#include "services/wifiManager.hpp"
+#include "secrets.hpp"
+#endif
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -25,9 +35,18 @@
 #include <cstdint>
 #include <cstring>
 
+// Version string from CMake
+#ifndef DOMES_VERSION_STRING
+#define DOMES_VERSION_STRING "v0.0.0-unknown"
+#endif
+
 static constexpr const char* kTag = domes::infra::tag::kMain;
 
 using namespace domes::config;
+
+// GitHub configuration for OTA updates
+static constexpr const char* kGithubOwner = "pcesar22";
+static constexpr const char* kGithubRepo = "domes";
 
 // Global instances (static allocation per GUIDELINES.md)
 static domes::LedStripDriver<pins::kLedCount>* ledDriver = nullptr;
@@ -35,6 +54,13 @@ static domes::LedAnimator* ledAnimator = nullptr;
 static domes::infra::TaskManager taskManager;
 static domes::infra::NvsConfig configStorage;
 static domes::infra::NvsConfig statsStorage;
+static domes::GithubClient* githubClient = nullptr;
+static domes::OtaManager* otaManager = nullptr;
+
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+static domes::WifiManager* wifiManager = nullptr;
+static domes::infra::NvsConfig wifiStorage;
+#endif
 
 /**
  * @brief LED demo task runner with smooth transitions
@@ -148,6 +174,189 @@ private:
 static LedDemoRunner* ledDemoRunner = nullptr;
 
 /**
+ * @brief Perform post-OTA self-test
+ *
+ * Validates critical systems after an OTA update.
+ * If this fails, firmware will roll back to previous version.
+ *
+ * @return ESP_OK if all tests pass
+ */
+static esp_err_t performSelfTest() {
+    ESP_LOGI(kTag, "Running post-OTA self-test...");
+
+    // Test 1: Watchdog initialized
+    if (!domes::infra::Watchdog::isInitialized()) {
+        ESP_LOGE(kTag, "Self-test FAIL: Watchdog not initialized");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(kTag, "  [PASS] Watchdog initialized");
+
+    // Test 2: NVS accessible
+    domes::infra::NvsConfig testNvs;
+    esp_err_t err = testNvs.open(domes::infra::nvs_ns::kConfig);
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGE(kTag, "Self-test FAIL: NVS inaccessible");
+        return ESP_FAIL;
+    }
+    testNvs.close();
+    ESP_LOGI(kTag, "  [PASS] NVS accessible");
+
+    // Test 3: Heap is reasonable (>50KB free)
+    size_t freeHeap = esp_get_free_heap_size();
+    if (freeHeap < 50000) {
+        ESP_LOGE(kTag, "Self-test FAIL: Heap too low (%zu bytes)", freeHeap);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(kTag, "  [PASS] Heap OK (%zu bytes free)", freeHeap);
+
+    // Test 4: LED driver (if initialized)
+    if (ledDriver) {
+        err = ledDriver->setPixel(0, domes::Color::green());
+        if (err != ESP_OK) {
+            ESP_LOGE(kTag, "Self-test FAIL: LED driver error");
+            return ESP_FAIL;
+        }
+        ledDriver->refresh();
+        ESP_LOGI(kTag, "  [PASS] LED driver OK");
+    }
+
+    ESP_LOGI(kTag, "Self-test PASSED");
+    return ESP_OK;
+}
+
+/**
+ * @brief Handle OTA verification after boot
+ *
+ * If running from a new OTA partition, performs self-test
+ * and either confirms the firmware or rolls back.
+ */
+static void handleOtaVerification() {
+    if (!otaManager) {
+        return;
+    }
+
+    if (!otaManager->isPendingVerification()) {
+        ESP_LOGI(kTag, "Firmware already verified");
+        return;
+    }
+
+    ESP_LOGW(kTag, "New OTA firmware - running verification");
+
+    esp_err_t selfTestResult = performSelfTest();
+
+    if (selfTestResult == ESP_OK) {
+        // Confirm new firmware is good
+        esp_err_t err = otaManager->confirmFirmware();
+        if (err == ESP_OK) {
+            ESP_LOGI(kTag, "OTA firmware confirmed successfully");
+
+            // Visual indication - green LED
+            if (ledDriver) {
+                ledDriver->setPixel(0, domes::Color::green());
+                ledDriver->refresh();
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                ledDriver->clear();
+                ledDriver->refresh();
+            }
+        } else {
+            ESP_LOGE(kTag, "Failed to confirm firmware: %s", esp_err_to_name(err));
+        }
+    } else {
+        // Self-test failed - rollback
+        ESP_LOGE(kTag, "Self-test FAILED - rolling back to previous firmware");
+
+        // Visual indication - red LED
+        if (ledDriver) {
+            ledDriver->setPixel(0, domes::Color::red());
+            ledDriver->refresh();
+            vTaskDelay(pdMS_TO_TICKS(2000));
+        }
+
+        otaManager->rollback();  // Never returns
+    }
+}
+
+/**
+ * @brief Initialize OTA subsystem
+ */
+static esp_err_t initOta() {
+    ESP_LOGI(kTag, "Initializing OTA subsystem");
+
+    // Create GitHub client (static allocation during init)
+    static domes::GithubClient github(kGithubOwner, kGithubRepo);
+    githubClient = &github;
+
+    // Create OTA manager
+    static domes::OtaManager ota(github);
+    otaManager = &ota;
+
+    esp_err_t err = otaManager->init();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "OTA init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    domes::FirmwareVersion ver = otaManager->getCurrentVersion();
+    ESP_LOGI(kTag, "Firmware version: %d.%d.%d (partition: %s)",
+             ver.major, ver.minor, ver.patch,
+             otaManager->getCurrentPartition());
+
+    return ESP_OK;
+}
+
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+/**
+ * @brief Initialize WiFi and connect
+ */
+static esp_err_t initWifi() {
+    ESP_LOGI(kTag, "Initializing WiFi...");
+
+    // Open WiFi NVS namespace
+    esp_err_t err = wifiStorage.open(domes::wifi_nvs::kNamespace);
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGW(kTag, "WiFi NVS open warning: %s", esp_err_to_name(err));
+    }
+
+    // Create WiFi manager
+    static domes::WifiManager wifi(wifiStorage);
+    wifiManager = &wifi;
+
+    err = wifiManager->init();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "WiFi init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Connect with credentials from secrets.hpp
+    ESP_LOGI(kTag, "Connecting to WiFi: %s", domes::secrets::kWifiSsid);
+    err = wifiManager->connect(domes::secrets::kWifiSsid,
+                                domes::secrets::kWifiPassword,
+                                true);  // Save to NVS
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "WiFi connect failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Wait for connection (max 30 seconds)
+    for (int i = 0; i < 30 && !wifiManager->isConnected(); i++) {
+        ESP_LOGI(kTag, "Waiting for WiFi... %d/30", i + 1);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    if (wifiManager->isConnected()) {
+        char ip[16];
+        wifiManager->getIpAddress(ip, sizeof(ip));
+        ESP_LOGI(kTag, "WiFi connected! IP: %s, RSSI: %d dBm",
+                 ip, wifiManager->getRssi());
+        return ESP_OK;
+    } else {
+        ESP_LOGE(kTag, "WiFi connection timeout");
+        return ESP_ERR_TIMEOUT;
+    }
+}
+#endif  // CONFIG_DOMES_WIFI_AUTO_CONNECT
+
+/**
  * @brief Initialize the LED strip hardware and animator
  */
 static esp_err_t initLedStrip() {
@@ -221,8 +430,8 @@ static esp_err_t initInfrastructure() {
 extern "C" void app_main() {
     ESP_LOGI(kTag, "");
     ESP_LOGI(kTag, "========================================");
-    ESP_LOGI(kTag, "  DOMES Firmware - Phase 4");
-    ESP_LOGI(kTag, "  Infrastructure Layer");
+    ESP_LOGI(kTag, "  DOMES Firmware - %s", DOMES_VERSION_STRING);
+    ESP_LOGI(kTag, "  Infrastructure + OTA Layer");
     ESP_LOGI(kTag, "========================================");
     ESP_LOGI(kTag, "");
 
@@ -236,6 +445,24 @@ extern "C" void app_main() {
     // Initialize hardware drivers
     if (initLedStrip() != ESP_OK) {
         ESP_LOGW(kTag, "LED init failed, continuing without LED");
+    }
+
+    // Initialize WiFi (required for OTA)
+    // Enable with: idf.py menuconfig -> DOMES -> Enable automatic WiFi connection
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+    if (initWifi() != ESP_OK) {
+        ESP_LOGW(kTag, "WiFi init failed, OTA updates unavailable");
+    }
+#else
+    ESP_LOGI(kTag, "WiFi auto-connect disabled (enable in menuconfig)");
+#endif
+
+    // Initialize OTA subsystem
+    if (initOta() != ESP_OK) {
+        ESP_LOGW(kTag, "OTA init failed, continuing without OTA support");
+    } else {
+        // Handle OTA verification (self-test + confirm/rollback)
+        handleOtaVerification();
     }
 
     // Quick RGB flash to confirm hardware (using smooth transitions)
@@ -274,5 +501,55 @@ extern "C" void app_main() {
     ESP_LOGI(kTag, "");
     ESP_LOGI(kTag, "Initialization complete");
     ESP_LOGI(kTag, "Active tasks: %zu", taskManager.getActiveTaskCount());
+    ESP_LOGI(kTag, "Free heap: %lu bytes", static_cast<unsigned long>(esp_get_free_heap_size()));
     ESP_LOGI(kTag, "");
+
+    // Check for OTA updates in a separate task (needs large stack for TLS)
+    // Disabled by default - enable with: idf.py menuconfig -> DOMES -> Enable OTA auto-check
+#if defined(CONFIG_DOMES_OTA_AUTO_CHECK) && defined(CONFIG_DOMES_WIFI_AUTO_CONNECT)
+    if (wifiManager && wifiManager->isConnected() && otaManager) {
+        ESP_LOGI(kTag, "Creating OTA check task...");
+
+        xTaskCreate([](void* param) {
+            ESP_LOGI(kTag, "OTA check task started");
+            ESP_LOGI(kTag, "Checking for firmware updates...");
+
+            domes::OtaCheckResult updateResult;
+            esp_err_t err = otaManager->checkForUpdate(updateResult);
+
+            if (err == ESP_OK) {
+                if (updateResult.updateAvailable) {
+                    ESP_LOGI(kTag, "Update available: v%d.%d.%d -> v%d.%d.%d",
+                             updateResult.currentVersion.major,
+                             updateResult.currentVersion.minor,
+                             updateResult.currentVersion.patch,
+                             updateResult.availableVersion.major,
+                             updateResult.availableVersion.minor,
+                             updateResult.availableVersion.patch);
+                    ESP_LOGI(kTag, "Download URL: %s", updateResult.downloadUrl);
+                    ESP_LOGI(kTag, "Firmware size: %zu bytes", updateResult.firmwareSize);
+
+                    // Start OTA update
+                    ESP_LOGI(kTag, "Starting OTA update...");
+                    err = otaManager->startUpdate(updateResult.downloadUrl,
+                                                  updateResult.sha256[0] ? updateResult.sha256 : nullptr);
+                    if (err != ESP_OK) {
+                        ESP_LOGE(kTag, "OTA update failed to start: %s", esp_err_to_name(err));
+                    }
+                    // If successful, device will reboot
+                } else {
+                    ESP_LOGI(kTag, "Firmware is up to date (v%d.%d.%d)",
+                             updateResult.currentVersion.major,
+                             updateResult.currentVersion.minor,
+                             updateResult.currentVersion.patch);
+                }
+            } else {
+                ESP_LOGW(kTag, "Update check failed: %s", esp_err_to_name(err));
+            }
+
+            ESP_LOGI(kTag, "OTA check task done, deleting self");
+            vTaskDelete(nullptr);
+        }, "ota_check", 16384, nullptr, domes::infra::priority::kLow, nullptr);
+    }
+#endif  // CONFIG_DOMES_OTA_AUTO_CHECK
 }

@@ -17,3 +17,6 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets (WiFi credentials, API keys, etc.)
+**/secrets.hpp
