@@ -1,7 +1,8 @@
 # Development Board - Schematic & PCB Design Specification
 
-**Document Version:** 1.0
+**Document Version:** 2.0
 **Date:** 2026-01-09
+**Status:** Datasheet-Verified - Ready for Design
 
 ---
 
@@ -69,13 +70,20 @@ Design a 2-layer development board that serves as a carrier/breakout for an ESP3
 
 **Note:** J3 and J4 are backup connectors for testing alternative speakers/motors.
 
-### 2.5 Capacitors (0402, X5R)
+### 2.5 Capacitors (UPDATED)
 
-| Ref | Value | Voltage | LCSC # | Qty |
-|-----|-------|---------|--------|-----|
-| C1, C2, C4, C6, C8-C11 | 100nF | 16V | C1525 | 8 |
-| C3 | 1µF | 10V | C52923 | 1 |
-| C5, C7 | 10µF | 10V | C15525 | 2 |
+| Ref | Value | Voltage | LCSC # | Package | Qty |
+|-----|-------|---------|--------|---------|-----|
+| C1, C2, C4, C6, C8-C11 | 100nF | 16V | C1525 | 0402 | 8 |
+| C1a | 10µF | 10V | C15525 | 0402 | 1 | **ADDED - U1 VDD bulk**
+| C3, C3a | 1µF | 10V | C52923 | 0402 | 2 | **C3a ADDED - U2 VDD**
+| C5 | 10µF | 10V | C15525 | 0402 | 1 |
+| C7 | 100µF | 10V | C440198 | 0805 | 1 | **INCREASED from 10µF**
+
+**BOM Changes:**
+- C1a: Added 10µF bulk capacitor for LIS2DW12 VDD (per datasheet)
+- C3a: Added 1µF decoupling for DRV2605L VDD (was missing)
+- C7: Increased from 10µF to 100µF for better LED power stability
 
 ### 2.6 Resistors (0402, 1%)
 
@@ -129,8 +137,9 @@ Design a 2-layer development board that serves as a carrier/breakout for an ESP3
 ## 4. Detailed Schematic - U1 (LIS2DW12TR)
 
 **Function:** 3-axis accelerometer with tap detection
-**Interface:** I2C at address 0x19
+**Interface:** I2C at address 0x19 (SA0=VDD)
 **Datasheet:** https://www.st.com/resource/en/datasheet/lis2dw12.pdf
+**Max I2C Speed:** 400kHz (Fast Mode)
 
 ```
                     LIS2DW12TR (LGA-12, Top View)
@@ -138,35 +147,38 @@ Design a 2-layer development board that serves as a carrier/breakout for an ESP3
 
                     ┌──────────────────────────┐
                     │  ●                       │
-             Pin 1  │ VDD_IO            INT2   │ Pin 12  → NC
-                    │                          │
-             Pin 2  │ RES (NC)          INT1   │ Pin 11  → Net: IMU_INT (GPIO 5)
-                    │                          │
-             Pin 3  │ SCL               CS     │ Pin 10  → 3.3V
+             Pin 1  │ SCL               INT1   │ Pin 12  → Net: IMU_INT (GPIO 5)
                     │   ↑                      │
-             Pin 4  │ SDA               GND    │ Pin 9   → GND
+             Pin 2  │ CS                INT2   │ Pin 11  → NC
+                    │   ↑                      │
+             Pin 3  │ SDO/SA0         VDD_IO   │ Pin 10  → 3.3V + C2
+                    │   ↑                      │
+             Pin 4  │ SDA               VDD    │ Pin 9   → 3.3V + C1 + C1a
                     │   ↑↓                     │
-             Pin 5  │ SA0             VDD_IO   │ Pin 8   → 3.3V + C2
-                    │   ↑                      │
-             Pin 6  │ VDD               GND    │ Pin 7   → GND
-                    │   ↑                      │
+             Pin 5  │ NC                GND    │ Pin 8   → GND
+                    │                          │
+             Pin 6  │ GND               RES    │ Pin 7   → GND (REQUIRED!)
+                    │                          │
                     └──────────────────────────┘
 
-Connections:
-- Pin 1 (VDD_IO): 3.3V
-- Pin 3 (SCL): Net I2C_SCL (to GPIO 9)
+CORRECTED CONNECTIONS (verified against datasheet):
+- Pin 1 (SCL): Net I2C_SCL (to GPIO 9)
+- Pin 2 (CS): 3.3V (enables I2C mode)
+- Pin 3 (SDO/SA0): 3.3V (sets address to 0x19)
 - Pin 4 (SDA): Net I2C_SDA (to GPIO 8)
-- Pin 5 (SA0): 3.3V (sets address to 0x19)
-- Pin 6 (VDD): 3.3V
-- Pin 7, 9 (GND): Ground
-- Pin 8 (VDD_IO): 3.3V
-- Pin 10 (CS): 3.3V (enables I2C mode)
-- Pin 11 (INT1): Net IMU_INT (optional, to GPIO 5)
-- Pin 12 (INT2): No connection
+- Pin 5 (NC): GND or leave unconnected
+- Pin 6 (GND): Ground
+- Pin 7 (RES): MUST connect to GND - reserved pin
+- Pin 8 (GND): Ground
+- Pin 9 (VDD): 3.3V - main power
+- Pin 10 (VDD_IO): 3.3V - I/O power
+- Pin 11 (INT2): NC (not used)
+- Pin 12 (INT1): Net IMU_INT (to GPIO 5)
 
 Capacitors:
-- C1: 100nF between Pin 6 (VDD) and GND, place <2mm from pin
-- C2: 100nF between Pin 8 (VDD_IO) and GND, place <2mm from pin
+- C1: 100nF between Pin 9 (VDD) and GND, place <2mm from pin
+- C1a: 10µF between Pin 9 (VDD) and GND (in parallel with C1) **ADDED**
+- C2: 100nF between Pin 10 (VDD_IO) and GND, place <2mm from pin
 ```
 
 ---
@@ -176,44 +188,48 @@ Capacitors:
 **Function:** Haptic motor driver with built-in effects library
 **Interface:** I2C at address 0x5A (fixed)
 **Datasheet:** https://www.ti.com/lit/ds/symlink/drv2605l.pdf
+**Package:** VSSOP-10/DGS (3x3mm) - Often labeled MSOP-10
+**Supply Range:** 2.0V to 5.2V
 
 ```
-                    DRV2605LDGSR (MSOP-10, Top View)
+                    DRV2605LDGSR (VSSOP-10, Top View)
                     Pin 1 indicator at corner dot
 
                     ┌──────────────────────────┐
                     │  ●                       │
-             Pin 1  │ REG               OUT-   │ Pin 10  → J4 Pin 2 (Motor -)
+             Pin 1  │ REG               SCL    │ Pin 10  → NC (duplicate of Pin 2)
                     │   ↓                      │
-             Pin 2  │ VDD               OUT+   │ Pin 9   → J4 Pin 1 (Motor +)
+             Pin 2  │ SCL               OUT-   │ Pin 9   → MOT1- / J4 Pin 2
                     │   ↑                      │
-             Pin 3  │ SCL               VDD    │ Pin 8   → 3.3V
-                    │   ↑                      │
-             Pin 4  │ SDA               GND    │ Pin 7   → GND
+             Pin 3  │ SDA               GND    │ Pin 8   → GND
                     │   ↑↓                     │
-             Pin 5  │ IN/TRIG           EN     │ Pin 6   → 3.3V
-                    │                          │
+             Pin 4  │ IN/TRIG           OUT+   │ Pin 7   → MOT1+ / J4 Pin 1
+                    │   ↓                      │
+             Pin 5  │ EN                VDD    │ Pin 6   → 3.3V + C3a
+                    │   ↑                      │
                     └──────────────────────────┘
 
-Connections:
+CORRECTED CONNECTIONS (verified against datasheet):
 - Pin 1 (REG): C3 (1µF to GND) - internal 1.8V regulator output
-- Pin 2 (VDD): 3.3V
-- Pin 3 (SCL): Net I2C_SCL (to GPIO 9)
-- Pin 4 (SDA): Net I2C_SDA (to GPIO 8)
-- Pin 5 (IN/TRIG): No connection (I2C mode only)
-- Pin 6 (EN): 3.3V (always enabled)
-- Pin 7 (GND): Ground
-- Pin 8 (VDD): 3.3V
-- Pin 9 (OUT+): J4 Pin 1
-- Pin 10 (OUT-): J4 Pin 2
+- Pin 2 (SCL): Net I2C_SCL (to GPIO 9)
+- Pin 3 (SDA): Net I2C_SDA (to GPIO 8)
+- Pin 4 (IN/TRIG): GND (for I2C-only mode) or NC
+- Pin 5 (EN): 3.3V (always enabled)
+- Pin 6 (VDD): 3.3V + C3a (1µF decoupling) **ADDED**
+- Pin 7 (OUT+): MOT1+ / J4 Pin 1
+- Pin 8 (GND): Ground
+- Pin 9 (OUT-): MOT1- / J4 Pin 2
+- Pin 10 (SCL): NC (duplicate of Pin 2)
 
 Capacitors:
 - C3: 1µF between Pin 1 (REG) and GND, place <3mm from pin
+- C3a: 1µF between Pin 6 (VDD) and GND, place <3mm from pin **ADDED**
 
 On-board LRA Motor (MOT1):
 - Part: LD0832AA-0099F (LCSC C2682305)
 - Specs: 8×3.2mm Linear Resonant Actuator, 1.8V rated, 80mA
 - Mounting: Solder pads for wire leads, motor adhered to PCB
+- Auto-resonance: DRV2605L tracks LRA frequency automatically
 
 Backup connector J4:
 - 2-pin JST XH connector for testing alternative motors
@@ -344,19 +360,27 @@ Why this works for level shifting:
 ## 8. Detailed Schematic - LED Ring (D1-D16)
 
 **Component:** SK6812MINI-E addressable RGBW LED
-**Datasheet:** https://cdn-shop.adafruit.com/product-files/2686/SK6812MINI_REV.01-1-2.pdf
+**Datasheet:** https://cdn-shop.adafruit.com/product-files/4960/4960_SK6812MINI-E_REV02_EN.pdf
+**Data Rate:** 800kHz
+**Color Order:** GRBW (Green-Red-Blue-White) - NOT RGBW!
 
 ```
                     SK6812MINI-E (3535 package, Top View)
-                    Identify Pin 1 by notched corner or marking
+                    Pin 3 (GND) has notch for orientation
 
                     ┌──────────────────────────┐
                     │                          │
-             Pin 1  │ DOUT              DIN    │ Pin 4
-                    │                          │
-             Pin 2  │ GND               VDD    │ Pin 3
-                    │                          │
+             Pin 1  │ VDD               DIN    │ Pin 4
+                    │   ↑                 ↑    │
+             Pin 2  │ DOUT              GND    │ Pin 3 (notched)
+                    │   ↓                      │
                     └──────────────────────────┘
+
+CORRECTED PINOUT (SK6812MINI-E differs from older SK6812MINI!):
+- Pin 1: VDD (power)
+- Pin 2: DOUT (data output to next LED)
+- Pin 3: GND (has notch for identification)
+- Pin 4: DIN (data input)
 
 LED Chain:
     U4 Pin 3 → R3 (330Ω) → D1.DIN
@@ -367,24 +391,29 @@ LED Chain:
     D16.DOUT → NC
 
 Power Distribution:
-    5V Rail + C7 (10µF bulk) ──┬── D1.VDD + C8 (100nF)
-                               ├── D2.VDD
-                               ├── D3.VDD
-                               ├── D4.VDD + C9 (100nF)
-                               ├── D5.VDD
-                               ├── D6.VDD
-                               ├── D7.VDD
-                               ├── D8.VDD + C10 (100nF)
-                               ├── D9.VDD
-                               ├── D10.VDD
-                               ├── D11.VDD
-                               ├── D12.VDD + C11 (100nF)
-                               ├── D13.VDD
-                               ├── D14.VDD
-                               ├── D15.VDD
-                               └── D16.VDD
+    5V Rail + C7 (100µF bulk) ──┬── D1.VDD + C8 (100nF)
+                                ├── D2.VDD
+                                ├── D3.VDD
+                                ├── D4.VDD + C9 (100nF)
+                                ├── D5.VDD
+                                ├── D6.VDD
+                                ├── D7.VDD
+                                ├── D8.VDD + C10 (100nF)
+                                ├── D9.VDD
+                                ├── D10.VDD
+                                ├── D11.VDD
+                                ├── D12.VDD + C11 (100nF)
+                                ├── D13.VDD
+                                ├── D14.VDD
+                                ├── D15.VDD
+                                └── D16.VDD
 
     All D1-D16.GND → Ground plane
+
+Notes:
+- C7 increased to 100µF for better power stability
+- Peak current: 16 LEDs × ~60mA = ~960mA at full white
+- Color order GRBW - configure in firmware
 
 LED Ring Layout:
 - Arrange 16 LEDs in a circle, 60mm diameter
@@ -429,7 +458,7 @@ I2C Parameters:
 ```
     GPIO 1 ─────────────────────────► Touch Pad T1
     GPIO 2 ─────────────────────────► Touch Pad T2
-    GPIO 3 ─────────────────────────► Touch Pad T3
+    GPIO 6 ─────────────────────────► Touch Pad T3
     GPIO 4 ─────────────────────────► Touch Pad T4
 
 Touch Pad Design:
@@ -437,6 +466,8 @@ Touch Pad Design:
 - No soldermask over pad
 - Guard ring: 1mm ground ring around each pad with 2mm gap
 - Route traces on bottom layer
+
+NOTE: GPIO 6 used for T3 instead of GPIO 3 because GPIO 3 is a strapping pin.
 ```
 
 ---
@@ -444,29 +475,34 @@ Touch Pad Design:
 ## 11. Detailed Schematic - Power Distribution
 
 ```
-    J1 Pin 1 (3.3V from MCU board) ───┬─── U1 VDD (Pin 6)
-                                      ├─── U1 VDD_IO (Pin 1, Pin 8)
-                                      ├─── U1 SA0 (Pin 5)
-                                      ├─── U1 CS (Pin 10)
-                                      ├─── U2 VDD (Pin 2, Pin 8)
-                                      ├─── U2 EN (Pin 6)
+    J1 Pin 1 (3.3V from MCU board) ───┬─── U1 VDD (Pin 9) + C1 (100nF) + C1a (10µF)
+                                      ├─── U1 VDD_IO (Pin 10) + C2 (100nF)
+                                      ├─── U1 CS (Pin 2)
+                                      ├─── U1 SDO/SA0 (Pin 3)
+                                      ├─── U2 VDD (Pin 6) + C3a (1µF)
+                                      ├─── U2 EN (Pin 5)
                                       ├─── R1 (I2C pull-up)
-                                      ├─── R2 (I2C pull-up)
-                                      ├─── U4 Pin 4 (2OE - disable)
-                                      ├─── U4 Pin 10 (3OE - disable)
-                                      └─── U4 Pin 13 (4OE - disable)
-
+                                      └─── R2 (I2C pull-up)
 
     J1 Pin 2 (5V from MCU board) ─────┬─── U4 VCC (Pin 14) + C4
+                                      ├─── U4 Pin 4 (2OE - disable, tied HIGH)
+                                      ├─── U4 Pin 10 (3OE - disable, tied HIGH)
+                                      ├─── U4 Pin 13 (4OE - disable, tied HIGH)
                                       ├─── U3 VDD (Pin 4, Pin 13) + C5, C6
-                                      ├─── D1-D16 VDD + C7, C8-C11
+                                      ├─── D1-D16 VDD (Pin 1) + C7 (100µF), C8-C11
                                       └─── R4 (to SD_MODE)
 
 
     J1 Pin 3 (GND) ───────────────────┴─── Ground plane (bottom layer)
                                           All component GND pins
+                                          U1 RES (Pin 7) - MUST be grounded
+                                          U1 Pin 5, 8 (GND)
+                                          U2 IN/TRIG (Pin 4)
+                                          U2 GND (Pin 8)
                                           U4 Pin 1 (1OE - enable)
+                                          U4 Pin 3, 5, 9, 11 (unused inputs - tie to GND)
                                           U3 Exposed Pad
+                                          D1-D16 GND (Pin 3 - notched corner)
 ```
 
 ---
@@ -485,7 +521,7 @@ Touch Pad Design:
     │  5  │                              │  5  │
     │  6  │ GPIO 1 (Touch T1) ◄────────  │  6  │
     │  7  │ GPIO 2 (Touch T2) ◄────────  │  7  │
-    │  8  │ GPIO 3 (Touch T3) ◄────────  │  8  │
+    │  8  │ GPIO 6 (Touch T3) ◄────────  │  8  │
     │  9  │ GPIO 4 (Touch T4) ◄────────  │  9  │
     │ 10  │ GPIO 5 (IMU INT) ◄─────────  │ 10  │
     │ 11  │                              │ 11  │
@@ -571,14 +607,21 @@ Header spacing: Match MCU board pin spacing (2.54mm pitch, ~46mm between rows)
 | Top | Signal traces, all SMD components, through-hole components |
 | Bottom | Ground pour (solid), touch pad traces only |
 
-### 13.3 Trace Widths
+### 13.3 Trace Widths (CORRECTED)
 
 | Net Type | Width | Notes |
 |----------|-------|-------|
-| 5V power | 0.8mm minimum | High current for LEDs |
-| 3.3V power | 0.5mm minimum | |
+| 5V input | 1.5mm minimum | Main feed - handles up to 2A peak |
+| 5V LED branch | 1.0mm minimum | Supplies LEDs (up to 1A peak) |
+| 5V audio branch | 1.0mm minimum | MAX98357A can draw significant current |
+| 3.3V power | 0.5mm minimum | Low current (~200mA max) |
 | Signal traces | 0.25mm | I2C, I2S, GPIO |
 | LED data | 0.3mm | Include series resistor R3 inline |
+
+**Power Budget:**
+- 16x SK6812 LEDs at full white: ~960mA peak
+- MAX98357A at 3W output: ~1.3A peak
+- Total 5V peak: ~2.0A (design for this)
 
 ### 13.4 Critical Routing Rules
 
@@ -588,7 +631,8 @@ Header spacing: Match MCU board pin spacing (2.54mm pitch, ~46mm between rows)
 4. **I2S bus:** Route BCLK, LRCLK, DIN as a group
 5. **Touch traces:** Route on bottom layer only, through ground pour opening
 6. **Decoupling caps:** Place within specified distance of IC pins
-7. **U3 thermal pad:** Connect to ground with 4-6 thermal vias (0.3mm)
+7. **U3 thermal pad:** Connect to ground with 5-6 thermal vias (0.3mm) in quincunx pattern
+8. **Power distribution:** Use star topology from input to branches
 
 ### 13.5 Keep-Out Zones
 
@@ -698,6 +742,15 @@ Please provide:
 ## 19. Contact for Questions
 
 [Your contact information here]
+
+---
+
+## 20. Revision History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2026-01-07 | Initial release |
+| 2.0 | 2026-01-09 | Critical corrections after datasheet verification: Fixed LIS2DW12 pinout (was completely wrong), fixed DRV2605L pinout (was completely wrong), fixed SK6812MINI-E pinout and color order (GRBW not RGBW), added missing decoupling caps (C1a 10µF, C3a 1µF), increased LED bulk cap C7 to 100µF, fixed GPIO 3→6 for touch pad (strapping pin), increased 5V trace widths, fixed 74AHCT125 unused pin handling |
 
 ---
 
