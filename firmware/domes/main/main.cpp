@@ -23,6 +23,7 @@
 #include "services/otaManager.hpp"
 #include "transport/usbCdcTransport.hpp"
 #include "transport/serialOtaReceiver.hpp"
+#include "transport/bleOtaService.hpp"
 
 // WiFi manager and secrets are only needed when WiFi auto-connect is enabled
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
@@ -60,6 +61,8 @@ static domes::GithubClient* githubClient = nullptr;
 static domes::OtaManager* otaManager = nullptr;
 static domes::UsbCdcTransport* usbCdcTransport = nullptr;
 static domes::SerialOtaReceiver* serialOtaReceiver = nullptr;
+static domes::BleOtaService* bleOtaService = nullptr;
+static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::WifiManager* wifiManager = nullptr;
@@ -353,6 +356,51 @@ static esp_err_t initSerialOta() {
     return ESP_OK;
 }
 
+/**
+ * @brief Initialize BLE OTA service
+ *
+ * Sets up BLE GATT server and starts the BLE OTA receiver task.
+ * This allows OTA updates via Bluetooth from a phone or host tool.
+ */
+static esp_err_t initBleOta() {
+    ESP_LOGI(kTag, "Initializing BLE OTA service...");
+
+    // Create BLE OTA service (GATT server)
+    static domes::BleOtaService service;
+    bleOtaService = &service;
+
+    domes::TransportError err = bleOtaService->init();
+    if (!domes::isOk(err)) {
+        ESP_LOGE(kTag, "BLE OTA service init failed: %s",
+                 domes::transportErrorToString(err));
+        return ESP_FAIL;
+    }
+    ESP_LOGI(kTag, "BLE OTA service initialized, advertising started");
+
+    // Create BLE OTA receiver (reuses SerialOtaReceiver with BLE transport)
+    static domes::SerialOtaReceiver receiver(*bleOtaService);
+    bleOtaReceiver = &receiver;
+
+    // Create receiver task
+    domes::infra::TaskConfig config = {
+        .name = "ble_ota",
+        .stackSize = 4096,
+        .priority = domes::infra::priority::kMedium,
+        .coreAffinity = domes::infra::core::kProtocol,  // Core 0 for BLE
+        .subscribeToWatchdog = false  // OTA can take a long time
+    };
+
+    esp_err_t espErr = taskManager.createTask(config, receiver);
+    if (espErr != ESP_OK) {
+        ESP_LOGE(kTag, "Failed to create BLE OTA task: %s",
+                 esp_err_to_name(espErr));
+        return espErr;
+    }
+
+    ESP_LOGI(kTag, "BLE OTA receiver task started");
+    return ESP_OK;
+}
+
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 /**
  * @brief Initialize WiFi and connect
@@ -514,7 +562,17 @@ extern "C" void app_main() {
         handleOtaVerification();
     }
 
-    // Initialize serial OTA receiver (USB-CDC based)
+    // Initialize BLE OTA service FIRST (before serial takes over console)
+    ESP_LOGI(kTag, ">>> Starting BLE OTA init...");
+    vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
+    if (initBleOta() != ESP_OK) {
+        ESP_LOGW(kTag, "BLE OTA init failed, continuing without BLE OTA");
+    } else {
+        ESP_LOGI(kTag, ">>> BLE OTA init SUCCESS");
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
+
+    // Initialize serial OTA receiver (USB-CDC based) - this takes over console
     if (initSerialOta() != ESP_OK) {
         ESP_LOGW(kTag, "Serial OTA init failed, continuing without serial OTA");
     }
