@@ -210,14 +210,32 @@ graph TD
 
 ## MILESTONE DEFINITIONS
 
+### Status Summary
+
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| M1 | Target Compiles | COMPLETE |
+| M2 | DevKit Boots | COMPLETE |
+| M3 | Debug Infrastructure | COMPLETE |
+| M4 | RF Stacks Validated | Not Started |
+| M5 | Unit Tests Pass | Not Started |
+| M6 | ESP-NOW Latency Validated | Not Started |
+| M7 | Dev PCB Works | Not Started |
+| M8 | 6-Pod Demo | Not Started |
+| M9 | Demo Ready | Not Started |
+
+---
+
 ### M1: Target Compiles
 
-| Check | Method | Pass Criteria |
-|-------|--------|---------------|
-| ESP-IDF installed | `idf.py --version` | Version 5.x |
-| Project scaffolding | Directory structure | Per SOFTWARE_ARCHITECTURE.md |
-| Cross-compile | `idf.py build` | Exit code 0, no errors |
-| Binary size | Check .bin | < 4MB (fits OTA partition) |
+**Status:** COMPLETE (January 2026)
+
+| Check | Method | Pass Criteria | Result |
+|-------|--------|---------------|--------|
+| ESP-IDF installed | `idf.py --version` | Version 5.x | v5.2.2 |
+| Project scaffolding | Directory structure | Per SOFTWARE_ARCHITECTURE.md | Done |
+| Cross-compile | `idf.py build` | Exit code 0, no errors | Pass |
+| Binary size | Check .bin | < 4MB (fits OTA partition) | ~350KB |
 
 **Owner:** Claude
 **Depends On:** Nothing
@@ -227,14 +245,16 @@ graph TD
 
 ### M2: DevKit Boots
 
-| Check | Method | Pass Criteria |
-|-------|--------|---------------|
-| Flash succeeds | `idf.py flash` | Exit code 0 |
-| Boot completes | UART monitor | `app_main` log within 5s |
-| UART parseable | Log regex | Timestamps + levels parse correctly |
-| No crash loops | Monitor 60s | No repeated boot messages |
-| Heap OK | `heap_caps_get_info()` | Free heap > 100KB |
-| PSRAM OK | Log check | `Octal SPI RAM enabled` |
+**Status:** COMPLETE (January 2026)
+
+| Check | Method | Pass Criteria | Result |
+|-------|--------|---------------|--------|
+| Flash succeeds | `idf.py flash` | Exit code 0 | Pass |
+| Boot completes | UART monitor | `app_main` log within 5s | Pass |
+| UART parseable | Log regex | Timestamps + levels parse correctly | Pass |
+| No crash loops | Monitor 60s | No repeated boot messages | Pass |
+| Heap OK | `heap_caps_get_info()` | Free heap > 100KB | Pass |
+| PSRAM OK | Log check | `Octal SPI RAM enabled` | Pass |
 
 **Owner:** Claude (requires DevKit from You)
 **Depends On:** M1, A1 (dev boards ordered/received)
@@ -244,15 +264,20 @@ graph TD
 
 ### M3: Debug Infrastructure
 
-| Check | Method | Pass Criteria |
-|-------|--------|---------------|
-| OpenOCD connects | `openocd -f board/esp32s3-builtin.cfg` | "Listening on port 3333" |
-| GDB connects | `target remote :3333` | Connected, no errors |
-| Breakpoint works | Set BP on `app_main` | Hits breakpoint |
-| Step works | `next`, `step` | Executes, shows source |
-| Variable inspect | `print variable` | Shows correct value |
-| Core dump to flash | Trigger panic via code | Core dump saved |
-| Core dump decode | `idf.py coredump-info` | Stack trace readable |
+**Status:** COMPLETE (January 2026)
+
+| Check | Method | Pass Criteria | Result |
+|-------|--------|---------------|--------|
+| OpenOCD connects | `openocd -f board/esp32s3-builtin.cfg` | "Listening on port 3333" | Pass |
+| GDB connects | `target remote :3333` | Connected, no errors | Pass |
+| Breakpoint works | Set BP on `app_main` | Hits breakpoint | Pass |
+| Step works | `next`, `step` | Executes, shows source | Pass |
+| Variable inspect | `print variable` | Shows correct value | Pass |
+| Core dump to flash | Trigger panic via code | Core dump saved | Pass |
+| Core dump decode | `idf.py coredump-info` | Stack trace readable | Pass |
+| NVS config storage | Boot counter persistence | Increments across reboots | Pass |
+| Task Watchdog (TWDT) | 30-second stability test | No watchdog triggers | Pass |
+| TaskManager | LED demo task via TaskManager | Task runs with watchdog | Pass |
 
 **Owner:** Claude
 **Depends On:** M2
