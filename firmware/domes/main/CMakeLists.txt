@@ -7,6 +7,8 @@ idf_component_register(
         "services/wifiManager.cpp"
         "services/githubClient.cpp"
         "services/otaManager.cpp"
+        "transport/usbCdcTransport.cpp"
+        "transport/serialOtaReceiver.cpp"
     INCLUDE_DIRS
         "."
         "interfaces"
@@ -14,6 +16,7 @@ idf_component_register(
         "infra"
         "services"
         "utils"
+        "transport"
     REQUIRES
         driver
         esp_timer
@@ -27,4 +30,5 @@ idf_component_register(
         json
         app_update
         mbedtls
+        common
 )

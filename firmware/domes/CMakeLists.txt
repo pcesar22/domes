@@ -31,10 +31,11 @@ set(PROJECT_VER "${GIT_VERSION}")
 
 message(STATUS "DOMES firmware version: ${GIT_VERSION}")
 
-# Add components directory if it exists
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/components")
-    set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/components")
-endif()
+# Add components directories
+set(EXTRA_COMPONENT_DIRS
+    "${CMAKE_CURRENT_SOURCE_DIR}/components"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../common"
+)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(domes)
