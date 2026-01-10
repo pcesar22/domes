@@ -52,6 +52,13 @@ idf.py -p /dev/ttyACM0 flash
 
 ## Monitoring Serial Output
 
+### PROHIBITED COMMANDS - NEVER USE ON SERIAL PORTS:
+- `dd` - NEVER use on /dev/ttyACM* or /dev/ttyUSB*
+- `cat` - NEVER use to read serial ports
+- `head`/`tail` - NEVER use on serial devices
+
+### Correct Approach
+
 The `idf.py monitor` command requires a TTY. For non-TTY environments, use Python:
 
 ```python
@@ -154,8 +161,51 @@ idf.py build
 ./scripts/flash_and_verify.sh /home/pncosta/domes/firmware/hello_world /dev/ttyACM0 "Hello"
 ```
 
+## Serial OTA Testing
+
+Test firmware updates via USB-CDC without using esptool flash:
+
+### 1. Build firmware (don't flash)
+```bash
+cd /home/pncosta/domes/firmware/domes
+. ~/esp/esp-idf/export.sh
+idf.py build
+```
+
+### 2. Transfer via OTA sender
+```bash
+/home/pncosta/domes/firmware/host/build/simple_ota_sender \
+    /dev/ttyACM0 \
+    /home/pncosta/domes/firmware/domes/build/domes.bin \
+    v1.0.0
+```
+
+### 3. Verify with serial monitor
+```bash
+python3 .claude/skills/esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0 10
+```
+
+Or reset device and capture boot:
+```python
+import serial, time
+port = serial.Serial('/dev/ttyACM0', 115200, timeout=0.5)
+port.dtr = False; port.rts = True; time.sleep(0.1); port.rts = False
+start = time.time()
+while time.time() - start < 8:
+    data = port.read(1024)
+    if data: print(data.decode('utf-8', errors='replace'), end='')
+port.close()
+```
+
+### Host tool build (if needed)
+```bash
+cd /home/pncosta/domes/firmware/host
+cmake -B build && cd build && make simple_ota_sender
+```
+
 ## Additional References
 
 - **Configuration options**: See [CONFIGS.md](CONFIGS.md) for sdkconfig options, partition tables, and pin mappings
 - **Project firmware guidelines**: See [firmware/GUIDELINES.md](../../firmware/GUIDELINES.md)
 - **ESP-IDF documentation**: https://docs.espressif.com/projects/esp-idf/en/v5.2.2/
+- **OTA architecture**: See `research/architecture/08-ota-updates.md`
