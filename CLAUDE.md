@@ -52,6 +52,15 @@ Provides ESP32 firmware build/flash/monitor commands.
 ### github-workflow
 **Trigger**: Use for GitHub Actions and CI/CD tasks.
 
+## Platform Requirements
+
+**READ FIRST: `.claude/PLATFORM.md`**
+
+- Host machine for BLE testing: **Native Linux only** (Arch, Ubuntu, etc.)
+- Do NOT use WSL2 for BLE - USB passthrough is broken
+- Do NOT use Raspberry Pi - BCM Bluetooth has firmware bugs
+- Recommended BLE adapter: Intel AX200/AX210 or Realtek RTL8761B
+
 ## Best Practices
 
 - Keep commits atomic and well-described
@@ -59,6 +68,7 @@ Provides ESP32 firmware build/flash/monitor commands.
 - Use Claude for exploration, implementation, and documentation
 - Maintain clear documentation for human developers
 - **For debugging**: Always use the debug-esp32 skill and follow its workflow
+- **For BLE testing**: Use native Linux, never WSL2
 
 ## Resources
 
