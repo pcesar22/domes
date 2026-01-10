@@ -20,6 +20,8 @@
 #include "utils/ledAnimator.hpp"
 #include "services/githubClient.hpp"
 #include "services/otaManager.hpp"
+#include "services/wifiManager.hpp"
+#include "secrets.hpp"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -49,6 +51,8 @@ static domes::infra::NvsConfig configStorage;
 static domes::infra::NvsConfig statsStorage;
 static domes::GithubClient* githubClient = nullptr;
 static domes::OtaManager* otaManager = nullptr;
+static domes::WifiManager* wifiManager = nullptr;
+static domes::infra::NvsConfig wifiStorage;
 
 /**
  * @brief LED demo task runner with smooth transitions
@@ -293,6 +297,56 @@ static esp_err_t initOta() {
 }
 
 /**
+ * @brief Initialize WiFi and connect
+ */
+static esp_err_t initWifi() {
+    ESP_LOGI(kTag, "Initializing WiFi...");
+
+    // Open WiFi NVS namespace
+    esp_err_t err = wifiStorage.open(domes::wifi_nvs::kNamespace);
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGW(kTag, "WiFi NVS open warning: %s", esp_err_to_name(err));
+    }
+
+    // Create WiFi manager
+    static domes::WifiManager wifi(wifiStorage);
+    wifiManager = &wifi;
+
+    err = wifiManager->init();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "WiFi init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Connect with credentials from secrets.hpp
+    ESP_LOGI(kTag, "Connecting to WiFi: %s", domes::secrets::kWifiSsid);
+    err = wifiManager->connect(domes::secrets::kWifiSsid,
+                                domes::secrets::kWifiPassword,
+                                true);  // Save to NVS
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "WiFi connect failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Wait for connection (max 30 seconds)
+    for (int i = 0; i < 30 && !wifiManager->isConnected(); i++) {
+        ESP_LOGI(kTag, "Waiting for WiFi... %d/30", i + 1);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    if (wifiManager->isConnected()) {
+        char ip[16];
+        wifiManager->getIpAddress(ip, sizeof(ip));
+        ESP_LOGI(kTag, "WiFi connected! IP: %s, RSSI: %d dBm",
+                 ip, wifiManager->getRssi());
+        return ESP_OK;
+    } else {
+        ESP_LOGE(kTag, "WiFi connection timeout");
+        return ESP_ERR_TIMEOUT;
+    }
+}
+
+/**
  * @brief Initialize the LED strip hardware and animator
  */
 static esp_err_t initLedStrip() {
@@ -383,6 +437,16 @@ extern "C" void app_main() {
         ESP_LOGW(kTag, "LED init failed, continuing without LED");
     }
 
+    // Initialize WiFi (required for OTA)
+    // Enable with: idf.py menuconfig -> DOMES -> Enable automatic WiFi connection
+#if CONFIG_DOMES_WIFI_AUTO_CONNECT
+    if (initWifi() != ESP_OK) {
+        ESP_LOGW(kTag, "WiFi init failed, OTA updates unavailable");
+    }
+#else
+    ESP_LOGI(kTag, "WiFi auto-connect disabled (enable in menuconfig)");
+#endif
+
     // Initialize OTA subsystem
     if (initOta() != ESP_OK) {
         ESP_LOGW(kTag, "OTA init failed, continuing without OTA support");
@@ -429,4 +493,53 @@ extern "C" void app_main() {
     ESP_LOGI(kTag, "Active tasks: %zu", taskManager.getActiveTaskCount());
     ESP_LOGI(kTag, "Free heap: %lu bytes", static_cast<unsigned long>(esp_get_free_heap_size()));
     ESP_LOGI(kTag, "");
+
+    // Check for OTA updates in a separate task (needs large stack for TLS)
+    // Disabled by default - enable with: idf.py menuconfig -> DOMES -> Enable OTA auto-check
+#if CONFIG_DOMES_OTA_AUTO_CHECK
+    if (wifiManager && wifiManager->isConnected() && otaManager) {
+        ESP_LOGI(kTag, "Creating OTA check task...");
+
+        xTaskCreate([](void* param) {
+            ESP_LOGI(kTag, "OTA check task started");
+            ESP_LOGI(kTag, "Checking for firmware updates...");
+
+            domes::OtaCheckResult updateResult;
+            esp_err_t err = otaManager->checkForUpdate(updateResult);
+
+            if (err == ESP_OK) {
+                if (updateResult.updateAvailable) {
+                    ESP_LOGI(kTag, "Update available: v%d.%d.%d -> v%d.%d.%d",
+                             updateResult.currentVersion.major,
+                             updateResult.currentVersion.minor,
+                             updateResult.currentVersion.patch,
+                             updateResult.availableVersion.major,
+                             updateResult.availableVersion.minor,
+                             updateResult.availableVersion.patch);
+                    ESP_LOGI(kTag, "Download URL: %s", updateResult.downloadUrl);
+                    ESP_LOGI(kTag, "Firmware size: %zu bytes", updateResult.firmwareSize);
+
+                    // Start OTA update
+                    ESP_LOGI(kTag, "Starting OTA update...");
+                    err = otaManager->startUpdate(updateResult.downloadUrl,
+                                                  updateResult.sha256[0] ? updateResult.sha256 : nullptr);
+                    if (err != ESP_OK) {
+                        ESP_LOGE(kTag, "OTA update failed to start: %s", esp_err_to_name(err));
+                    }
+                    // If successful, device will reboot
+                } else {
+                    ESP_LOGI(kTag, "Firmware is up to date (v%d.%d.%d)",
+                             updateResult.currentVersion.major,
+                             updateResult.currentVersion.minor,
+                             updateResult.currentVersion.patch);
+                }
+            } else {
+                ESP_LOGW(kTag, "Update check failed: %s", esp_err_to_name(err));
+            }
+
+            ESP_LOGI(kTag, "OTA check task done, deleting self");
+            vTaskDelete(nullptr);
+        }, "ota_check", 16384, nullptr, domes::infra::priority::kLow, nullptr);
+    }
+#endif  // CONFIG_DOMES_OTA_AUTO_CHECK
 }
