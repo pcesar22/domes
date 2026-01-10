@@ -54,6 +54,25 @@ struct Color {
     static constexpr Color orange()    { return {255, 128, 0, 0}; }
     static constexpr Color off()       { return {0, 0, 0, 0}; }
     /// @}
+
+    /**
+     * @brief Linear interpolation between two colors
+     * @param a Start color
+     * @param b End color
+     * @param t Interpolation factor (0=a, 255=b)
+     * @return Interpolated color
+     */
+    static Color lerp(const Color& a, const Color& b, uint8_t t) {
+        auto blend = [](uint8_t x, uint8_t y, uint8_t t) -> uint8_t {
+            return static_cast<uint8_t>(x + ((static_cast<int16_t>(y) - x) * t) / 255);
+        };
+        return {
+            blend(a.r, b.r, t),
+            blend(a.g, b.g, t),
+            blend(a.b, b.b, t),
+            blend(a.w, b.w, t)
+        };
+    }
 };
 
 /**
