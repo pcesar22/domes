@@ -19,25 +19,32 @@ namespace domes::config {
 #ifdef BOARD_DEVKITC1
 
 namespace pins {
-    // Built-in RGB LED (WS2812)
+    // LED Ring (16x SK6812 RGBW on dev board, 1x on bare DevKit)
     // NOTE: DevKitC-1 v1.0 uses GPIO48, v1.1 uses GPIO38
     constexpr gpio_num_t kLedData = GPIO_NUM_38;  // v1.1
-    constexpr uint8_t kLedCount = 1;
+    constexpr uint8_t kLedCount = 16;  // Dev board has 16 LEDs
 
     // Boot button
     constexpr gpio_num_t kButtonBoot = GPIO_NUM_0;
 
-    // Touch test pins (directly touchable on devkit)
+    // Touch pads (T1-T4 on dev board)
     constexpr gpio_num_t kTouch1 = GPIO_NUM_1;
     constexpr gpio_num_t kTouch2 = GPIO_NUM_2;
     constexpr gpio_num_t kTouch3 = GPIO_NUM_3;
     constexpr gpio_num_t kTouch4 = GPIO_NUM_4;
 
-    // I2C (directly touchable on devkit)
+    // IMU interrupt (LIS2DW12 INT1 on dev board)
+    constexpr gpio_num_t kImuInt = GPIO_NUM_5;
+
+    // Audio amp shutdown (MAX98357A SD_MODE on dev board)
+    // LOW = shutdown, HIGH/float = active
+    constexpr gpio_num_t kAmpSd = GPIO_NUM_7;
+
+    // I2C bus (DRV2605L @ 0x5A, LIS2DW12 @ 0x19 on dev board)
     constexpr gpio_num_t kI2cSda = GPIO_NUM_8;
     constexpr gpio_num_t kI2cScl = GPIO_NUM_9;
 
-    // I2S (directly touchable on devkit)
+    // I2S audio (MAX98357A on dev board)
     constexpr gpio_num_t kI2sBclk = GPIO_NUM_12;
     constexpr gpio_num_t kI2sLrclk = GPIO_NUM_11;
     constexpr gpio_num_t kI2sDout = GPIO_NUM_13;
@@ -61,7 +68,14 @@ namespace pins {
     constexpr gpio_num_t kTouch3 = GPIO_NUM_3;
     constexpr gpio_num_t kTouch4 = GPIO_NUM_4;
 
-    // I2C bus (DRV2605L @ 0x5A, LIS2DW12 @ 0x18)
+    // IMU interrupt (LIS2DW12 INT1)
+    constexpr gpio_num_t kImuInt = GPIO_NUM_5;
+
+    // Audio amp shutdown (MAX98357A SD_MODE)
+    // LOW = shutdown, HIGH/float = active
+    constexpr gpio_num_t kAmpSd = GPIO_NUM_7;
+
+    // I2C bus (DRV2605L @ 0x5A, LIS2DW12 @ 0x19)
     constexpr gpio_num_t kI2cSda = GPIO_NUM_8;
     constexpr gpio_num_t kI2cScl = GPIO_NUM_9;
 
@@ -71,7 +85,7 @@ namespace pins {
     constexpr gpio_num_t kI2sDout = GPIO_NUM_13;
 
     // Battery ADC
-    constexpr gpio_num_t kBatteryAdc = GPIO_NUM_5;
+    constexpr gpio_num_t kBatteryAdc = GPIO_NUM_6;
 }
 
 #endif // BOARD_DOMES_V1
