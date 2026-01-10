@@ -1,0 +1,89 @@
+name: Firmware Hardware Test
+
+on:
+  workflow_dispatch:  # Manual trigger only - requires hardware
+    inputs:
+      port:
+        description: 'Serial port (e.g., /dev/ttyACM0)'
+        required: true
+        default: '/dev/ttyACM0'
+
+jobs:
+  serial-ota-test:
+    name: Serial OTA Test
+    runs-on: self-hosted  # Requires runner with ESP32 attached
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify device connected
+        run: |
+          if [ ! -e "${{ inputs.port }}" ]; then
+            echo "::error::Device not found at ${{ inputs.port }}"
+            exit 1
+          fi
+          echo "Device found at ${{ inputs.port }}"
+
+      - name: Build firmware
+        working-directory: firmware/domes
+        run: |
+          . ~/esp/esp-idf/export.sh
+          idf.py build
+
+      - name: Flash initial firmware
+        working-directory: firmware/domes
+        run: |
+          . ~/esp/esp-idf/export.sh
+          idf.py -p ${{ inputs.port }} flash
+          sleep 3  # Wait for device to boot
+
+      - name: Build host OTA tool
+        working-directory: firmware/host
+        run: |
+          cmake -B build
+          cmake --build build --target simple_ota_sender
+
+      - name: Run Serial OTA test
+        run: |
+          echo "Sending firmware via Serial OTA..."
+          firmware/host/build/simple_ota_sender \
+            ${{ inputs.port }} \
+            firmware/domes/build/domes.bin \
+            v0.0.0-ci-test
+
+          echo "OTA transfer complete, verifying device boots..."
+          sleep 5
+
+      - name: Verify device boot
+        run: |
+          python3 -c "
+          import serial
+          import time
+
+          port = serial.Serial('${{ inputs.port }}', 115200, timeout=0.5)
+          port.dtr = False
+          port.rts = True
+          time.sleep(0.1)
+          port.rts = False
+
+          output = ''
+          start = time.time()
+          while time.time() - start < 8:
+              data = port.read(1024)
+              if data:
+                  output += data.decode('utf-8', errors='replace')
+          port.close()
+
+          if 'DOMES Firmware' in output and 'Initialization complete' in output:
+              print('SUCCESS: Device booted correctly after OTA')
+              print('---')
+              for line in output.split('\n')[:30]:
+                  print(line)
+          else:
+              print('FAILURE: Device did not boot correctly')
+              print(output)
+              exit(1)
+          "
