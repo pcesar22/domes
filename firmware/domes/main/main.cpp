@@ -10,6 +10,7 @@
  * - OTA self-test and rollback protection
  */
 
+#include "sdkconfig.h"  // Must be first for CONFIG_* macros
 #include "config.hpp"
 #include "infra/logging.hpp"
 #include "infra/watchdog.hpp"
@@ -20,8 +21,12 @@
 #include "utils/ledAnimator.hpp"
 #include "services/githubClient.hpp"
 #include "services/otaManager.hpp"
+
+// WiFi manager and secrets are only needed when WiFi auto-connect is enabled
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 #include "services/wifiManager.hpp"
 #include "secrets.hpp"
+#endif
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -51,8 +56,11 @@ static domes::infra::NvsConfig configStorage;
 static domes::infra::NvsConfig statsStorage;
 static domes::GithubClient* githubClient = nullptr;
 static domes::OtaManager* otaManager = nullptr;
+
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::WifiManager* wifiManager = nullptr;
 static domes::infra::NvsConfig wifiStorage;
+#endif
 
 /**
  * @brief LED demo task runner with smooth transitions
@@ -296,6 +304,7 @@ static esp_err_t initOta() {
     return ESP_OK;
 }
 
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 /**
  * @brief Initialize WiFi and connect
  */
@@ -345,6 +354,7 @@ static esp_err_t initWifi() {
         return ESP_ERR_TIMEOUT;
     }
 }
+#endif  // CONFIG_DOMES_WIFI_AUTO_CONNECT
 
 /**
  * @brief Initialize the LED strip hardware and animator
@@ -439,7 +449,7 @@ extern "C" void app_main() {
 
     // Initialize WiFi (required for OTA)
     // Enable with: idf.py menuconfig -> DOMES -> Enable automatic WiFi connection
-#if CONFIG_DOMES_WIFI_AUTO_CONNECT
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
     if (initWifi() != ESP_OK) {
         ESP_LOGW(kTag, "WiFi init failed, OTA updates unavailable");
     }
@@ -496,7 +506,7 @@ extern "C" void app_main() {
 
     // Check for OTA updates in a separate task (needs large stack for TLS)
     // Disabled by default - enable with: idf.py menuconfig -> DOMES -> Enable OTA auto-check
-#if CONFIG_DOMES_OTA_AUTO_CHECK
+#if defined(CONFIG_DOMES_OTA_AUTO_CHECK) && defined(CONFIG_DOMES_WIFI_AUTO_CONNECT)
     if (wifiManager && wifiManager->isConnected() && otaManager) {
         ESP_LOGI(kTag, "Creating OTA check task...");
 

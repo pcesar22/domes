@@ -14,11 +14,12 @@ menu "DOMES Configuration"
 
     config DOMES_WIFI_AUTO_CONNECT
         bool "Enable automatic WiFi connection on boot"
-        default y
+        default n
         help
             When enabled, the firmware will automatically connect to WiFi
             using credentials stored in NVS or from secrets.hpp.
 
-            Disable this if you don't need WiFi during development.
+            You must create main/secrets.hpp with your WiFi credentials.
+            See main/secrets.hpp.example for the template.
 
 endmenu
