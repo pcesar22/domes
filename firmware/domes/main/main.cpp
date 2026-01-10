@@ -21,6 +21,8 @@
 #include "utils/ledAnimator.hpp"
 #include "services/githubClient.hpp"
 #include "services/otaManager.hpp"
+#include "transport/usbCdcTransport.hpp"
+#include "transport/serialOtaReceiver.hpp"
 
 // WiFi manager and secrets are only needed when WiFi auto-connect is enabled
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
@@ -56,6 +58,8 @@ static domes::infra::NvsConfig configStorage;
 static domes::infra::NvsConfig statsStorage;
 static domes::GithubClient* githubClient = nullptr;
 static domes::OtaManager* otaManager = nullptr;
+static domes::UsbCdcTransport* usbCdcTransport = nullptr;
+static domes::SerialOtaReceiver* serialOtaReceiver = nullptr;
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::WifiManager* wifiManager = nullptr;
@@ -304,6 +308,51 @@ static esp_err_t initOta() {
     return ESP_OK;
 }
 
+/**
+ * @brief Initialize serial OTA receiver
+ *
+ * Sets up USB-CDC transport and starts the serial OTA receiver task.
+ * This allows OTA updates via USB serial from the host tool.
+ */
+static esp_err_t initSerialOta() {
+    ESP_LOGI(kTag, "Initializing serial OTA receiver...");
+
+    // Create USB-CDC transport
+    static domes::UsbCdcTransport transport;
+    usbCdcTransport = &transport;
+
+    domes::TransportError err = usbCdcTransport->init();
+    if (!domes::isOk(err)) {
+        ESP_LOGE(kTag, "USB-CDC transport init failed: %s",
+                 domes::transportErrorToString(err));
+        return ESP_FAIL;
+    }
+    ESP_LOGI(kTag, "USB-CDC transport initialized");
+
+    // Create serial OTA receiver
+    static domes::SerialOtaReceiver receiver(*usbCdcTransport);
+    serialOtaReceiver = &receiver;
+
+    // Create receiver task
+    domes::infra::TaskConfig config = {
+        .name = "serial_ota",
+        .stackSize = 4096,
+        .priority = domes::infra::priority::kMedium,
+        .coreAffinity = domes::infra::core::kAny,
+        .subscribeToWatchdog = false  // OTA can take a long time
+    };
+
+    esp_err_t espErr = taskManager.createTask(config, receiver);
+    if (espErr != ESP_OK) {
+        ESP_LOGE(kTag, "Failed to create serial OTA task: %s",
+                 esp_err_to_name(espErr));
+        return espErr;
+    }
+
+    ESP_LOGI(kTag, "Serial OTA receiver task started");
+    return ESP_OK;
+}
+
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 /**
  * @brief Initialize WiFi and connect
@@ -465,6 +514,11 @@ extern "C" void app_main() {
         handleOtaVerification();
     }
 
+    // Initialize serial OTA receiver (USB-CDC based)
+    if (initSerialOta() != ESP_OK) {
+        ESP_LOGW(kTag, "Serial OTA init failed, continuing without serial OTA");
+    }
+
     // Quick RGB flash to confirm hardware (using smooth transitions)
     if (ledAnimator) {
         ESP_LOGI(kTag, "Quick RGB test (smooth)...");
@@ -486,7 +540,7 @@ extern "C" void app_main() {
 
         domes::infra::TaskConfig ledConfig = {
             .name = "led_demo",
-            .stackSize = domes::infra::stack::kMinimal,
+            .stackSize = domes::infra::stack::kStandard,  // 4096 - needs more for animations
             .priority = domes::infra::priority::kLow,
             .coreAffinity = domes::infra::core::kAny,
             .subscribeToWatchdog = true
