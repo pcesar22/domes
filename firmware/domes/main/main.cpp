@@ -208,7 +208,7 @@ static esp_err_t performSelfTest() {
             ESP_LOGE(kTag, "Self-test FAIL: LED driver error");
             return ESP_FAIL;
         }
-        ledDriver->show();
+        ledDriver->refresh();
         ESP_LOGI(kTag, "  [PASS] LED driver OK");
     }
 
@@ -245,10 +245,10 @@ static void handleOtaVerification() {
             // Visual indication - green LED
             if (ledDriver) {
                 ledDriver->setPixel(0, domes::Color::green());
-                ledDriver->show();
+                ledDriver->refresh();
                 vTaskDelay(pdMS_TO_TICKS(2000));
                 ledDriver->clear();
-                ledDriver->show();
+                ledDriver->refresh();
             }
         } else {
             ESP_LOGE(kTag, "Failed to confirm firmware: %s", esp_err_to_name(err));
@@ -260,7 +260,7 @@ static void handleOtaVerification() {
         // Visual indication - red LED
         if (ledDriver) {
             ledDriver->setPixel(0, domes::Color::red());
-            ledDriver->show();
+            ledDriver->refresh();
             vTaskDelay(pdMS_TO_TICKS(2000));
         }
 
