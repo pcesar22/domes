@@ -7,6 +7,7 @@
 
 #include "protocol/otaProtocol.hpp"
 #include "protocol/frameCodec.hpp"
+#include "trace/traceProtocol.hpp"
 
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -25,6 +26,7 @@ SerialOtaReceiver::SerialOtaReceiver(ITransport& transport)
     : transport_(transport)
     , stopRequested_(false)
     , otaInProgress_(false)
+    , traceHandler_(std::make_unique<trace::CommandHandler>(transport))
     , otaHandle_(0)
     , updatePartition_(nullptr)
     , firmwareSize_(0)
@@ -57,9 +59,19 @@ void SerialOtaReceiver::run() {
             decoder.feedByte(rxBuf[i]);
 
             if (decoder.isComplete()) {
-                auto msgType = static_cast<OtaMsgType>(decoder.getType());
+                uint8_t msgTypeByte = decoder.getType();
                 const uint8_t* payload = decoder.getPayload();
                 size_t payloadLen = decoder.getPayloadLen();
+
+                // Check if this is a trace command
+                if (trace::isTraceMessage(msgTypeByte)) {
+                    traceHandler_->handleCommand(msgTypeByte, payload, payloadLen);
+                    decoder.reset();
+                    continue;
+                }
+
+                // Handle OTA messages
+                auto msgType = static_cast<OtaMsgType>(msgTypeByte);
 
                 switch (msgType) {
                     case OtaMsgType::kBegin:
@@ -80,7 +92,7 @@ void SerialOtaReceiver::run() {
                         break;
 
                     default:
-                        ESP_LOGW(TAG, "Unknown message type: 0x%02X", decoder.getType());
+                        ESP_LOGW(TAG, "Unknown message type: 0x%02X", msgTypeByte);
                         break;
                 }
 

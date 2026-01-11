@@ -69,6 +69,7 @@ namespace tag {
     constexpr const char* kEspNow    = "espnow";
     constexpr const char* kBle       = "ble";
     constexpr const char* kGame      = "game";
+    constexpr const char* kTrace     = "trace";
 }
 
 } // namespace domes::infra
