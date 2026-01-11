@@ -24,6 +24,8 @@
 #include "transport/usbCdcTransport.hpp"
 #include "transport/serialOtaReceiver.hpp"
 #include "transport/bleOtaService.hpp"
+#include "trace/traceRecorder.hpp"
+#include "trace/traceApi.hpp"
 
 // WiFi manager and secrets are only needed when WiFi auto-connect is enabled
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
@@ -83,6 +85,7 @@ public:
 
     void run() override {
         ESP_LOGI(kTag, "LED demo task started (smooth transitions)");
+        domes::trace::Recorder::registerTask(xTaskGetCurrentTaskHandle(), "led_demo");
 
         static constexpr domes::Color kColors[] = {
             domes::Color::red(),
@@ -113,6 +116,7 @@ public:
         ESP_LOGI(kTag, "LED: %s (transitioning)", kColorNames[0]);
 
         while (shouldRun()) {
+            TRACE_SCOPE(TRACE_ID("LED.Update"), domes::trace::TraceCategory::kLed);
             // Update animator (this refreshes LEDs)
             animator_.update();
 
@@ -123,6 +127,7 @@ public:
                 // In breathing mode
                 if (elapsed >= kBreathingDurationMs) {
                     // Switch to color cycle
+                    TRACE_INSTANT(TRACE_ID("LED.ModeColorCycle"), domes::trace::TraceCategory::kLed);
                     breathingMode = false;
                     modeStartTime = xTaskGetTickCount() * portTICK_PERIOD_MS;
                     animator_.stopBreathing();
@@ -134,6 +139,7 @@ public:
                 // In color cycle mode
                 if (elapsed >= kCycleDurationMs) {
                     // Switch to breathing
+                    TRACE_INSTANT(TRACE_ID("LED.ModeBreathing"), domes::trace::TraceCategory::kLed);
                     breathingMode = true;
                     modeStartTime = xTaskGetTickCount() * portTICK_PERIOD_MS;
                     animator_.startBreathing(domes::Color::cyan(), 2000);
@@ -339,7 +345,7 @@ static esp_err_t initSerialOta() {
     // Create receiver task
     domes::infra::TaskConfig config = {
         .name = "serial_ota",
-        .stackSize = 4096,
+        .stackSize = 8192,  // Increased for trace dump operations
         .priority = domes::infra::priority::kMedium,
         .coreAffinity = domes::infra::core::kAny,
         .subscribeToWatchdog = false  // OTA can take a long time
@@ -531,6 +537,16 @@ extern "C" void app_main() {
     ESP_LOGI(kTag, "  Infrastructure + OTA Layer");
     ESP_LOGI(kTag, "========================================");
     ESP_LOGI(kTag, "");
+
+    // Initialize trace system early
+    esp_err_t traceErr = domes::trace::Recorder::init();
+    if (traceErr == ESP_OK) {
+        domes::trace::Recorder::setEnabled(true);
+        domes::trace::Recorder::registerTask(xTaskGetCurrentTaskHandle(), "main");
+        ESP_LOGI(kTag, "Trace system initialized and enabled");
+    } else {
+        ESP_LOGW(kTag, "Trace init failed: %s", esp_err_to_name(traceErr));
+    }
 
     // Initialize infrastructure first
     if (initInfrastructure() != ESP_OK) {

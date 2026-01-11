@@ -5,15 +5,18 @@
  * @brief OTA receiver task for serial transport
  *
  * Listens for OTA protocol messages on a transport (USB-CDC or UART)
- * and handles firmware updates using the ESP32 OTA APIs.
+ * and handles firmware updates using the ESP32 OTA APIs. Also handles
+ * trace protocol commands for performance profiling.
  */
 
 #include "interfaces/iTransport.hpp"
 #include "interfaces/iTaskRunner.hpp"
+#include "trace/traceCommandHandler.hpp"
 
 #include "esp_ota_ops.h"
 
 #include <atomic>
+#include <memory>
 
 namespace domes {
 
@@ -104,6 +107,9 @@ private:
     ITransport& transport_;
     std::atomic<bool> stopRequested_;
     std::atomic<bool> otaInProgress_;
+
+    // Trace command handler
+    std::unique_ptr<trace::CommandHandler> traceHandler_;
 
     // OTA state
     esp_ota_handle_t otaHandle_;
