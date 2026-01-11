@@ -139,6 +139,54 @@ Pin assignments are in `research/SYSTEM_ARCHITECTURE.md`.
 
 ---
 
+## Performance Tracing
+
+The firmware includes a lightweight tracing framework for post-mortem performance analysis.
+
+### Adding Trace Points
+
+```cpp
+#include "trace/traceApi.hpp"
+
+void myFunction() {
+    // RAII scope trace - begin on entry, end on exit
+    TRACE_SCOPE(TRACE_ID("Module.Function"), domes::trace::TraceCategory::kGame);
+
+    // Manual begin/end
+    TRACE_BEGIN(TRACE_ID("Module.SubOp"), domes::trace::TraceCategory::kGame);
+    doWork();
+    TRACE_END(TRACE_ID("Module.SubOp"), domes::trace::TraceCategory::kGame);
+
+    // Point event
+    TRACE_INSTANT(TRACE_ID("Module.Event"), domes::trace::TraceCategory::kGame);
+
+    // Counter
+    TRACE_COUNTER(TRACE_ID("Module.Value"), value, domes::trace::TraceCategory::kGame);
+}
+```
+
+### Available Categories
+
+`kKernel`, `kTransport`, `kOta`, `kWifi`, `kLed`, `kAudio`, `kTouch`, `kGame`, `kUser`, `kHaptic`, `kBle`, `kNvs`
+
+### Dumping Traces
+
+```bash
+python tools/trace/trace_dump.py -p /dev/ttyACM0 -o trace.json
+# Open trace.json in https://ui.perfetto.dev
+```
+
+### Key Files
+
+- `main/trace/traceApi.hpp` - User macros (`TRACE_SCOPE`, `TRACE_BEGIN`, etc.)
+- `main/trace/traceRecorder.hpp` - Singleton recorder
+- `main/trace/traceEvent.hpp` - 16-byte event struct
+- `tools/trace/trace_dump.py` - Host dump tool
+
+See `research/architecture/07-debugging.md` for full documentation.
+
+---
+
 ## Error Handling
 
 Use ESP-IDF error codes. Check and propagate errors:

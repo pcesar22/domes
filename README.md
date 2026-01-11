@@ -16,11 +16,24 @@ Requires [ESP-IDF v5.x](https://docs.espressif.com/projects/esp-idf/en/latest/es
 
 ```bash
 git clone https://github.com/pcesar22/domes.git
-cd domes/firmware
+cd domes/firmware/domes
 idf.py set-target esp32s3
 idf.py build
 idf.py flash monitor
 ```
+
+## Performance Profiling
+
+The firmware includes a tracing framework for post-mortem performance analysis:
+
+```bash
+# Dump traces from device
+python tools/trace/trace_dump.py -p /dev/ttyACM0 -o trace.json
+
+# Visualize at https://ui.perfetto.dev
+```
+
+See `research/architecture/07-debugging.md` for full documentation.
 
 ## License
 

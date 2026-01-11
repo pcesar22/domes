@@ -52,6 +52,46 @@ Provides ESP32 firmware build/flash/monitor commands.
 ### github-workflow
 **Trigger**: Use for GitHub Actions and CI/CD tasks.
 
+## Performance Tracing
+
+The firmware includes a lightweight tracing framework for performance profiling. Traces are captured to a ring buffer and exported via USB serial in Chrome JSON format for Perfetto visualization.
+
+### Quick Usage
+
+```bash
+# Dump traces
+python tools/trace/trace_dump.py -p /dev/ttyACM0 -o trace.json -n tools/trace/trace_names.json
+
+# Visualize at https://ui.perfetto.dev
+```
+
+### Adding Trace Points
+
+```cpp
+#include "trace/traceApi.hpp"
+
+void myFunction() {
+    // RAII scope trace - automatically records begin/end
+    TRACE_SCOPE(TRACE_ID("MyModule.Function"), domes::trace::TraceCategory::kGame);
+
+    // Point-in-time event
+    TRACE_INSTANT(TRACE_ID("MyModule.Event"), domes::trace::TraceCategory::kGame);
+
+    // Counter value
+    TRACE_COUNTER(TRACE_ID("MyModule.Value"), someValue, domes::trace::TraceCategory::kGame);
+}
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `firmware/domes/main/trace/traceApi.hpp` | User-facing macros |
+| `firmware/domes/main/trace/traceRecorder.hpp` | Singleton recorder |
+| `tools/trace/trace_dump.py` | Host dump/convert tool |
+| `tools/trace/trace_names.json` | Span ID → name mappings |
+| `research/architecture/07-debugging.md` | Full documentation |
+
 ## Platform Requirements
 
 **READ FIRST: `.claude/PLATFORM.md`**

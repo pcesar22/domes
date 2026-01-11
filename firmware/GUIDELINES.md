@@ -204,6 +204,31 @@ esp_log_level_set("haptic", ESP_LOG_DEBUG);  // Per-module
 esp_log_level_set("*", ESP_LOG_INFO);        // Default
 ```
 
+### 6.1 Performance Tracing
+
+For post-mortem performance analysis, use the tracing framework:
+
+```cpp
+#include "trace/traceApi.hpp"
+
+void processGameTick() {
+    // RAII scope trace - begin on entry, end on exit
+    TRACE_SCOPE(TRACE_ID("Game.Tick"), domes::trace::TraceCategory::kGame);
+
+    // Point-in-time events
+    TRACE_INSTANT(TRACE_ID("Game.Hit"), domes::trace::TraceCategory::kGame);
+
+    // Counter values over time
+    TRACE_COUNTER(TRACE_ID("Game.Score"), score, domes::trace::TraceCategory::kGame);
+}
+```
+
+Dump and visualize with Perfetto:
+```bash
+python tools/trace/trace_dump.py -p /dev/ttyACM0 -o trace.json
+# Open trace.json at https://ui.perfetto.dev
+```
+
 ---
 
 ## 7. Integer Types

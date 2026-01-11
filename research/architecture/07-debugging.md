@@ -354,6 +354,132 @@ CONFIG_SPIRAM_SPEED_80M=y
 
 ## Performance Profiling
 
+### Tracing Framework (Perfetto)
+
+The firmware includes a lightweight tracing framework for post-mortem performance analysis. Traces are dumped via USB serial and visualized in [Perfetto](https://ui.perfetto.dev).
+
+#### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      ESP32-S3 Firmware                       │
+├─────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │  App Code    │  │  FreeRTOS    │  │    ISRs      │       │
+│  │ TRACE_SCOPE()│  │  Kernel      │  │              │       │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘       │
+│         │                 │                 │               │
+│         ▼                 ▼                 ▼               │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │         TraceRecorder (32KB ring buffer)             │    │
+│  └─────────────────────────┬───────────────────────────┘    │
+│                            │ USB Serial                      │
+└────────────────────────────┼────────────────────────────────┘
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│  tools/trace/trace_dump.py → trace.json → ui.perfetto.dev  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Adding Trace Points
+
+```cpp
+#include "trace/traceApi.hpp"
+
+void processGameTick() {
+    // Automatic scope tracing (RAII - traces begin/end automatically)
+    TRACE_SCOPE(TRACE_ID("Game.Tick"), domes::trace::TraceCategory::kGame);
+
+    // Manual begin/end for more control
+    TRACE_BEGIN(TRACE_ID("Game.Input"), domes::trace::TraceCategory::kGame);
+    processInput();
+    TRACE_END(TRACE_ID("Game.Input"), domes::trace::TraceCategory::kGame);
+
+    // Instant event (point in time)
+    TRACE_INSTANT(TRACE_ID("Game.HitDetected"), domes::trace::TraceCategory::kGame);
+
+    // Counter value (track numeric values over time)
+    TRACE_COUNTER(TRACE_ID("Game.Score"), score, domes::trace::TraceCategory::kGame);
+}
+```
+
+#### Available Categories
+
+| Category | Usage |
+|----------|-------|
+| `kKernel` | FreeRTOS task switches, ISRs |
+| `kTransport` | Serial, USB communication |
+| `kOta` | OTA updates |
+| `kWifi` | WiFi operations |
+| `kLed` | LED driver, animations |
+| `kAudio` | Audio playback |
+| `kTouch` | Touch sensing |
+| `kGame` | Game logic |
+| `kUser` | User-defined events |
+| `kHaptic` | Haptic feedback |
+| `kBle` | Bluetooth LE |
+| `kNvs` | NVS storage |
+
+#### Dumping Traces
+
+```bash
+# Install dependencies
+pip install pyserial
+
+# Check status
+python tools/trace/trace_dump.py -p /dev/ttyACM0 --status
+
+# Dump traces with human-readable names
+python tools/trace/trace_dump.py -p /dev/ttyACM0 -o trace.json -n tools/trace/trace_names.json
+
+# Control tracing
+python tools/trace/trace_dump.py -p /dev/ttyACM0 --start   # Enable
+python tools/trace/trace_dump.py -p /dev/ttyACM0 --stop    # Disable
+python tools/trace/trace_dump.py -p /dev/ttyACM0 --clear   # Clear buffer
+```
+
+#### Visualizing in Perfetto
+
+1. Open https://ui.perfetto.dev
+2. Click "Open trace file" and select `trace.json`
+3. Navigate timeline with WASD keys
+4. Click events for details
+
+#### Memory Impact
+
+| Component | RAM |
+|-----------|-----|
+| Ring buffer | 32,768 bytes |
+| Recorder state | ~300 bytes |
+| **Total** | **~33 KB** |
+
+#### Adding New Span Names
+
+When adding new trace points, update `tools/trace/trace_names.json`:
+
+```bash
+# Calculate FNV-1a hash for your span name
+python3 -c "
+def fnv1a(s):
+    h = 0x811c9dc5
+    for c in s:
+        h ^= ord(c)
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return h
+print(fnv1a('YourSpan.Name'))
+"
+```
+
+Add the hash and name to `trace_names.json`:
+```json
+{
+  "3254304013": "LED.Update",
+  "1234567890": "YourSpan.Name"
+}
+```
+
+---
+
 ### Task Runtime Stats
 
 ```cpp
