@@ -31,7 +31,7 @@
 │   M3: Debug Infrastructure          │ Validation                             │
 │         │                           │ (MUST pass before                      │
 │         ▼                           │  investing in unit tests)              │
-│   M4: RF Stacks Validated ──────────┘                                        │
+│   M4: RF Stacks Init ───────────────┘                                        │
 │         │                                                                    │
 │         ▼                                                                    │
 │   M5: Unit Tests Pass (host)                                                 │
@@ -52,10 +52,10 @@
 ```
 
 **Rationale for Sequence:**
-1. RF stacks (WiFi/BT) are highest risk - validate first
-2. Debug infrastructure is foundational - every future bug depends on it
+1. Debug infrastructure is foundational - every future bug depends on it
+2. RF stack *init* is low-risk on ESP32-S3 - coexistence issues only manifest under sustained concurrent load
 3. Unit tests are more valuable when target is proven to work
-4. CI catches regressions only if foundation is solid
+4. Real RF coexistence validation happens during integration (M7/M8) with actual game traffic
 
 ---
 
@@ -83,7 +83,6 @@ graph TD
         B5[Validate Core Dump]
         B6[Init WiFi Stack]
         B7[Init BLE Stack]
-        B8[Validate Coexistence]
         B9[ESP-NOW Latency Test]
     end
 
@@ -127,7 +126,7 @@ graph TD
         M1((M1: Target<br/>Compiles))
         M2((M2: DevKit<br/>Boots))
         M3((M3: Debug<br/>Infra))
-        M4((M4: RF<br/>Validated))
+        M4((M4: RF<br/>Init))
         M5((M5: Unit<br/>Tests))
         M6((M6: ESP-NOW<br/>Latency))
         M7((M7: Dev PCB<br/>Works))
@@ -146,8 +145,7 @@ graph TD
     B5 --> M3
     M3 --> B6
     B6 --> B7
-    B7 --> B8
-    B8 --> M4
+    B7 --> M4
 
     %% Unit Tests (after system validation)
     M4 --> C1
@@ -217,7 +215,7 @@ graph TD
 | M1 | Target Compiles | COMPLETE |
 | M2 | DevKit Boots | COMPLETE |
 | M3 | Debug Infrastructure | COMPLETE |
-| M4 | RF Stacks Validated | Not Started |
+| M4 | RF Stacks Init | Not Started |
 | M5 | Unit Tests Pass | Not Started |
 | M6 | ESP-NOW Latency Validated | Not Started |
 | M7 | Dev PCB Works | Not Started |
@@ -285,22 +283,22 @@ graph TD
 
 ---
 
-### M4: RF Stacks Validated
+### M4: RF Stacks Init
 
 | Check | Method | Pass Criteria |
 |-------|--------|---------------|
 | WiFi init | UART log | `wifi:mode : sta`, no errors |
-| WiFi scan | Code | Finds nearby APs |
 | BLE init | UART log | `NimBLE: GAP` init, no errors |
 | BLE advertise | nRF Connect app | Device visible |
-| Coexistence mode | UART log | `coex: enabled`, no errors |
-| Both active | Simultaneous | WiFi scan + BLE advertise work together |
-| No RF errors | 5 min soak | No `coex` warnings/errors |
 | Memory stable | heap check | No leak after WiFi+BLE init |
 
 **Owner:** Claude
 **Depends On:** M3
 **Blocks:** M5, M6
+
+**Note:** WiFi stack is only initialized as a dependency for ESP-NOW (direct P2P radio).
+We don't connect to any AP or use WiFi networking. OTA updates are done via BLE.
+Full RF validation happens during M7/M8 integration with actual game traffic.
 
 ---
 
@@ -366,10 +364,15 @@ graph TD
 | Touch response | Hit each pod | < 50ms visual feedback |
 | Audio sync | Listen | No noticeable delay |
 | 10 min soak | Run drills | No crashes, no desyncs |
+| RF coexistence | BLE + ESP-NOW | No packet loss under game load |
 
 **Owner:** Claude + You
 **Depends On:** M7
 **Blocks:** M9, A8 (form-factor design)
+
+**Note:** This is where real RF coexistence validation happens - with actual game traffic
+patterns (ESP-NOW mesh active, BLE connected to phone, sustained drill sequences).
+If issues surface here, tune BLE scan params per Espressif guidelines.
 
 ---
 
@@ -545,8 +548,7 @@ sudo ./svc.sh start
 | **B4: Validate GDB Debugging** | M2 | B5 | Breakpoints work |
 | **B5: Validate Core Dump** | B4 | M3 | Panic decoded correctly |
 | **B6: Init WiFi Stack** | M3 | B7 | `wifi:mode` in logs |
-| **B7: Init BLE Stack** | B6 | B8 | `NimBLE` init OK |
-| **B8: Validate Coexistence** | B7 | M4 | Both stacks active |
+| **B7: Init BLE Stack** | B6 | M4 | `NimBLE` init OK |
 | **B9: ESP-NOW Latency Test** | M4 | M6 | P95 < 2ms |
 
 ### Track C: Unit Tests (Claude + Host)
@@ -598,7 +600,7 @@ sudo ./svc.sh start
 ## CRITICAL PATH
 
 ```
-A1 (Order DevKits) ──► B2 (Flash) ──► B3-B8 (System Validation) ──► M4
+A1 (Order DevKits) ──► B2 (Flash) ──► B3-B7 (System Validation) ──► M4
                                                                       │
 ┌─────────────────────────────────────────────────────────────────────┘
 │
@@ -614,7 +616,7 @@ C1-C4 (Unit Tests) ──► M5 ──► E1-E7 (Application) ──► F1 ◄�
 
 **Bottlenecks:**
 1. A1 (Dev boards) - blocks all hardware validation
-2. M4 (RF validated) - gates unit test development
+2. M4 (RF init) - gates unit test development (low risk, just needs hardware)
 3. A7 (PCB assembly) - blocks integration
 
 ---
@@ -636,7 +638,7 @@ A3: Design schematic                    │
         │                        B3: Validate UART
         │                        B4: Validate GDB
         │                        B5: Validate core dump
-        │                        B6-B8: RF stacks ────► M4
+        │                        B6-B7: RF stacks init ► M4
         │                               │
         ▼                               ▼
 A5: PCB Layout               C1-C4: Unit tests ────► M5
@@ -666,10 +668,10 @@ A10: Assemble ─────────────────► F5-F6 ─�
 
 ## DECISION GATES
 
-### Gate 1: After M4 (RF Validated)
-**Question:** Do WiFi/BLE/ESP-NOW coexist reliably?
+### Gate 1: After M4 (RF Init)
+**Question:** Do WiFi and BLE stacks initialize without errors?
 - ✅ Yes → Proceed with unit tests and drivers
-- ❌ No → Debug RF issues before investing in more code
+- ❌ No → Debug RF init issues (likely sdkconfig or partition table)
 
 ### Gate 2: After M6 (ESP-NOW Latency)
 **Question:** Is ESP-NOW latency acceptable (P95 < 2ms)?
@@ -692,13 +694,18 @@ A10: Assemble ─────────────────► F5-F6 ─�
 
 | Risk | Probability | Impact | Mitigation |
 |------|-------------|--------|------------|
-| RF coexistence fails | Low | High | Early M4 validation; fallback to BLE-only |
+| RF coexistence under load | Low | Medium | ESP32-S3 STA+BLE is stable per Espressif; tune BLE scan params if needed |
 | DevKit delayed | Medium | Medium | Order from multiple suppliers |
 | PCB layout errors | Medium | Medium | Careful review; dev PCB is throwaway |
 | CI DevKit flaky | Medium | Low | Retry logic; manual fallback |
 | Touch through diffuser | Low | Medium | Test materials early |
+| ESP-NOW latency spikes | Low | High | Validate P99 < 5ms; fallback to time-sliced BLE if needed |
+
+**Note on RF coexistence:** Init code is low-risk. Real issues surface under sustained load
+with specific patterns (e.g., BLE scan window = scan interval starves WiFi). These are
+config issues, not fundamental blockers. Validated during M7/M8 integration.
 
 ---
 
-*Document Updated: 2026-01-03*
+*Document Updated: 2026-01-11*
 *Project: DOMES*
