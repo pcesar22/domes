@@ -29,9 +29,9 @@ jobs:
         run: |
           mkdir -p build
           cd build
-          cmake -DIDF_TARGET= ..
-          make
+          cmake ..
+          make -j$(nproc)
 
       - name: Run tests
         working-directory: firmware/test_app/build
-        run: ./test_app
+        run: ctest --output-on-failure

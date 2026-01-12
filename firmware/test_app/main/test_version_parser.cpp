@@ -3,7 +3,7 @@
  * @brief Unit tests for firmware version parsing
  */
 
-#include "unity.h"
+#include <gtest/gtest.h>
 
 #include <cstring>
 #include <cstdint>
@@ -96,149 +96,149 @@ using namespace domes;
 // parseVersion Tests
 // =============================================================================
 
-extern "C" void test_parseVersion_handles_simple_version(void) {
+TEST(ParseVersion, HandlesSimpleVersion) {
     FirmwareVersion v = parseVersion("v1.2.3");
 
-    TEST_ASSERT_EQUAL_UINT8(1, v.major);
-    TEST_ASSERT_EQUAL_UINT8(2, v.minor);
-    TEST_ASSERT_EQUAL_UINT8(3, v.patch);
-    TEST_ASSERT_FALSE(v.dirty);
-    TEST_ASSERT_EQUAL_STRING("", v.gitHash);
+    EXPECT_EQ(1, v.major);
+    EXPECT_EQ(2, v.minor);
+    EXPECT_EQ(3, v.patch);
+    EXPECT_FALSE(v.dirty);
+    EXPECT_STREQ("", v.gitHash);
 }
 
-extern "C" void test_parseVersion_handles_version_without_v_prefix(void) {
+TEST(ParseVersion, HandlesVersionWithoutVPrefix) {
     FirmwareVersion v = parseVersion("1.2.3");
 
-    TEST_ASSERT_EQUAL_UINT8(1, v.major);
-    TEST_ASSERT_EQUAL_UINT8(2, v.minor);
-    TEST_ASSERT_EQUAL_UINT8(3, v.patch);
+    EXPECT_EQ(1, v.major);
+    EXPECT_EQ(2, v.minor);
+    EXPECT_EQ(3, v.patch);
 }
 
-extern "C" void test_parseVersion_handles_dirty_flag(void) {
+TEST(ParseVersion, HandlesDirtyFlag) {
     FirmwareVersion v = parseVersion("v1.2.3-dirty");
 
-    TEST_ASSERT_EQUAL_UINT8(1, v.major);
-    TEST_ASSERT_EQUAL_UINT8(2, v.minor);
-    TEST_ASSERT_EQUAL_UINT8(3, v.patch);
-    TEST_ASSERT_TRUE(v.dirty);
+    EXPECT_EQ(1, v.major);
+    EXPECT_EQ(2, v.minor);
+    EXPECT_EQ(3, v.patch);
+    EXPECT_TRUE(v.dirty);
 }
 
-extern "C" void test_parseVersion_handles_git_describe_output(void) {
+TEST(ParseVersion, HandlesGitDescribeOutput) {
     FirmwareVersion v = parseVersion("v1.2.3-5-ga1b2c3d");
 
-    TEST_ASSERT_EQUAL_UINT8(1, v.major);
-    TEST_ASSERT_EQUAL_UINT8(2, v.minor);
-    TEST_ASSERT_EQUAL_UINT8(3, v.patch);
-    TEST_ASSERT_FALSE(v.dirty);
-    TEST_ASSERT_EQUAL_STRING("a1b2c3d", v.gitHash);
+    EXPECT_EQ(1, v.major);
+    EXPECT_EQ(2, v.minor);
+    EXPECT_EQ(3, v.patch);
+    EXPECT_FALSE(v.dirty);
+    EXPECT_STREQ("a1b2c3d", v.gitHash);
 }
 
-extern "C" void test_parseVersion_handles_git_describe_with_dirty(void) {
+TEST(ParseVersion, HandlesGitDescribeWithDirty) {
     FirmwareVersion v = parseVersion("v1.2.3-5-ga1b2c3d-dirty");
 
-    TEST_ASSERT_EQUAL_UINT8(1, v.major);
-    TEST_ASSERT_EQUAL_UINT8(2, v.minor);
-    TEST_ASSERT_EQUAL_UINT8(3, v.patch);
-    TEST_ASSERT_TRUE(v.dirty);
-    TEST_ASSERT_EQUAL_STRING("a1b2c3d", v.gitHash);
+    EXPECT_EQ(1, v.major);
+    EXPECT_EQ(2, v.minor);
+    EXPECT_EQ(3, v.patch);
+    EXPECT_TRUE(v.dirty);
+    EXPECT_STREQ("a1b2c3d", v.gitHash);
 }
 
-extern "C" void test_parseVersion_handles_zero_version(void) {
+TEST(ParseVersion, HandlesZeroVersion) {
     FirmwareVersion v = parseVersion("v0.0.0");
 
-    TEST_ASSERT_EQUAL_UINT8(0, v.major);
-    TEST_ASSERT_EQUAL_UINT8(0, v.minor);
-    TEST_ASSERT_EQUAL_UINT8(0, v.patch);
+    EXPECT_EQ(0, v.major);
+    EXPECT_EQ(0, v.minor);
+    EXPECT_EQ(0, v.patch);
 }
 
-extern "C" void test_parseVersion_handles_large_version_numbers(void) {
+TEST(ParseVersion, HandlesLargeVersionNumbers) {
     FirmwareVersion v = parseVersion("v255.255.255");
 
-    TEST_ASSERT_EQUAL_UINT8(255, v.major);
-    TEST_ASSERT_EQUAL_UINT8(255, v.minor);
-    TEST_ASSERT_EQUAL_UINT8(255, v.patch);
+    EXPECT_EQ(255, v.major);
+    EXPECT_EQ(255, v.minor);
+    EXPECT_EQ(255, v.patch);
 }
 
-extern "C" void test_parseVersion_handles_null_input(void) {
+TEST(ParseVersion, HandlesNullInput) {
     FirmwareVersion v = parseVersion(nullptr);
 
-    TEST_ASSERT_EQUAL_UINT8(0, v.major);
-    TEST_ASSERT_EQUAL_UINT8(0, v.minor);
-    TEST_ASSERT_EQUAL_UINT8(0, v.patch);
+    EXPECT_EQ(0, v.major);
+    EXPECT_EQ(0, v.minor);
+    EXPECT_EQ(0, v.patch);
 }
 
-extern "C" void test_parseVersion_handles_empty_string(void) {
+TEST(ParseVersion, HandlesEmptyString) {
     FirmwareVersion v = parseVersion("");
 
-    TEST_ASSERT_EQUAL_UINT8(0, v.major);
-    TEST_ASSERT_EQUAL_UINT8(0, v.minor);
-    TEST_ASSERT_EQUAL_UINT8(0, v.patch);
+    EXPECT_EQ(0, v.major);
+    EXPECT_EQ(0, v.minor);
+    EXPECT_EQ(0, v.patch);
 }
 
-extern "C" void test_parseVersion_handles_invalid_format(void) {
+TEST(ParseVersion, HandlesInvalidFormat) {
     FirmwareVersion v = parseVersion("not-a-version");
 
-    TEST_ASSERT_EQUAL_UINT8(0, v.major);
-    TEST_ASSERT_EQUAL_UINT8(0, v.minor);
-    TEST_ASSERT_EQUAL_UINT8(0, v.patch);
+    EXPECT_EQ(0, v.major);
+    EXPECT_EQ(0, v.minor);
+    EXPECT_EQ(0, v.patch);
 }
 
 // =============================================================================
 // Version Comparison Tests
 // =============================================================================
 
-extern "C" void test_FirmwareVersion_compare_equal_versions(void) {
+TEST(FirmwareVersionCompare, EqualVersions) {
     FirmwareVersion v1 = parseVersion("v1.2.3");
     FirmwareVersion v2 = parseVersion("v1.2.3");
 
-    TEST_ASSERT_EQUAL_INT(0, v1.compare(v2));
+    EXPECT_EQ(0, v1.compare(v2));
 }
 
-extern "C" void test_FirmwareVersion_compare_major_difference(void) {
+TEST(FirmwareVersionCompare, MajorDifference) {
     FirmwareVersion v1 = parseVersion("v1.0.0");
     FirmwareVersion v2 = parseVersion("v2.0.0");
 
-    TEST_ASSERT_TRUE(v1.compare(v2) < 0);
-    TEST_ASSERT_TRUE(v2.compare(v1) > 0);
+    EXPECT_LT(v1.compare(v2), 0);
+    EXPECT_GT(v2.compare(v1), 0);
 }
 
-extern "C" void test_FirmwareVersion_compare_minor_difference(void) {
+TEST(FirmwareVersionCompare, MinorDifference) {
     FirmwareVersion v1 = parseVersion("v1.2.0");
     FirmwareVersion v2 = parseVersion("v1.3.0");
 
-    TEST_ASSERT_TRUE(v1.compare(v2) < 0);
-    TEST_ASSERT_TRUE(v2.compare(v1) > 0);
+    EXPECT_LT(v1.compare(v2), 0);
+    EXPECT_GT(v2.compare(v1), 0);
 }
 
-extern "C" void test_FirmwareVersion_compare_patch_difference(void) {
+TEST(FirmwareVersionCompare, PatchDifference) {
     FirmwareVersion v1 = parseVersion("v1.2.3");
     FirmwareVersion v2 = parseVersion("v1.2.4");
 
-    TEST_ASSERT_TRUE(v1.compare(v2) < 0);
-    TEST_ASSERT_TRUE(v2.compare(v1) > 0);
+    EXPECT_LT(v1.compare(v2), 0);
+    EXPECT_GT(v2.compare(v1), 0);
 }
 
-extern "C" void test_FirmwareVersion_isUpdateAvailable(void) {
+TEST(FirmwareVersionCompare, IsUpdateAvailable) {
     FirmwareVersion current = parseVersion("v1.0.0");
     FirmwareVersion newer = parseVersion("v1.0.1");
     FirmwareVersion older = parseVersion("v0.9.9");
     FirmwareVersion same = parseVersion("v1.0.0");
 
-    TEST_ASSERT_TRUE(current.isUpdateAvailable(newer));
-    TEST_ASSERT_FALSE(current.isUpdateAvailable(older));
-    TEST_ASSERT_FALSE(current.isUpdateAvailable(same));
+    EXPECT_TRUE(current.isUpdateAvailable(newer));
+    EXPECT_FALSE(current.isUpdateAvailable(older));
+    EXPECT_FALSE(current.isUpdateAvailable(same));
 }
 
-extern "C" void test_FirmwareVersion_compare_ignores_dirty_flag(void) {
+TEST(FirmwareVersionCompare, IgnoresDirtyFlag) {
     FirmwareVersion clean = parseVersion("v1.0.0");
     FirmwareVersion dirty = parseVersion("v1.0.0-dirty");
 
-    TEST_ASSERT_EQUAL_INT(0, clean.compare(dirty));
+    EXPECT_EQ(0, clean.compare(dirty));
 }
 
-extern "C" void test_FirmwareVersion_compare_ignores_git_hash(void) {
+TEST(FirmwareVersionCompare, IgnoresGitHash) {
     FirmwareVersion v1 = parseVersion("v1.0.0-5-ga1b2c3d");
     FirmwareVersion v2 = parseVersion("v1.0.0-10-gx9y8z7w");
 
-    TEST_ASSERT_EQUAL_INT(0, v1.compare(v2));
+    EXPECT_EQ(0, v1.compare(v2));
 }

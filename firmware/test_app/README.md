@@ -1,15 +1,20 @@
 # DOMES Unit Tests
 
-Standalone unit test application for the DOMES firmware protocol layer.
+Standalone unit test application for the DOMES firmware protocol layer using GoogleTest.
 
 ## Quick Start
 
 ```bash
 cd firmware/test_app
 mkdir -p build && cd build
-cmake -DIDF_TARGET= ..
+cmake ..
 make
 ./test_app
+```
+
+Or run with CTest for detailed output:
+```bash
+ctest --output-on-failure
 ```
 
 ## Test Suites
@@ -29,12 +34,16 @@ Tests run on the host (Linux/macOS) without ESP-IDF dependencies. The `common/` 
 - ESP-IDF component mode (when `IDF_TARGET` is set)
 - Standard CMake library mode (for host testing)
 
+GoogleTest is fetched automatically via CMake FetchContent.
+
 ## Adding New Tests
 
 1. Create `main/test_<module>.cpp` with test functions:
    ```cpp
-   extern "C" void test_MyModule_does_something(void) {
-       TEST_ASSERT_EQUAL(expected, actual);
+   #include <gtest/gtest.h>
+
+   TEST(MyModule, DoesSomething) {
+       EXPECT_EQ(expected, actual);
    }
    ```
 
@@ -46,12 +55,7 @@ Tests run on the host (Linux/macOS) without ESP-IDF dependencies. The `common/` 
    )
    ```
 
-3. Register in `main/test_main_standalone.cpp`:
-   ```cpp
-   extern "C" void test_MyModule_does_something(void);
-   // ...
-   RUN_TEST(test_MyModule_does_something);
-   ```
+Tests are auto-discovered by GoogleTest - no manual registration needed.
 
 ## CI Integration
 
