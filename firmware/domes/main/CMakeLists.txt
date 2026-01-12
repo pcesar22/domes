@@ -10,6 +10,8 @@ idf_component_register(
         "transport/usbCdcTransport.cpp"
         "transport/serialOtaReceiver.cpp"
         "transport/bleOtaService.cpp"
+        "transport/tcpTransport.cpp"
+        "transport/tcpConfigServer.cpp"
         "trace/traceBuffer.cpp"
         "trace/traceRecorder.cpp"
         "trace/traceHooks.cpp"

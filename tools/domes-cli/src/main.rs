@@ -1,9 +1,13 @@
 //! DOMES CLI - Runtime configuration tool for DOMES firmware
 //!
-//! Usage:
+//! Usage (Serial):
 //!   domes-cli --port /dev/ttyACM0 feature list
 //!   domes-cli --port /dev/ttyACM0 feature enable led-effects
 //!   domes-cli --port /dev/ttyACM0 feature disable ble
+//!
+//! Usage (WiFi):
+//!   domes-cli --wifi 192.168.1.100:5000 feature list
+//!   domes-cli --wifi 192.168.1.100:5000 feature enable led-effects
 
 mod commands;
 mod protocol;
@@ -11,7 +15,7 @@ mod transport;
 
 use clap::{Parser, Subcommand};
 use protocol::Feature;
-use transport::SerialTransport;
+use transport::{SerialTransport, TcpTransport, Transport};
 
 #[derive(Parser)]
 #[command(name = "domes-cli")]
@@ -20,6 +24,10 @@ struct Cli {
     /// Serial port to connect to (e.g., /dev/ttyACM0, COM3)
     #[arg(short, long)]
     port: Option<String>,
+
+    /// WiFi address to connect to (e.g., 192.168.1.100:5000)
+    #[arg(short, long)]
+    wifi: Option<String>,
 
     /// List available serial ports
     #[arg(long)]
@@ -73,24 +81,32 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Commands require a port
+    // Commands require a transport (port or wifi)
     let Some(command) = cli.command else {
         eprintln!("No command specified. Use --help for usage.");
         std::process::exit(1);
     };
 
-    let Some(port) = cli.port else {
-        eprintln!("No port specified. Use --port <PORT> or --list-ports to see available ports.");
+    // Create transport based on connection type
+    let mut transport: Box<dyn Transport> = if let Some(wifi_addr) = cli.wifi {
+        // WiFi/TCP transport
+        println!("Connecting to {} via WiFi...", wifi_addr);
+        let tcp = TcpTransport::connect(&wifi_addr)?;
+        println!("Connected to {}", tcp.peer_addr()?);
+        Box::new(tcp)
+    } else if let Some(port) = cli.port {
+        // Serial transport
+        Box::new(SerialTransport::open(&port)?)
+    } else {
+        eprintln!("No transport specified. Use --port <PORT> or --wifi <IP:PORT>");
+        eprintln!("Use --list-ports to see available serial ports.");
         std::process::exit(1);
     };
-
-    // Open serial connection
-    let mut transport = SerialTransport::open(&port)?;
 
     match command {
         Commands::Feature { action } => match action {
             FeatureAction::List => {
-                let features = commands::feature_list(&mut transport)?;
+                let features = commands::feature_list(transport.as_mut())?;
 
                 println!("Features:");
                 println!("{:<16} {}", "NAME", "STATUS");
@@ -107,7 +123,7 @@ fn main() -> anyhow::Result<()> {
                     .parse()
                     .map_err(|_| anyhow::anyhow!("Unknown feature: {}", feature))?;
 
-                let state = commands::feature_enable(&mut transport, feature)?;
+                let state = commands::feature_enable(transport.as_mut(), feature)?;
                 println!(
                     "Feature '{}' is now {}",
                     state.feature.name(),
@@ -120,7 +136,7 @@ fn main() -> anyhow::Result<()> {
                     .parse()
                     .map_err(|_| anyhow::anyhow!("Unknown feature: {}", feature))?;
 
-                let state = commands::feature_disable(&mut transport, feature)?;
+                let state = commands::feature_disable(transport.as_mut(), feature)?;
                 println!(
                     "Feature '{}' is now {}",
                     state.feature.name(),

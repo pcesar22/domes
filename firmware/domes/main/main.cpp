@@ -18,6 +18,7 @@
 #include "trace/traceRecorder.hpp"
 #include "transport/bleOtaService.hpp"
 #include "transport/serialOtaReceiver.hpp"
+#include "transport/tcpConfigServer.hpp"
 #include "transport/usbCdcTransport.hpp"
 
 // WiFi manager and secrets are only needed when WiFi auto-connect is enabled
@@ -63,6 +64,7 @@ static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaR
 static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+static domes::TcpConfigServer* tcpConfigServer = nullptr;  // WiFi config server
 static domes::WifiManager* wifiManager = nullptr;
 static domes::infra::NvsConfig wifiStorage;
 #endif
@@ -198,6 +200,18 @@ static esp_err_t initOta() {
 }
 
 /**
+ * @brief Initialize feature manager for runtime config
+ *
+ * Must be called before TCP config server and serial OTA receiver,
+ * as both use the feature manager.
+ */
+static void initFeatureManager() {
+    static domes::config::FeatureManager features;
+    featureManager = &features;
+    ESP_LOGI(kTag, "Feature manager initialized");
+}
+
+/**
  * @brief Initialize serial OTA receiver
  *
  * Sets up USB-CDC transport and starts the serial OTA receiver task.
@@ -216,10 +230,6 @@ static esp_err_t initSerialOta() {
         return ESP_FAIL;
     }
     ESP_LOGI(kTag, "USB-CDC transport initialized");
-
-    // Create feature manager for runtime config
-    static domes::config::FeatureManager features;
-    featureManager = &features;
 
     // Create serial OTA receiver with config support
     static domes::SerialOtaReceiver receiver(*usbCdcTransport, featureManager);
@@ -287,6 +297,47 @@ static esp_err_t initBleOta() {
     ESP_LOGI(kTag, "BLE OTA receiver task started");
     return ESP_OK;
 }
+
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+/**
+ * @brief Initialize TCP config server
+ *
+ * Starts the TCP config server for WiFi-based runtime configuration.
+ * Requires featureManager to be initialized first.
+ */
+static esp_err_t initTcpConfigServer() {
+    if (!featureManager) {
+        ESP_LOGE(kTag, "Cannot init TCP config server: featureManager not initialized");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(kTag, "Initializing TCP config server on port %u...",
+             domes::kConfigServerPort);
+
+    // Create TCP config server
+    static domes::TcpConfigServer server(*featureManager, domes::kConfigServerPort);
+    tcpConfigServer = &server;
+
+    // Create server task
+    domes::infra::TaskConfig config = {
+        .name = "tcp_config",
+        .stackSize = 4096,
+        .priority = domes::infra::priority::kMedium,
+        .coreAffinity = domes::infra::core::kProtocol,  // Core 0 with WiFi
+        .subscribeToWatchdog = false  // Server may block on accept
+    };
+
+    esp_err_t err = taskManager.createTask(config, server);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Failed to create TCP config server task: %s",
+                 esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(kTag, "TCP config server started on port %u", domes::kConfigServerPort);
+    return ESP_OK;
+}
+#endif  // CONFIG_DOMES_WIFI_AUTO_CONNECT
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 /**
@@ -500,6 +551,21 @@ extern "C" void app_main() {
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
 
     vTaskDelay(pdMS_TO_TICKS(500));  // Let BLE settle
+
+    // Initialize feature manager (needed by both TCP config server and serial OTA)
+    initFeatureManager();
+
+    // Initialize TCP config server (WiFi-based config) - BEFORE serial OTA takes console
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+    if (wifiManager && wifiManager->isConnected()) {
+        ESP_LOGI(kTag, "WiFi connected, starting TCP config server...");
+        if (initTcpConfigServer() != ESP_OK) {
+            ESP_LOGW(kTag, "TCP config server init failed");
+        }
+    } else {
+        ESP_LOGI(kTag, "TCP config server not started (WiFi not connected)");
+    }
+#endif
 
     // Initialize serial OTA receiver (USB-CDC based) - this takes over console
     if (initSerialOta() != ESP_OK) {
