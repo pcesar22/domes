@@ -4,16 +4,15 @@
  */
 
 #include "infra/nvsConfig.hpp"
-#include "infra/logging.hpp"
 
+#include "infra/logging.hpp"
 #include "nvs_flash.h"
 
 static constexpr const char* kTag = domes::infra::tag::kNvs;
 
 namespace domes::infra {
 
-NvsConfig::NvsConfig() : handle_(0), isOpen_(false) {
-}
+NvsConfig::NvsConfig() : handle_(0), isOpen_(false) {}
 
 NvsConfig::~NvsConfig() {
     close();
@@ -192,7 +191,7 @@ esp_err_t NvsConfig::eraseKey(const char* key) {
 
 // Template specializations for getOrDefault
 
-template<>
+template <>
 uint8_t NvsConfig::getOrDefault<uint8_t>(const char* key, uint8_t defaultValue) const {
     uint8_t value = defaultValue;
     esp_err_t err = getU8(key, value);
@@ -202,7 +201,7 @@ uint8_t NvsConfig::getOrDefault<uint8_t>(const char* key, uint8_t defaultValue) 
     return value;
 }
 
-template<>
+template <>
 uint16_t NvsConfig::getOrDefault<uint16_t>(const char* key, uint16_t defaultValue) const {
     uint16_t value = defaultValue;
     esp_err_t err = getU16(key, value);
@@ -212,7 +211,7 @@ uint16_t NvsConfig::getOrDefault<uint16_t>(const char* key, uint16_t defaultValu
     return value;
 }
 
-template<>
+template <>
 uint32_t NvsConfig::getOrDefault<uint32_t>(const char* key, uint32_t defaultValue) const {
     uint32_t value = defaultValue;
     esp_err_t err = getU32(key, value);
@@ -222,7 +221,7 @@ uint32_t NvsConfig::getOrDefault<uint32_t>(const char* key, uint32_t defaultValu
     return value;
 }
 
-template<>
+template <>
 int32_t NvsConfig::getOrDefault<int32_t>(const char* key, int32_t defaultValue) const {
     int32_t value = defaultValue;
     esp_err_t err = getI32(key, value);
@@ -232,4 +231,4 @@ int32_t NvsConfig::getOrDefault<int32_t>(const char* key, int32_t defaultValue) 
     return value;
 }
 
-} // namespace domes::infra
+}  // namespace domes::infra

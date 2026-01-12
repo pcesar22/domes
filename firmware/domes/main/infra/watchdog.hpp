@@ -143,4 +143,4 @@ private:
     bool subscribed_;
 };
 
-} // namespace domes::infra
+}  // namespace domes::infra

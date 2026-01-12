@@ -20,18 +20,18 @@ namespace domes::trace {
  * Stored in upper 4 bits of TraceEvent::flags.
  */
 enum class TraceCategory : uint8_t {
-    kKernel    = 0,   ///< FreeRTOS kernel events (task switch, ISR)
-    kTransport = 1,   ///< USB/BLE transport operations
-    kOta       = 2,   ///< OTA update operations
-    kWifi      = 3,   ///< WiFi/ESP-NOW operations
-    kLed       = 4,   ///< LED animations
-    kAudio     = 5,   ///< Audio playback
-    kTouch     = 6,   ///< Touch sensing
-    kGame      = 7,   ///< Game logic
-    kUser      = 8,   ///< User-defined events
-    kHaptic    = 9,   ///< Haptic feedback
-    kBle       = 10,  ///< BLE operations
-    kNvs       = 11,  ///< NVS storage operations
+    kKernel = 0,     ///< FreeRTOS kernel events (task switch, ISR)
+    kTransport = 1,  ///< USB/BLE transport operations
+    kOta = 2,        ///< OTA update operations
+    kWifi = 3,       ///< WiFi/ESP-NOW operations
+    kLed = 4,        ///< LED animations
+    kAudio = 5,      ///< Audio playback
+    kTouch = 6,      ///< Touch sensing
+    kGame = 7,       ///< Game logic
+    kUser = 8,       ///< User-defined events
+    kHaptic = 9,     ///< Haptic feedback
+    kBle = 10,       ///< BLE operations
+    kNvs = 11,       ///< NVS storage operations
 };
 
 /**
@@ -42,23 +42,23 @@ enum class TraceCategory : uint8_t {
  */
 enum class TraceEventType : uint8_t {
     // FreeRTOS kernel events (0x01-0x0F)
-    kTaskSwitchIn  = 0x01,  ///< Task switched in (began running)
+    kTaskSwitchIn = 0x01,   ///< Task switched in (began running)
     kTaskSwitchOut = 0x02,  ///< Task switched out (stopped running)
-    kTaskCreate    = 0x03,  ///< Task created
-    kTaskDelete    = 0x04,  ///< Task deleted
-    kIsrEnter      = 0x05,  ///< ISR entered
-    kIsrExit       = 0x06,  ///< ISR exited
-    kQueueSend     = 0x07,  ///< Queue send operation
-    kQueueReceive  = 0x08,  ///< Queue receive operation
-    kMutexLock     = 0x09,  ///< Mutex acquired
-    kMutexUnlock   = 0x0A,  ///< Mutex released
+    kTaskCreate = 0x03,     ///< Task created
+    kTaskDelete = 0x04,     ///< Task deleted
+    kIsrEnter = 0x05,       ///< ISR entered
+    kIsrExit = 0x06,        ///< ISR exited
+    kQueueSend = 0x07,      ///< Queue send operation
+    kQueueReceive = 0x08,   ///< Queue receive operation
+    kMutexLock = 0x09,      ///< Mutex acquired
+    kMutexUnlock = 0x0A,    ///< Mutex released
 
     // Application events (0x20-0x2F)
-    kSpanBegin     = 0x20,  ///< Begin of a duration span
-    kSpanEnd       = 0x21,  ///< End of a duration span
-    kInstant       = 0x22,  ///< Instant/point event
-    kCounter       = 0x23,  ///< Counter value update
-    kComplete      = 0x24,  ///< Complete event (has duration in arg2)
+    kSpanBegin = 0x20,  ///< Begin of a duration span
+    kSpanEnd = 0x21,    ///< End of a duration span
+    kInstant = 0x22,    ///< Instant/point event
+    kCounter = 0x23,    ///< Counter value update
+    kComplete = 0x24,   ///< Complete event (has duration in arg2)
 };
 
 /**
@@ -74,17 +74,15 @@ enum class TraceEventType : uint8_t {
  */
 #pragma pack(push, 1)
 struct TraceEvent {
-    uint32_t timestamp;   ///< Microseconds since boot (esp_timer_get_time())
-    uint16_t taskId;      ///< FreeRTOS task number (uxTaskGetTaskNumber())
-    uint8_t  eventType;   ///< TraceEventType value
-    uint8_t  flags;       ///< Category in bits 7-4, reserved in bits 3-0
-    uint32_t arg1;        ///< Primary argument (span ID, counter ID, ISR number)
-    uint32_t arg2;        ///< Secondary argument (counter value, duration)
+    uint32_t timestamp;  ///< Microseconds since boot (esp_timer_get_time())
+    uint16_t taskId;     ///< FreeRTOS task number (uxTaskGetTaskNumber())
+    uint8_t eventType;   ///< TraceEventType value
+    uint8_t flags;       ///< Category in bits 7-4, reserved in bits 3-0
+    uint32_t arg1;       ///< Primary argument (span ID, counter ID, ISR number)
+    uint32_t arg2;       ///< Secondary argument (counter value, duration)
 
     /// Extract category from flags
-    TraceCategory category() const {
-        return static_cast<TraceCategory>((flags >> 4) & 0x0F);
-    }
+    TraceCategory category() const { return static_cast<TraceCategory>((flags >> 4) & 0x0F); }
 
     /// Set category in flags
     void setCategory(TraceCategory cat) {
@@ -92,9 +90,7 @@ struct TraceEvent {
     }
 
     /// Get event type as enum
-    TraceEventType type() const {
-        return static_cast<TraceEventType>(eventType);
-    }
+    TraceEventType type() const { return static_cast<TraceEventType>(eventType); }
 };
 #pragma pack(pop)
 

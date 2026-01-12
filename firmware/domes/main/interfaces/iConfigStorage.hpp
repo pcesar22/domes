@@ -10,8 +10,8 @@
 
 #include "esp_err.h"
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 namespace domes {
 
@@ -97,4 +97,4 @@ public:
     virtual esp_err_t eraseKey(const char* key) = 0;
 };
 
-} // namespace domes
+}  // namespace domes

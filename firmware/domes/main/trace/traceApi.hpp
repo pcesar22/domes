@@ -29,13 +29,12 @@
  * @endcode
  */
 
-#include "traceRecorder.hpp"
-#include "traceEvent.hpp"
-#include "traceStrings.hpp"
-
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_timer.h"
+#include "traceEvent.hpp"
+#include "traceRecorder.hpp"
+#include "traceStrings.hpp"
 
 namespace domes::trace {
 
@@ -69,12 +68,8 @@ inline uint32_t getTimestampUs() {
  * @param arg2 Secondary argument
  * @return Populated TraceEvent
  */
-inline TraceEvent makeEvent(
-    TraceEventType type,
-    TraceCategory category,
-    uint32_t arg1 = 0,
-    uint32_t arg2 = 0
-) {
+inline TraceEvent makeEvent(TraceEventType type, TraceCategory category, uint32_t arg1 = 0,
+                            uint32_t arg2 = 0) {
     TraceEvent event;
     event.timestamp = getTimestampUs();
     event.taskId = getCurrentTaskId();
@@ -99,15 +94,9 @@ public:
      * @param spanId Span identifier (use TRACE_ID("name"))
      * @param category Event category
      */
-    ScopeTrace(uint32_t spanId, TraceCategory category)
-        : spanId_(spanId)
-        , category_(category) {
+    ScopeTrace(uint32_t spanId, TraceCategory category) : spanId_(spanId), category_(category) {
         if (Recorder::isEnabled()) {
-            Recorder::record(makeEvent(
-                TraceEventType::kSpanBegin,
-                category_,
-                spanId_
-            ));
+            Recorder::record(makeEvent(TraceEventType::kSpanBegin, category_, spanId_));
         }
     }
 
@@ -116,11 +105,7 @@ public:
      */
     ~ScopeTrace() {
         if (Recorder::isEnabled()) {
-            Recorder::record(makeEvent(
-                TraceEventType::kSpanEnd,
-                category_,
-                spanId_
-            ));
+            Recorder::record(makeEvent(TraceEventType::kSpanEnd, category_, spanId_));
         }
     }
 
@@ -143,16 +128,13 @@ private:
  * @param spanId Span identifier (use TRACE_ID("name"))
  * @param category TraceCategory enum value
  */
-#define TRACE_BEGIN(spanId, category) \
-    do { \
-        if (::domes::trace::Recorder::isEnabled()) { \
-            ::domes::trace::Recorder::record(::domes::trace::makeEvent( \
-                ::domes::trace::TraceEventType::kSpanBegin, \
-                (category), \
-                (spanId) \
-            )); \
-        } \
-    } while(0)
+#define TRACE_BEGIN(spanId, category)                                               \
+    do {                                                                            \
+        if (::domes::trace::Recorder::isEnabled()) {                                \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(             \
+                ::domes::trace::TraceEventType::kSpanBegin, (category), (spanId))); \
+        }                                                                           \
+    } while (0)
 
 /**
  * @brief Record the end of a duration span
@@ -162,16 +144,13 @@ private:
  * @param spanId Span identifier (use TRACE_ID("name"))
  * @param category TraceCategory enum value
  */
-#define TRACE_END(spanId, category) \
-    do { \
-        if (::domes::trace::Recorder::isEnabled()) { \
-            ::domes::trace::Recorder::record(::domes::trace::makeEvent( \
-                ::domes::trace::TraceEventType::kSpanEnd, \
-                (category), \
-                (spanId) \
-            )); \
-        } \
-    } while(0)
+#define TRACE_END(spanId, category)                                               \
+    do {                                                                          \
+        if (::domes::trace::Recorder::isEnabled()) {                              \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(           \
+                ::domes::trace::TraceEventType::kSpanEnd, (category), (spanId))); \
+        }                                                                         \
+    } while (0)
 
 /**
  * @brief Record an instant (point) event
@@ -181,16 +160,13 @@ private:
  * @param eventId Event identifier (use TRACE_ID("name"))
  * @param category TraceCategory enum value
  */
-#define TRACE_INSTANT(eventId, category) \
-    do { \
-        if (::domes::trace::Recorder::isEnabled()) { \
-            ::domes::trace::Recorder::record(::domes::trace::makeEvent( \
-                ::domes::trace::TraceEventType::kInstant, \
-                (category), \
-                (eventId) \
-            )); \
-        } \
-    } while(0)
+#define TRACE_INSTANT(eventId, category)                                           \
+    do {                                                                           \
+        if (::domes::trace::Recorder::isEnabled()) {                               \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(            \
+                ::domes::trace::TraceEventType::kInstant, (category), (eventId))); \
+        }                                                                          \
+    } while (0)
 
 /**
  * @brief Record a counter value
@@ -201,17 +177,14 @@ private:
  * @param value Current counter value
  * @param category TraceCategory enum value
  */
-#define TRACE_COUNTER(counterId, value, category) \
-    do { \
-        if (::domes::trace::Recorder::isEnabled()) { \
-            ::domes::trace::Recorder::record(::domes::trace::makeEvent( \
-                ::domes::trace::TraceEventType::kCounter, \
-                (category), \
-                (counterId), \
-                static_cast<uint32_t>(value) \
-            )); \
-        } \
-    } while(0)
+#define TRACE_COUNTER(counterId, value, category)                                               \
+    do {                                                                                        \
+        if (::domes::trace::Recorder::isEnabled()) {                                            \
+            ::domes::trace::Recorder::record(                                                   \
+                ::domes::trace::makeEvent(::domes::trace::TraceEventType::kCounter, (category), \
+                                          (counterId), static_cast<uint32_t>(value)));          \
+        }                                                                                       \
+    } while (0)
 
 /**
  * @brief Automatic scope tracing

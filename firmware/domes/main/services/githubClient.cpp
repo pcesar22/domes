@@ -4,23 +4,23 @@
  */
 
 #include "githubClient.hpp"
+
+#include "cJSON.h"
+#include "esp_crt_bundle.h"
+#include "esp_http_client.h"
 #include "infra/logging.hpp"
 
-#include "esp_http_client.h"
-#include "esp_crt_bundle.h"
-#include "cJSON.h"
-
-#include <cstring>
-#include <cstdlib>
 #include <cctype>
+#include <cstdlib>
+#include <cstring>
 
 namespace domes {
 
 namespace {
-    constexpr const char* kTag = "github";
-    constexpr const char* kApiUrl = "https://api.github.com/repos/%s/%s/releases/latest";
-    constexpr const char* kUserAgent = "ESP32-OTA-Client/1.0";
-}
+constexpr const char* kTag = "github";
+constexpr const char* kApiUrl = "https://api.github.com/repos/%s/%s/releases/latest";
+constexpr const char* kUserAgent = "ESP32-OTA-Client/1.0";
+}  // namespace
 
 FirmwareVersion parseVersion(const char* versionStr) {
     FirmwareVersion ver = {};
@@ -81,9 +81,7 @@ FirmwareVersion parseVersion(const char* versionStr) {
     return ver;
 }
 
-GithubClient::GithubClient(const char* owner, const char* repo)
-    : useCustomEndpoint_(false)
-{
+GithubClient::GithubClient(const char* owner, const char* repo) : useCustomEndpoint_(false) {
     std::strncpy(owner_, owner, sizeof(owner_) - 1);
     owner_[sizeof(owner_) - 1] = '\0';
 
@@ -169,7 +167,7 @@ esp_err_t GithubClient::getLatestRelease(GithubRelease& release) {
     int readLen;
 
     while ((readLen = esp_http_client_read(client, responseBuffer + totalRead,
-                                            kMaxResponseSize - totalRead - 1)) > 0) {
+                                           kMaxResponseSize - totalRead - 1)) > 0) {
         totalRead += readLen;
         if (totalRead >= kMaxResponseSize - 1) {
             break;
@@ -240,13 +238,12 @@ esp_err_t GithubClient::parseRelease(const char* json, size_t len, GithubRelease
         // Look for domes.bin or domes-*.bin
         const char* assetName = name->valuestring;
         if (std::strstr(assetName, "domes") && std::strstr(assetName, ".bin")) {
-            std::strncpy(release.firmware.name, assetName,
-                        sizeof(release.firmware.name) - 1);
+            std::strncpy(release.firmware.name, assetName, sizeof(release.firmware.name) - 1);
 
             cJSON* downloadUrl = cJSON_GetObjectItem(asset, "browser_download_url");
             if (cJSON_IsString(downloadUrl) && downloadUrl->valuestring) {
                 std::strncpy(release.firmware.downloadUrl, downloadUrl->valuestring,
-                            sizeof(release.firmware.downloadUrl) - 1);
+                             sizeof(release.firmware.downloadUrl) - 1);
             }
 
             cJSON* size = cJSON_GetObjectItem(asset, "size");
@@ -254,8 +251,8 @@ esp_err_t GithubClient::parseRelease(const char* json, size_t len, GithubRelease
                 release.firmware.size = static_cast<size_t>(size->valuedouble);
             }
 
-            ESP_LOGI(kTag, "Found firmware: %s (%zu bytes)",
-                    release.firmware.name, release.firmware.size);
+            ESP_LOGI(kTag, "Found firmware: %s (%zu bytes)", release.firmware.name,
+                     release.firmware.size);
             break;
         }
     }
@@ -287,8 +284,7 @@ bool GithubClient::extractSha256(const char* body, char* sha256Out) {
 
         // Read 64 hex characters
         size_t hashLen = 0;
-        while (hashLen < 64 &&
-               std::isxdigit(static_cast<unsigned char>(found[hashLen]))) {
+        while (hashLen < 64 && std::isxdigit(static_cast<unsigned char>(found[hashLen]))) {
             hashLen++;
         }
 

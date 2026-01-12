@@ -19,8 +19,8 @@
  * @endcode
  */
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 namespace domes::trace {
 
@@ -55,7 +55,7 @@ constexpr uint32_t fnv1aHash(const char* str, size_t len) {
  * @param str String literal
  * @return 32-bit hash value
  */
-template<size_t N>
+template <size_t N>
 constexpr uint32_t traceId(const char (&str)[N]) {
     return fnv1aHash(str, N - 1);  // Exclude null terminator
 }

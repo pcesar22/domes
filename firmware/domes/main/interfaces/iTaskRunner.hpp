@@ -73,4 +73,4 @@ public:
     virtual bool shouldRun() const = 0;
 };
 
-} // namespace domes
+}  // namespace domes

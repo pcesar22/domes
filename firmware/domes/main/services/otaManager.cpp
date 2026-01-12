@@ -4,16 +4,16 @@
  */
 
 #include "otaManager.hpp"
-#include "infra/logging.hpp"
 
-#include "esp_https_ota.h"
 #include "esp_crt_bundle.h"
+#include "esp_https_ota.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "infra/logging.hpp"
 #include "mbedtls/sha256.h"
 
-#include <cstring>
 #include <cstdio>
+#include <cstring>
 
 // Version macros from CMakeLists.txt
 #ifndef DOMES_VERSION_STRING
@@ -23,20 +23,19 @@
 namespace domes {
 
 namespace {
-    constexpr const char* kTag = "ota";
+constexpr const char* kTag = "ota";
 }
 
 OtaManager::OtaManager(GithubClient& github)
-    : github_(github)
-    , state_(OtaState::kIdle)
-    , bytesReceived_(0)
-    , totalBytes_(0)
-    , abortRequested_(false)
-    , progressCallback_(nullptr)
-    , completeCallback_(nullptr)
-    , runningPartition_(nullptr)
-    , currentVersion_{}
-{
+    : github_(github),
+      state_(OtaState::kIdle),
+      bytesReceived_(0),
+      totalBytes_(0),
+      abortRequested_(false),
+      progressCallback_(nullptr),
+      completeCallback_(nullptr),
+      runningPartition_(nullptr),
+      currentVersion_{} {
     lastError_[0] = '\0';
 }
 
@@ -54,13 +53,13 @@ esp_err_t OtaManager::init() {
         return ESP_FAIL;
     }
 
-    ESP_LOGI(kTag, "Running from partition: %s at 0x%lx",
-             runningPartition_->label, runningPartition_->address);
+    ESP_LOGI(kTag, "Running from partition: %s at 0x%lx", runningPartition_->label,
+             runningPartition_->address);
 
     // Parse current version
     currentVersion_ = parseVersion(DOMES_VERSION_STRING);
-    ESP_LOGI(kTag, "Current version: %d.%d.%d",
-             currentVersion_.major, currentVersion_.minor, currentVersion_.patch);
+    ESP_LOGI(kTag, "Current version: %d.%d.%d", currentVersion_.major, currentVersion_.minor,
+             currentVersion_.patch);
 
     // Check OTA state
     if (isPendingVerification()) {
@@ -105,10 +104,8 @@ esp_err_t OtaManager::checkForUpdate(OtaCheckResult& result) {
     // Parse available version
     result.availableVersion = parseVersion(release.tagName);
 
-    ESP_LOGI(kTag, "Available version: %d.%d.%d",
-             result.availableVersion.major,
-             result.availableVersion.minor,
-             result.availableVersion.patch);
+    ESP_LOGI(kTag, "Available version: %d.%d.%d", result.availableVersion.major,
+             result.availableVersion.minor, result.availableVersion.patch);
 
     // Check if update is available
     result.updateAvailable = currentVersion_.isUpdateAvailable(result.availableVersion);
@@ -117,7 +114,7 @@ esp_err_t OtaManager::checkForUpdate(OtaCheckResult& result) {
         ESP_LOGI(kTag, "Update available!");
         result.firmwareSize = release.firmware.size;
         std::strncpy(result.downloadUrl, release.firmware.downloadUrl,
-                    sizeof(result.downloadUrl) - 1);
+                     sizeof(result.downloadUrl) - 1);
         std::strncpy(result.sha256, release.sha256, sizeof(result.sha256) - 1);
     } else {
         ESP_LOGI(kTag, "Already running latest version");
@@ -127,8 +124,7 @@ esp_err_t OtaManager::checkForUpdate(OtaCheckResult& result) {
     return ESP_OK;
 }
 
-esp_err_t OtaManager::startUpdate(const char* downloadUrl,
-                                   const char* expectedSha256) {
+esp_err_t OtaManager::startUpdate(const char* downloadUrl, const char* expectedSha256) {
     if (!downloadUrl || strlen(downloadUrl) == 0) {
         ESP_LOGE(kTag, "Invalid download URL");
         return ESP_ERR_INVALID_ARG;
@@ -174,16 +170,16 @@ esp_err_t OtaManager::startUpdate(const char* downloadUrl,
 
         esp_err_t err = esp_https_ota_begin(&otaConfig, &otaHandle);
         if (err != ESP_OK) {
-            ESP_LOGW(kTag, "OTA begin failed (attempt %d/%d): %s",
-                    attempt + 1, kMaxRetries, esp_err_to_name(err));
+            ESP_LOGW(kTag, "OTA begin failed (attempt %d/%d): %s", attempt + 1, kMaxRetries,
+                     esp_err_to_name(err));
 
             if (attempt < kMaxRetries - 1) {
                 vTaskDelay(pdMS_TO_TICKS(kRetryDelayMs));
                 continue;
             }
 
-            std::snprintf(lastError_, sizeof(lastError_),
-                         "OTA begin failed: %s", esp_err_to_name(err));
+            std::snprintf(lastError_, sizeof(lastError_), "OTA begin failed: %s",
+                          esp_err_to_name(err));
             state_ = OtaState::kError;
             if (completeCallback_) {
                 completeCallback_(false, lastError_);
@@ -236,8 +232,7 @@ esp_err_t OtaManager::startUpdate(const char* downloadUrl,
 
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "OTA perform failed: %s", esp_err_to_name(err));
-        std::snprintf(lastError_, sizeof(lastError_),
-                     "Download failed: %s", esp_err_to_name(err));
+        std::snprintf(lastError_, sizeof(lastError_), "Download failed: %s", esp_err_to_name(err));
         esp_https_ota_abort(otaHandle);
         state_ = OtaState::kError;
         if (completeCallback_) {
@@ -284,8 +279,7 @@ esp_err_t OtaManager::startUpdate(const char* downloadUrl,
     err = esp_https_ota_finish(otaHandle);
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "OTA finish failed: %s", esp_err_to_name(err));
-        std::snprintf(lastError_, sizeof(lastError_),
-                     "Install failed: %s", esp_err_to_name(err));
+        std::snprintf(lastError_, sizeof(lastError_), "Install failed: %s", esp_err_to_name(err));
         state_ = OtaState::kError;
         if (completeCallback_) {
             completeCallback_(false, lastError_);
@@ -388,7 +382,7 @@ const char* OtaManager::getCurrentPartition() const {
 }
 
 esp_err_t OtaManager::verifyFirmwareHash(const esp_partition_t* partition,
-                                          const char* expectedSha256) {
+                                         const char* expectedSha256) {
     if (!partition || !expectedSha256 || strlen(expectedSha256) != 64) {
         return ESP_ERR_INVALID_ARG;
     }
