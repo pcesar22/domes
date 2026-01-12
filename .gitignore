@@ -5,9 +5,15 @@ dependencies.lock
 sdkconfig.old
 sdkconfig
 
+# Compilation database (symlink to build/)
+/compile_commands.json
+
 # IDE
 .vscode/
 .idea/
+
+# Git worktrees
+/worktree/
 
 # Python
 __pycache__/

@@ -1,0 +1,43 @@
+# DOMES Project Clangd Configuration
+# See: https://clangd.llvm.org/config
+
+CompileFlags:
+  # Path to compilation database
+  CompilationDatabase: .
+
+  # Add common flags for ESP-IDF development
+  Add:
+    - -Wno-unknown-warning-option
+    - -Wno-unused-command-line-argument
+
+  # Remove flags that clangd doesn't understand
+  Remove:
+    - -fno-tree-switch-conversion
+    - -fstrict-volatile-bitfields
+    - -mlongcalls
+    - -mtext-section-literals
+    - -march=*
+    - -mtune=*
+
+Diagnostics:
+  # Enable most diagnostics
+  UnusedIncludes: Strict
+  MissingIncludes: Strict
+
+  # Suppress ESP-IDF specific warnings
+  Suppress:
+    - pp_including_mainfile_in_preamble
+    - drv_unknown_argument
+
+InlayHints:
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true
+  Designators: true
+
+Hover:
+  ShowAKA: true
+
+Index:
+  Background: Build
+  StandardLibrary: true

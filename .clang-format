@@ -1,0 +1,112 @@
+# DOMES Firmware Clang-Format Configuration
+# Based on GUIDELINES.md and existing code style
+
+Language: Cpp
+BasedOnStyle: Google
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+IndentCaseLabels: true
+IndentPPDirectives: None
+NamespaceIndentation: None
+
+# Braces
+BreakBeforeBraces: Attach
+Cpp11BracedListStyle: true
+
+# Line breaking
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Inline
+AlwaysBreakAfterReturnType: None
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBinaryOperators: None
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+
+# Alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignEscapedNewlines: Left
+AlignOperands: true
+AlignTrailingComments: true
+
+# Spacing
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 2
+SpacesInAngles: false
+SpacesInCStyleCastParentheses: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Pointers and references
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+# Includes
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Project config headers first
+  - Regex: '^"(sdkconfig|config)\.'
+    Priority: 1
+    SortPriority: 1
+  # Project headers
+  - Regex: '^"'
+    Priority: 2
+    SortPriority: 2
+  # FreeRTOS headers
+  - Regex: '^<freertos/'
+    Priority: 3
+    SortPriority: 3
+  # ESP-IDF headers
+  - Regex: '^<(esp_|driver_|hal_|soc_|nvs|spi_|i2c_)'
+    Priority: 4
+    SortPriority: 4
+  # ESP-IDF generic
+  - Regex: '^<esp.*\.h>'
+    Priority: 4
+    SortPriority: 5
+  # Standard C++ headers
+  - Regex: '^<[a-z_]+>'
+    Priority: 5
+    SortPriority: 6
+  # C headers
+  - Regex: '^<c[a-z]+>'
+    Priority: 6
+    SortPriority: 7
+  # System headers
+  - Regex: '^<'
+    Priority: 7
+    SortPriority: 8
+SortIncludes: true
+
+# Other
+FixNamespaceComments: true
+MaxEmptyLinesToKeep: 1
+ReflowComments: true
+SortUsingDeclarations: true
+
+# C++ standard
+Standard: c++20
