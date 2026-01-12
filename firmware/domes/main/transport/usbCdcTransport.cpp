@@ -5,19 +5,15 @@
 
 #include "usbCdcTransport.hpp"
 
-#include "esp_log.h"
 #include "driver/usb_serial_jtag.h"
+#include "esp_log.h"
 
 static const char* TAG = "usb_cdc";
 
 namespace domes {
 
 UsbCdcTransport::UsbCdcTransport(size_t rxBufSize)
-    : rxBufSize_(rxBufSize)
-    , rxRingBuf_(nullptr)
-    , txMutex_(nullptr)
-    , initialized_(false) {
-}
+    : rxBufSize_(rxBufSize), rxRingBuf_(nullptr), txMutex_(nullptr), initialized_(false) {}
 
 UsbCdcTransport::~UsbCdcTransport() {
     disconnect();
@@ -52,8 +48,7 @@ TransportError UsbCdcTransport::init() {
 
     esp_err_t err = usb_serial_jtag_driver_install(&config);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install USB Serial/JTAG driver: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed to install USB Serial/JTAG driver: %s", esp_err_to_name(err));
         vRingbufferDelete(rxRingBuf_);
         rxRingBuf_ = nullptr;
         vSemaphoreDelete(txMutex_);
@@ -81,11 +76,8 @@ TransportError UsbCdcTransport::send(const uint8_t* data, size_t len) {
 
     size_t totalWritten = 0;
     while (totalWritten < len) {
-        int written = usb_serial_jtag_write_bytes(
-            data + totalWritten,
-            len - totalWritten,
-            pdMS_TO_TICKS(1000)
-        );
+        int written = usb_serial_jtag_write_bytes(data + totalWritten, len - totalWritten,
+                                                  pdMS_TO_TICKS(1000));
 
         if (written < 0) {
             xSemaphoreGive(txMutex_);

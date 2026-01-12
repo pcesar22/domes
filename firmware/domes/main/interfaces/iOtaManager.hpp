@@ -11,8 +11,8 @@
 #include "esp_err.h"
 #include "services/githubClient.hpp"
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 
 namespace domes {
@@ -21,25 +21,25 @@ namespace domes {
  * @brief OTA update state
  */
 enum class OtaState : uint8_t {
-    kIdle,              ///< No update in progress
-    kCheckingVersion,   ///< Checking for updates
-    kDownloading,       ///< Downloading firmware
-    kVerifying,         ///< Verifying downloaded firmware
-    kInstalling,        ///< Writing to flash
-    kRebooting,         ///< About to reboot
-    kError,             ///< Error occurred
+    kIdle,             ///< No update in progress
+    kCheckingVersion,  ///< Checking for updates
+    kDownloading,      ///< Downloading firmware
+    kVerifying,        ///< Verifying downloaded firmware
+    kInstalling,       ///< Writing to flash
+    kRebooting,        ///< About to reboot
+    kError,            ///< Error occurred
 };
 
 /**
  * @brief OTA update check result
  */
 struct OtaCheckResult {
-    bool updateAvailable;           ///< True if newer version found
-    FirmwareVersion currentVersion; ///< Currently running version
-    FirmwareVersion availableVersion; ///< Available version
-    size_t firmwareSize;            ///< Size of new firmware
-    char downloadUrl[256];          ///< URL to download firmware
-    char sha256[65];                ///< Expected SHA-256 hash
+    bool updateAvailable;              ///< True if newer version found
+    FirmwareVersion currentVersion;    ///< Currently running version
+    FirmwareVersion availableVersion;  ///< Available version
+    size_t firmwareSize;               ///< Size of new firmware
+    char downloadUrl[256];             ///< URL to download firmware
+    char sha256[65];                   ///< Expected SHA-256 hash
 };
 
 /**

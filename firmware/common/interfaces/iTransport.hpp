@@ -118,9 +118,7 @@ public:
      *
      * @return TransportError::kOk on success
      */
-    virtual TransportError flush() {
-        return TransportError::kOk;
-    }
+    virtual TransportError flush() { return TransportError::kOk; }
 
     /**
      * @brief Get number of bytes available to read without blocking
@@ -129,9 +127,7 @@ public:
      *
      * @return Number of bytes available, or 0 if unknown
      */
-    virtual size_t available() const {
-        return 0;
-    }
+    virtual size_t available() const { return 0; }
 };
 
 }  // namespace domes

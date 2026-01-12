@@ -8,12 +8,11 @@
  * the ITaskRunner pattern.
  */
 
-#include "infra/taskConfig.hpp"
-#include "interfaces/iTaskRunner.hpp"
-
+#include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_err.h"
+#include "infra/taskConfig.hpp"
+#include "interfaces/iTaskRunner.hpp"
 
 #include <array>
 
@@ -139,4 +138,4 @@ private:
     size_t activeCount_ = 0;
 };
 
-} // namespace domes::infra
+}  // namespace domes::infra

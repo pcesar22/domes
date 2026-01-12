@@ -4,9 +4,9 @@
  */
 
 #include "infra/watchdog.hpp"
-#include "infra/logging.hpp"
 
 #include "esp_task_wdt.h"
+#include "infra/logging.hpp"
 
 static constexpr const char* kTag = domes::infra::tag::kWatchdog;
 
@@ -20,11 +20,9 @@ esp_err_t Watchdog::init(uint32_t timeoutSec, bool panicOnTimeout) {
         return ESP_OK;
     }
 
-    esp_task_wdt_config_t config = {
-        .timeout_ms = timeoutSec * 1000,
-        .idle_core_mask = 0,  // Don't monitor idle tasks by default
-        .trigger_panic = panicOnTimeout
-    };
+    esp_task_wdt_config_t config = {.timeout_ms = timeoutSec * 1000,
+                                    .idle_core_mask = 0,  // Don't monitor idle tasks by default
+                                    .trigger_panic = panicOnTimeout};
 
     esp_err_t err = esp_task_wdt_init(&config);
 
@@ -44,8 +42,7 @@ esp_err_t Watchdog::init(uint32_t timeoutSec, bool panicOnTimeout) {
 
     initialized_ = true;
     ESP_LOGI(kTag, "Watchdog initialized (timeout=%lus, panic=%s)",
-             static_cast<unsigned long>(timeoutSec),
-             panicOnTimeout ? "yes" : "no");
+             static_cast<unsigned long>(timeoutSec), panicOnTimeout ? "yes" : "no");
     return ESP_OK;
 }
 
@@ -146,4 +143,4 @@ WatchdogGuard::~WatchdogGuard() {
     }
 }
 
-} // namespace domes::infra
+}  // namespace domes::infra

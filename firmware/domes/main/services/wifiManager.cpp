@@ -4,36 +4,34 @@
  */
 
 #include "wifiManager.hpp"
-#include "infra/logging.hpp"
 
-#include "esp_smartconfig.h"
 #include "esp_log.h"
+#include "esp_smartconfig.h"
+#include "infra/logging.hpp"
 #include "nvs_flash.h"
 
-#include <cstring>
 #include <algorithm>
+#include <cstring>
 
 namespace domes {
 
 namespace {
-    constexpr const char* kTag = "wifi";
+constexpr const char* kTag = "wifi";
 }
 
 WifiManager::WifiManager(IConfigStorage& config)
-    : config_(config)
-    , staNetif_(nullptr)
-    , state_(WifiState::kDisconnected)
-    , smartConfigActive_(false)
-    , initialized_(false)
-    , eventCallback_(nullptr)
-    , wifiEventInstance_(nullptr)
-    , ipEventInstance_(nullptr)
-    , scEventInstance_(nullptr)
-    , retryCount_(0)
-    , currentBackoffMs_(kInitialBackoffMs)
-    , ipAddress_{}
-{
-}
+    : config_(config),
+      staNetif_(nullptr),
+      state_(WifiState::kDisconnected),
+      smartConfigActive_(false),
+      initialized_(false),
+      eventCallback_(nullptr),
+      wifiEventInstance_(nullptr),
+      ipEventInstance_(nullptr),
+      scEventInstance_(nullptr),
+      retryCount_(0),
+      currentBackoffMs_(kInitialBackoffMs),
+      ipAddress_{} {}
 
 WifiManager::~WifiManager() {
     if (initialized_) {
@@ -80,24 +78,21 @@ esp_err_t WifiManager::init() {
 
     // Register event handlers
     err = esp_event_handler_instance_register(
-        WIFI_EVENT, ESP_EVENT_ANY_ID,
-        &WifiManager::wifiEventHandler, this, &wifiEventInstance_);
+        WIFI_EVENT, ESP_EVENT_ANY_ID, &WifiManager::wifiEventHandler, this, &wifiEventInstance_);
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "Failed to register WiFi event handler: %s", esp_err_to_name(err));
         return err;
     }
 
     err = esp_event_handler_instance_register(
-        IP_EVENT, IP_EVENT_STA_GOT_IP,
-        &WifiManager::ipEventHandler, this, &ipEventInstance_);
+        IP_EVENT, IP_EVENT_STA_GOT_IP, &WifiManager::ipEventHandler, this, &ipEventInstance_);
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "Failed to register IP event handler: %s", esp_err_to_name(err));
         return err;
     }
 
     err = esp_event_handler_instance_register(
-        SC_EVENT, ESP_EVENT_ANY_ID,
-        &WifiManager::smartconfigEventHandler, this, &scEventInstance_);
+        SC_EVENT, ESP_EVENT_ANY_ID, &WifiManager::smartconfigEventHandler, this, &scEventInstance_);
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "Failed to register SmartConfig event handler: %s", esp_err_to_name(err));
         return err;
@@ -181,8 +176,7 @@ esp_err_t WifiManager::connect() {
     return connect(ssid, password, false);
 }
 
-esp_err_t WifiManager::connect(const char* ssid, const char* password,
-                               bool shouldSave) {
+esp_err_t WifiManager::connect(const char* ssid, const char* password, bool shouldSave) {
     if (!initialized_) {
         ESP_LOGE(kTag, "Not initialized");
         return ESP_ERR_INVALID_STATE;
@@ -197,8 +191,7 @@ esp_err_t WifiManager::connect(const char* ssid, const char* password,
 
     // Configure WiFi
     wifi_config_t wifiConfig = {};
-    strncpy(reinterpret_cast<char*>(wifiConfig.sta.ssid), ssid,
-            sizeof(wifiConfig.sta.ssid) - 1);
+    strncpy(reinterpret_cast<char*>(wifiConfig.sta.ssid), ssid, sizeof(wifiConfig.sta.ssid) - 1);
 
     if (password && strlen(password) > 0) {
         strncpy(reinterpret_cast<char*>(wifiConfig.sta.password), password,
@@ -429,8 +422,8 @@ esp_err_t WifiManager::saveCredentials(const char* ssid, const char* password) {
     return err;
 }
 
-void WifiManager::wifiEventHandler(void* arg, esp_event_base_t eventBase,
-                                    int32_t eventId, void* eventData) {
+void WifiManager::wifiEventHandler(void* arg, esp_event_base_t eventBase, int32_t eventId,
+                                   void* eventData) {
     auto* self = static_cast<WifiManager*>(arg);
 
     switch (eventId) {
@@ -467,8 +460,8 @@ void WifiManager::wifiEventHandler(void* arg, esp_event_base_t eventBase,
     }
 }
 
-void WifiManager::ipEventHandler(void* arg, esp_event_base_t eventBase,
-                                  int32_t eventId, void* eventData) {
+void WifiManager::ipEventHandler(void* arg, esp_event_base_t eventBase, int32_t eventId,
+                                 void* eventData) {
     auto* self = static_cast<WifiManager*>(arg);
 
     if (eventId == IP_EVENT_STA_GOT_IP) {
@@ -485,8 +478,8 @@ void WifiManager::ipEventHandler(void* arg, esp_event_base_t eventBase,
     }
 }
 
-void WifiManager::smartconfigEventHandler(void* arg, esp_event_base_t eventBase,
-                                           int32_t eventId, void* eventData) {
+void WifiManager::smartconfigEventHandler(void* arg, esp_event_base_t eventBase, int32_t eventId,
+                                          void* eventData) {
     auto* self = static_cast<WifiManager*>(arg);
 
     switch (eventId) {

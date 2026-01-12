@@ -10,12 +10,11 @@
  * - SmartConfig provisioning support
  */
 
-#include "interfaces/iWifiManager.hpp"
-#include "interfaces/iConfigStorage.hpp"
-
-#include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_wifi.h"
+#include "interfaces/iConfigStorage.hpp"
+#include "interfaces/iWifiManager.hpp"
 
 #include <atomic>
 
@@ -25,10 +24,10 @@ namespace domes {
  * @brief NVS namespace and keys for WiFi credentials
  */
 namespace wifi_nvs {
-    constexpr const char* kNamespace = "wifi";
-    constexpr const char* kSsid      = "ssid";
-    constexpr const char* kPassword  = "pass";
-}
+constexpr const char* kNamespace = "wifi";
+constexpr const char* kSsid = "ssid";
+constexpr const char* kPassword = "pass";
+}  // namespace wifi_nvs
 
 /**
  * @brief WiFi connection manager implementation
@@ -68,8 +67,7 @@ public:
     esp_err_t init() override;
     esp_err_t deinit() override;
     esp_err_t connect() override;
-    esp_err_t connect(const char* ssid, const char* password,
-                      bool saveCredentials = true) override;
+    esp_err_t connect(const char* ssid, const char* password, bool saveCredentials = true) override;
     esp_err_t disconnect() override;
     bool isConnected() const override;
     WifiState getState() const override;
@@ -105,20 +103,20 @@ private:
     /**
      * @brief WiFi event handler
      */
-    static void wifiEventHandler(void* arg, esp_event_base_t eventBase,
-                                  int32_t eventId, void* eventData);
+    static void wifiEventHandler(void* arg, esp_event_base_t eventBase, int32_t eventId,
+                                 void* eventData);
 
     /**
      * @brief IP event handler
      */
-    static void ipEventHandler(void* arg, esp_event_base_t eventBase,
-                                int32_t eventId, void* eventData);
+    static void ipEventHandler(void* arg, esp_event_base_t eventBase, int32_t eventId,
+                               void* eventData);
 
     /**
      * @brief SmartConfig event handler
      */
-    static void smartconfigEventHandler(void* arg, esp_event_base_t eventBase,
-                                         int32_t eventId, void* eventData);
+    static void smartconfigEventHandler(void* arg, esp_event_base_t eventBase, int32_t eventId,
+                                        void* eventData);
 
     /**
      * @brief Handle WiFi disconnection with retry logic
@@ -156,8 +154,8 @@ private:
     esp_ip4_addr_t ipAddress_;
 
     static constexpr uint32_t kInitialBackoffMs = 1000;
-    static constexpr uint32_t kMaxBackoffMs     = 30000;
-    static constexpr uint8_t  kMaxRetries       = 10;
+    static constexpr uint32_t kMaxBackoffMs = 30000;
+    static constexpr uint8_t kMaxRetries = 10;
 };
 
 }  // namespace domes

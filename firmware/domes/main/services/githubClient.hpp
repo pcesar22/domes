@@ -10,8 +10,8 @@
 
 #include "esp_err.h"
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 namespace domes {
 
@@ -19,19 +19,19 @@ namespace domes {
  * @brief GitHub Release asset information
  */
 struct GithubAsset {
-    char name[64];           ///< Asset filename
-    char downloadUrl[256];   ///< Direct download URL
-    size_t size;             ///< Asset size in bytes
+    char name[64];          ///< Asset filename
+    char downloadUrl[256];  ///< Direct download URL
+    size_t size;            ///< Asset size in bytes
 };
 
 /**
  * @brief GitHub Release information
  */
 struct GithubRelease {
-    char tagName[32];        ///< Release tag (e.g., "v1.2.3")
-    char sha256[65];         ///< SHA-256 hash from release body (if present)
-    GithubAsset firmware;    ///< Firmware binary asset
-    bool found;              ///< True if release was found
+    char tagName[32];      ///< Release tag (e.g., "v1.2.3")
+    char sha256[65];       ///< SHA-256 hash from release body (if present)
+    GithubAsset firmware;  ///< Firmware binary asset
+    bool found;            ///< True if release was found
 };
 
 /**
@@ -41,8 +41,8 @@ struct FirmwareVersion {
     uint8_t major;
     uint8_t minor;
     uint8_t patch;
-    char gitHash[12];        ///< Short git hash (e.g., "a1b2c3d")
-    bool dirty;              ///< True if built from dirty working tree
+    char gitHash[12];  ///< Short git hash (e.g., "a1b2c3d")
+    bool dirty;        ///< True if built from dirty working tree
 
     /**
      * @brief Compare versions (ignores gitHash and dirty)
@@ -51,8 +51,10 @@ struct FirmwareVersion {
      * @return negative if this < other, 0 if equal, positive if this > other
      */
     int compare(const FirmwareVersion& other) const {
-        if (major != other.major) return static_cast<int>(major) - static_cast<int>(other.major);
-        if (minor != other.minor) return static_cast<int>(minor) - static_cast<int>(other.minor);
+        if (major != other.major)
+            return static_cast<int>(major) - static_cast<int>(other.major);
+        if (minor != other.minor)
+            return static_cast<int>(minor) - static_cast<int>(other.minor);
         return static_cast<int>(patch) - static_cast<int>(other.patch);
     }
 
@@ -62,9 +64,7 @@ struct FirmwareVersion {
      * @param other Available version
      * @return true if other is newer than this
      */
-    bool isUpdateAvailable(const FirmwareVersion& other) const {
-        return compare(other) < 0;
-    }
+    bool isUpdateAvailable(const FirmwareVersion& other) const { return compare(other) < 0; }
 };
 
 /**

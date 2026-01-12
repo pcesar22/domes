@@ -1,7 +1,7 @@
 #pragma once
 
-#include "interfaces/iLedDriver.hpp"
 #include "esp_timer.h"
+#include "interfaces/iLedDriver.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -21,15 +21,15 @@ public:
      * @param driver Reference to LED driver (must outlive animator)
      */
     explicit LedAnimator(ILedDriver& driver)
-        : driver_(driver)
-        , currentColor_(Color::off())
-        , targetColor_(Color::off())
-        , transitionStartMs_(0)
-        , transitionDurationMs_(0)
-        , breathingColor_(Color::off())
-        , breathingPeriodMs_(0)
-        , breathingStartMs_(0)
-        , breathing_(false) {}
+        : driver_(driver),
+          currentColor_(Color::off()),
+          targetColor_(Color::off()),
+          transitionStartMs_(0),
+          transitionDurationMs_(0),
+          breathingColor_(Color::off()),
+          breathingPeriodMs_(0),
+          breathingStartMs_(0),
+          breathing_(false) {}
 
     /**
      * @brief Start transition to a new color
@@ -61,9 +61,7 @@ public:
     /**
      * @brief Stop breathing effect
      */
-    void stopBreathing() {
-        breathing_ = false;
-    }
+    void stopBreathing() { breathing_ = false; }
 
     /**
      * @brief Update animation state and refresh LEDs
@@ -96,7 +94,8 @@ public:
      * @return true if animating between colors
      */
     bool isAnimating() const {
-        if (transitionDurationMs_ == 0) return false;
+        if (transitionDurationMs_ == 0)
+            return false;
         uint32_t elapsed = nowMs() - transitionStartMs_;
         return elapsed < transitionDurationMs_;
     }
@@ -105,9 +104,7 @@ public:
      * @brief Check if breathing effect is active
      * @return true if breathing
      */
-    bool isBreathing() const {
-        return breathing_;
-    }
+    bool isBreathing() const { return breathing_; }
 
     /**
      * @brief Get current displayed color
@@ -121,12 +118,11 @@ public:
     }
 
 private:
-    static uint32_t nowMs() {
-        return static_cast<uint32_t>(esp_timer_get_time() / 1000);
-    }
+    static uint32_t nowMs() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 
     Color getInterpolatedColor() const {
-        if (transitionDurationMs_ == 0) return targetColor_;
+        if (transitionDurationMs_ == 0)
+            return targetColor_;
 
         uint32_t elapsed = nowMs() - transitionStartMs_;
         if (elapsed >= transitionDurationMs_) {
@@ -139,7 +135,8 @@ private:
     }
 
     Color getBreathingColor() const {
-        if (breathingPeriodMs_ == 0) return breathingColor_;
+        if (breathingPeriodMs_ == 0)
+            return breathingColor_;
 
         uint32_t elapsed = nowMs() - breathingStartMs_;
         uint32_t phase = elapsed % breathingPeriodMs_;
@@ -168,4 +165,4 @@ private:
     bool breathing_;
 };
 
-} // namespace domes
+}  // namespace domes

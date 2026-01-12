@@ -11,12 +11,11 @@
  * in the FreeRTOS port, allowing us to override them here.
  */
 
-#include "traceRecorder.hpp"
-#include "traceEvent.hpp"
-
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_timer.h"
+#include "traceEvent.hpp"
+#include "traceRecorder.hpp"
 
 namespace {
 
@@ -26,12 +25,8 @@ namespace {
  * Helper to create trace events for FreeRTOS hooks.
  * Called from ISR context, must be fast.
  */
-inline domes::trace::TraceEvent makeKernelEvent(
-    domes::trace::TraceEventType type,
-    uint16_t taskId,
-    uint32_t arg1 = 0,
-    uint32_t arg2 = 0
-) {
+inline domes::trace::TraceEvent makeKernelEvent(domes::trace::TraceEventType type, uint16_t taskId,
+                                                uint32_t arg1 = 0, uint32_t arg2 = 0) {
     domes::trace::TraceEvent event;
     event.timestamp = static_cast<uint32_t>(esp_timer_get_time());
     event.taskId = taskId;
@@ -63,8 +58,7 @@ void domes_trace_task_switched_in(void) {
     uint16_t taskId = static_cast<uint16_t>(uxTaskGetTaskNumber(task));
 
     domes::trace::Recorder::recordFromIsr(
-        makeKernelEvent(domes::trace::TraceEventType::kTaskSwitchIn, taskId)
-    );
+        makeKernelEvent(domes::trace::TraceEventType::kTaskSwitchIn, taskId));
 }
 
 /**
@@ -81,8 +75,7 @@ void domes_trace_task_switched_out(void) {
     uint16_t taskId = static_cast<uint16_t>(uxTaskGetTaskNumber(task));
 
     domes::trace::Recorder::recordFromIsr(
-        makeKernelEvent(domes::trace::TraceEventType::kTaskSwitchOut, taskId)
-    );
+        makeKernelEvent(domes::trace::TraceEventType::kTaskSwitchOut, taskId));
 }
 
 /**
@@ -97,8 +90,7 @@ void domes_trace_isr_enter(uint32_t isrId) {
 
     // ISRs are tracked on task ID 0 (reserved for ISR context)
     domes::trace::Recorder::recordFromIsr(
-        makeKernelEvent(domes::trace::TraceEventType::kIsrEnter, 0, isrId)
-    );
+        makeKernelEvent(domes::trace::TraceEventType::kIsrEnter, 0, isrId));
 }
 
 /**
@@ -112,8 +104,7 @@ void domes_trace_isr_exit(uint32_t isrId) {
     }
 
     domes::trace::Recorder::recordFromIsr(
-        makeKernelEvent(domes::trace::TraceEventType::kIsrExit, 0, isrId)
-    );
+        makeKernelEvent(domes::trace::TraceEventType::kIsrExit, 0, isrId));
 }
 
 /**
@@ -130,16 +121,13 @@ void domes_trace_task_create(TaskHandle_t taskHandle) {
 
     // Get current task ID for context
     TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();
-    uint16_t currentTaskId = currentTask ?
-        static_cast<uint16_t>(uxTaskGetTaskNumber(currentTask)) : 0;
+    uint16_t currentTaskId =
+        currentTask ? static_cast<uint16_t>(uxTaskGetTaskNumber(currentTask)) : 0;
 
-    domes::trace::Recorder::record(
-        makeKernelEvent(
-            domes::trace::TraceEventType::kTaskCreate,
-            currentTaskId,
-            taskId  // New task ID in arg1
-        )
-    );
+    domes::trace::Recorder::record(makeKernelEvent(domes::trace::TraceEventType::kTaskCreate,
+                                                   currentTaskId,
+                                                   taskId  // New task ID in arg1
+                                                   ));
 }
 
 /**
@@ -152,20 +140,16 @@ void domes_trace_task_delete(TaskHandle_t taskHandle) {
         return;
     }
 
-    uint16_t taskId = taskHandle ?
-        static_cast<uint16_t>(uxTaskGetTaskNumber(taskHandle)) : 0;
+    uint16_t taskId = taskHandle ? static_cast<uint16_t>(uxTaskGetTaskNumber(taskHandle)) : 0;
 
     TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();
-    uint16_t currentTaskId = currentTask ?
-        static_cast<uint16_t>(uxTaskGetTaskNumber(currentTask)) : 0;
+    uint16_t currentTaskId =
+        currentTask ? static_cast<uint16_t>(uxTaskGetTaskNumber(currentTask)) : 0;
 
-    domes::trace::Recorder::record(
-        makeKernelEvent(
-            domes::trace::TraceEventType::kTaskDelete,
-            currentTaskId,
-            taskId  // Deleted task ID in arg1
-        )
-    );
+    domes::trace::Recorder::record(makeKernelEvent(domes::trace::TraceEventType::kTaskDelete,
+                                                   currentTaskId,
+                                                   taskId  // Deleted task ID in arg1
+                                                   ));
 }
 
 /**
@@ -181,13 +165,8 @@ void domes_trace_queue_send(void* queueHandle) {
     TaskHandle_t task = xTaskGetCurrentTaskHandle();
     uint16_t taskId = task ? static_cast<uint16_t>(uxTaskGetTaskNumber(task)) : 0;
 
-    domes::trace::Recorder::record(
-        makeKernelEvent(
-            domes::trace::TraceEventType::kQueueSend,
-            taskId,
-            reinterpret_cast<uint32_t>(queueHandle)
-        )
-    );
+    domes::trace::Recorder::record(makeKernelEvent(domes::trace::TraceEventType::kQueueSend, taskId,
+                                                   reinterpret_cast<uint32_t>(queueHandle)));
 }
 
 /**
@@ -203,13 +182,9 @@ void domes_trace_queue_receive(void* queueHandle) {
     TaskHandle_t task = xTaskGetCurrentTaskHandle();
     uint16_t taskId = task ? static_cast<uint16_t>(uxTaskGetTaskNumber(task)) : 0;
 
-    domes::trace::Recorder::record(
-        makeKernelEvent(
-            domes::trace::TraceEventType::kQueueReceive,
-            taskId,
-            reinterpret_cast<uint32_t>(queueHandle)
-        )
-    );
+    domes::trace::Recorder::record(makeKernelEvent(domes::trace::TraceEventType::kQueueReceive,
+                                                   taskId,
+                                                   reinterpret_cast<uint32_t>(queueHandle)));
 }
 
 }  // extern "C"

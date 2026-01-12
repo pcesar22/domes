@@ -16,12 +16,11 @@ constexpr const char* kTag = "trace_buf";
 namespace domes::trace {
 
 TraceBuffer::TraceBuffer(size_t bufferSize)
-    : ringBuf_(nullptr)
-    , bufferSize_(bufferSize)
-    , initialized_(false)
-    , paused_(false)
-    , droppedCount_(0) {
-}
+    : ringBuf_(nullptr),
+      bufferSize_(bufferSize),
+      initialized_(false),
+      paused_(false),
+      droppedCount_(0) {}
 
 TraceBuffer::~TraceBuffer() {
     if (ringBuf_ != nullptr) {
@@ -45,8 +44,8 @@ esp_err_t TraceBuffer::init() {
     }
 
     initialized_.store(true);
-    ESP_LOGI(kTag, "Trace buffer initialized (%zu bytes, ~%zu events)",
-             bufferSize_, bufferSize_ / kEventSize);
+    ESP_LOGI(kTag, "Trace buffer initialized (%zu bytes, ~%zu events)", bufferSize_,
+             bufferSize_ / kEventSize);
 
     return ESP_OK;
 }
@@ -57,11 +56,8 @@ bool TraceBuffer::record(const TraceEvent& event) {
     }
 
     // Try to send with no wait (don't block if full)
-    BaseType_t result = xRingbufferSend(
-        ringBuf_,
-        &event,
-        kEventSize,
-        0  // No wait
+    BaseType_t result = xRingbufferSend(ringBuf_, &event, kEventSize,
+                                        0  // No wait
     );
 
     if (result != pdTRUE) {
@@ -78,12 +74,8 @@ bool TraceBuffer::recordFromIsr(const TraceEvent& event) {
     }
 
     BaseType_t higherPriorityTaskWoken = pdFALSE;
-    BaseType_t result = xRingbufferSendFromISR(
-        ringBuf_,
-        &event,
-        kEventSize,
-        &higherPriorityTaskWoken
-    );
+    BaseType_t result =
+        xRingbufferSendFromISR(ringBuf_, &event, kEventSize, &higherPriorityTaskWoken);
 
     if (result != pdTRUE) {
         droppedCount_.fetch_add(1);
@@ -102,11 +94,7 @@ bool TraceBuffer::read(TraceEvent* event, uint32_t timeoutMs) {
     }
 
     size_t itemSize = 0;
-    void* item = xRingbufferReceive(
-        ringBuf_,
-        &itemSize,
-        pdMS_TO_TICKS(timeoutMs)
-    );
+    void* item = xRingbufferReceive(ringBuf_, &itemSize, pdMS_TO_TICKS(timeoutMs));
 
     if (item == nullptr) {
         return false;
@@ -114,8 +102,7 @@ bool TraceBuffer::read(TraceEvent* event, uint32_t timeoutMs) {
 
     // Verify size matches
     if (itemSize != kEventSize) {
-        ESP_LOGW(kTag, "Unexpected event size: %zu (expected %zu)",
-                 itemSize, kEventSize);
+        ESP_LOGW(kTag, "Unexpected event size: %zu (expected %zu)", itemSize, kEventSize);
         vRingbufferReturnItem(ringBuf_, item);
         return false;
     }

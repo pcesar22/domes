@@ -11,11 +11,11 @@
 
 // NimBLE headers (must include esp_nimble_hci.h first in ESP-IDF)
 #include "esp_nimble_hci.h"
-#include "nimble/nimble_port.h"
-#include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
 #include "host/ble_uuid.h"
 #include "host/util/util.h"
+#include "nimble/nimble_port.h"
+#include "nimble/nimble_port_freertos.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 
@@ -31,41 +31,32 @@ static const char* kTag = "ble_ota";
 // ============================================================================
 
 // OTA Service: 12345678-1234-5678-1234-56789abcdef0
-const uint8_t kOtaServiceUuid[16] = {
-    0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
-    0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12
-};
+const uint8_t kOtaServiceUuid[16] = {0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
+                                     0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12};
 
 // OTA Data Characteristic: 12345678-1234-5678-1234-56789abcdef1
-const uint8_t kOtaDataCharUuid[16] = {
-    0xf1, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
-    0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12
-};
+const uint8_t kOtaDataCharUuid[16] = {0xf1, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
+                                      0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12};
 
 // OTA Status Characteristic: 12345678-1234-5678-1234-56789abcdef2
-const uint8_t kOtaStatusCharUuid[16] = {
-    0xf2, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
-    0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12
-};
+const uint8_t kOtaStatusCharUuid[16] = {0xf2, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
+                                        0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12};
 
 // Static UUID structures for NimBLE (avoids taking address of temporaries in C++)
 static const ble_uuid128_t kOtaServiceUuid128 = {
     .u = {.type = BLE_UUID_TYPE_128},
-    .value = {0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
-              0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12}
-};
+    .value = {0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12, 0x78, 0x56,
+              0x34, 0x12}};
 
 static const ble_uuid128_t kOtaDataCharUuid128 = {
     .u = {.type = BLE_UUID_TYPE_128},
-    .value = {0xf1, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
-              0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12}
-};
+    .value = {0xf1, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12, 0x78, 0x56,
+              0x34, 0x12}};
 
 static const ble_uuid128_t kOtaStatusCharUuid128 = {
     .u = {.type = BLE_UUID_TYPE_128},
-    .value = {0xf2, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
-              0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12}
-};
+    .value = {0xf2, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12, 0x78, 0x56,
+              0x34, 0x12}};
 
 // ============================================================================
 // Global instance pointer (for NimBLE callbacks)
@@ -154,24 +145,21 @@ static const struct ble_gatt_chr_def otaCharacteristics[] = {
         .flags = 0,
         .min_key_size = 0,
         .val_handle = nullptr,
-    }
-};
+    }};
 
-static const struct ble_gatt_svc_def otaServices[] = {
-    {
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = &kOtaServiceUuid128.u,
-        .includes = nullptr,
-        .characteristics = otaCharacteristics,
-    },
-    {
-        // Terminator
-        .type = 0,
-        .uuid = nullptr,
-        .includes = nullptr,
-        .characteristics = nullptr,
-    }
-};
+static const struct ble_gatt_svc_def otaServices[] = {{
+                                                          .type = BLE_GATT_SVC_TYPE_PRIMARY,
+                                                          .uuid = &kOtaServiceUuid128.u,
+                                                          .includes = nullptr,
+                                                          .characteristics = otaCharacteristics,
+                                                      },
+                                                      {
+                                                          // Terminator
+                                                          .type = 0,
+                                                          .uuid = nullptr,
+                                                          .includes = nullptr,
+                                                          .characteristics = nullptr,
+                                                      }};
 
 // ============================================================================
 // GAP Event Handler
@@ -463,8 +451,8 @@ void BleOtaService::startAdvertising() {
         return;
     }
 
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, nullptr, BLE_HS_FOREVER,
-                           &advParams, bleGapEventCb, nullptr);
+    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, nullptr, BLE_HS_FOREVER, &advParams, bleGapEventCb,
+                           nullptr);
     ESP_LOGI(kTag, "ble_gap_adv_start rc=%d", rc);
     if (rc != 0) {
         ESP_LOGE(kTag, "Failed to start advertising: %d", rc);

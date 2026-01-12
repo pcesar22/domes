@@ -11,11 +11,10 @@
  * console output when CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG is enabled.
  */
 
-#include "interfaces/iTransport.hpp"
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
 #include "freertos/semphr.h"
+#include "interfaces/iTransport.hpp"
 
 namespace domes {
 

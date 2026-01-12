@@ -32,8 +32,7 @@ esp_err_t Recorder::init(size_t bufferSize) {
     buffer_ = std::make_unique<TraceBuffer>(bufferSize);
     esp_err_t err = buffer_->init();
     if (err != ESP_OK) {
-        ESP_LOGE(kTag, "Failed to initialize trace buffer: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(kTag, "Failed to initialize trace buffer: %s", esp_err_to_name(err));
         buffer_.reset();
         return err;
     }

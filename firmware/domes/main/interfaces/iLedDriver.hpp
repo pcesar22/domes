@@ -25,9 +25,7 @@ struct Color {
      * @param b Blue value (0-255)
      * @return Color instance
      */
-    static constexpr Color rgb(uint8_t r, uint8_t g, uint8_t b) {
-        return {r, g, b, 0};
-    }
+    static constexpr Color rgb(uint8_t r, uint8_t g, uint8_t b) { return {r, g, b, 0}; }
 
     /**
      * @brief Create color from RGBW values
@@ -37,22 +35,20 @@ struct Color {
      * @param w White value (0-255)
      * @return Color instance
      */
-    static constexpr Color rgbw(uint8_t r, uint8_t g, uint8_t b, uint8_t w) {
-        return {r, g, b, w};
-    }
+    static constexpr Color rgbw(uint8_t r, uint8_t g, uint8_t b, uint8_t w) { return {r, g, b, w}; }
 
     /// @name Predefined Colors
     /// @{
-    static constexpr Color red()       { return {255, 0, 0, 0}; }
-    static constexpr Color green()     { return {0, 255, 0, 0}; }
-    static constexpr Color blue()      { return {0, 0, 255, 0}; }
-    static constexpr Color white()     { return {255, 255, 255, 0}; }
+    static constexpr Color red() { return {255, 0, 0, 0}; }
+    static constexpr Color green() { return {0, 255, 0, 0}; }
+    static constexpr Color blue() { return {0, 0, 255, 0}; }
+    static constexpr Color white() { return {255, 255, 255, 0}; }
     static constexpr Color warmWhite() { return {0, 0, 0, 255}; }  ///< RGBW only
-    static constexpr Color yellow()    { return {255, 255, 0, 0}; }
-    static constexpr Color cyan()      { return {0, 255, 255, 0}; }
-    static constexpr Color magenta()   { return {255, 0, 255, 0}; }
-    static constexpr Color orange()    { return {255, 128, 0, 0}; }
-    static constexpr Color off()       { return {0, 0, 0, 0}; }
+    static constexpr Color yellow() { return {255, 255, 0, 0}; }
+    static constexpr Color cyan() { return {0, 255, 255, 0}; }
+    static constexpr Color magenta() { return {255, 0, 255, 0}; }
+    static constexpr Color orange() { return {255, 128, 0, 0}; }
+    static constexpr Color off() { return {0, 0, 0, 0}; }
     /// @}
 
     /**
@@ -66,12 +62,7 @@ struct Color {
         auto blend = [](uint8_t x, uint8_t y, uint8_t t) -> uint8_t {
             return static_cast<uint8_t>(x + ((static_cast<int16_t>(y) - x) * t) / 255);
         };
-        return {
-            blend(a.r, b.r, t),
-            blend(a.g, b.g, t),
-            blend(a.b, b.b, t),
-            blend(a.w, b.w, t)
-        };
+        return {blend(a.r, b.r, t), blend(a.g, b.g, t), blend(a.b, b.b, t), blend(a.w, b.w, t)};
     }
 };
 
@@ -159,4 +150,4 @@ public:
     virtual uint8_t getLedCount() const = 0;
 };
 
-} // namespace domes
+}  // namespace domes

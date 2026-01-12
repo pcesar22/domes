@@ -8,11 +8,11 @@
  * sends responses. Works with SerialOtaReceiver for command dispatch.
  */
 
-#include "traceProtocol.hpp"
 #include "interfaces/iTransport.hpp"
+#include "traceProtocol.hpp"
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 namespace domes::trace {
 
@@ -82,12 +82,7 @@ private:
      * @param startTs First event timestamp
      * @param endTs Last event timestamp
      */
-    void sendMetadata(
-        uint32_t eventCount,
-        uint32_t droppedCount,
-        uint32_t startTs,
-        uint32_t endTs
-    );
+    void sendMetadata(uint32_t eventCount, uint32_t droppedCount, uint32_t startTs, uint32_t endTs);
 
     /**
      * @brief Send a chunk of trace events
