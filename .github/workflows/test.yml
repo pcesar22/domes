@@ -1,0 +1,37 @@
+name: Unit Tests
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/test.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'firmware/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Build tests
+        working-directory: firmware/test_app
+        run: |
+          mkdir -p build
+          cd build
+          cmake -DIDF_TARGET= ..
+          make
+
+      - name: Run tests
+        working-directory: firmware/test_app/build
+        run: ./test_app

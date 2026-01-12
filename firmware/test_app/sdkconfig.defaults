@@ -1,0 +1,17 @@
+# DOMES Unit Test App Configuration
+#
+# Minimal config for running tests on Linux target
+
+# Enable Unity test framework
+CONFIG_UNITY_ENABLE_FLOAT=y
+CONFIG_UNITY_ENABLE_DOUBLE=y
+
+# Disable hardware-specific features for Linux target
+CONFIG_FREERTOS_UNICORE=y
+
+# C++ features
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
+
+# Logging
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
