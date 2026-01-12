@@ -438,7 +438,7 @@ graph LR
 - **I2S**: Direct digital audio to MAX98357A
 - **Touch Sensing**: Built-in capacitive touch
 - **ESP-NOW**: Ultra-low latency pod-to-pod communication
-- **WiFi**: OTA updates, future cloud features
+- **WiFi**: Required for ESP-NOW (P2P radio mode); not used for networking
 - **Dual Core**: Audio/haptics on one core, comms on other
 - **Community**: Extensive libraries, documentation, examples
 

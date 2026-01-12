@@ -133,14 +133,20 @@ esp_err_t err = led_strip_new_spi_device(&strip_config, &spi_config, &led_strip)
 
 ## Phase 7: Communication Stack
 **Status:** Not Started
-**Goal:** ESP-NOW and BLE validation
+**Goal:** ESP-NOW and BLE initialization and basic functionality
 
+- [ ] WiFi stack init for ESP-NOW (verify `wifi:mode : sta` in logs)
 - [ ] ESP-NOW point-to-point test
 - [ ] ESP-NOW broadcast/multicast
+- [ ] BLE stack init (verify `NimBLE: GAP` in logs)
 - [ ] BLE GATT server setup
-- [ ] WiFi + BLE + ESP-NOW coexistence test
+- [ ] BLE OTA service
 
 **Hardware Required:** 2+ ESP32-S3 DevKits
+
+**Note:** WiFi is only used as a dependency for ESP-NOW (P2P radio mode) - we don't
+connect to any AP or use WiFi networking. OTA is done via BLE, not WiFi.
+Real coexistence validation happens during Phase 8 with actual game traffic.
 
 ---
 
@@ -190,5 +196,5 @@ esp_err_t err = led_strip_new_spi_device(&strip_config, &spi_config, &led_strip)
 | 4 | Tasks run stable for 10+ minutes |
 | 5 | Haptic effects play, IMU detects taps |
 | 6 | Audio samples play clearly |
-| 7 | ESP-NOW latency < 5ms P99 |
+| 7 | RF stacks init, ESP-NOW ping works |
 | 8 | All peripherals work on custom PCB |
