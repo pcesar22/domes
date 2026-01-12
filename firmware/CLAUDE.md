@@ -255,6 +255,65 @@ constexpr size_t OTA_PARTITION_SIZE = 0x400000;  // 4MB
 
 ---
 
+## Runtime Configuration
+
+The firmware supports runtime feature toggles via a binary protocol.
+
+### Transport Architecture
+
+```
+┌─────────────────┐                    ┌─────────────────┐
+│   Host Tool     │   USB-CDC/TCP      │   ESP32-S3      │
+│   (CLI/Python)  │◄──────────────────►│   Firmware      │
+└─────────────────┘                    └─────────────────┘
+        │                                      │
+   Frame Protocol                    ConfigCommandHandler
+   [AA 55 Len Type Payload CRC]              │
+                                     FeatureManager
+                                     (atomic bitmask)
+```
+
+### Key Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| ITransport | `transport/iTransport.hpp` | Abstract transport interface |
+| UsbCdcTransport | `transport/usbCdcTransport.hpp` | USB serial transport |
+| TcpTransport | `transport/tcpTransport.hpp` | TCP socket transport |
+| TcpConfigServer | `transport/tcpConfigServer.hpp` | TCP server (port 5000) |
+| ConfigCommandHandler | `config/configCommandHandler.hpp` | Handles config messages |
+| FeatureManager | `config/featureManager.hpp` | Feature state (atomic bitmask) |
+| FrameDecoder | `protocol/frameCodec.hpp` | Frame parsing |
+
+### Adding New Features
+
+1. Add feature ID to `config/configProtocol.hpp`:
+```cpp
+enum class Feature : uint8_t {
+    kLedEffects = 1,
+    kBle = 2,
+    // Add new feature here
+    kMyFeature = 8,
+};
+```
+
+2. Handle the feature in your service by checking FeatureManager:
+```cpp
+if (featureManager.isEnabled(Feature::kMyFeature)) {
+    // Feature is enabled
+}
+```
+
+### Initialization Order (main.cpp)
+
+1. `initFeatureManager()` - Create feature manager (required first)
+2. `initTcpConfigServer()` - Start TCP server (if WiFi connected)
+3. `initSerialOta()` - Start serial OTA receiver (takes over USB-CDC console)
+
+**Important**: FeatureManager must be initialized before both TCP and serial config handlers.
+
+---
+
 ## When in Doubt
 
 1. Check `research/SOFTWARE_ARCHITECTURE.md` for design decisions

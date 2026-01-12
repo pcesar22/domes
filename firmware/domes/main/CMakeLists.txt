@@ -10,10 +10,14 @@ idf_component_register(
         "transport/usbCdcTransport.cpp"
         "transport/serialOtaReceiver.cpp"
         "transport/bleOtaService.cpp"
+        "transport/tcpTransport.cpp"
+        "transport/tcpConfigServer.cpp"
         "trace/traceBuffer.cpp"
         "trace/traceRecorder.cpp"
         "trace/traceHooks.cpp"
         "trace/traceCommandHandler.cpp"
+        "config/featureManager.cpp"
+        "config/configCommandHandler.cpp"
     INCLUDE_DIRS
         "."
         "interfaces"
@@ -23,6 +27,7 @@ idf_component_register(
         "utils"
         "transport"
         "trace"
+        "config"
     REQUIRES
         driver
         esp_timer

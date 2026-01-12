@@ -5,6 +5,7 @@
 
 #include "serialOtaReceiver.hpp"
 
+#include "config/configProtocol.hpp"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
@@ -21,16 +22,18 @@ static const char* TAG = "serial_ota";
 
 namespace domes {
 
-SerialOtaReceiver::SerialOtaReceiver(ITransport& transport)
-    : transport_(transport),
-      stopRequested_(false),
-      otaInProgress_(false),
-      traceHandler_(std::make_unique<trace::CommandHandler>(transport)),
-      otaHandle_(0),
-      updatePartition_(nullptr),
-      firmwareSize_(0),
-      bytesReceived_(0),
-      expectedOffset_(0) {
+SerialOtaReceiver::SerialOtaReceiver(ITransport& transport,
+                                       config::FeatureManager* features)
+    : transport_(transport)
+    , stopRequested_(false)
+    , otaInProgress_(false)
+    , traceHandler_(std::make_unique<trace::CommandHandler>(transport))
+    , configHandler_(features ? std::make_unique<config::ConfigCommandHandler>(transport, *features) : nullptr)
+    , otaHandle_(0)
+    , updatePartition_(nullptr)
+    , firmwareSize_(0)
+    , bytesReceived_(0)
+    , expectedOffset_(0) {
     std::memset(expectedSha256_, 0, sizeof(expectedSha256_));
 }
 
@@ -65,6 +68,13 @@ void SerialOtaReceiver::run() {
                 // Check if this is a trace command
                 if (trace::isTraceMessage(msgTypeByte)) {
                     traceHandler_->handleCommand(msgTypeByte, payload, payloadLen);
+                    decoder.reset();
+                    continue;
+                }
+
+                // Check if this is a config command
+                if (config::isConfigMessage(msgTypeByte) && configHandler_) {
+                    configHandler_->handleCommand(msgTypeByte, payload, payloadLen);
                     decoder.reset();
                     continue;
                 }
