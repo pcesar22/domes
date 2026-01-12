@@ -1,0 +1,32 @@
+[package]
+name = "domes-cli"
+version = "0.1.0"
+edition = "2021"
+description = "DOMES firmware runtime configuration CLI"
+authors = ["DOMES Team"]
+
+[dependencies]
+# CLI argument parsing
+clap = { version = "4.4", features = ["derive"] }
+
+# Serial port communication
+serialport = "4.3"
+
+# CRC32 calculation (matching firmware's IEEE 802.3 polynomial)
+crc32fast = "1.4"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Hex formatting for debug output
+hex = "0.4"
+
+[dev-dependencies]
+# For testing
+assert_cmd = "2.0"
+predicates = "3.0"
+
+[[bin]]
+name = "domes-cli"
+path = "src/main.rs"

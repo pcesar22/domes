@@ -14,6 +14,8 @@ idf_component_register(
         "trace/traceRecorder.cpp"
         "trace/traceHooks.cpp"
         "trace/traceCommandHandler.cpp"
+        "config/featureManager.cpp"
+        "config/configCommandHandler.cpp"
     INCLUDE_DIRS
         "."
         "interfaces"
@@ -23,6 +25,7 @@ idf_component_register(
         "utils"
         "transport"
         "trace"
+        "config"
     REQUIRES
         driver
         esp_timer

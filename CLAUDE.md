@@ -2,6 +2,70 @@
 
 This project was created and is maintained with assistance from Claude Code, Anthropic's official CLI for Claude.
 
+## MANDATORY: Verification After Implementation
+
+**IMPORTANT**: After ANY code implementation, you MUST verify your changes work END-TO-END. Unit tests alone are NOT sufficient. Do NOT consider a task complete until the feature actually works on hardware.
+
+### Verification Levels (ALL required for new features)
+
+#### Level 1: Unit Tests
+```bash
+cd firmware/test_app && mkdir -p build && cd build && cmake .. && make && ctest --output-on-failure
+```
+
+#### Level 2: Build ALL affected components
+```bash
+# Firmware
+cd firmware/domes && . ~/esp/esp-idf/export.sh && idf.py build
+
+# Host tools (if modified)
+cd tools/domes-cli && cargo build
+```
+
+#### Level 3: End-to-End Verification (REQUIRED for new features)
+```bash
+# Flash firmware to device
+/flash
+
+# Test the actual feature works by:
+# 1. Running the host tool against the device
+# 2. Checking serial output/logs for expected behavior
+# 3. Verifying the feature does what it's supposed to do
+```
+
+### Feature-Specific Verification
+
+| Feature Type | Verification Method |
+|--------------|---------------------|
+| Protocol/transport | Flash firmware, run host tool, verify communication works |
+| Config/runtime | Flash firmware, use CLI to change settings, verify settings applied |
+| LED/display | Flash firmware, visually confirm behavior |
+| Sensors/input | Flash firmware, trigger input, verify response in logs |
+
+### Available Skills & Commands
+
+| Command | Purpose | When to Use |
+|---------|---------|-------------|
+| `/flash` | Build, flash, monitor | **ALWAYS** after firmware changes |
+| `/lint-fw` | Check coding standards | Before committing firmware code |
+| `/size` | Analyze binary size | After adding new features |
+| `/debug-esp32` | GDB debugging | When investigating runtime issues |
+
+### Test Files
+
+- **Firmware unit tests**: `firmware/test_app/main/test_*.cpp`
+- **Protocol tests**: `test_frame_codec.cpp`, `test_ota_protocol.cpp`, `test_config_protocol.cpp`
+- **Feature tests**: `test_feature_manager.cpp`
+
+**DO NOT** mark a task as complete if:
+- Build fails
+- Unit tests fail
+- Firmware doesn't flash successfully
+- **You haven't verified the feature works on actual hardware**
+- Host tool doesn't communicate with device (for host<->device features)
+
+---
+
 ## About Claude Code
 
 Claude Code is an interactive CLI tool that helps with software engineering tasks, including:
@@ -19,6 +83,7 @@ When working on this project with Claude Code:
 2. **Iterative Development**: Claude can help break down complex tasks into manageable steps
 3. **Code Review**: Always review Claude's suggestions before committing changes
 4. **Context Awareness**: Claude understands the project structure and can maintain consistency
+5. **Always Verify**: Run tests after every implementation - no exceptions
 
 ## Project Sessions
 

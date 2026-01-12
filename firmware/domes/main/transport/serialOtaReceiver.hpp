@@ -9,6 +9,8 @@
  * trace protocol commands for performance profiling.
  */
 
+#include "config/configCommandHandler.hpp"
+#include "config/featureManager.hpp"
 #include "esp_ota_ops.h"
 #include "interfaces/iTaskRunner.hpp"
 #include "interfaces/iTransport.hpp"
@@ -43,8 +45,10 @@ public:
      * @brief Construct OTA receiver
      *
      * @param transport Transport to receive OTA data on
+     * @param features Feature manager for runtime config (optional)
      */
-    explicit SerialOtaReceiver(ITransport& transport);
+    explicit SerialOtaReceiver(ITransport& transport,
+                                config::FeatureManager* features = nullptr);
 
     ~SerialOtaReceiver() override = default;
 
@@ -109,6 +113,9 @@ private:
 
     // Trace command handler
     std::unique_ptr<trace::CommandHandler> traceHandler_;
+
+    // Config command handler (nullptr if feature manager not provided)
+    std::unique_ptr<config::ConfigCommandHandler> configHandler_;
 
     // OTA state
     esp_ota_handle_t otaHandle_;

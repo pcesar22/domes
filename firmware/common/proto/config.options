@@ -1,0 +1,5 @@
+# nanopb options for config.proto
+# Sets maximum sizes for variable-length fields
+
+# ListFeaturesResponse: max 16 features in array
+domes.config.ListFeaturesResponse.features  max_count:16

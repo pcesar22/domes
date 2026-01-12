@@ -14,6 +14,7 @@
 #include "services/githubClient.hpp"
 #include "services/otaManager.hpp"
 #include "trace/traceApi.hpp"
+#include "config/featureManager.hpp"
 #include "trace/traceRecorder.hpp"
 #include "transport/bleOtaService.hpp"
 #include "transport/serialOtaReceiver.hpp"
@@ -58,8 +59,8 @@ static domes::OtaManager* otaManager = nullptr;
 static domes::UsbCdcTransport* usbCdcTransport = nullptr;
 static domes::SerialOtaReceiver* serialOtaReceiver = nullptr;
 static domes::BleOtaService* bleOtaService = nullptr;
-static domes::SerialOtaReceiver* bleOtaReceiver =
-    nullptr;  // Reuses SerialOtaReceiver with BLE transport
+static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
+static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::WifiManager* wifiManager = nullptr;
@@ -216,8 +217,12 @@ static esp_err_t initSerialOta() {
     }
     ESP_LOGI(kTag, "USB-CDC transport initialized");
 
-    // Create serial OTA receiver
-    static domes::SerialOtaReceiver receiver(*usbCdcTransport);
+    // Create feature manager for runtime config
+    static domes::config::FeatureManager features;
+    featureManager = &features;
+
+    // Create serial OTA receiver with config support
+    static domes::SerialOtaReceiver receiver(*usbCdcTransport, featureManager);
     serialOtaReceiver = &receiver;
 
     // Create receiver task
@@ -260,7 +265,8 @@ static esp_err_t initBleOta() {
     ESP_LOGI(kTag, "BLE OTA service initialized, advertising started");
 
     // Create BLE OTA receiver (reuses SerialOtaReceiver with BLE transport)
-    static domes::SerialOtaReceiver receiver(*bleOtaService);
+    // Note: featureManager may be nullptr if serial OTA wasn't initialized first
+    static domes::SerialOtaReceiver receiver(*bleOtaService, featureManager);
     bleOtaReceiver = &receiver;
 
     // Create receiver task

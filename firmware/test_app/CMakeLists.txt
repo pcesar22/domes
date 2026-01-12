@@ -27,6 +27,11 @@ FetchContent_MakeAvailable(googletest)
 # Add common library (uses its non-IDF CMake mode)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../common ${CMAKE_BINARY_DIR}/common)
 
+# Config module sources (from main firmware)
+set(CONFIG_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/config/featureManager.cpp
+)
+
 # Test executable
 add_executable(test_app
     main/test_main.cpp
@@ -34,6 +39,13 @@ add_executable(test_app
     main/test_frame_codec.cpp
     main/test_ota_protocol.cpp
     main/test_version_parser.cpp
+    main/test_config_protocol.cpp
+    main/test_feature_manager.cpp
+    ${CONFIG_SOURCES}
+)
+
+target_include_directories(test_app PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main
 )
 
 target_link_libraries(test_app PRIVATE
