@@ -1,12 +1,18 @@
 /**
  * @file main.cpp
- * @brief DOMES Firmware - Phase 4 Infrastructure + OTA
+ * @brief DOMES Firmware - M4 RF Stacks + Infrastructure
  *
- * Infrastructure layer validated on ESP32-S3-DevKitC-1 v1.1
+ * Milestones validated on ESP32-S3-DevKitC-1 v1.1:
+ * - M1-M3: Build, boot, debug infrastructure
+ * - M4: RF stacks init (WiFi for ESP-NOW + BLE advertising)
+ *
+ * Features:
  * - NVS configuration storage
  * - Task Watchdog Timer (TWDT)
  * - Managed task lifecycle
  * - LED demo using TaskManager with smooth transitions
+ * - WiFi stack init for ESP-NOW (no AP connection)
+ * - BLE OTA service with NimBLE advertising
  * - OTA self-test and rollback protection
  */
 
@@ -36,6 +42,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_netif.h"
 
 #include <cstdint>
 #include <cstring>
@@ -460,6 +469,72 @@ static esp_err_t initWifi() {
 #endif  // CONFIG_DOMES_WIFI_AUTO_CONNECT
 
 /**
+ * @brief Initialize WiFi in station mode for ESP-NOW
+ *
+ * ESP-NOW requires the WiFi stack to be initialized in station mode.
+ * We don't connect to any AP - this just enables the radio for direct
+ * peer-to-peer communication.
+ *
+ * @note This must be called before BLE init for proper coexistence.
+ */
+static esp_err_t initWifiForEspNow() {
+    ESP_LOGI(kTag, "Initializing WiFi stack for ESP-NOW...");
+
+    // Track heap before WiFi init
+    size_t heapBefore = esp_get_free_heap_size();
+
+    // Initialize TCP/IP stack (required even though we don't use networking)
+    esp_err_t err = esp_netif_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "esp_netif_init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Create default event loop (may already exist from NVS init)
+    err = esp_event_loop_create_default();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(kTag, "esp_event_loop_create_default failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Create WiFi station interface (required for ESP-NOW)
+    esp_netif_t* staNetif = esp_netif_create_default_wifi_sta();
+    if (staNetif == nullptr) {
+        ESP_LOGE(kTag, "Failed to create WiFi STA netif");
+        return ESP_FAIL;
+    }
+
+    // Initialize WiFi with default config
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    err = esp_wifi_init(&cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "esp_wifi_init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Set station mode (required for ESP-NOW)
+    err = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "esp_wifi_set_mode failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Start WiFi (brings up the radio)
+    err = esp_wifi_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "esp_wifi_start failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Log success and heap usage
+    size_t heapAfter = esp_get_free_heap_size();
+    ESP_LOGI(kTag, "WiFi stack initialized (STA mode, not connected)");
+    ESP_LOGI(kTag, "WiFi heap usage: %zu bytes", heapBefore - heapAfter);
+
+    return ESP_OK;
+}
+
+/**
  * @brief Initialize the LED strip hardware and animator
  */
 static esp_err_t initLedStrip() {
@@ -560,14 +635,17 @@ extern "C" void app_main() {
         ESP_LOGW(kTag, "LED init failed, continuing without LED");
     }
 
-    // Initialize WiFi (required for OTA)
-    // Enable with: idf.py menuconfig -> DOMES -> Enable automatic WiFi connection
+    // Initialize WiFi stack (required for ESP-NOW and BLE coexistence)
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+    // WiFi auto-connect enabled - WifiManager will initialize WiFi and connect to AP
     if (initWifi() != ESP_OK) {
-        ESP_LOGW(kTag, "WiFi init failed, OTA updates unavailable");
+        ESP_LOGW(kTag, "WiFi connect failed, GitHub OTA unavailable");
     }
 #else
-    ESP_LOGI(kTag, "WiFi auto-connect disabled (enable in menuconfig)");
+    // No AP connection needed - just initialize WiFi stack for ESP-NOW
+    if (initWifiForEspNow() != ESP_OK) {
+        ESP_LOGE(kTag, "WiFi stack init failed - ESP-NOW will not work!");
+    }
 #endif
 
     // Initialize OTA subsystem
@@ -578,15 +656,31 @@ extern "C" void app_main() {
         handleOtaVerification();
     }
 
-    // Initialize BLE OTA service FIRST (before serial takes over console)
-    ESP_LOGI(kTag, ">>> Starting BLE OTA init...");
+    // Initialize BLE OTA service (before serial takes over console)
+    ESP_LOGI(kTag, "Initializing BLE stack...");
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
+    size_t heapBeforeBle = esp_get_free_heap_size();
     if (initBleOta() != ESP_OK) {
         ESP_LOGW(kTag, "BLE OTA init failed, continuing without BLE OTA");
     } else {
-        ESP_LOGI(kTag, ">>> BLE OTA init SUCCESS");
+        size_t heapAfterBle = esp_get_free_heap_size();
+        ESP_LOGI(kTag, "BLE stack initialized (NimBLE + advertising)");
+        ESP_LOGI(kTag, "BLE heap usage: %zu bytes", heapBeforeBle - heapAfterBle);
     }
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
+
+    // Log RF stack summary
+    ESP_LOGI(kTag, "");
+    ESP_LOGI(kTag, "=== M4: RF Stacks Init Complete ===");
+    ESP_LOGI(kTag, "  WiFi: STA mode (for ESP-NOW)");
+    ESP_LOGI(kTag, "  BLE:  Advertising as 'DOMES-Pod'");
+    ESP_LOGI(kTag, "  Heap: %lu bytes free", static_cast<unsigned long>(esp_get_free_heap_size()));
+    ESP_LOGI(kTag, "===================================");
+    ESP_LOGI(kTag, "");
+
+    // Delay before serial OTA to allow boot logs to be visible
+    ESP_LOGI(kTag, "Waiting 3s before serial OTA (for log visibility)...");
+    vTaskDelay(pdMS_TO_TICKS(3000));
 
     // Initialize serial OTA receiver (USB-CDC based) - this takes over console
     if (initSerialOta() != ESP_OK) {
