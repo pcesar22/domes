@@ -243,6 +243,18 @@ constexpr size_t OTA_PARTITION_SIZE = 0x400000;  // 4MB
 
 ---
 
+## Code Organization Principles
+
+**Keep it simple. No over-engineering.**
+
+- **No backward compatibility wrappers** - When refactoring, just change the code. Update all call sites. Don't create wrapper files or alias namespaces.
+- **No umbrella headers** - Don't create `all.hpp` or `index.hpp` files. Include what you need directly.
+- **Delete unused code** - Don't comment it out, don't deprecate it, just delete it.
+- **One file, one purpose** - Don't split simple configs into multiple files for "organization".
+- **Flat over nested** - Avoid unnecessary directory hierarchies.
+
+---
+
 ## When in Doubt
 
 1. Check `research/SOFTWARE_ARCHITECTURE.md` for design decisions
@@ -250,3 +262,4 @@ constexpr size_t OTA_PARTITION_SIZE = 0x400000;  // 4MB
 3. Check `research/DEVELOPMENT_ROADMAP.md` for task dependencies
 4. Prefer explicit over clever
 5. Prefer tested over fast
+6. **Delete code rather than deprecate it**
