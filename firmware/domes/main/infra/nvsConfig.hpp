@@ -8,7 +8,6 @@
  */
 
 #include "interfaces/iConfigStorage.hpp"
-
 #include "nvs.h"
 
 namespace domes::infra {
@@ -17,29 +16,29 @@ namespace domes::infra {
  * @brief NVS namespace names for DOMES configuration
  */
 namespace nvs_ns {
-    constexpr const char* kConfig      = "config";      ///< User settings (brightness, volume)
-    constexpr const char* kStats       = "stats";       ///< Runtime statistics
-    constexpr const char* kCalibration = "calibration"; ///< Sensor calibration data
-}
+constexpr const char* kConfig = "config";            ///< User settings (brightness, volume)
+constexpr const char* kStats = "stats";              ///< Runtime statistics
+constexpr const char* kCalibration = "calibration";  ///< Sensor calibration data
+}  // namespace nvs_ns
 
 /**
  * @brief Configuration keys within "config" namespace
  */
 namespace config_key {
-    constexpr const char* kBrightness     = "brightness";    ///< uint8_t 0-255
-    constexpr const char* kVolume         = "volume";        ///< uint8_t 0-100
-    constexpr const char* kTouchThreshold = "touch_thresh";  ///< uint16_t
-    constexpr const char* kPodId          = "pod_id";        ///< uint8_t
-}
+constexpr const char* kBrightness = "brightness";        ///< uint8_t 0-255
+constexpr const char* kVolume = "volume";                ///< uint8_t 0-100
+constexpr const char* kTouchThreshold = "touch_thresh";  ///< uint16_t
+constexpr const char* kPodId = "pod_id";                 ///< uint8_t
+}  // namespace config_key
 
 /**
  * @brief Statistics keys within "stats" namespace
  */
 namespace stats_key {
-    constexpr const char* kBootCount    = "boot_count";     ///< uint32_t
-    constexpr const char* kTotalRuntime = "runtime_s";      ///< uint32_t seconds
-    constexpr const char* kTouchEvents  = "touch_events";   ///< uint32_t
-}
+constexpr const char* kBootCount = "boot_count";      ///< uint32_t
+constexpr const char* kTotalRuntime = "runtime_s";    ///< uint32_t seconds
+constexpr const char* kTouchEvents = "touch_events";  ///< uint32_t
+}  // namespace stats_key
 
 /**
  * @brief NVS-backed configuration storage implementation
@@ -117,7 +116,7 @@ public:
      * @param defaultValue Value to return if key not found
      * @return Stored value or default
      */
-    template<typename T>
+    template <typename T>
     T getOrDefault(const char* key, T defaultValue) const;
 
 private:
@@ -126,16 +125,16 @@ private:
 };
 
 // Template specializations
-template<>
+template <>
 uint8_t NvsConfig::getOrDefault<uint8_t>(const char* key, uint8_t defaultValue) const;
 
-template<>
+template <>
 uint16_t NvsConfig::getOrDefault<uint16_t>(const char* key, uint16_t defaultValue) const;
 
-template<>
+template <>
 uint32_t NvsConfig::getOrDefault<uint32_t>(const char* key, uint32_t defaultValue) const;
 
-template<>
+template <>
 int32_t NvsConfig::getOrDefault<int32_t>(const char* key, int32_t defaultValue) const;
 
-} // namespace domes::infra
+}  // namespace domes::infra

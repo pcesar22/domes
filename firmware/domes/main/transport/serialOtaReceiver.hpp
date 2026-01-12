@@ -9,11 +9,10 @@
  * trace protocol commands for performance profiling.
  */
 
-#include "interfaces/iTransport.hpp"
-#include "interfaces/iTaskRunner.hpp"
-#include "trace/traceCommandHandler.hpp"
-
 #include "esp_ota_ops.h"
+#include "interfaces/iTaskRunner.hpp"
+#include "interfaces/iTransport.hpp"
+#include "trace/traceCommandHandler.hpp"
 
 #include <atomic>
 #include <memory>

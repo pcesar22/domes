@@ -1,8 +1,7 @@
 #pragma once
 
-#include "interfaces/iLedDriver.hpp"
-
 #include "driver/gpio.h"
+#include "interfaces/iLedDriver.hpp"
 #include "led_strip.h"
 
 #include <array>
@@ -21,7 +20,7 @@ namespace domes {
  * @note Uses RMT backend by default. For boards with Octal PSRAM (like
  *       DevKitC-1 v1.1), consider using SPI backend directly instead.
  */
-template<uint8_t kNumLeds>
+template <uint8_t kNumLeds>
 class LedStripDriver : public ILedDriver {
 public:
     /**
@@ -31,10 +30,7 @@ public:
      * @param useRgbw True for SK6812 RGBW, false for WS2812 RGB
      */
     explicit LedStripDriver(gpio_num_t gpioPin, bool useRgbw = false)
-        : gpioPin_(gpioPin)
-        , useRgbw_(useRgbw)
-        , brightness_(255)
-        , stripHandle_(nullptr) {
+        : gpioPin_(gpioPin), useRgbw_(useRgbw), brightness_(255), stripHandle_(nullptr) {
         colors_.fill(Color::off());
     }
 
@@ -54,18 +50,20 @@ public:
             .max_leds = kNumLeds,
             .led_pixel_format = useRgbw_ ? LED_PIXEL_FORMAT_GRBW : LED_PIXEL_FORMAT_GRB,
             .led_model = useRgbw_ ? LED_MODEL_SK6812 : LED_MODEL_WS2812,
-            .flags = {
-                .invert_out = false,
-            },
+            .flags =
+                {
+                    .invert_out = false,
+                },
         };
 
         led_strip_rmt_config_t rmtConfig = {
             .clk_src = RMT_CLK_SRC_DEFAULT,
             .resolution_hz = kRmtResolutionHz,
             .mem_block_symbols = kMemBlockSymbols,
-            .flags = {
-                .with_dma = false,
-            },
+            .flags =
+                {
+                    .with_dma = false,
+                },
         };
 
         esp_err_t err = led_strip_new_rmt_device(&stripConfig, &rmtConfig, &stripHandle_);
@@ -124,13 +122,9 @@ public:
         return led_strip_refresh(stripHandle_);
     }
 
-    void setBrightness(uint8_t brightness) override {
-        brightness_ = brightness;
-    }
+    void setBrightness(uint8_t brightness) override { brightness_ = brightness; }
 
-    uint8_t getLedCount() const override {
-        return kNumLeds;
-    }
+    uint8_t getLedCount() const override { return kNumLeds; }
 
 private:
     static constexpr uint32_t kRmtResolutionHz = 10 * 1000 * 1000;  ///< 10 MHz = 100ns
@@ -153,4 +147,4 @@ private:
     std::array<Color, kNumLeds> colors_;
 };
 
-} // namespace domes
+}  // namespace domes

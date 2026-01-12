@@ -15,8 +15,8 @@
 #include "traceEvent.hpp"
 #include "traceRecorder.hpp"
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 namespace domes::trace {
 
@@ -26,14 +26,14 @@ namespace domes::trace {
  * These extend the frame protocol with trace-specific commands.
  */
 enum class TraceMsgType : uint8_t {
-    kStart  = 0x10,  ///< Start trace recording (host -> device)
-    kStop   = 0x11,  ///< Stop trace recording (host -> device)
-    kDump   = 0x12,  ///< Request trace dump (host -> device)
-    kData   = 0x13,  ///< Trace data chunk (device -> host)
-    kEnd    = 0x14,  ///< End of trace dump (device -> host)
-    kClear  = 0x15,  ///< Clear trace buffer (host -> device)
+    kStart = 0x10,   ///< Start trace recording (host -> device)
+    kStop = 0x11,    ///< Stop trace recording (host -> device)
+    kDump = 0x12,    ///< Request trace dump (host -> device)
+    kData = 0x13,    ///< Trace data chunk (device -> host)
+    kEnd = 0x14,     ///< End of trace dump (device -> host)
+    kClear = 0x15,   ///< Clear trace buffer (host -> device)
     kStatus = 0x16,  ///< Query trace status (host -> device)
-    kAck    = 0x17,  ///< Acknowledge command (device -> host)
+    kAck = 0x17,     ///< Acknowledge command (device -> host)
 };
 
 /**
@@ -51,12 +51,12 @@ inline bool isTraceMessage(uint8_t type) {
  * @brief Trace status for ACK responses
  */
 enum class TraceStatus : uint8_t {
-    kOk           = 0x00,  ///< Command succeeded
-    kNotInit      = 0x01,  ///< Trace not initialized
-    kAlreadyOn    = 0x02,  ///< Tracing already enabled
-    kAlreadyOff   = 0x03,  ///< Tracing already disabled
-    kBufferEmpty  = 0x04,  ///< No events to dump
-    kError        = 0xFF,  ///< Generic error
+    kOk = 0x00,           ///< Command succeeded
+    kNotInit = 0x01,      ///< Trace not initialized
+    kAlreadyOn = 0x02,    ///< Tracing already enabled
+    kAlreadyOff = 0x03,   ///< Tracing already disabled
+    kBufferEmpty = 0x04,  ///< No events to dump
+    kError = 0xFF,        ///< Generic error
 };
 
 /**
@@ -70,7 +70,7 @@ struct TraceMetadata {
     uint32_t droppedCount;    ///< Events dropped due to buffer full
     uint32_t startTimestamp;  ///< First event timestamp (microseconds)
     uint32_t endTimestamp;    ///< Last event timestamp (microseconds)
-    uint8_t  taskCount;       ///< Number of registered tasks
+    uint8_t taskCount;        ///< Number of registered tasks
     // Followed by: TraceTaskEntry[taskCount]
 };
 static_assert(sizeof(TraceMetadata) == 17, "TraceMetadata size mismatch");
@@ -83,8 +83,8 @@ static_assert(sizeof(TraceMetadata) == 17, "TraceMetadata size mismatch");
  */
 #pragma pack(push, 1)
 struct TraceTaskEntry {
-    uint16_t taskId;                      ///< FreeRTOS task number
-    char name[kMaxTaskNameLength];        ///< Task name (null-terminated)
+    uint16_t taskId;                ///< FreeRTOS task number
+    char name[kMaxTaskNameLength];  ///< Task name (null-terminated)
 };
 static_assert(sizeof(TraceTaskEntry) == 18, "TraceTaskEntry size mismatch");
 #pragma pack(pop)
@@ -96,8 +96,8 @@ static_assert(sizeof(TraceTaskEntry) == 18, "TraceTaskEntry size mismatch");
  */
 #pragma pack(push, 1)
 struct TraceDataHeader {
-    uint32_t offset;   ///< Event offset in dump (0-based)
-    uint16_t count;    ///< Number of events in this chunk
+    uint32_t offset;  ///< Event offset in dump (0-based)
+    uint16_t count;   ///< Number of events in this chunk
     // Followed by: TraceEvent[count]
 };
 static_assert(sizeof(TraceDataHeader) == 6, "TraceDataHeader size mismatch");
@@ -119,11 +119,11 @@ static_assert(sizeof(TraceDumpEnd) == 8, "TraceDumpEnd size mismatch");
  */
 #pragma pack(push, 1)
 struct TraceStatusResponse {
-    uint8_t  initialized;  ///< 1 if trace system initialized
-    uint8_t  enabled;      ///< 1 if tracing is currently enabled
-    uint32_t eventCount;   ///< Approximate events in buffer
-    uint32_t droppedCount; ///< Events dropped since last clear
-    uint32_t bufferSize;   ///< Total buffer size in bytes
+    uint8_t initialized;    ///< 1 if trace system initialized
+    uint8_t enabled;        ///< 1 if tracing is currently enabled
+    uint32_t eventCount;    ///< Approximate events in buffer
+    uint32_t droppedCount;  ///< Events dropped since last clear
+    uint32_t bufferSize;    ///< Total buffer size in bytes
 };
 static_assert(sizeof(TraceStatusResponse) == 14, "TraceStatusResponse size mismatch");
 #pragma pack(pop)

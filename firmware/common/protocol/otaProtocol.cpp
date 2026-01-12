@@ -14,14 +14,8 @@ namespace domes {
 // Serialization
 // =============================================================================
 
-TransportError serializeOtaBegin(
-    uint32_t firmwareSize,
-    const uint8_t* sha256,
-    const char* version,
-    uint8_t* buf,
-    size_t bufSize,
-    size_t* outLen
-) {
+TransportError serializeOtaBegin(uint32_t firmwareSize, const uint8_t* sha256, const char* version,
+                                 uint8_t* buf, size_t bufSize, size_t* outLen) {
     constexpr size_t payloadSize = sizeof(OtaBeginPayload);
 
     if (buf == nullptr || outLen == nullptr) {
@@ -55,14 +49,8 @@ TransportError serializeOtaBegin(
     return TransportError::kOk;
 }
 
-TransportError serializeOtaData(
-    uint32_t offset,
-    const uint8_t* data,
-    size_t dataLen,
-    uint8_t* buf,
-    size_t bufSize,
-    size_t* outLen
-) {
+TransportError serializeOtaData(uint32_t offset, const uint8_t* data, size_t dataLen, uint8_t* buf,
+                                size_t bufSize, size_t* outLen) {
     const size_t totalSize = sizeof(OtaDataHeader) + dataLen;
 
     if (buf == nullptr || outLen == nullptr) {
@@ -90,11 +78,7 @@ TransportError serializeOtaData(
     return TransportError::kOk;
 }
 
-TransportError serializeOtaEnd(
-    uint8_t* buf,
-    size_t bufSize,
-    size_t* outLen
-) {
+TransportError serializeOtaEnd(uint8_t* buf, size_t bufSize, size_t* outLen) {
     if (outLen == nullptr) {
         return TransportError::kInvalidArg;
     }
@@ -106,13 +90,8 @@ TransportError serializeOtaEnd(
     return TransportError::kOk;
 }
 
-TransportError serializeOtaAck(
-    OtaStatus status,
-    uint32_t nextOffset,
-    uint8_t* buf,
-    size_t bufSize,
-    size_t* outLen
-) {
+TransportError serializeOtaAck(OtaStatus status, uint32_t nextOffset, uint8_t* buf, size_t bufSize,
+                               size_t* outLen) {
     constexpr size_t payloadSize = sizeof(OtaAckPayload);
 
     if (buf == nullptr || outLen == nullptr) {
@@ -130,12 +109,7 @@ TransportError serializeOtaAck(
     return TransportError::kOk;
 }
 
-TransportError serializeOtaAbort(
-    OtaStatus reason,
-    uint8_t* buf,
-    size_t bufSize,
-    size_t* outLen
-) {
+TransportError serializeOtaAbort(OtaStatus reason, uint8_t* buf, size_t bufSize, size_t* outLen) {
     constexpr size_t payloadSize = sizeof(OtaAbortPayload);
 
     if (buf == nullptr || outLen == nullptr) {
@@ -156,14 +130,9 @@ TransportError serializeOtaAbort(
 // Deserialization
 // =============================================================================
 
-TransportError deserializeOtaBegin(
-    const uint8_t* payload,
-    size_t payloadLen,
-    uint32_t* firmwareSize,
-    uint8_t* sha256,
-    char* version,
-    size_t versionBufSize
-) {
+TransportError deserializeOtaBegin(const uint8_t* payload, size_t payloadLen,
+                                   uint32_t* firmwareSize, uint8_t* sha256, char* version,
+                                   size_t versionBufSize) {
     constexpr size_t expectedSize = sizeof(OtaBeginPayload);
 
     if (payload == nullptr || firmwareSize == nullptr) {
@@ -190,13 +159,8 @@ TransportError deserializeOtaBegin(
     return TransportError::kOk;
 }
 
-TransportError deserializeOtaData(
-    const uint8_t* payload,
-    size_t payloadLen,
-    uint32_t* offset,
-    const uint8_t** data,
-    size_t* dataLen
-) {
+TransportError deserializeOtaData(const uint8_t* payload, size_t payloadLen, uint32_t* offset,
+                                  const uint8_t** data, size_t* dataLen) {
     constexpr size_t headerSize = sizeof(OtaDataHeader);
 
     if (payload == nullptr || offset == nullptr || data == nullptr || dataLen == nullptr) {
@@ -220,12 +184,8 @@ TransportError deserializeOtaData(
     return TransportError::kOk;
 }
 
-TransportError deserializeOtaAck(
-    const uint8_t* payload,
-    size_t payloadLen,
-    OtaStatus* status,
-    uint32_t* nextOffset
-) {
+TransportError deserializeOtaAck(const uint8_t* payload, size_t payloadLen, OtaStatus* status,
+                                 uint32_t* nextOffset) {
     constexpr size_t expectedSize = sizeof(OtaAckPayload);
 
     if (payload == nullptr || status == nullptr || nextOffset == nullptr) {
@@ -243,11 +203,7 @@ TransportError deserializeOtaAck(
     return TransportError::kOk;
 }
 
-TransportError deserializeOtaAbort(
-    const uint8_t* payload,
-    size_t payloadLen,
-    OtaStatus* reason
-) {
+TransportError deserializeOtaAbort(const uint8_t* payload, size_t payloadLen, OtaStatus* reason) {
     constexpr size_t expectedSize = sizeof(OtaAbortPayload);
 
     if (payload == nullptr || reason == nullptr) {

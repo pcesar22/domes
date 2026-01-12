@@ -11,13 +11,11 @@
  * - Access to the trace buffer for dump operations
  */
 
-#include "traceBuffer.hpp"
-#include "traceEvent.hpp"
-
+#include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
-#include "esp_err.h"
+#include "traceBuffer.hpp"
+#include "traceEvent.hpp"
 
 #include <array>
 #include <atomic>
@@ -36,9 +34,9 @@ constexpr size_t kMaxTaskNameLength = 16;
  * @brief Task name entry for trace metadata
  */
 struct TaskNameEntry {
-    uint16_t taskId;                      ///< FreeRTOS task number
-    char name[kMaxTaskNameLength];        ///< Task name (null-terminated)
-    bool valid;                           ///< Entry is valid
+    uint16_t taskId;                ///< FreeRTOS task number
+    char name[kMaxTaskNameLength];  ///< Task name (null-terminated)
+    bool valid;                     ///< Entry is valid
 };
 
 /**

@@ -17,8 +17,8 @@
  * - Total frame overhead: 9 bytes (2 start + 2 length + 1 type + 4 CRC)
  */
 
-#include "utils/crc32.hpp"
 #include "interfaces/result.hpp"
+#include "utils/crc32.hpp"
 
 #include <array>
 #include <cstddef>
@@ -55,14 +55,8 @@ constexpr size_t kMaxFrameSize = kMaxPayloadSize + kFrameOverhead;
  * @return TransportError::kOk on success
  * @return TransportError::kInvalidArg if buffer too small or payload too large
  */
-inline TransportError encodeFrame(
-    uint8_t type,
-    const uint8_t* payload,
-    size_t payloadLen,
-    uint8_t* frameBuf,
-    size_t frameBufSize,
-    size_t* frameLen
-) {
+inline TransportError encodeFrame(uint8_t type, const uint8_t* payload, size_t payloadLen,
+                                  uint8_t* frameBuf, size_t frameBufSize, size_t* frameLen) {
     if (payloadLen > kMaxPayloadSize) {
         return TransportError::kInvalidArg;
     }
@@ -249,10 +243,10 @@ public:
 
 private:
     State state_;
-    uint16_t length_;           ///< Length field from frame (type + payload)
-    size_t dataIndex_;          ///< Current position in data buffer
-    uint8_t crcIndex_;          ///< Current position in CRC (0-3)
-    uint32_t receivedCrc_;      ///< CRC from frame
+    uint16_t length_;                                ///< Length field from frame (type + payload)
+    size_t dataIndex_;                               ///< Current position in data buffer
+    uint8_t crcIndex_;                               ///< Current position in CRC (0-3)
+    uint32_t receivedCrc_;                           ///< CRC from frame
     std::array<uint8_t, kMaxPayloadSize + 1> data_;  ///< Type + payload buffer
 };
 

@@ -5,15 +5,14 @@
 
 #include "serialOtaReceiver.hpp"
 
-#include "protocol/otaProtocol.hpp"
-#include "protocol/frameCodec.hpp"
-#include "trace/traceProtocol.hpp"
-
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "protocol/frameCodec.hpp"
+#include "protocol/otaProtocol.hpp"
+#include "trace/traceProtocol.hpp"
 
 #include <array>
 #include <cstring>
@@ -23,15 +22,15 @@ static const char* TAG = "serial_ota";
 namespace domes {
 
 SerialOtaReceiver::SerialOtaReceiver(ITransport& transport)
-    : transport_(transport)
-    , stopRequested_(false)
-    , otaInProgress_(false)
-    , traceHandler_(std::make_unique<trace::CommandHandler>(transport))
-    , otaHandle_(0)
-    , updatePartition_(nullptr)
-    , firmwareSize_(0)
-    , bytesReceived_(0)
-    , expectedOffset_(0) {
+    : transport_(transport),
+      stopRequested_(false),
+      otaInProgress_(false),
+      traceHandler_(std::make_unique<trace::CommandHandler>(transport)),
+      otaHandle_(0),
+      updatePartition_(nullptr),
+      firmwareSize_(0),
+      bytesReceived_(0),
+      expectedOffset_(0) {
     std::memset(expectedSha256_, 0, sizeof(expectedSha256_));
 }
 
@@ -131,12 +130,9 @@ void SerialOtaReceiver::handleOtaBegin(const uint8_t* payload, size_t len) {
 
     // Deserialize
     char version[32];
-    TransportError err = deserializeOtaBegin(
-        payload, len,
-        reinterpret_cast<uint32_t*>(&firmwareSize_),
-        expectedSha256_,
-        version, sizeof(version)
-    );
+    TransportError err =
+        deserializeOtaBegin(payload, len, reinterpret_cast<uint32_t*>(&firmwareSize_),
+                            expectedSha256_, version, sizeof(version));
 
     if (!isOk(err)) {
         ESP_LOGE(TAG, "Failed to deserialize OTA_BEGIN");
@@ -158,8 +154,8 @@ void SerialOtaReceiver::handleOtaBegin(const uint8_t* payload, size_t len) {
 
     // Check partition size
     if (firmwareSize_ > updatePartition_->size) {
-        ESP_LOGE(TAG, "Firmware too large for partition (%zu > %lu)",
-                 firmwareSize_, updatePartition_->size);
+        ESP_LOGE(TAG, "Firmware too large for partition (%zu > %lu)", firmwareSize_,
+                 updatePartition_->size);
         sendAck(OtaStatus::kSizeMismatch, 0);
         return;
     }
@@ -218,8 +214,7 @@ void SerialOtaReceiver::handleOtaData(const uint8_t* payload, size_t len) {
 
     // Log progress periodically
     if (bytesReceived_ % (64 * 1024) == 0 || bytesReceived_ == firmwareSize_) {
-        ESP_LOGI(TAG, "OTA progress: %zu / %zu bytes (%.1f%%)",
-                 bytesReceived_, firmwareSize_,
+        ESP_LOGI(TAG, "OTA progress: %zu / %zu bytes (%.1f%%)", bytesReceived_, firmwareSize_,
                  100.0f * bytesReceived_ / firmwareSize_);
     }
 
@@ -237,8 +232,7 @@ void SerialOtaReceiver::handleOtaEnd() {
 
     // Check size
     if (bytesReceived_ != firmwareSize_) {
-        ESP_LOGE(TAG, "Size mismatch: received %zu, expected %zu",
-                 bytesReceived_, firmwareSize_);
+        ESP_LOGE(TAG, "Size mismatch: received %zu, expected %zu", bytesReceived_, firmwareSize_);
         sendAbortAndCleanup(OtaStatus::kSizeMismatch);
         return;
     }
@@ -278,9 +272,8 @@ void SerialOtaReceiver::sendAck(OtaStatus status, uint32_t nextOffset) {
     std::array<uint8_t, 16> payloadBuf;
     size_t payloadLen = 0;
 
-    TransportError err = serializeOtaAck(status, nextOffset,
-                                          payloadBuf.data(), payloadBuf.size(),
-                                          &payloadLen);
+    TransportError err =
+        serializeOtaAck(status, nextOffset, payloadBuf.data(), payloadBuf.size(), &payloadLen);
     if (!isOk(err)) {
         ESP_LOGE(TAG, "Failed to serialize OTA_ACK");
         return;
@@ -289,14 +282,8 @@ void SerialOtaReceiver::sendAck(OtaStatus status, uint32_t nextOffset) {
     std::array<uint8_t, kMaxFrameSize> frameBuf;
     size_t frameLen = 0;
 
-    err = encodeFrame(
-        static_cast<uint8_t>(OtaMsgType::kAck),
-        payloadBuf.data(),
-        payloadLen,
-        frameBuf.data(),
-        frameBuf.size(),
-        &frameLen
-    );
+    err = encodeFrame(static_cast<uint8_t>(OtaMsgType::kAck), payloadBuf.data(), payloadLen,
+                      frameBuf.data(), frameBuf.size(), &frameLen);
     if (!isOk(err)) {
         ESP_LOGE(TAG, "Failed to encode OTA_ACK frame");
         return;
@@ -312,21 +299,14 @@ void SerialOtaReceiver::sendAbortAndCleanup(OtaStatus reason) {
     std::array<uint8_t, 8> payloadBuf;
     size_t payloadLen = 0;
 
-    TransportError err = serializeOtaAbort(reason,
-                                            payloadBuf.data(), payloadBuf.size(),
-                                            &payloadLen);
+    TransportError err =
+        serializeOtaAbort(reason, payloadBuf.data(), payloadBuf.size(), &payloadLen);
     if (isOk(err)) {
         std::array<uint8_t, kMaxFrameSize> frameBuf;
         size_t frameLen = 0;
 
-        err = encodeFrame(
-            static_cast<uint8_t>(OtaMsgType::kAbort),
-            payloadBuf.data(),
-            payloadLen,
-            frameBuf.data(),
-            frameBuf.size(),
-            &frameLen
-        );
+        err = encodeFrame(static_cast<uint8_t>(OtaMsgType::kAbort), payloadBuf.data(), payloadLen,
+                          frameBuf.data(), frameBuf.size(), &frameLen);
         if (isOk(err)) {
             transport_.send(frameBuf.data(), frameLen);
         }

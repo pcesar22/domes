@@ -3,33 +3,34 @@
  * @brief DOMES Firmware entry point
  */
 
-#include "sdkconfig.h"
 #include "config.hpp"
+#include "sdkconfig.h"
+
+#include "drivers/ledStrip.hpp"
 #include "infra/logging.hpp"
-#include "infra/watchdog.hpp"
 #include "infra/nvsConfig.hpp"
 #include "infra/taskManager.hpp"
-#include "drivers/ledStrip.hpp"
+#include "infra/watchdog.hpp"
 #include "services/githubClient.hpp"
 #include "services/otaManager.hpp"
-#include "transport/usbCdcTransport.hpp"
-#include "transport/serialOtaReceiver.hpp"
-#include "transport/bleOtaService.hpp"
-#include "trace/traceRecorder.hpp"
 #include "trace/traceApi.hpp"
+#include "trace/traceRecorder.hpp"
+#include "transport/bleOtaService.hpp"
+#include "transport/serialOtaReceiver.hpp"
+#include "transport/usbCdcTransport.hpp"
 
 // WiFi manager and secrets are only needed when WiFi auto-connect is enabled
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
-#include "services/wifiManager.hpp"
 #include "secrets.hpp"
+#include "services/wifiManager.hpp"
 #endif
 
+#include "esp_event.h"
+#include "esp_log.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_log.h"
-#include "esp_wifi.h"
-#include "esp_event.h"
-#include "esp_netif.h"
 
 #include <cstdint>
 #include <cstring>
@@ -57,13 +58,13 @@ static domes::OtaManager* otaManager = nullptr;
 static domes::UsbCdcTransport* usbCdcTransport = nullptr;
 static domes::SerialOtaReceiver* serialOtaReceiver = nullptr;
 static domes::BleOtaService* bleOtaService = nullptr;
-static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
+static domes::SerialOtaReceiver* bleOtaReceiver =
+    nullptr;  // Reuses SerialOtaReceiver with BLE transport
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::WifiManager* wifiManager = nullptr;
 static domes::infra::NvsConfig wifiStorage;
 #endif
-
 
 /**
  * @brief Perform post-OTA self-test
@@ -189,8 +190,7 @@ static esp_err_t initOta() {
     }
 
     domes::FirmwareVersion ver = otaManager->getCurrentVersion();
-    ESP_LOGI(kTag, "Firmware version: %d.%d.%d (partition: %s)",
-             ver.major, ver.minor, ver.patch,
+    ESP_LOGI(kTag, "Firmware version: %d.%d.%d (partition: %s)", ver.major, ver.minor, ver.patch,
              otaManager->getCurrentPartition());
 
     return ESP_OK;
@@ -211,8 +211,7 @@ static esp_err_t initSerialOta() {
 
     domes::TransportError err = usbCdcTransport->init();
     if (!domes::isOk(err)) {
-        ESP_LOGE(kTag, "USB-CDC transport init failed: %s",
-                 domes::transportErrorToString(err));
+        ESP_LOGE(kTag, "USB-CDC transport init failed: %s", domes::transportErrorToString(err));
         return ESP_FAIL;
     }
     ESP_LOGI(kTag, "USB-CDC transport initialized");
@@ -232,8 +231,7 @@ static esp_err_t initSerialOta() {
 
     esp_err_t espErr = taskManager.createTask(config, receiver);
     if (espErr != ESP_OK) {
-        ESP_LOGE(kTag, "Failed to create serial OTA task: %s",
-                 esp_err_to_name(espErr));
+        ESP_LOGE(kTag, "Failed to create serial OTA task: %s", esp_err_to_name(espErr));
         return espErr;
     }
 
@@ -256,8 +254,7 @@ static esp_err_t initBleOta() {
 
     domes::TransportError err = bleOtaService->init();
     if (!domes::isOk(err)) {
-        ESP_LOGE(kTag, "BLE OTA service init failed: %s",
-                 domes::transportErrorToString(err));
+        ESP_LOGE(kTag, "BLE OTA service init failed: %s", domes::transportErrorToString(err));
         return ESP_FAIL;
     }
     ESP_LOGI(kTag, "BLE OTA service initialized, advertising started");
@@ -272,13 +269,12 @@ static esp_err_t initBleOta() {
         .stackSize = 4096,
         .priority = domes::infra::priority::kMedium,
         .coreAffinity = domes::infra::core::kProtocol,  // Core 0 for BLE
-        .subscribeToWatchdog = false  // OTA can take a long time
+        .subscribeToWatchdog = false                    // OTA can take a long time
     };
 
     esp_err_t espErr = taskManager.createTask(config, receiver);
     if (espErr != ESP_OK) {
-        ESP_LOGE(kTag, "Failed to create BLE OTA task: %s",
-                 esp_err_to_name(espErr));
+        ESP_LOGE(kTag, "Failed to create BLE OTA task: %s", esp_err_to_name(espErr));
         return espErr;
     }
 
@@ -311,9 +307,8 @@ static esp_err_t initWifi() {
 
     // Connect with credentials from secrets.hpp
     ESP_LOGI(kTag, "Connecting to WiFi: %s", domes::secrets::kWifiSsid);
-    err = wifiManager->connect(domes::secrets::kWifiSsid,
-                                domes::secrets::kWifiPassword,
-                                true);  // Save to NVS
+    err = wifiManager->connect(domes::secrets::kWifiSsid, domes::secrets::kWifiPassword,
+                               true);  // Save to NVS
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "WiFi connect failed: %s", esp_err_to_name(err));
         return err;
@@ -328,8 +323,7 @@ static esp_err_t initWifi() {
     if (wifiManager->isConnected()) {
         char ip[16];
         wifiManager->getIpAddress(ip, sizeof(ip));
-        ESP_LOGI(kTag, "WiFi connected! IP: %s, RSSI: %d dBm",
-                 ip, wifiManager->getRssi());
+        ESP_LOGI(kTag, "WiFi connected! IP: %s, RSSI: %d dBm", ip, wifiManager->getRssi());
         return ESP_OK;
     } else {
         ESP_LOGE(kTag, "WiFi connection timeout");
@@ -420,16 +414,18 @@ static esp_err_t initLedStrip() {
 
 static esp_err_t initInfrastructure() {
     esp_err_t err = domes::infra::NvsConfig::initFlash();
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK)
+        return err;
 
     configStorage.open(domes::infra::nvs_ns::kConfig);
 
     err = domes::infra::Watchdog::init(timing::kWatchdogTimeoutS, true);
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK)
+        return err;
 
     if (statsStorage.open(domes::infra::nvs_ns::kStats) == ESP_OK) {
-        uint32_t bootCount = statsStorage.getOrDefault<uint32_t>(
-            domes::infra::stats_key::kBootCount, 0) + 1;
+        uint32_t bootCount =
+            statsStorage.getOrDefault<uint32_t>(domes::infra::stats_key::kBootCount, 0) + 1;
         statsStorage.setU32(domes::infra::stats_key::kBootCount, bootCount);
         statsStorage.commit();
         ESP_LOGI(kTag, "Boot #%lu", static_cast<unsigned long>(bootCount));
@@ -510,8 +506,7 @@ extern "C" void app_main() {
         ledDriver->refresh();
     }
 
-    ESP_LOGI(kTag, "Init complete. Tasks: %zu, Heap: %lu",
-             taskManager.getActiveTaskCount(),
+    ESP_LOGI(kTag, "Init complete. Tasks: %zu, Heap: %lu", taskManager.getActiveTaskCount(),
              static_cast<unsigned long>(esp_get_free_heap_size()));
 
     // Check for OTA updates in a separate task (needs large stack for TLS)
@@ -520,46 +515,48 @@ extern "C" void app_main() {
     if (wifiManager && wifiManager->isConnected() && otaManager) {
         ESP_LOGI(kTag, "Creating OTA check task...");
 
-        xTaskCreate([](void* param) {
-            ESP_LOGI(kTag, "OTA check task started");
-            ESP_LOGI(kTag, "Checking for firmware updates...");
+        xTaskCreate(
+            [](void* param) {
+                ESP_LOGI(kTag, "OTA check task started");
+                ESP_LOGI(kTag, "Checking for firmware updates...");
 
-            domes::OtaCheckResult updateResult;
-            esp_err_t err = otaManager->checkForUpdate(updateResult);
+                domes::OtaCheckResult updateResult;
+                esp_err_t err = otaManager->checkForUpdate(updateResult);
 
-            if (err == ESP_OK) {
-                if (updateResult.updateAvailable) {
-                    ESP_LOGI(kTag, "Update available: v%d.%d.%d -> v%d.%d.%d",
-                             updateResult.currentVersion.major,
-                             updateResult.currentVersion.minor,
-                             updateResult.currentVersion.patch,
-                             updateResult.availableVersion.major,
-                             updateResult.availableVersion.minor,
-                             updateResult.availableVersion.patch);
-                    ESP_LOGI(kTag, "Download URL: %s", updateResult.downloadUrl);
-                    ESP_LOGI(kTag, "Firmware size: %zu bytes", updateResult.firmwareSize);
+                if (err == ESP_OK) {
+                    if (updateResult.updateAvailable) {
+                        ESP_LOGI(
+                            kTag, "Update available: v%d.%d.%d -> v%d.%d.%d",
+                            updateResult.currentVersion.major, updateResult.currentVersion.minor,
+                            updateResult.currentVersion.patch, updateResult.availableVersion.major,
+                            updateResult.availableVersion.minor,
+                            updateResult.availableVersion.patch);
+                        ESP_LOGI(kTag, "Download URL: %s", updateResult.downloadUrl);
+                        ESP_LOGI(kTag, "Firmware size: %zu bytes", updateResult.firmwareSize);
 
-                    // Start OTA update
-                    ESP_LOGI(kTag, "Starting OTA update...");
-                    err = otaManager->startUpdate(updateResult.downloadUrl,
-                                                  updateResult.sha256[0] ? updateResult.sha256 : nullptr);
-                    if (err != ESP_OK) {
-                        ESP_LOGE(kTag, "OTA update failed to start: %s", esp_err_to_name(err));
+                        // Start OTA update
+                        ESP_LOGI(kTag, "Starting OTA update...");
+                        err = otaManager->startUpdate(
+                            updateResult.downloadUrl,
+                            updateResult.sha256[0] ? updateResult.sha256 : nullptr);
+                        if (err != ESP_OK) {
+                            ESP_LOGE(kTag, "OTA update failed to start: %s", esp_err_to_name(err));
+                        }
+                        // If successful, device will reboot
+                    } else {
+                        ESP_LOGI(kTag, "Firmware is up to date (v%d.%d.%d)",
+                                 updateResult.currentVersion.major,
+                                 updateResult.currentVersion.minor,
+                                 updateResult.currentVersion.patch);
                     }
-                    // If successful, device will reboot
                 } else {
-                    ESP_LOGI(kTag, "Firmware is up to date (v%d.%d.%d)",
-                             updateResult.currentVersion.major,
-                             updateResult.currentVersion.minor,
-                             updateResult.currentVersion.patch);
+                    ESP_LOGW(kTag, "Update check failed: %s", esp_err_to_name(err));
                 }
-            } else {
-                ESP_LOGW(kTag, "Update check failed: %s", esp_err_to_name(err));
-            }
 
-            ESP_LOGI(kTag, "OTA check task done, deleting self");
-            vTaskDelete(nullptr);
-        }, "ota_check", 16384, nullptr, domes::infra::priority::kLow, nullptr);
+                ESP_LOGI(kTag, "OTA check task done, deleting self");
+                vTaskDelete(nullptr);
+            },
+            "ota_check", 16384, nullptr, domes::infra::priority::kLow, nullptr);
     }
 #endif  // CONFIG_DOMES_OTA_AUTO_CHECK
 }

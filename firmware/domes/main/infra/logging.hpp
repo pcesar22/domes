@@ -58,18 +58,18 @@ inline void setDefaultLogLevel(esp_log_level_t level) {
  * naming across the codebase.
  */
 namespace tag {
-    constexpr const char* kMain      = "domes";
-    constexpr const char* kTask      = "task";
-    constexpr const char* kNvs       = "nvs";
-    constexpr const char* kWatchdog  = "wdt";
-    constexpr const char* kLed       = "led";
-    constexpr const char* kTouch     = "touch";
-    constexpr const char* kAudio     = "audio";
-    constexpr const char* kHaptic    = "haptic";
-    constexpr const char* kEspNow    = "espnow";
-    constexpr const char* kBle       = "ble";
-    constexpr const char* kGame      = "game";
-    constexpr const char* kTrace     = "trace";
-}
+constexpr const char* kMain = "domes";
+constexpr const char* kTask = "task";
+constexpr const char* kNvs = "nvs";
+constexpr const char* kWatchdog = "wdt";
+constexpr const char* kLed = "led";
+constexpr const char* kTouch = "touch";
+constexpr const char* kAudio = "audio";
+constexpr const char* kHaptic = "haptic";
+constexpr const char* kEspNow = "espnow";
+constexpr const char* kBle = "ble";
+constexpr const char* kGame = "game";
+constexpr const char* kTrace = "trace";
+}  // namespace tag
 
-} // namespace domes::infra
+}  // namespace domes::infra

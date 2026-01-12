@@ -4,10 +4,10 @@
  */
 
 #include "traceCommandHandler.hpp"
-#include "traceRecorder.hpp"
-#include "protocol/frameCodec.hpp"
 
 #include "esp_log.h"
+#include "protocol/frameCodec.hpp"
+#include "traceRecorder.hpp"
 
 #include <array>
 #include <cstring>
@@ -19,9 +19,7 @@ constexpr const char* kTag = "trace_cmd";
 
 namespace domes::trace {
 
-CommandHandler::CommandHandler(ITransport& transport)
-    : transport_(transport) {
-}
+CommandHandler::CommandHandler(ITransport& transport) : transport_(transport) {}
 
 bool CommandHandler::handleCommand(uint8_t type, const uint8_t* payload, size_t len) {
     (void)payload;  // Most commands don't use payload
@@ -130,12 +128,7 @@ void CommandHandler::handleDump() {
     uint32_t droppedCount = Recorder::buffer().droppedCount();
 
     // Send metadata
-    sendMetadata(
-        static_cast<uint32_t>(events.size()),
-        droppedCount,
-        startTs,
-        endTs
-    );
+    sendMetadata(static_cast<uint32_t>(events.size()), droppedCount, startTs, endTs);
 
     // Send events in chunks
     uint32_t offset = 0;
@@ -165,8 +158,8 @@ void CommandHandler::handleDump() {
     // Send end marker
     sendEnd(static_cast<uint32_t>(events.size()), checksum);
 
-    ESP_LOGI(kTag, "Dump complete: %zu events, checksum 0x%08lX",
-             events.size(), static_cast<unsigned long>(checksum));
+    ESP_LOGI(kTag, "Dump complete: %zu events, checksum 0x%08lX", events.size(),
+             static_cast<unsigned long>(checksum));
 
     // Clear buffer and reset dropped count
     Recorder::buffer().resetDroppedCount();
@@ -205,17 +198,11 @@ void CommandHandler::sendAck(TraceStatus status) {
     TraceAckResponse ack;
     ack.status = static_cast<uint8_t>(status);
 
-    sendFrame(TraceMsgType::kAck,
-              reinterpret_cast<const uint8_t*>(&ack),
-              sizeof(ack));
+    sendFrame(TraceMsgType::kAck, reinterpret_cast<const uint8_t*>(&ack), sizeof(ack));
 }
 
-void CommandHandler::sendMetadata(
-    uint32_t eventCount,
-    uint32_t droppedCount,
-    uint32_t startTs,
-    uint32_t endTs
-) {
+void CommandHandler::sendMetadata(uint32_t eventCount, uint32_t droppedCount, uint32_t startTs,
+                                  uint32_t endTs) {
     // Calculate total size: metadata + task entries
     const auto& taskNames = Recorder::getTaskNames();
     size_t validTaskCount = 0;
@@ -225,8 +212,7 @@ void CommandHandler::sendMetadata(
         }
     }
 
-    size_t payloadSize = sizeof(TraceMetadata) +
-                         validTaskCount * sizeof(TraceTaskEntry);
+    size_t payloadSize = sizeof(TraceMetadata) + validTaskCount * sizeof(TraceTaskEntry);
 
     std::vector<uint8_t> payload(payloadSize);
 
@@ -239,9 +225,7 @@ void CommandHandler::sendMetadata(
     meta->taskCount = static_cast<uint8_t>(validTaskCount);
 
     // Fill task entries
-    auto* taskEntry = reinterpret_cast<TraceTaskEntry*>(
-        payload.data() + sizeof(TraceMetadata)
-    );
+    auto* taskEntry = reinterpret_cast<TraceTaskEntry*>(payload.data() + sizeof(TraceMetadata));
 
     for (const auto& entry : taskNames) {
         if (entry.valid) {
@@ -255,11 +239,7 @@ void CommandHandler::sendMetadata(
     sendFrame(TraceMsgType::kData, payload.data(), payload.size());
 }
 
-void CommandHandler::sendDataChunk(
-    uint32_t offset,
-    const TraceEvent* events,
-    size_t count
-) {
+void CommandHandler::sendDataChunk(uint32_t offset, const TraceEvent* events, size_t count) {
     size_t payloadSize = sizeof(TraceDataHeader) + count * sizeof(TraceEvent);
     std::vector<uint8_t> payload(payloadSize);
 
@@ -269,11 +249,7 @@ void CommandHandler::sendDataChunk(
     header->count = static_cast<uint16_t>(count);
 
     // Copy events
-    std::memcpy(
-        payload.data() + sizeof(TraceDataHeader),
-        events,
-        count * sizeof(TraceEvent)
-    );
+    std::memcpy(payload.data() + sizeof(TraceDataHeader), events, count * sizeof(TraceEvent));
 
     sendFrame(TraceMsgType::kData, payload.data(), payload.size());
 }
@@ -283,9 +259,7 @@ void CommandHandler::sendEnd(uint32_t totalEvents, uint32_t checksum) {
     endMsg.totalEvents = totalEvents;
     endMsg.checksum = checksum;
 
-    sendFrame(TraceMsgType::kEnd,
-              reinterpret_cast<const uint8_t*>(&endMsg),
-              sizeof(endMsg));
+    sendFrame(TraceMsgType::kEnd, reinterpret_cast<const uint8_t*>(&endMsg), sizeof(endMsg));
 }
 
 void CommandHandler::sendStatusResponse() {
@@ -296,23 +270,15 @@ void CommandHandler::sendStatusResponse() {
     status.droppedCount = Recorder::buffer().droppedCount();
     status.bufferSize = TraceBuffer::kDefaultBufferSize;
 
-    sendFrame(TraceMsgType::kStatus,
-              reinterpret_cast<const uint8_t*>(&status),
-              sizeof(status));
+    sendFrame(TraceMsgType::kStatus, reinterpret_cast<const uint8_t*>(&status), sizeof(status));
 }
 
 bool CommandHandler::sendFrame(TraceMsgType type, const uint8_t* payload, size_t len) {
     std::array<uint8_t, kMaxFrameSize> frameBuf;
     size_t frameLen = 0;
 
-    TransportError err = encodeFrame(
-        static_cast<uint8_t>(type),
-        payload,
-        len,
-        frameBuf.data(),
-        frameBuf.size(),
-        &frameLen
-    );
+    TransportError err = encodeFrame(static_cast<uint8_t>(type), payload, len, frameBuf.data(),
+                                     frameBuf.size(), &frameLen);
 
     if (!isOk(err)) {
         ESP_LOGE(kTag, "Failed to encode frame");

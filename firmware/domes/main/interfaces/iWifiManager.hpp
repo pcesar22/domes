@@ -19,11 +19,11 @@ namespace domes {
  * @brief WiFi connection state
  */
 enum class WifiState : uint8_t {
-    kDisconnected,    ///< Not connected to any network
-    kConnecting,      ///< Connection attempt in progress
-    kConnected,       ///< Connected but no IP yet
-    kGotIp,           ///< Connected with valid IP address
-    kError,           ///< Connection error occurred
+    kDisconnected,  ///< Not connected to any network
+    kConnecting,    ///< Connection attempt in progress
+    kConnected,     ///< Connected but no IP yet
+    kGotIp,         ///< Connected with valid IP address
+    kError,         ///< Connection error occurred
 };
 
 /**

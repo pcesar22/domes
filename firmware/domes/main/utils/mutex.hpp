@@ -20,9 +20,7 @@ namespace domes::utils {
  */
 class Mutex {
 public:
-    Mutex() {
-        handle_ = xSemaphoreCreateMutexStatic(&buffer_);
-    }
+    Mutex() { handle_ = xSemaphoreCreateMutexStatic(&buffer_); }
 
     ~Mutex() = default;
 
@@ -33,25 +31,19 @@ public:
     /**
      * @brief Acquire mutex (blocking)
      */
-    void lock() {
-        xSemaphoreTake(handle_, portMAX_DELAY);
-    }
+    void lock() { xSemaphoreTake(handle_, portMAX_DELAY); }
 
     /**
      * @brief Try to acquire mutex with timeout
      * @param timeout Timeout in ticks (0 for non-blocking)
      * @return true if acquired, false if timeout
      */
-    bool tryLock(TickType_t timeout = 0) {
-        return xSemaphoreTake(handle_, timeout) == pdTRUE;
-    }
+    bool tryLock(TickType_t timeout = 0) { return xSemaphoreTake(handle_, timeout) == pdTRUE; }
 
     /**
      * @brief Release mutex
      */
-    void unlock() {
-        xSemaphoreGive(handle_);
-    }
+    void unlock() { xSemaphoreGive(handle_); }
 
     /**
      * @brief Get underlying handle for advanced use
@@ -77,13 +69,9 @@ private:
  */
 class MutexGuard {
 public:
-    explicit MutexGuard(Mutex& mutex) : mutex_(mutex) {
-        mutex_.lock();
-    }
+    explicit MutexGuard(Mutex& mutex) : mutex_(mutex) { mutex_.lock(); }
 
-    ~MutexGuard() {
-        mutex_.unlock();
-    }
+    ~MutexGuard() { mutex_.unlock(); }
 
     // Non-copyable
     MutexGuard(const MutexGuard&) = delete;
@@ -93,4 +81,4 @@ private:
     Mutex& mutex_;
 };
 
-} // namespace domes::utils
+}  // namespace domes::utils

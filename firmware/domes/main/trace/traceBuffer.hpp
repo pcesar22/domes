@@ -8,12 +8,10 @@
  * Uses FreeRTOS ring buffer primitives with static allocation.
  */
 
-#include "traceEvent.hpp"
-
+#include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
-
-#include "esp_err.h"
+#include "traceEvent.hpp"
 
 #include <atomic>
 #include <cstddef>

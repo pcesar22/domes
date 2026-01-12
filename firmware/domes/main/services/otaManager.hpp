@@ -11,11 +11,10 @@
  * - Progress reporting
  */
 
-#include "interfaces/iOtaManager.hpp"
-#include "githubClient.hpp"
-
-#include "esp_ota_ops.h"
 #include "esp_app_format.h"
+#include "esp_ota_ops.h"
+#include "githubClient.hpp"
+#include "interfaces/iOtaManager.hpp"
 
 #include <atomic>
 
@@ -58,8 +57,7 @@ public:
     esp_err_t init() override;
     FirmwareVersion getCurrentVersion() const override;
     esp_err_t checkForUpdate(OtaCheckResult& result) override;
-    esp_err_t startUpdate(const char* downloadUrl,
-                         const char* expectedSha256 = nullptr) override;
+    esp_err_t startUpdate(const char* downloadUrl, const char* expectedSha256 = nullptr) override;
     void abort() override;
     OtaState getState() const override;
     size_t getBytesReceived() const override;
@@ -79,8 +77,7 @@ private:
      * @param expectedSha256 Expected hash (64 hex chars)
      * @return ESP_OK if hash matches
      */
-    esp_err_t verifyFirmwareHash(const esp_partition_t* partition,
-                                  const char* expectedSha256);
+    esp_err_t verifyFirmwareHash(const esp_partition_t* partition, const char* expectedSha256);
 
     GithubClient& github_;
 

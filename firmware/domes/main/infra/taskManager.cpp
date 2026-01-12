@@ -4,6 +4,7 @@
  */
 
 #include "infra/taskManager.hpp"
+
 #include "infra/logging.hpp"
 #include "infra/watchdog.hpp"
 
@@ -33,25 +34,12 @@ esp_err_t TaskManager::createTask(const TaskConfig& config, ITaskRunner& runner)
     BaseType_t result;
     if (config.coreAffinity == core::kAny) {
         // Create unpinned task
-        result = xTaskCreate(
-            taskEntryPoint,
-            config.name,
-            config.stackSize,
-            &slot,
-            config.priority,
-            &slot.handle
-        );
+        result = xTaskCreate(taskEntryPoint, config.name, config.stackSize, &slot, config.priority,
+                             &slot.handle);
     } else {
         // Create pinned task
-        result = xTaskCreatePinnedToCore(
-            taskEntryPoint,
-            config.name,
-            config.stackSize,
-            &slot,
-            config.priority,
-            &slot.handle,
-            config.coreAffinity
-        );
+        result = xTaskCreatePinnedToCore(taskEntryPoint, config.name, config.stackSize, &slot,
+                                         config.priority, &slot.handle, config.coreAffinity);
     }
 
     if (result != pdPASS) {
@@ -62,12 +50,11 @@ esp_err_t TaskManager::createTask(const TaskConfig& config, ITaskRunner& runner)
     }
 
     activeCount_++;
-    ESP_LOGI(kTag, "Created task '%s' (stack=%lu, prio=%u, core=%s, wdt=%s)",
-             config.name,
-             static_cast<unsigned long>(config.stackSize),
-             static_cast<unsigned>(config.priority),
-             config.coreAffinity == core::kAny ? "any" :
-                 (config.coreAffinity == core::kProtocol ? "0" : "1"),
+    ESP_LOGI(kTag, "Created task '%s' (stack=%lu, prio=%u, core=%s, wdt=%s)", config.name,
+             static_cast<unsigned long>(config.stackSize), static_cast<unsigned>(config.priority),
+             config.coreAffinity == core::kAny
+                 ? "any"
+                 : (config.coreAffinity == core::kProtocol ? "0" : "1"),
              config.subscribeToWatchdog ? "yes" : "no");
 
     return ESP_OK;
@@ -88,8 +75,7 @@ esp_err_t TaskManager::stopAllTasks(uint32_t timeoutMs) {
     while (activeCount_ > 0) {
         // Check for timeout
         if ((xTaskGetTickCount() - startTick) > timeoutTicks) {
-            ESP_LOGW(kTag, "Timeout waiting for tasks to stop (%zu still active)",
-                     activeCount_);
+            ESP_LOGW(kTag, "Timeout waiting for tasks to stop (%zu still active)", activeCount_);
             return ESP_ERR_TIMEOUT;
         }
 
@@ -162,4 +148,4 @@ void TaskManager::taskEntryPoint(void* param) {
     vTaskDelete(nullptr);
 }
 
-} // namespace domes::infra
+}  // namespace domes::infra

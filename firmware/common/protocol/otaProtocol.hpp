@@ -42,11 +42,11 @@ constexpr size_t kSha256Size = 32;
  * @brief OTA message types
  */
 enum class OtaMsgType : uint8_t {
-    kBegin = 0x01,   ///< Start OTA transfer (host → device)
-    kData  = 0x02,   ///< Firmware data chunk (host → device)
-    kEnd   = 0x03,   ///< Transfer complete (host → device)
-    kAck   = 0x04,   ///< Acknowledge (device → host)
-    kAbort = 0x05,   ///< Abort transfer (either direction)
+    kBegin = 0x01,  ///< Start OTA transfer (host → device)
+    kData = 0x02,   ///< Firmware data chunk (host → device)
+    kEnd = 0x03,    ///< Transfer complete (host → device)
+    kAck = 0x04,    ///< Acknowledge (device → host)
+    kAbort = 0x05,  ///< Abort transfer (either direction)
 };
 
 // =============================================================================
@@ -61,8 +61,8 @@ enum class OtaMsgType : uint8_t {
  * Sent by host to start OTA transfer.
  */
 struct OtaBeginPayload {
-    uint32_t firmwareSize;                 ///< Total firmware size in bytes
-    std::array<uint8_t, kSha256Size> sha256;  ///< Expected SHA256 hash
+    uint32_t firmwareSize;                        ///< Total firmware size in bytes
+    std::array<uint8_t, kSha256Size> sha256;      ///< Expected SHA256 hash
     std::array<char, kOtaVersionMaxLen> version;  ///< Version string (null-terminated)
 };
 static_assert(sizeof(OtaBeginPayload) == 4 + 32 + 32, "OtaBeginPayload size mismatch");
@@ -73,8 +73,8 @@ static_assert(sizeof(OtaBeginPayload) == 4 + 32 + 32, "OtaBeginPayload size mism
  * Sent by host with firmware chunk.
  */
 struct OtaDataHeader {
-    uint32_t offset;    ///< Byte offset in firmware image
-    uint16_t length;    ///< Length of data in this chunk
+    uint32_t offset;  ///< Byte offset in firmware image
+    uint16_t length;  ///< Length of data in this chunk
     // Followed by: uint8_t data[length]
 };
 static_assert(sizeof(OtaDataHeader) == 6, "OtaDataHeader size mismatch");
@@ -117,14 +117,8 @@ static_assert(sizeof(OtaAbortPayload) == 1, "OtaAbortPayload size mismatch");
  * @param outLen [out] Bytes written
  * @return TransportError::kOk on success
  */
-TransportError serializeOtaBegin(
-    uint32_t firmwareSize,
-    const uint8_t* sha256,
-    const char* version,
-    uint8_t* buf,
-    size_t bufSize,
-    size_t* outLen
-);
+TransportError serializeOtaBegin(uint32_t firmwareSize, const uint8_t* sha256, const char* version,
+                                 uint8_t* buf, size_t bufSize, size_t* outLen);
 
 /**
  * @brief Serialize OTA_DATA message
@@ -137,14 +131,8 @@ TransportError serializeOtaBegin(
  * @param outLen [out] Bytes written
  * @return TransportError::kOk on success
  */
-TransportError serializeOtaData(
-    uint32_t offset,
-    const uint8_t* data,
-    size_t dataLen,
-    uint8_t* buf,
-    size_t bufSize,
-    size_t* outLen
-);
+TransportError serializeOtaData(uint32_t offset, const uint8_t* data, size_t dataLen, uint8_t* buf,
+                                size_t bufSize, size_t* outLen);
 
 /**
  * @brief Serialize OTA_END message
@@ -154,11 +142,7 @@ TransportError serializeOtaData(
  * @param outLen [out] Bytes written (always 0 for OTA_END)
  * @return TransportError::kOk on success
  */
-TransportError serializeOtaEnd(
-    uint8_t* buf,
-    size_t bufSize,
-    size_t* outLen
-);
+TransportError serializeOtaEnd(uint8_t* buf, size_t bufSize, size_t* outLen);
 
 /**
  * @brief Serialize OTA_ACK message
@@ -170,13 +154,8 @@ TransportError serializeOtaEnd(
  * @param outLen [out] Bytes written
  * @return TransportError::kOk on success
  */
-TransportError serializeOtaAck(
-    OtaStatus status,
-    uint32_t nextOffset,
-    uint8_t* buf,
-    size_t bufSize,
-    size_t* outLen
-);
+TransportError serializeOtaAck(OtaStatus status, uint32_t nextOffset, uint8_t* buf, size_t bufSize,
+                               size_t* outLen);
 
 /**
  * @brief Serialize OTA_ABORT message
@@ -187,12 +166,7 @@ TransportError serializeOtaAck(
  * @param outLen [out] Bytes written
  * @return TransportError::kOk on success
  */
-TransportError serializeOtaAbort(
-    OtaStatus reason,
-    uint8_t* buf,
-    size_t bufSize,
-    size_t* outLen
-);
+TransportError serializeOtaAbort(OtaStatus reason, uint8_t* buf, size_t bufSize, size_t* outLen);
 
 // =============================================================================
 // Deserialization Functions
@@ -209,14 +183,9 @@ TransportError serializeOtaAbort(
  * @param versionBufSize Size of version buffer
  * @return TransportError::kOk on success
  */
-TransportError deserializeOtaBegin(
-    const uint8_t* payload,
-    size_t payloadLen,
-    uint32_t* firmwareSize,
-    uint8_t* sha256,
-    char* version,
-    size_t versionBufSize
-);
+TransportError deserializeOtaBegin(const uint8_t* payload, size_t payloadLen,
+                                   uint32_t* firmwareSize, uint8_t* sha256, char* version,
+                                   size_t versionBufSize);
 
 /**
  * @brief Deserialize OTA_DATA header
@@ -228,13 +197,8 @@ TransportError deserializeOtaBegin(
  * @param dataLen [out] Chunk data length
  * @return TransportError::kOk on success
  */
-TransportError deserializeOtaData(
-    const uint8_t* payload,
-    size_t payloadLen,
-    uint32_t* offset,
-    const uint8_t** data,
-    size_t* dataLen
-);
+TransportError deserializeOtaData(const uint8_t* payload, size_t payloadLen, uint32_t* offset,
+                                  const uint8_t** data, size_t* dataLen);
 
 /**
  * @brief Deserialize OTA_ACK payload
@@ -245,12 +209,8 @@ TransportError deserializeOtaData(
  * @param nextOffset [out] Next expected offset
  * @return TransportError::kOk on success
  */
-TransportError deserializeOtaAck(
-    const uint8_t* payload,
-    size_t payloadLen,
-    OtaStatus* status,
-    uint32_t* nextOffset
-);
+TransportError deserializeOtaAck(const uint8_t* payload, size_t payloadLen, OtaStatus* status,
+                                 uint32_t* nextOffset);
 
 /**
  * @brief Deserialize OTA_ABORT payload
@@ -260,10 +220,6 @@ TransportError deserializeOtaAck(
  * @param reason [out] Abort reason
  * @return TransportError::kOk on success
  */
-TransportError deserializeOtaAbort(
-    const uint8_t* payload,
-    size_t payloadLen,
-    OtaStatus* reason
-);
+TransportError deserializeOtaAbort(const uint8_t* payload, size_t payloadLen, OtaStatus* reason);
 
 }  // namespace domes
