@@ -4,9 +4,9 @@
  * @file configProtocol.hpp
  * @brief Wire protocol definitions for runtime configuration commands
  *
- * Defines the message types and payload structures for runtime feature
- * configuration over the serial transport. Uses the same frame format as
- * OTA protocol (0xAA55 start, length, type, payload, CRC32).
+ * Type definitions are sourced from nanopb-generated config.pb.h (the single
+ * source of truth from config.proto). This file provides C++ wrappers and
+ * the packed wire format structs for the current binary protocol.
  *
  * Message types are in the 0x20-0x2F range to avoid conflicts with
  * OTA message types (0x01-0x05) and trace types (0x10-0x1F).
@@ -15,31 +15,41 @@
 #include <cstdint>
 #include <cstddef>
 
+// Include the nanopb-generated protobuf definitions (source of truth)
+#include "config.pb.h"
+
 namespace domes::config {
 
 /**
- * @brief Runtime-toggleable features
+ * @brief Runtime-toggleable features (sourced from config.proto)
  *
- * Each feature can be enabled/disabled at runtime via the config protocol.
- * Feature IDs are stable and should not be reordered.
+ * Feature IDs are defined in firmware/common/proto/config.proto.
  */
 enum class Feature : uint8_t {
-    kUnknown        = 0,  ///< Invalid/unknown feature
-    kLedEffects     = 1,  ///< LED animation effects
-    kBleAdvertising = 2,  ///< BLE advertising and connections
-    kWifi           = 3,  ///< WiFi stack
-    kEspNow         = 4,  ///< ESP-NOW communication
-    kTouch          = 5,  ///< Touch sensing
-    kHaptic         = 6,  ///< Haptic feedback
-    kAudio          = 7,  ///< Audio playback
-    // Add new features here, don't reorder existing ones
-    kCount          = 8,  ///< Number of features (for iteration)
+    kUnknown        = domes_config_Feature_FEATURE_UNKNOWN,
+    kLedEffects     = domes_config_Feature_FEATURE_LED_EFFECTS,
+    kBleAdvertising = domes_config_Feature_FEATURE_BLE_ADVERTISING,
+    kWifi           = domes_config_Feature_FEATURE_WIFI,
+    kEspNow         = domes_config_Feature_FEATURE_ESP_NOW,
+    kTouch          = domes_config_Feature_FEATURE_TOUCH,
+    kHaptic         = domes_config_Feature_FEATURE_HAPTIC,
+    kAudio          = domes_config_Feature_FEATURE_AUDIO,
+    // NOTE: Add new features to config.proto, not here!
+    kCount          = _domes_config_Feature_ARRAYSIZE,
 };
 
 /**
- * @brief Config protocol message types
- *
- * These extend the frame protocol with config-specific commands.
+ * @brief Config command status codes (sourced from config.proto)
+ */
+enum class ConfigStatus : uint8_t {
+    kOk             = domes_config_Status_STATUS_OK,
+    kError          = domes_config_Status_STATUS_ERROR,
+    kInvalidFeature = domes_config_Status_STATUS_INVALID_FEATURE,
+    kBusy           = domes_config_Status_STATUS_BUSY,
+};
+
+/**
+ * @brief Config protocol message types (frame-level, not protobuf)
  */
 enum class ConfigMsgType : uint8_t {
     kListFeaturesReq = 0x20,  ///< List all features (host -> device)
@@ -52,24 +62,11 @@ enum class ConfigMsgType : uint8_t {
 
 /**
  * @brief Check if a message type is a config command
- *
- * @param type Message type byte
- * @return true if this is a config message
  */
 inline bool isConfigMessage(uint8_t type) {
     return type >= static_cast<uint8_t>(ConfigMsgType::kListFeaturesReq) &&
            type <= static_cast<uint8_t>(ConfigMsgType::kGetFeatureRsp);
 }
-
-/**
- * @brief Config command status codes
- */
-enum class ConfigStatus : uint8_t {
-    kOk             = 0x00,  ///< Command succeeded
-    kError          = 0x01,  ///< Generic error
-    kInvalidFeature = 0x02,  ///< Unknown feature ID
-    kBusy           = 0x03,  ///< Device busy, try again
-};
 
 /**
  * @brief Feature state entry (used in list response)
