@@ -11,6 +11,7 @@
 #include "configProtocol.hpp"
 #include "featureManager.hpp"
 #include "interfaces/iTransport.hpp"
+#include "utils/rgbPatternController.hpp"
 
 #include <cstdint>
 #include <cstddef>
@@ -30,8 +31,10 @@ public:
      *
      * @param transport Transport to send responses on
      * @param features Feature manager for toggle state
+     * @param rgbController Optional RGB pattern controller (may be nullptr)
      */
-    ConfigCommandHandler(ITransport& transport, FeatureManager& features);
+    ConfigCommandHandler(ITransport& transport, FeatureManager& features,
+                         RgbPatternController* rgbController = nullptr);
 
     /**
      * @brief Handle an incoming config command
@@ -64,6 +67,40 @@ private:
      * @param len Payload length
      */
     void handleGetFeature(const uint8_t* payload, size_t len);
+
+    // =========================================================================
+    // RGB Pattern handlers
+    // =========================================================================
+
+    /**
+     * @brief Handle SET_RGB_PATTERN request
+     */
+    void handleSetRgbPattern(const uint8_t* payload, size_t len);
+
+    /**
+     * @brief Handle GET_RGB_PATTERN request
+     */
+    void handleGetRgbPattern();
+
+    /**
+     * @brief Handle LIST_RGB_PATTERNS request
+     */
+    void handleListRgbPatterns();
+
+    /**
+     * @brief Send set RGB pattern response
+     */
+    void sendSetRgbPatternResponse(RgbPattern pattern);
+
+    /**
+     * @brief Send get RGB pattern response
+     */
+    void sendGetRgbPatternResponse();
+
+    /**
+     * @brief Send list RGB patterns response
+     */
+    void sendListRgbPatternsResponse();
 
     /**
      * @brief Send list features response
@@ -100,6 +137,7 @@ private:
 
     ITransport& transport_;
     FeatureManager& features_;
+    RgbPatternController* rgbController_;
 };
 
 }  // namespace domes::config

@@ -7,7 +7,9 @@
 //! generated from firmware/common/proto/config.proto.
 
 use crate::proto::config::{
-    Feature, ListFeaturesResponse, SetFeatureRequest, SetFeatureResponse, Status,
+    Feature, GetRgbPatternResponse, ListFeaturesResponse, ListRgbPatternsResponse, RgbColor,
+    RgbPattern, RgbPatternInfo, SetFeatureRequest, SetFeatureResponse, SetRgbPatternRequest,
+    SetRgbPatternResponse, Status,
 };
 use prost::Message;
 use thiserror::Error;
@@ -17,12 +19,21 @@ use thiserror::Error;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConfigMsgType {
+    // Feature control (0x20-0x2F)
     ListFeaturesReq = 0x20,
     ListFeaturesRsp = 0x21,
     SetFeatureReq = 0x22,
     SetFeatureRsp = 0x23,
     GetFeatureReq = 0x24,
     GetFeatureRsp = 0x25,
+
+    // RGB LED pattern control (0x30-0x3F)
+    SetRgbPatternReq = 0x30,
+    SetRgbPatternRsp = 0x31,
+    GetRgbPatternReq = 0x32,
+    GetRgbPatternRsp = 0x33,
+    ListRgbPatternsReq = 0x34,
+    ListRgbPatternsRsp = 0x35,
 }
 
 impl TryFrom<u8> for ConfigMsgType {
@@ -36,6 +47,12 @@ impl TryFrom<u8> for ConfigMsgType {
             0x23 => Ok(Self::SetFeatureRsp),
             0x24 => Ok(Self::GetFeatureReq),
             0x25 => Ok(Self::GetFeatureRsp),
+            0x30 => Ok(Self::SetRgbPatternReq),
+            0x31 => Ok(Self::SetRgbPatternRsp),
+            0x32 => Ok(Self::GetRgbPatternReq),
+            0x33 => Ok(Self::GetRgbPatternRsp),
+            0x34 => Ok(Self::ListRgbPatternsReq),
+            0x35 => Ok(Self::ListRgbPatternsRsp),
             _ => Err(ProtocolError::UnknownMessageType(value)),
         }
     }
@@ -52,6 +69,9 @@ pub enum ProtocolError {
 
     #[error("Unknown status code: {0}")]
     UnknownStatus(i32),
+
+    #[error("Unknown RGB pattern ID: {0}")]
+    UnknownRgbPattern(i32),
 
     #[error("Payload too short: expected {expected}, got {actual}")]
     PayloadTooShort { expected: usize, actual: usize },
@@ -130,4 +150,92 @@ pub fn parse_feature_response(payload: &[u8]) -> Result<CliFeatureState, Protoco
         feature,
         enabled: fs.enabled,
     })
+}
+
+// =============================================================================
+// RGB Pattern Protocol
+// =============================================================================
+
+/// RGB pattern state for CLI use
+#[derive(Debug, Clone)]
+pub struct CliRgbPatternState {
+    pub pattern: RgbPattern,
+    pub primary_color: (u8, u8, u8),
+    pub speed_ms: u32,
+    pub brightness: u8,
+}
+
+/// RGB pattern info for listing
+#[derive(Debug, Clone)]
+pub struct CliRgbPatternInfo {
+    pub pattern: RgbPattern,
+    pub name: String,
+    pub description: String,
+}
+
+/// Serialize SetRgbPatternRequest using protobuf encoding
+pub fn serialize_set_rgb_pattern(
+    pattern: RgbPattern,
+    color: Option<(u8, u8, u8)>,
+    speed_ms: Option<u32>,
+    brightness: Option<u8>,
+) -> Vec<u8> {
+    let req = SetRgbPatternRequest {
+        pattern: pattern as i32,
+        primary_color: color.map(|(r, g, b)| RgbColor {
+            r: r as u32,
+            g: g as u32,
+            b: b as u32,
+        }),
+        speed_ms: speed_ms.unwrap_or(50),
+        brightness: brightness.unwrap_or(128) as u32,
+    };
+    req.encode_to_vec()
+}
+
+/// Parse SetRgbPatternResponse payload
+pub fn parse_set_rgb_pattern_response(payload: &[u8]) -> Result<RgbPattern, ProtocolError> {
+    let resp = SetRgbPatternResponse::decode(payload)?;
+    RgbPattern::try_from(resp.active_pattern)
+        .map_err(|_| ProtocolError::UnknownRgbPattern(resp.active_pattern))
+}
+
+/// Parse GetRgbPatternResponse payload
+pub fn parse_get_rgb_pattern_response(payload: &[u8]) -> Result<CliRgbPatternState, ProtocolError> {
+    let resp = GetRgbPatternResponse::decode(payload)?;
+
+    let pattern = RgbPattern::try_from(resp.active_pattern)
+        .map_err(|_| ProtocolError::UnknownRgbPattern(resp.active_pattern))?;
+
+    let primary_color = resp
+        .primary_color
+        .map(|c| (c.r as u8, c.g as u8, c.b as u8))
+        .unwrap_or((255, 0, 0));
+
+    Ok(CliRgbPatternState {
+        pattern,
+        primary_color,
+        speed_ms: resp.speed_ms,
+        brightness: resp.brightness as u8,
+    })
+}
+
+/// Parse ListRgbPatternsResponse payload
+pub fn parse_list_rgb_patterns_response(
+    payload: &[u8],
+) -> Result<Vec<CliRgbPatternInfo>, ProtocolError> {
+    let resp = ListRgbPatternsResponse::decode(payload)?;
+
+    let mut patterns = Vec::with_capacity(resp.patterns.len());
+    for info in resp.patterns {
+        let pattern = RgbPattern::try_from(info.pattern)
+            .map_err(|_| ProtocolError::UnknownRgbPattern(info.pattern))?;
+        patterns.push(CliRgbPatternInfo {
+            pattern,
+            name: info.name,
+            description: info.description,
+        });
+    }
+
+    Ok(patterns)
 }

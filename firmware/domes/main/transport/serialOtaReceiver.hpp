@@ -15,6 +15,7 @@
 #include "interfaces/iTaskRunner.hpp"
 #include "interfaces/iTransport.hpp"
 #include "trace/traceCommandHandler.hpp"
+#include "utils/rgbPatternController.hpp"
 
 #include <atomic>
 #include <memory>
@@ -46,9 +47,11 @@ public:
      *
      * @param transport Transport to receive OTA data on
      * @param features Feature manager for runtime config (optional)
+     * @param rgbController RGB pattern controller for LED control (optional)
      */
     explicit SerialOtaReceiver(ITransport& transport,
-                                config::FeatureManager* features = nullptr);
+                                config::FeatureManager* features = nullptr,
+                                RgbPatternController* rgbController = nullptr);
 
     ~SerialOtaReceiver() override = default;
 
