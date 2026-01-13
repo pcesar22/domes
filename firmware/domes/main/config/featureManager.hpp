@@ -9,6 +9,7 @@
  */
 
 #include "configProtocol.hpp"
+#include "config.pb.h"
 
 #include <atomic>
 #include <cstdint>
@@ -63,7 +64,7 @@ public:
      * @param states Output array (must be at least kMaxFeatures elements)
      * @return Number of features written
      */
-    size_t getAll(FeatureState* states) const;
+    size_t getAll(domes_config_FeatureState* states) const;
 
     /**
      * @brief Get the raw enabled mask

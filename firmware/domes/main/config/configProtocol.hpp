@@ -5,8 +5,10 @@
  * @brief Wire protocol definitions for runtime configuration commands
  *
  * Type definitions are sourced from nanopb-generated config.pb.h (the single
- * source of truth from config.proto). This file provides C++ wrappers and
- * the packed wire format structs for the current binary protocol.
+ * source of truth from config.proto). This file provides C++ enum wrappers
+ * for type safety.
+ *
+ * Message payloads use protobuf encoding via nanopb (firmware) and prost (CLI).
  *
  * Message types are in the 0x20-0x2F range to avoid conflicts with
  * OTA message types (0x01-0x05) and trace types (0x10-0x1F).
@@ -69,78 +71,7 @@ inline bool isConfigMessage(uint8_t type) {
 }
 
 /**
- * @brief Feature state entry (used in list response)
- */
-#pragma pack(push, 1)
-struct FeatureState {
-    uint8_t feature;  ///< Feature ID (cast to Feature enum)
-    uint8_t enabled;  ///< 1 if enabled, 0 if disabled
-};
-static_assert(sizeof(FeatureState) == 2, "FeatureState size mismatch");
-#pragma pack(pop)
-
-/**
- * @brief List features response payload
- */
-#pragma pack(push, 1)
-struct ListFeaturesResponse {
-    uint8_t status;  ///< ConfigStatus value
-    uint8_t count;   ///< Number of features
-    // Followed by: FeatureState[count]
-};
-static_assert(sizeof(ListFeaturesResponse) == 2, "ListFeaturesResponse size mismatch");
-#pragma pack(pop)
-
-/**
- * @brief Set feature request payload
- */
-#pragma pack(push, 1)
-struct SetFeatureRequest {
-    uint8_t feature;  ///< Feature ID to set
-    uint8_t enabled;  ///< 1 to enable, 0 to disable
-};
-static_assert(sizeof(SetFeatureRequest) == 2, "SetFeatureRequest size mismatch");
-#pragma pack(pop)
-
-/**
- * @brief Set feature response payload
- */
-#pragma pack(push, 1)
-struct SetFeatureResponse {
-    uint8_t status;   ///< ConfigStatus value
-    uint8_t feature;  ///< Feature ID that was set
-    uint8_t enabled;  ///< New state (1 enabled, 0 disabled)
-};
-static_assert(sizeof(SetFeatureResponse) == 3, "SetFeatureResponse size mismatch");
-#pragma pack(pop)
-
-/**
- * @brief Get feature request payload
- */
-#pragma pack(push, 1)
-struct GetFeatureRequest {
-    uint8_t feature;  ///< Feature ID to query
-};
-static_assert(sizeof(GetFeatureRequest) == 1, "GetFeatureRequest size mismatch");
-#pragma pack(pop)
-
-/**
- * @brief Get feature response payload
- */
-#pragma pack(push, 1)
-struct GetFeatureResponse {
-    uint8_t status;   ///< ConfigStatus value
-    uint8_t feature;  ///< Feature ID queried
-    uint8_t enabled;  ///< Current state (1 enabled, 0 disabled)
-};
-static_assert(sizeof(GetFeatureResponse) == 3, "GetFeatureResponse size mismatch");
-#pragma pack(pop)
-
-/**
  * @brief Get human-readable name for a feature
- *
- * @param feature Feature ID
- * @return Feature name string
  */
 inline const char* featureToString(Feature feature) {
     switch (feature) {
@@ -157,9 +88,6 @@ inline const char* featureToString(Feature feature) {
 
 /**
  * @brief Get human-readable name for a config status
- *
- * @param status Status code
- * @return Status name string
  */
 inline const char* configStatusToString(ConfigStatus status) {
     switch (status) {
@@ -171,11 +99,10 @@ inline const char* configStatusToString(ConfigStatus status) {
     }
 }
 
-/// Maximum features in list response
+/// Maximum features supported
 constexpr size_t kMaxFeatures = static_cast<size_t>(Feature::kCount);
 
-/// Maximum payload size for list features response
-constexpr size_t kMaxListFeaturesPayload =
-    sizeof(ListFeaturesResponse) + (kMaxFeatures * sizeof(FeatureState));
+/// Maximum frame size for config messages
+constexpr size_t kMaxFrameSize = 256;
 
 }  // namespace domes::config
