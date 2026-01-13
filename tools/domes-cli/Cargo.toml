@@ -19,6 +19,9 @@ crc32fast = "1.4"
 anyhow = "1.0"
 thiserror = "1.0"
 
+# SHA256 hashing for OTA
+sha2 = "0.10"
+
 # Hex formatting for debug output
 hex = "0.4"
 

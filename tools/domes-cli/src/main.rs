@@ -7,11 +7,13 @@
 //!   domes-cli --port /dev/ttyACM0 wifi enable
 //!   domes-cli --port /dev/ttyACM0 wifi disable
 //!   domes-cli --port /dev/ttyACM0 wifi status
+//!   domes-cli --port /dev/ttyACM0 ota flash firmware.bin --version v1.2.3
 //!
 //! Usage (WiFi):
 //!   domes-cli --wifi 192.168.1.100:5000 feature list
 //!   domes-cli --wifi 192.168.1.100:5000 feature enable led-effects
 //!   domes-cli --wifi 192.168.1.100:5000 wifi status
+//!   domes-cli --wifi 192.168.1.100:5000 ota flash firmware.bin
 
 mod commands;
 mod proto;
@@ -20,6 +22,7 @@ mod transport;
 
 use clap::{Parser, Subcommand};
 use proto::config::Feature;
+use std::path::PathBuf;
 use transport::{SerialTransport, TcpTransport, Transport};
 
 #[derive(Parser)]
@@ -55,6 +58,12 @@ enum Commands {
         #[command(subcommand)]
         action: WifiAction,
     },
+
+    /// Over-the-air firmware updates
+    Ota {
+        #[command(subcommand)]
+        action: OtaAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -85,6 +94,19 @@ enum WifiAction {
 
     /// Show WiFi subsystem status
     Status,
+}
+
+#[derive(Subcommand)]
+enum OtaAction {
+    /// Flash firmware to device
+    Flash {
+        /// Path to firmware binary (.bin file)
+        firmware: PathBuf,
+
+        /// Version string (e.g., v1.2.3)
+        #[arg(short, long)]
+        version: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -190,6 +212,16 @@ fn main() -> anyhow::Result<()> {
             WifiAction::Status => {
                 let enabled = commands::wifi_status(transport.as_mut())?;
                 println!("WiFi subsystem: {}", if enabled { "enabled" } else { "disabled" });
+            }
+        },
+
+        Commands::Ota { action } => match action {
+            OtaAction::Flash { firmware, version } => {
+                commands::ota_flash(
+                    transport.as_mut(),
+                    &firmware,
+                    version.as_deref(),
+                )?;
             }
         },
     }
