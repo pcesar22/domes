@@ -13,6 +13,7 @@
 set(COMMON_SRCS
     protocol/otaProtocol.cpp
     proto/config.pb.c
+    proto/trace.pb.c
 )
 
 # Include directories

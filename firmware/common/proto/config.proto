@@ -1,7 +1,22 @@
 // Runtime configuration protocol for DOMES firmware
 // Shared between firmware (nanopb) and host CLI (prost)
+//
+// THIS IS THE SINGLE SOURCE OF TRUTH FOR ALL CONFIG PROTOCOL DEFINITIONS.
+// DO NOT duplicate these definitions in firmware or CLI code.
 syntax = "proto3";
 package domes.config;
+
+// Frame-level message types for config protocol (0x20-0x2F range)
+// Used in the frame header [0xAA 0x55][Len][MsgType][Payload][CRC32]
+enum MsgType {
+    MSG_TYPE_UNKNOWN = 0;
+    MSG_TYPE_LIST_FEATURES_REQ = 0x20;
+    MSG_TYPE_LIST_FEATURES_RSP = 0x21;
+    MSG_TYPE_SET_FEATURE_REQ = 0x22;
+    MSG_TYPE_SET_FEATURE_RSP = 0x23;
+    MSG_TYPE_GET_FEATURE_REQ = 0x24;
+    MSG_TYPE_GET_FEATURE_RSP = 0x25;
+}
 
 // Status codes for responses
 enum Status {

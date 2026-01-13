@@ -10,6 +10,18 @@
 #endif
 
 /* Enum definitions */
+/* Frame-level message types for config protocol (0x20-0x2F range)
+ Used in the frame header [0xAA 0x55][Len][MsgType][Payload][CRC32] */
+typedef enum _domes_config_MsgType {
+    domes_config_MsgType_MSG_TYPE_UNKNOWN = 0,
+    domes_config_MsgType_MSG_TYPE_LIST_FEATURES_REQ = 32,
+    domes_config_MsgType_MSG_TYPE_LIST_FEATURES_RSP = 33,
+    domes_config_MsgType_MSG_TYPE_SET_FEATURE_REQ = 34,
+    domes_config_MsgType_MSG_TYPE_SET_FEATURE_RSP = 35,
+    domes_config_MsgType_MSG_TYPE_GET_FEATURE_REQ = 36,
+    domes_config_MsgType_MSG_TYPE_GET_FEATURE_RSP = 37
+} domes_config_MsgType;
+
 /* Status codes for responses */
 typedef enum _domes_config_Status {
     domes_config_Status_STATUS_OK = 0,
@@ -83,6 +95,10 @@ extern "C" {
 #endif
 
 /* Helper constants for enums */
+#define _domes_config_MsgType_MIN domes_config_MsgType_MSG_TYPE_UNKNOWN
+#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_GET_FEATURE_RSP
+#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_GET_FEATURE_RSP+1))
+
 #define _domes_config_Status_MIN domes_config_Status_STATUS_OK
 #define _domes_config_Status_MAX domes_config_Status_STATUS_BUSY
 #define _domes_config_Status_ARRAYSIZE ((domes_config_Status)(domes_config_Status_STATUS_BUSY+1))

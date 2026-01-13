@@ -8,6 +8,10 @@
 //!   domes-cli --port /dev/ttyACM0 wifi disable
 //!   domes-cli --port /dev/ttyACM0 wifi status
 //!   domes-cli --port /dev/ttyACM0 ota flash firmware.bin --version v1.2.3
+//!   domes-cli --port /dev/ttyACM0 trace start
+//!   domes-cli --port /dev/ttyACM0 trace stop
+//!   domes-cli --port /dev/ttyACM0 trace status
+//!   domes-cli --port /dev/ttyACM0 trace dump -o trace.json
 //!
 //! Usage (WiFi):
 //!   domes-cli --wifi 192.168.1.100:5000 feature list
@@ -64,6 +68,12 @@ enum Commands {
         #[command(subcommand)]
         action: OtaAction,
     },
+
+    /// Performance tracing (Perfetto compatible)
+    Trace {
+        #[command(subcommand)]
+        action: TraceAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -106,6 +116,28 @@ enum OtaAction {
         /// Version string (e.g., v1.2.3)
         #[arg(short, long)]
         version: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum TraceAction {
+    /// Start trace recording
+    Start,
+
+    /// Stop trace recording
+    Stop,
+
+    /// Clear trace buffer
+    Clear,
+
+    /// Show trace system status
+    Status,
+
+    /// Dump traces to JSON file (Perfetto compatible)
+    Dump {
+        /// Output file path (default: trace.json)
+        #[arg(short, long, default_value = "trace.json")]
+        output: PathBuf,
     },
 }
 
@@ -222,6 +254,44 @@ fn main() -> anyhow::Result<()> {
                     &firmware,
                     version.as_deref(),
                 )?;
+            }
+        },
+
+        Commands::Trace { action } => match action {
+            TraceAction::Start => {
+                commands::trace_start(transport.as_mut())?;
+                println!("Tracing started");
+            }
+
+            TraceAction::Stop => {
+                commands::trace_stop(transport.as_mut())?;
+                println!("Tracing stopped");
+            }
+
+            TraceAction::Clear => {
+                commands::trace_clear(transport.as_mut())?;
+                println!("Trace buffer cleared");
+            }
+
+            TraceAction::Status => {
+                let status = commands::trace_status(transport.as_mut())?;
+                println!("Trace status:");
+                println!("  Initialized: {}", status.initialized);
+                println!("  Enabled:     {}", status.enabled);
+                println!("  Events:      {}", status.event_count);
+                println!("  Dropped:     {}", status.dropped_count);
+                println!("  Buffer size: {} bytes", status.buffer_size);
+            }
+
+            TraceAction::Dump { output } => {
+                println!("Dumping traces to {}...", output.display());
+                let result = commands::trace_dump(transport.as_mut(), &output)?;
+                println!("Dump complete:");
+                println!("  Events:   {}", result.event_count);
+                println!("  Dropped:  {}", result.dropped_count);
+                println!("  Duration: {} us ({:.2} ms)", result.duration_us, result.duration_us as f64 / 1000.0);
+                println!("  Output:   {}", result.output_path.display());
+                println!("\nOpen trace in https://ui.perfetto.dev");
             }
         },
     }

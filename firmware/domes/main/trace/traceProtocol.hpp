@@ -4,12 +4,12 @@
  * @file traceProtocol.hpp
  * @brief Wire protocol definitions for trace commands
  *
- * Defines the message types and payload structures for trace operations
- * over the serial transport. Uses the same frame format as OTA protocol
- * (0xAA55 start, length, type, payload, CRC32).
+ * ALL TYPE DEFINITIONS ARE SOURCED FROM trace.proto via nanopb-generated trace.pb.h.
+ * This file provides C++ enum class wrappers for type safety only.
+ * DO NOT add new message types or enums here - add them to trace.proto instead.
  *
- * Message types are in the 0x10-0x1F range to avoid conflicts with
- * OTA message types (0x01-0x05).
+ * Note: Binary struct formats (TraceMetadata, etc.) are kept here for efficient
+ * wire encoding. The proto messages are used for type generation only.
  */
 
 #include "traceEvent.hpp"
@@ -18,51 +18,68 @@
 #include <cstddef>
 #include <cstdint>
 
+// Include the nanopb-generated protobuf definitions (source of truth)
+#include "trace.pb.h"
+
 namespace domes::trace {
 
 /**
- * @brief Trace protocol message types
- *
- * These extend the frame protocol with trace-specific commands.
+ * @brief Trace protocol message types (sourced from trace.proto)
  */
-enum class TraceMsgType : uint8_t {
-    kStart = 0x10,   ///< Start trace recording (host -> device)
-    kStop = 0x11,    ///< Stop trace recording (host -> device)
-    kDump = 0x12,    ///< Request trace dump (host -> device)
-    kData = 0x13,    ///< Trace data chunk (device -> host)
-    kEnd = 0x14,     ///< End of trace dump (device -> host)
-    kClear = 0x15,   ///< Clear trace buffer (host -> device)
-    kStatus = 0x16,  ///< Query trace status (host -> device)
-    kAck = 0x17,     ///< Acknowledge command (device -> host)
+enum class MsgType : uint8_t {
+    kUnknown = domes_trace_MsgType_MSG_TYPE_UNKNOWN,
+    kStart   = domes_trace_MsgType_MSG_TYPE_START,
+    kStop    = domes_trace_MsgType_MSG_TYPE_STOP,
+    kDump    = domes_trace_MsgType_MSG_TYPE_DUMP,
+    kData    = domes_trace_MsgType_MSG_TYPE_DATA,
+    kEnd     = domes_trace_MsgType_MSG_TYPE_END,
+    kClear   = domes_trace_MsgType_MSG_TYPE_CLEAR,
+    kStatus  = domes_trace_MsgType_MSG_TYPE_STATUS,
+    kAck     = domes_trace_MsgType_MSG_TYPE_ACK,
 };
 
 /**
- * @brief Check if a message type is a trace command
- *
- * @param type Message type byte
- * @return true if this is a trace message
+ * @brief Trace status codes (sourced from trace.proto)
+ */
+enum class Status : uint8_t {
+    kOk          = domes_trace_Status_STATUS_OK,
+    kNotInit     = domes_trace_Status_STATUS_NOT_INIT,
+    kAlreadyOn   = domes_trace_Status_STATUS_ALREADY_ON,
+    kAlreadyOff  = domes_trace_Status_STATUS_ALREADY_OFF,
+    kBufferEmpty = domes_trace_Status_STATUS_BUFFER_EMPTY,
+    kError       = domes_trace_Status_STATUS_ERROR,
+};
+
+/**
+ * @brief Check if a message type is a trace command (0x10-0x1F range)
  */
 inline bool isTraceMessage(uint8_t type) {
-    return type >= static_cast<uint8_t>(TraceMsgType::kStart) &&
-           type <= static_cast<uint8_t>(TraceMsgType::kAck);
+    return type >= static_cast<uint8_t>(MsgType::kStart) &&
+           type <= static_cast<uint8_t>(MsgType::kAck);
 }
 
 /**
- * @brief Trace status for ACK responses
+ * @brief Get human-readable name for a trace status
  */
-enum class TraceStatus : uint8_t {
-    kOk = 0x00,           ///< Command succeeded
-    kNotInit = 0x01,      ///< Trace not initialized
-    kAlreadyOn = 0x02,    ///< Tracing already enabled
-    kAlreadyOff = 0x03,   ///< Tracing already disabled
-    kBufferEmpty = 0x04,  ///< No events to dump
-    kError = 0xFF,        ///< Generic error
-};
+inline const char* statusToString(Status status) {
+    switch (status) {
+        case Status::kOk:          return "ok";
+        case Status::kNotInit:     return "not-initialized";
+        case Status::kAlreadyOn:   return "already-on";
+        case Status::kAlreadyOff:  return "already-off";
+        case Status::kBufferEmpty: return "buffer-empty";
+        case Status::kError:       return "error";
+        default:                   return "unknown";
+    }
+}
+
+// ============================================================================
+// Binary Wire Format Structures
+// These are NOT protobuf messages - they are packed binary for efficient transfer.
+// ============================================================================
 
 /**
  * @brief Trace metadata sent at start of dump
- *
- * Sent as the first TRACE_DATA message during a dump operation.
  */
 #pragma pack(push, 1)
 struct TraceMetadata {
@@ -78,8 +95,6 @@ static_assert(sizeof(TraceMetadata) == 17, "TraceMetadata size mismatch");
 
 /**
  * @brief Task entry in trace metadata
- *
- * Maps task IDs to human-readable names.
  */
 #pragma pack(push, 1)
 struct TraceTaskEntry {
@@ -91,8 +106,6 @@ static_assert(sizeof(TraceTaskEntry) == 18, "TraceTaskEntry size mismatch");
 
 /**
  * @brief Header for trace data chunks
- *
- * Precedes each batch of trace events during dump.
  */
 #pragma pack(push, 1)
 struct TraceDataHeader {
@@ -133,17 +146,19 @@ static_assert(sizeof(TraceStatusResponse) == 14, "TraceStatusResponse size misma
  */
 #pragma pack(push, 1)
 struct TraceAckResponse {
-    uint8_t status;  ///< TraceStatus value
+    uint8_t status;  ///< Status value
 };
 static_assert(sizeof(TraceAckResponse) == 1, "TraceAckResponse size mismatch");
 #pragma pack(pop)
 
 /// Maximum events per data chunk (8 events * 16 bytes = 128 bytes)
-/// Smaller chunks reduce USB buffer overflow issues
 constexpr size_t kEventsPerChunk = 8;
 
 /// Maximum payload size for trace data (header + events)
 constexpr size_t kMaxTraceDataPayload =
     sizeof(TraceDataHeader) + (kEventsPerChunk * sizeof(TraceEvent));
+
+/// Maximum frame size for trace messages
+constexpr size_t kMaxFrameSize = 256;
 
 }  // namespace domes::trace

@@ -1,0 +1,124 @@
+// Trace/Perfetto protocol for DOMES firmware
+// Shared between firmware (nanopb) and host CLI (prost)
+//
+// THIS IS THE SINGLE SOURCE OF TRUTH FOR ALL TRACE PROTOCOL DEFINITIONS.
+// DO NOT duplicate these definitions in firmware or CLI code.
+syntax = "proto3";
+package domes.trace;
+
+// Frame-level message types for trace protocol (0x10-0x1F range)
+// Used in the frame header [0xAA 0x55][Len][MsgType][Payload][CRC32]
+enum MsgType {
+    MSG_TYPE_UNKNOWN = 0;
+    MSG_TYPE_START = 0x10;   // Start trace recording (host -> device)
+    MSG_TYPE_STOP = 0x11;    // Stop trace recording (host -> device)
+    MSG_TYPE_DUMP = 0x12;    // Request trace dump (host -> device)
+    MSG_TYPE_DATA = 0x13;    // Trace data chunk (device -> host)
+    MSG_TYPE_END = 0x14;     // End of trace dump (device -> host)
+    MSG_TYPE_CLEAR = 0x15;   // Clear trace buffer (host -> device)
+    MSG_TYPE_STATUS = 0x16;  // Query trace status (host -> device)
+    MSG_TYPE_ACK = 0x17;     // Acknowledge command (device -> host)
+}
+
+// Status codes for trace ACK responses
+enum Status {
+    STATUS_OK = 0;
+    STATUS_NOT_INIT = 1;      // Trace not initialized
+    STATUS_ALREADY_ON = 2;    // Tracing already enabled
+    STATUS_ALREADY_OFF = 3;   // Tracing already disabled
+    STATUS_BUFFER_EMPTY = 4;  // No events to dump
+    STATUS_ERROR = 255;       // Generic error
+}
+
+// Categories for trace events (used to filter and color-code in visualization)
+enum Category {
+    CATEGORY_KERNEL = 0;     // FreeRTOS kernel events (task switch, ISR)
+    CATEGORY_TRANSPORT = 1;  // USB/BLE transport operations
+    CATEGORY_OTA = 2;        // OTA update operations
+    CATEGORY_WIFI = 3;       // WiFi/ESP-NOW operations
+    CATEGORY_LED = 4;        // LED animations
+    CATEGORY_AUDIO = 5;      // Audio playback
+    CATEGORY_TOUCH = 6;      // Touch sensing
+    CATEGORY_GAME = 7;       // Game logic
+    CATEGORY_USER = 8;       // User-defined events
+    CATEGORY_HAPTIC = 9;     // Haptic feedback
+    CATEGORY_BLE = 10;       // BLE operations
+    CATEGORY_NVS = 11;       // NVS storage operations
+}
+
+// Types of trace events
+enum EventType {
+    // FreeRTOS kernel events (0x01-0x0F)
+    EVENT_TYPE_UNKNOWN = 0;
+    EVENT_TYPE_TASK_SWITCH_IN = 0x01;   // Task switched in (began running)
+    EVENT_TYPE_TASK_SWITCH_OUT = 0x02;  // Task switched out (stopped running)
+    EVENT_TYPE_TASK_CREATE = 0x03;      // Task created
+    EVENT_TYPE_TASK_DELETE = 0x04;      // Task deleted
+    EVENT_TYPE_ISR_ENTER = 0x05;        // ISR entered
+    EVENT_TYPE_ISR_EXIT = 0x06;         // ISR exited
+    EVENT_TYPE_QUEUE_SEND = 0x07;       // Queue send operation
+    EVENT_TYPE_QUEUE_RECEIVE = 0x08;    // Queue receive operation
+    EVENT_TYPE_MUTEX_LOCK = 0x09;       // Mutex acquired
+    EVENT_TYPE_MUTEX_UNLOCK = 0x0A;     // Mutex released
+
+    // Application events (0x20-0x2F)
+    EVENT_TYPE_SPAN_BEGIN = 0x20;  // Begin of a duration span
+    EVENT_TYPE_SPAN_END = 0x21;    // End of a duration span
+    EVENT_TYPE_INSTANT = 0x22;     // Instant/point event
+    EVENT_TYPE_COUNTER = 0x23;     // Counter value update
+    EVENT_TYPE_COMPLETE = 0x24;    // Complete event (has duration in arg2)
+}
+
+// Compact trace event (16 bytes when serialized as binary)
+// Note: For wire efficiency, trace events use fixed binary format, not protobuf.
+// This message is for reference/documentation and host-side processing.
+message Event {
+    uint32 timestamp = 1;   // Microseconds since boot
+    uint32 task_id = 2;     // FreeRTOS task number
+    EventType event_type = 3;
+    Category category = 4;
+    uint32 arg1 = 5;        // Primary argument (span ID, counter ID, ISR number)
+    uint32 arg2 = 6;        // Secondary argument (counter value, duration)
+}
+
+// Task entry mapping task ID to name
+message TaskEntry {
+    uint32 task_id = 1;
+    string name = 2;
+}
+
+// Trace metadata sent at start of dump
+message Metadata {
+    uint32 event_count = 1;      // Total events in this dump
+    uint32 dropped_count = 2;    // Events dropped due to buffer full
+    uint32 start_timestamp = 3;  // First event timestamp (microseconds)
+    uint32 end_timestamp = 4;    // Last event timestamp (microseconds)
+    repeated TaskEntry tasks = 5;
+}
+
+// Header for trace data chunks
+message DataHeader {
+    uint32 offset = 1;  // Event offset in dump (0-based)
+    uint32 count = 2;   // Number of events in this chunk
+    // Followed by: Event[count] in binary format
+}
+
+// End of dump message
+message DumpEnd {
+    uint32 total_events = 1;  // Total events sent
+    uint32 checksum = 2;      // Simple checksum of all event data
+}
+
+// Status response message
+message StatusResponse {
+    bool initialized = 1;      // True if trace system initialized
+    bool enabled = 2;          // True if tracing is currently enabled
+    uint32 event_count = 3;    // Approximate events in buffer
+    uint32 dropped_count = 4;  // Events dropped since last clear
+    uint32 buffer_size = 5;    // Total buffer size in bytes
+}
+
+// ACK response message
+message AckResponse {
+    Status status = 1;
+}
