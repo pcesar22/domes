@@ -20,7 +20,6 @@
 #include "transport/serialOtaReceiver.hpp"
 #include "transport/tcpConfigServer.hpp"
 #include "transport/usbCdcTransport.hpp"
-#include "utils/rgbPatternController.hpp"
 
 // WiFi manager and secrets are only needed when WiFi auto-connect is enabled
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
@@ -63,7 +62,6 @@ static domes::SerialOtaReceiver* serialOtaReceiver = nullptr;
 static domes::BleOtaService* bleOtaService = nullptr;
 static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
 static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
-static domes::RgbPatternController* rgbPatternController = nullptr;  // RGB LED pattern controller
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::TcpConfigServer* tcpConfigServer = nullptr;  // WiFi config server
@@ -233,8 +231,8 @@ static esp_err_t initSerialOta() {
     }
     ESP_LOGI(kTag, "USB-CDC transport initialized");
 
-    // Create serial OTA receiver with config support and RGB pattern controller
-    static domes::SerialOtaReceiver receiver(*usbCdcTransport, featureManager, rgbPatternController);
+    // Create serial OTA receiver with config support
+    static domes::SerialOtaReceiver receiver(*usbCdcTransport, featureManager);
     serialOtaReceiver = &receiver;
 
     // Create receiver task
@@ -278,7 +276,7 @@ static esp_err_t initBleOta() {
 
     // Create BLE OTA receiver (reuses SerialOtaReceiver with BLE transport)
     // Note: featureManager may be nullptr if serial OTA wasn't initialized first
-    static domes::SerialOtaReceiver receiver(*bleOtaService, featureManager, rgbPatternController);
+    static domes::SerialOtaReceiver receiver(*bleOtaService, featureManager);
     bleOtaReceiver = &receiver;
 
     // Create receiver task
@@ -471,37 +469,6 @@ static esp_err_t initLedStrip() {
     return ESP_OK;
 }
 
-/**
- * @brief Initialize RGB pattern controller
- *
- * Creates the pattern controller and a task to update it periodically.
- * Requires LED driver to be initialized first.
- */
-static void initRgbPatternController() {
-    if (!ledDriver) {
-        ESP_LOGW(kTag, "Cannot init RGB pattern controller: LED driver not initialized");
-        return;
-    }
-
-    static domes::RgbPatternController controller(*ledDriver);
-    rgbPatternController = &controller;
-
-    // Create pattern update task
-    xTaskCreate(
-        [](void* param) {
-            auto* controller = static_cast<domes::RgbPatternController*>(param);
-            ESP_LOGI(kTag, "RGB pattern update task started");
-
-            while (true) {
-                controller->update();
-                vTaskDelay(pdMS_TO_TICKS(20));  // 50 fps update rate
-            }
-        },
-        "rgb_pattern", 2048, rgbPatternController, domes::infra::priority::kLow, nullptr);
-
-    ESP_LOGI(kTag, "RGB pattern controller initialized");
-}
-
 static esp_err_t initInfrastructure() {
     esp_err_t err = domes::infra::NvsConfig::initFlash();
     if (err != ESP_OK)
@@ -587,9 +554,6 @@ extern "C" void app_main() {
 
     // Initialize feature manager (needed by both TCP config server and serial OTA)
     initFeatureManager();
-
-    // Initialize RGB pattern controller (after LED driver, before serial OTA)
-    initRgbPatternController();
 
     // Initialize TCP config server (WiFi-based config) - BEFORE serial OTA takes console
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT

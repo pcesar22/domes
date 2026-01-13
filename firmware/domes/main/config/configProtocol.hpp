@@ -54,74 +54,20 @@ enum class ConfigStatus : uint8_t {
  * @brief Config protocol message types (frame-level, not protobuf)
  */
 enum class ConfigMsgType : uint8_t {
-    // Feature control (0x20-0x2F)
     kListFeaturesReq = 0x20,  ///< List all features (host -> device)
     kListFeaturesRsp = 0x21,  ///< Feature list response (device -> host)
     kSetFeatureReq   = 0x22,  ///< Set feature state (host -> device)
     kSetFeatureRsp   = 0x23,  ///< Set feature response (device -> host)
     kGetFeatureReq   = 0x24,  ///< Get single feature state (host -> device)
     kGetFeatureRsp   = 0x25,  ///< Get feature response (device -> host)
-
-    // RGB LED pattern control (0x30-0x3F)
-    kSetRgbPatternReq   = 0x30,  ///< Set RGB pattern (host -> device)
-    kSetRgbPatternRsp   = 0x31,  ///< Set pattern response (device -> host)
-    kGetRgbPatternReq   = 0x32,  ///< Get current pattern (host -> device)
-    kGetRgbPatternRsp   = 0x33,  ///< Current pattern response (device -> host)
-    kListRgbPatternsReq = 0x34,  ///< List available patterns (host -> device)
-    kListRgbPatternsRsp = 0x35,  ///< Pattern list response (device -> host)
 };
 
 /**
  * @brief Check if a message type is a config command
  */
 inline bool isConfigMessage(uint8_t type) {
-    // Feature control range (0x20-0x2F)
-    bool isFeatureMsg = type >= static_cast<uint8_t>(ConfigMsgType::kListFeaturesReq) &&
-                        type <= static_cast<uint8_t>(ConfigMsgType::kGetFeatureRsp);
-    // RGB pattern control range (0x30-0x3F)
-    bool isRgbMsg = type >= static_cast<uint8_t>(ConfigMsgType::kSetRgbPatternReq) &&
-                    type <= static_cast<uint8_t>(ConfigMsgType::kListRgbPatternsRsp);
-    return isFeatureMsg || isRgbMsg;
-}
-
-/**
- * @brief RGB LED patterns (sourced from config.proto)
- */
-enum class RgbPattern : uint8_t {
-    kOff          = domes_config_RgbPattern_RGB_PATTERN_OFF,
-    kSolid        = domes_config_RgbPattern_RGB_PATTERN_SOLID,
-    kRainbowChase = domes_config_RgbPattern_RGB_PATTERN_RAINBOW_CHASE,
-    kCometTail    = domes_config_RgbPattern_RGB_PATTERN_COMET_TAIL,
-    kSparkleFire  = domes_config_RgbPattern_RGB_PATTERN_SPARKLE_FIRE,
-    kCount        = 5,
-};
-
-/**
- * @brief Get human-readable name for an RGB pattern
- */
-inline const char* rgbPatternToString(RgbPattern pattern) {
-    switch (pattern) {
-        case RgbPattern::kOff:          return "off";
-        case RgbPattern::kSolid:        return "solid";
-        case RgbPattern::kRainbowChase: return "rainbow-chase";
-        case RgbPattern::kCometTail:    return "comet-tail";
-        case RgbPattern::kSparkleFire:  return "sparkle-fire";
-        default:                        return "unknown";
-    }
-}
-
-/**
- * @brief Get description for an RGB pattern
- */
-inline const char* rgbPatternDescription(RgbPattern pattern) {
-    switch (pattern) {
-        case RgbPattern::kOff:          return "Turn off all LEDs";
-        case RgbPattern::kSolid:        return "Solid color on all LEDs";
-        case RgbPattern::kRainbowChase: return "Rainbow colors rotating around the ring";
-        case RgbPattern::kCometTail:    return "Bright dot with fading trail";
-        case RgbPattern::kSparkleFire:  return "Random sparkling with warm fire colors";
-        default:                        return "Unknown pattern";
-    }
+    return type >= static_cast<uint8_t>(ConfigMsgType::kListFeaturesReq) &&
+           type <= static_cast<uint8_t>(ConfigMsgType::kGetFeatureRsp);
 }
 
 /**

@@ -23,11 +23,9 @@ constexpr const char* kTag = "config_cmd";
 
 namespace domes::config {
 
-ConfigCommandHandler::ConfigCommandHandler(ITransport& transport, FeatureManager& features,
-                                           RgbPatternController* rgbController)
+ConfigCommandHandler::ConfigCommandHandler(ITransport& transport, FeatureManager& features)
     : transport_(transport)
-    , features_(features)
-    , rgbController_(rgbController) {
+    , features_(features) {
 }
 
 bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, size_t len) {
@@ -47,22 +45,6 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
         case ConfigMsgType::kGetFeatureReq:
             ESP_LOGD(kTag, "Received GET_FEATURE");
             handleGetFeature(payload, len);
-            return true;
-
-        // RGB Pattern commands
-        case ConfigMsgType::kSetRgbPatternReq:
-            ESP_LOGD(kTag, "Received SET_RGB_PATTERN");
-            handleSetRgbPattern(payload, len);
-            return true;
-
-        case ConfigMsgType::kGetRgbPatternReq:
-            ESP_LOGD(kTag, "Received GET_RGB_PATTERN");
-            handleGetRgbPattern();
-            return true;
-
-        case ConfigMsgType::kListRgbPatternsReq:
-            ESP_LOGD(kTag, "Received LIST_RGB_PATTERNS");
-            handleListRgbPatterns();
             return true;
 
         default:
@@ -225,139 +207,6 @@ bool ConfigCommandHandler::sendFrame(ConfigMsgType type, const uint8_t* payload,
     }
 
     return true;
-}
-
-// =============================================================================
-// RGB Pattern Handlers
-// =============================================================================
-
-void ConfigCommandHandler::handleSetRgbPattern(const uint8_t* payload, size_t len) {
-    if (!rgbController_) {
-        ESP_LOGW(kTag, "RGB controller not available");
-        sendSetRgbPatternResponse(RgbPattern::kOff);
-        return;
-    }
-
-    // Decode protobuf message
-    domes_config_SetRgbPatternRequest req = domes_config_SetRgbPatternRequest_init_zero;
-    pb_istream_t stream = pb_istream_from_buffer(payload, len);
-
-    if (!pb_decode(&stream, domes_config_SetRgbPatternRequest_fields, &req)) {
-        ESP_LOGW(kTag, "Failed to decode SET_RGB_PATTERN: %s", PB_GET_ERROR(&stream));
-        sendSetRgbPatternResponse(RgbPattern::kOff);
-        return;
-    }
-
-    // Build pattern config
-    RgbPatternConfig config;
-    config.pattern = static_cast<RgbPattern>(req.pattern);
-
-    // Set primary color if provided
-    if (req.has_primary_color) {
-        config.primaryColor = Color::rgb(
-            static_cast<uint8_t>(req.primary_color.r),
-            static_cast<uint8_t>(req.primary_color.g),
-            static_cast<uint8_t>(req.primary_color.b)
-        );
-    }
-
-    // Set speed if provided (default to 50ms if 0)
-    config.speedMs = (req.speed_ms > 0) ? req.speed_ms : 50;
-
-    // Set brightness if provided (default to 128 if 0)
-    config.brightness = (req.brightness > 0) ? static_cast<uint8_t>(req.brightness) : 128;
-
-    ESP_LOGI(kTag, "Setting RGB pattern: %s (speed=%lu ms, brightness=%u)",
-             rgbPatternToString(config.pattern),
-             static_cast<unsigned long>(config.speedMs),
-             config.brightness);
-
-    rgbController_->setConfig(config);
-    sendSetRgbPatternResponse(config.pattern);
-}
-
-void ConfigCommandHandler::handleGetRgbPattern() {
-    sendGetRgbPatternResponse();
-}
-
-void ConfigCommandHandler::handleListRgbPatterns() {
-    sendListRgbPatternsResponse();
-}
-
-void ConfigCommandHandler::sendSetRgbPatternResponse(RgbPattern pattern) {
-    domes_config_SetRgbPatternResponse resp = domes_config_SetRgbPatternResponse_init_zero;
-    resp.active_pattern = static_cast<domes_config_RgbPattern>(pattern);
-
-    std::array<uint8_t, domes_config_SetRgbPatternResponse_size + 10> payload;
-    pb_ostream_t stream = pb_ostream_from_buffer(payload.data(), payload.size());
-
-    if (!pb_encode(&stream, domes_config_SetRgbPatternResponse_fields, &resp)) {
-        ESP_LOGE(kTag, "Failed to encode SetRgbPatternResponse: %s", PB_GET_ERROR(&stream));
-        return;
-    }
-
-    sendFrame(ConfigMsgType::kSetRgbPatternRsp, payload.data(), stream.bytes_written);
-}
-
-void ConfigCommandHandler::sendGetRgbPatternResponse() {
-    domes_config_GetRgbPatternResponse resp = domes_config_GetRgbPatternResponse_init_zero;
-
-    if (rgbController_) {
-        const auto& config = rgbController_->getConfig();
-        resp.active_pattern = static_cast<domes_config_RgbPattern>(config.pattern);
-        resp.has_primary_color = true;
-        resp.primary_color.r = config.primaryColor.r;
-        resp.primary_color.g = config.primaryColor.g;
-        resp.primary_color.b = config.primaryColor.b;
-        resp.speed_ms = config.speedMs;
-        resp.brightness = config.brightness;
-    } else {
-        resp.active_pattern = domes_config_RgbPattern_RGB_PATTERN_OFF;
-    }
-
-    std::array<uint8_t, domes_config_GetRgbPatternResponse_size + 10> payload;
-    pb_ostream_t stream = pb_ostream_from_buffer(payload.data(), payload.size());
-
-    if (!pb_encode(&stream, domes_config_GetRgbPatternResponse_fields, &resp)) {
-        ESP_LOGE(kTag, "Failed to encode GetRgbPatternResponse: %s", PB_GET_ERROR(&stream));
-        return;
-    }
-
-    sendFrame(ConfigMsgType::kGetRgbPatternRsp, payload.data(), stream.bytes_written);
-}
-
-void ConfigCommandHandler::sendListRgbPatternsResponse() {
-    domes_config_ListRgbPatternsResponse resp = domes_config_ListRgbPatternsResponse_init_zero;
-
-    // Add all available patterns
-    for (uint8_t i = 0; i < static_cast<uint8_t>(RgbPattern::kCount); ++i) {
-        auto pattern = static_cast<RgbPattern>(i);
-        auto& info = resp.patterns[resp.patterns_count];
-
-        info.pattern = static_cast<domes_config_RgbPattern>(pattern);
-
-        // Copy pattern name
-        const char* name = rgbPatternToString(pattern);
-        strncpy(info.name, name, sizeof(info.name) - 1);
-        info.name[sizeof(info.name) - 1] = '\0';
-
-        // Copy pattern description
-        const char* desc = rgbPatternDescription(pattern);
-        strncpy(info.description, desc, sizeof(info.description) - 1);
-        info.description[sizeof(info.description) - 1] = '\0';
-
-        resp.patterns_count++;
-    }
-
-    std::array<uint8_t, domes_config_ListRgbPatternsResponse_size + 10> payload;
-    pb_ostream_t stream = pb_ostream_from_buffer(payload.data(), payload.size());
-
-    if (!pb_encode(&stream, domes_config_ListRgbPatternsResponse_fields, &resp)) {
-        ESP_LOGE(kTag, "Failed to encode ListRgbPatternsResponse: %s", PB_GET_ERROR(&stream));
-        return;
-    }
-
-    sendFrame(ConfigMsgType::kListRgbPatternsRsp, payload.data(), stream.bytes_written);
 }
 
 }  // namespace domes::config

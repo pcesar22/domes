@@ -55,43 +55,4 @@ pub mod config {
             Self::from_cli_name(s).ok_or_else(|| format!("Unknown feature: {}", s))
         }
     }
-
-    impl RgbPattern {
-        /// Get user-friendly name for CLI display
-        pub fn cli_name(&self) -> &'static str {
-            match self {
-                RgbPattern::Off => "off",
-                RgbPattern::Solid => "solid",
-                RgbPattern::RainbowChase => "rainbow-chase",
-                RgbPattern::CometTail => "comet-tail",
-                RgbPattern::SparkleFire => "sparkle-fire",
-            }
-        }
-
-        /// Parse from CLI input string
-        pub fn from_cli_name(s: &str) -> Option<RgbPattern> {
-            match s.to_lowercase().as_str() {
-                "off" | "none" => Some(RgbPattern::Off),
-                "solid" | "color" => Some(RgbPattern::Solid),
-                "rainbow-chase" | "rainbow" => Some(RgbPattern::RainbowChase),
-                "comet-tail" | "comet" => Some(RgbPattern::CometTail),
-                "sparkle-fire" | "fire" | "sparkle" => Some(RgbPattern::SparkleFire),
-                _ => None,
-            }
-        }
-    }
-
-    impl std::fmt::Display for RgbPattern {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.cli_name())
-        }
-    }
-
-    impl std::str::FromStr for RgbPattern {
-        type Err = String;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            Self::from_cli_name(s).ok_or_else(|| format!("Unknown pattern: {}", s))
-        }
-    }
 }

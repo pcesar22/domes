@@ -3,8 +3,3 @@
 
 # ListFeaturesResponse: max 16 features in array
 domes.config.ListFeaturesResponse.features  max_count:16
-
-# RGB pattern messages
-domes.config.RgbPatternInfo.name            max_size:32
-domes.config.RgbPatternInfo.description     max_size:64
-domes.config.ListRgbPatternsResponse.patterns  max_count:8
