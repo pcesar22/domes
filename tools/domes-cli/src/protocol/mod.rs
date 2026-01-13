@@ -1,10 +1,19 @@
 //! Protocol definitions for DOMES CLI
 //!
-//! Matches the wire protocol defined in firmware/domes/main/config/configProtocol.hpp
+//! Wire format handling for communication with firmware.
+//!
+//! IMPORTANT: Enum types (Feature, Status) come from proto::config module,
+//! which is generated from firmware/common/proto/config.proto.
+//! DO NOT define enums here - use the generated types.
+//!
+//! TODO: Switch to full protobuf encoding (prost::Message) when firmware
+//! is updated to use nanopb for serialization.
 
+use crate::proto::config::{Feature, Status};
 use thiserror::Error;
 
 /// Config protocol message types (0x20-0x2F range)
+/// These are frame-level identifiers, separate from protobuf encoding.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConfigMsgType {
@@ -32,108 +41,6 @@ impl TryFrom<u8> for ConfigMsgType {
     }
 }
 
-/// Runtime-toggleable features
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Feature {
-    Unknown = 0,
-    LedEffects = 1,
-    BleAdvertising = 2,
-    Wifi = 3,
-    EspNow = 4,
-    Touch = 5,
-    Haptic = 6,
-    Audio = 7,
-}
-
-impl Feature {
-    /// Get human-readable name for the feature
-    pub fn name(&self) -> &'static str {
-        match self {
-            Feature::Unknown => "unknown",
-            Feature::LedEffects => "led-effects",
-            Feature::BleAdvertising => "ble",
-            Feature::Wifi => "wifi",
-            Feature::EspNow => "esp-now",
-            Feature::Touch => "touch",
-            Feature::Haptic => "haptic",
-            Feature::Audio => "audio",
-        }
-    }
-
-    /// Get all valid features (excluding Unknown)
-    pub fn all() -> &'static [Feature] {
-        &[
-            Feature::LedEffects,
-            Feature::BleAdvertising,
-            Feature::Wifi,
-            Feature::EspNow,
-            Feature::Touch,
-            Feature::Haptic,
-            Feature::Audio,
-        ]
-    }
-}
-
-impl TryFrom<u8> for Feature {
-    type Error = ProtocolError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Unknown),
-            1 => Ok(Self::LedEffects),
-            2 => Ok(Self::BleAdvertising),
-            3 => Ok(Self::Wifi),
-            4 => Ok(Self::EspNow),
-            5 => Ok(Self::Touch),
-            6 => Ok(Self::Haptic),
-            7 => Ok(Self::Audio),
-            _ => Err(ProtocolError::UnknownFeature(value)),
-        }
-    }
-}
-
-impl std::str::FromStr for Feature {
-    type Err = ProtocolError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "led-effects" | "led" | "leds" => Ok(Feature::LedEffects),
-            "ble" | "bluetooth" | "ble-advertising" => Ok(Feature::BleAdvertising),
-            "wifi" | "wi-fi" => Ok(Feature::Wifi),
-            "esp-now" | "espnow" => Ok(Feature::EspNow),
-            "touch" => Ok(Feature::Touch),
-            "haptic" | "haptics" => Ok(Feature::Haptic),
-            "audio" | "sound" => Ok(Feature::Audio),
-            _ => Err(ProtocolError::InvalidFeatureName(s.to_string())),
-        }
-    }
-}
-
-/// Config status codes
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ConfigStatus {
-    Ok = 0x00,
-    Error = 0x01,
-    InvalidFeature = 0x02,
-    Busy = 0x03,
-}
-
-impl TryFrom<u8> for ConfigStatus {
-    type Error = ProtocolError;
-
-    fn try_from(value: u8) -> Result<Self, <Self as TryFrom<u8>>::Error> {
-        match value {
-            0x00 => Ok(Self::Ok),
-            0x01 => Ok(Self::Error),
-            0x02 => Ok(Self::InvalidFeature),
-            0x03 => Ok(Self::Busy),
-            _ => Err(ProtocolError::UnknownStatus(value)),
-        }
-    }
-}
-
 /// Protocol errors
 #[derive(Debug, Error)]
 pub enum ProtocolError {
@@ -141,39 +48,34 @@ pub enum ProtocolError {
     UnknownMessageType(u8),
 
     #[error("Unknown feature ID: {0}")]
-    UnknownFeature(u8),
+    UnknownFeature(i32),
 
-    #[error("Unknown status code: 0x{0:02X}")]
-    UnknownStatus(u8),
-
-    #[error("Invalid feature name: {0}")]
-    InvalidFeatureName(String),
+    #[error("Unknown status code: {0}")]
+    UnknownStatus(i32),
 
     #[error("Payload too short: expected {expected}, got {actual}")]
     PayloadTooShort { expected: usize, actual: usize },
 
     #[error("Device returned error: {0:?}")]
-    DeviceError(ConfigStatus),
+    DeviceError(Status),
 }
 
 /// Feature state (feature ID + enabled flag)
+/// Uses the proto-generated Feature enum.
 #[derive(Debug, Clone, Copy)]
 pub struct FeatureState {
     pub feature: Feature,
     pub enabled: bool,
 }
 
-/// Serialize SetFeatureRequest payload
+/// Serialize SetFeatureRequest payload (legacy binary format)
+/// TODO: Replace with prost::Message::encode when firmware uses nanopb
 pub fn serialize_set_feature(feature: Feature, enabled: bool) -> [u8; 2] {
-    [feature as u8, if enabled { 1 } else { 0 }]
+    [feature as i32 as u8, if enabled { 1 } else { 0 }]
 }
 
-/// Serialize GetFeatureRequest payload
-pub fn serialize_get_feature(feature: Feature) -> [u8; 1] {
-    [feature as u8]
-}
-
-/// Parse ListFeaturesResponse payload
+/// Parse ListFeaturesResponse payload (legacy binary format)
+/// TODO: Replace with prost::Message::decode when firmware uses nanopb
 pub fn parse_list_features_response(payload: &[u8]) -> Result<Vec<FeatureState>, ProtocolError> {
     if payload.len() < 2 {
         return Err(ProtocolError::PayloadTooShort {
@@ -182,8 +84,11 @@ pub fn parse_list_features_response(payload: &[u8]) -> Result<Vec<FeatureState>,
         });
     }
 
-    let status = ConfigStatus::try_from(payload[0])?;
-    if status != ConfigStatus::Ok {
+    let status_val = payload[0] as i32;
+    let status = Status::try_from(status_val)
+        .map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
         return Err(ProtocolError::DeviceError(status));
     }
 
@@ -200,7 +105,9 @@ pub fn parse_list_features_response(payload: &[u8]) -> Result<Vec<FeatureState>,
     let mut features = Vec::with_capacity(count);
     for i in 0..count {
         let offset = 2 + i * 2;
-        let feature = Feature::try_from(payload[offset])?;
+        let feature_val = payload[offset] as i32;
+        let feature = Feature::try_from(feature_val)
+            .map_err(|_| ProtocolError::UnknownFeature(feature_val))?;
         let enabled = payload[offset + 1] != 0;
         features.push(FeatureState { feature, enabled });
     }
@@ -208,7 +115,8 @@ pub fn parse_list_features_response(payload: &[u8]) -> Result<Vec<FeatureState>,
     Ok(features)
 }
 
-/// Parse SetFeatureResponse or GetFeatureResponse payload
+/// Parse SetFeatureResponse or GetFeatureResponse payload (legacy binary format)
+/// TODO: Replace with prost::Message::decode when firmware uses nanopb
 pub fn parse_feature_response(payload: &[u8]) -> Result<FeatureState, ProtocolError> {
     if payload.len() < 3 {
         return Err(ProtocolError::PayloadTooShort {
@@ -217,12 +125,17 @@ pub fn parse_feature_response(payload: &[u8]) -> Result<FeatureState, ProtocolEr
         });
     }
 
-    let status = ConfigStatus::try_from(payload[0])?;
-    if status != ConfigStatus::Ok {
+    let status_val = payload[0] as i32;
+    let status = Status::try_from(status_val)
+        .map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
         return Err(ProtocolError::DeviceError(status));
     }
 
-    let feature = Feature::try_from(payload[1])?;
+    let feature_val = payload[1] as i32;
+    let feature = Feature::try_from(feature_val)
+        .map_err(|_| ProtocolError::UnknownFeature(feature_val))?;
     let enabled = payload[2] != 0;
 
     Ok(FeatureState { feature, enabled })

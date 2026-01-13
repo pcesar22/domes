@@ -14,11 +14,12 @@
 //!   domes-cli --wifi 192.168.1.100:5000 wifi status
 
 mod commands;
+mod proto;
 mod protocol;
 mod transport;
 
 use clap::{Parser, Subcommand};
-use protocol::Feature;
+use proto::config::Feature;
 use transport::{SerialTransport, TcpTransport, Transport};
 
 #[derive(Parser)]
@@ -136,7 +137,7 @@ fn main() -> anyhow::Result<()> {
 
                 for state in features {
                     let status = if state.enabled { "enabled" } else { "disabled" };
-                    println!("{:<16} {}", state.feature.name(), status);
+                    println!("{:<16} {}", state.feature.cli_name(), status);
                 }
             }
 
@@ -148,7 +149,7 @@ fn main() -> anyhow::Result<()> {
                 let state = commands::feature_enable(transport.as_mut(), feature)?;
                 println!(
                     "Feature '{}' is now {}",
-                    state.feature.name(),
+                    state.feature.cli_name(),
                     if state.enabled { "enabled" } else { "disabled" }
                 );
             }
@@ -161,7 +162,7 @@ fn main() -> anyhow::Result<()> {
                 let state = commands::feature_disable(transport.as_mut(), feature)?;
                 println!(
                     "Feature '{}' is now {}",
-                    state.feature.name(),
+                    state.feature.cli_name(),
                     if state.enabled { "enabled" } else { "disabled" }
                 );
             }

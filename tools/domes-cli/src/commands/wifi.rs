@@ -1,6 +1,6 @@
 //! WiFi subsystem commands
 
-use crate::protocol::Feature;
+use crate::proto::config::Feature;
 use crate::transport::Transport;
 use anyhow::Result;
 

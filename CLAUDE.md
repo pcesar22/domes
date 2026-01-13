@@ -69,6 +69,96 @@ cd tools/domes-cli && cargo build
 
 ---
 
+## CRITICAL: Protocol Buffers (nanopb/prost) - READ THIS FIRST
+
+**THIS IS NON-NEGOTIABLE. DO NOT SKIP THIS SECTION.**
+
+All message serialization between firmware and host tools MUST use Protocol Buffers:
+- **Firmware**: Uses **nanopb** (C library for embedded)
+- **Host CLI (Rust)**: Uses **prost** (Rust protobuf library)
+- **Single source of truth**: `firmware/common/proto/*.proto` files
+
+### THE RULE
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  NEVER HAND-ROLL PROTOCOL DEFINITIONS.                         │
+│  NEVER DUPLICATE ENUMS OR MESSAGE TYPES IN CODE.               │
+│  ALL DEFINITIONS COME FROM .proto FILES.                       │
+│  IF YOU CREATE A NEW MESSAGE TYPE, ADD IT TO THE .proto FILE.  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Proto Files Location
+
+```
+firmware/common/proto/
+├── config.proto       # Runtime config protocol (features, settings)
+├── config.options     # nanopb options (max sizes, etc.)
+└── (future protos)    # OTA, trace, etc.
+```
+
+### How It Works
+
+```
+config.proto (SOURCE OF TRUTH)
+       │
+       ├──► nanopb generator ──► config.pb.h / config.pb.c (firmware)
+       │
+       └──► prost build.rs ──► config.rs (CLI, generated at build time)
+```
+
+### Before Adding ANY Protocol Code
+
+1. **CHECK** `firmware/common/proto/` for existing definitions
+2. **ADD** new messages/enums to the `.proto` file
+3. **GENERATE** code using nanopb (firmware) and prost (CLI)
+4. **NEVER** manually define enums like `Feature`, `Status`, etc. in code
+
+### Example: WRONG vs RIGHT
+
+**WRONG** (what a dumbass would do):
+```rust
+// DO NOT DO THIS - hand-rolling protocol definitions
+pub enum Feature {
+    LedEffects = 1,
+    Wifi = 3,  // Duplicating proto definitions!
+}
+```
+
+**RIGHT** (use generated code):
+```rust
+// In build.rs: prost generates from config.proto
+// In code: use the generated types
+use crate::proto::config::{Feature, SetFeatureRequest};
+```
+
+### Key Files
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Proto definitions | `firmware/common/proto/config.proto` | **THE SOURCE OF TRUTH** |
+| nanopb options | `firmware/common/proto/config.options` | Size limits for embedded |
+| CLI build script | `tools/domes-cli/build.rs` | Runs prost to generate Rust |
+| Generated Rust | `tools/domes-cli/src/proto/` | **Generated, do not edit** |
+
+### Adding a New Feature
+
+1. Edit `firmware/common/proto/config.proto`:
+   ```protobuf
+   enum Feature {
+       FEATURE_MY_NEW_THING = 8;  // Add here
+   }
+   ```
+
+2. Regenerate firmware code (nanopb)
+3. Rebuild CLI (prost runs automatically via build.rs)
+4. Both sides now have the new feature ID
+
+**DO NOT** add the feature to Rust code manually. It will be generated.
+
+---
+
 ## About Claude Code
 
 Claude Code is an interactive CLI tool that helps with software engineering tasks, including:
@@ -124,23 +214,27 @@ Provides ESP32 firmware build/flash/monitor commands.
 
 The firmware supports runtime feature toggles via a binary protocol over USB serial or WiFi TCP.
 
+**IMPORTANT**: See "CRITICAL: Protocol Buffers" section above. All message types are defined in `firmware/common/proto/config.proto`.
+
 ### Protocol Overview
 
 - **Frame format**: `[0xAA][0x55][LenLE16][Type][Payload][CRC32LE]`
-- **Message types**: 0x20-0x2F (config commands)
+- **Payload**: Protobuf-encoded messages (nanopb on firmware, prost on CLI)
 - **Transports**: USB-CDC (serial), TCP port 5000 (WiFi)
 
-### Available Features
+### Available Features (defined in config.proto)
 
 | ID | Feature | Description |
 |----|---------|-------------|
-| 1 | led-effects | LED animations and effects |
-| 2 | ble | Bluetooth Low Energy advertising |
-| 3 | wifi | WiFi connectivity |
-| 4 | esp-now | ESP-NOW peer-to-peer |
-| 5 | touch | Touch sensing |
-| 6 | haptic | Haptic feedback |
-| 7 | audio | Audio output |
+| 1 | FEATURE_LED_EFFECTS | LED animations and effects |
+| 2 | FEATURE_BLE_ADVERTISING | Bluetooth Low Energy advertising |
+| 3 | FEATURE_WIFI | WiFi connectivity |
+| 4 | FEATURE_ESP_NOW | ESP-NOW peer-to-peer |
+| 5 | FEATURE_TOUCH | Touch sensing |
+| 6 | FEATURE_HAPTIC | Haptic feedback |
+| 7 | FEATURE_AUDIO | Audio output |
+
+**To add a new feature**: Edit `firmware/common/proto/config.proto`, NOT code files.
 
 ### Testing Config Protocol
 
@@ -153,20 +247,20 @@ python3 tools/test_config.py /dev/ttyACM0
 
 # Using the Rust CLI
 cd tools/domes-cli && cargo run -- --port /dev/ttyACM0 feature list
-cd tools/domes-cli && cargo run -- --port /dev/ttyACM0 feature disable led-effects
+cd tools/domes-cli && cargo run -- --port /dev/ttyACM0 wifi status
 ```
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `firmware/domes/main/config/configProtocol.hpp` | Protocol constants and message types |
+| `firmware/common/proto/config.proto` | **SOURCE OF TRUTH** for protocol definitions |
+| `firmware/common/proto/config.options` | nanopb size constraints |
+| `tools/domes-cli/build.rs` | prost code generation for CLI |
 | `firmware/domes/main/config/configCommandHandler.hpp` | Command handler (shared by serial/TCP) |
 | `firmware/domes/main/config/featureManager.hpp` | Feature state management |
-| `firmware/domes/main/transport/tcpConfigServer.hpp` | WiFi TCP server (port 5000) |
 | `tools/test_config.py` | Serial protocol test |
 | `tools/test_config_wifi.py` | WiFi/TCP protocol test |
-| `tools/domes-cli/` | Rust CLI tool |
 
 ---
 
@@ -271,6 +365,19 @@ cp /tmp/wifi_profile.xml /mnt/c/Users/Public/wifi_profile.xml
 ---
 
 ## Learnings & Gotchas
+
+### ALWAYS Check for Proto Files First
+
+**Before writing ANY protocol/serialization code:**
+```bash
+# Check for existing proto definitions
+ls firmware/common/proto/
+
+# Search for proto-related files
+find . -name "*.proto" -o -name "*.options"
+```
+
+If proto files exist, USE THEM. Generate code with nanopb/prost. DO NOT hand-roll definitions.
 
 ### Always Search Codebase First
 
