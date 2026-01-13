@@ -43,6 +43,7 @@ cd tools/domes-cli && cargo build
 | Sensors/input | Flash firmware, trigger input, verify response in logs |
 | WiFi transport | Flash, connect Windows WiFi to same network, run `test_config_wifi.py` |
 | Serial transport | Flash, run `test_config.py /dev/ttyACM0` |
+| OTA updates | Flash, run `domes-cli ota flash`, verify device reboots and responds |
 
 ### Available Skills & Commands
 
@@ -261,6 +262,67 @@ cd tools/domes-cli && cargo run -- --port /dev/ttyACM0 wifi status
 | `firmware/domes/main/config/featureManager.hpp` | Feature state management |
 | `tools/test_config.py` | Serial protocol test |
 | `tools/test_config_wifi.py` | WiFi/TCP protocol test |
+
+---
+
+## OTA Firmware Updates
+
+The `domes-cli` tool is the **only supported method** for OTA firmware updates. It supports both wired (serial) and wireless (WiFi/TCP) transports.
+
+### Quick Usage
+
+```bash
+# Build the CLI (if not already built)
+cd tools/domes-cli && cargo build --release
+
+# Serial OTA (wired)
+domes-cli --port /dev/ttyACM0 ota flash firmware/domes/build/domes.bin --version v1.0.0
+
+# WiFi OTA (wireless) - requires device on same network
+domes-cli --wifi 192.168.1.100:5000 ota flash firmware/domes/build/domes.bin
+```
+
+### OTA Protocol Flow
+
+```
+Host → Device: OTA_BEGIN (size, sha256, version)
+Device → Host: OTA_ACK (status=OK, nextOffset=0)
+
+Host → Device: OTA_DATA (offset=0, data[0..1015])
+Device → Host: OTA_ACK (status=OK, nextOffset=1016)
+... repeat for all 1016-byte chunks ...
+
+Host → Device: OTA_END
+Device → Host: OTA_ACK (status=OK) → device reboots
+```
+
+### OTA Message Types
+
+| Type | Value | Direction | Description |
+|------|-------|-----------|-------------|
+| OTA_BEGIN | 0x01 | Host → Device | Start transfer with size, SHA256, version |
+| OTA_DATA | 0x02 | Host → Device | Firmware chunk (max 1016 bytes) |
+| OTA_END | 0x03 | Host → Device | Transfer complete, verify and reboot |
+| OTA_ACK | 0x04 | Device → Host | Acknowledge with status and next offset |
+| OTA_ABORT | 0x05 | Either | Abort transfer with reason |
+
+### Verifying OTA Success
+
+After OTA completes, the device reboots. Verify it's running:
+
+```bash
+# Wait for reboot, then check features
+domes-cli --port /dev/ttyACM0 feature list
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `tools/domes-cli/src/commands/ota.rs` | CLI OTA implementation |
+| `firmware/common/protocol/otaProtocol.hpp` | OTA message definitions |
+| `firmware/domes/main/transport/serialOtaReceiver.hpp` | Device-side OTA handler |
+| `firmware/domes/main/services/otaManager.hpp` | HTTPS/GitHub OTA (for auto-updates) |
 
 ---
 
