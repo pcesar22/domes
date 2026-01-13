@@ -123,7 +123,7 @@ pub enum ConfigStatus {
 impl TryFrom<u8> for ConfigStatus {
     type Error = ProtocolError;
 
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+    fn try_from(value: u8) -> Result<Self, <Self as TryFrom<u8>>::Error> {
         match value {
             0x00 => Ok(Self::Ok),
             0x01 => Ok(Self::Error),

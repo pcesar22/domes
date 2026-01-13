@@ -4,10 +4,14 @@
 //!   domes-cli --port /dev/ttyACM0 feature list
 //!   domes-cli --port /dev/ttyACM0 feature enable led-effects
 //!   domes-cli --port /dev/ttyACM0 feature disable ble
+//!   domes-cli --port /dev/ttyACM0 wifi enable
+//!   domes-cli --port /dev/ttyACM0 wifi disable
+//!   domes-cli --port /dev/ttyACM0 wifi status
 //!
 //! Usage (WiFi):
 //!   domes-cli --wifi 192.168.1.100:5000 feature list
 //!   domes-cli --wifi 192.168.1.100:5000 feature enable led-effects
+//!   domes-cli --wifi 192.168.1.100:5000 wifi status
 
 mod commands;
 mod protocol;
@@ -44,6 +48,12 @@ enum Commands {
         #[command(subcommand)]
         action: FeatureAction,
     },
+
+    /// Control WiFi subsystem
+    Wifi {
+        #[command(subcommand)]
+        action: WifiAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -62,6 +72,18 @@ enum FeatureAction {
         /// Feature name (e.g., led-effects, ble, wifi, esp-now, touch, haptic, audio)
         feature: String,
     },
+}
+
+#[derive(Subcommand)]
+enum WifiAction {
+    /// Enable WiFi subsystem
+    Enable,
+
+    /// Disable WiFi subsystem
+    Disable,
+
+    /// Show WiFi subsystem status
+    Status,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -142,6 +164,31 @@ fn main() -> anyhow::Result<()> {
                     state.feature.name(),
                     if state.enabled { "enabled" } else { "disabled" }
                 );
+            }
+        },
+
+        Commands::Wifi { action } => match action {
+            WifiAction::Enable => {
+                let enabled = commands::wifi_enable(transport.as_mut())?;
+                if enabled {
+                    println!("WiFi subsystem enabled");
+                } else {
+                    println!("WiFi subsystem failed to enable");
+                }
+            }
+
+            WifiAction::Disable => {
+                let disabled = commands::wifi_disable(transport.as_mut())?;
+                if disabled {
+                    println!("WiFi subsystem disabled");
+                } else {
+                    println!("WiFi subsystem failed to disable");
+                }
+            }
+
+            WifiAction::Status => {
+                let enabled = commands::wifi_status(transport.as_mut())?;
+                println!("WiFi subsystem: {}", if enabled { "enabled" } else { "disabled" });
             }
         },
     }
