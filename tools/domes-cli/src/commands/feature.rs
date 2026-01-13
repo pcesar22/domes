@@ -1,8 +1,9 @@
 //! Feature toggle commands
 
+use crate::proto::config::Feature;
 use crate::protocol::{
     parse_feature_response, parse_list_features_response, serialize_set_feature, ConfigMsgType,
-    Feature, FeatureState,
+    FeatureState,
 };
 use crate::transport::Transport;
 use anyhow::{Context, Result};

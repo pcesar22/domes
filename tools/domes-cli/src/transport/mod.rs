@@ -6,7 +6,7 @@ pub mod frame;
 pub mod serial;
 pub mod tcp;
 
-pub use frame::{encode_frame, Frame, FrameDecoder, FrameError};
+pub use frame::Frame;
 pub use serial::SerialTransport;
 pub use tcp::TcpTransport;
 

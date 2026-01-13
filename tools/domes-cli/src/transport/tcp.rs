@@ -2,7 +2,7 @@
 //!
 //! Handles WiFi communication with the ESP32-S3 device over TCP.
 
-use super::frame::{encode_frame, Frame, FrameDecoder, FrameError};
+use super::frame::{encode_frame, Frame, FrameDecoder};
 use anyhow::{Context, Result};
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -87,6 +87,10 @@ impl TcpTransport {
                 Ok(0) => {
                     // Connection closed
                     anyhow::bail!("Connection closed by peer");
+                }
+                Ok(_) => {
+                    // Unexpected: more bytes than buffer size (shouldn't happen with 1-byte buffer)
+                    continue;
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
                     // Continue loop and check overall timeout

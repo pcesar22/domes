@@ -2,7 +2,7 @@
 //!
 //! Handles USB CDC communication with the ESP32-S3 device.
 
-use super::frame::{encode_frame, Frame, FrameDecoder, FrameError};
+use super::frame::{encode_frame, Frame, FrameDecoder};
 use anyhow::{Context, Result};
 use serialport::SerialPort;
 use std::io::{Read, Write};
@@ -65,6 +65,10 @@ impl SerialTransport {
                 Ok(0) => {
                     // No data available, continue waiting
                     std::thread::sleep(Duration::from_millis(1));
+                }
+                Ok(_) => {
+                    // Unexpected: more bytes than buffer size (shouldn't happen with 1-byte buffer)
+                    continue;
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
                     // Timeout on read, continue loop and check overall timeout
