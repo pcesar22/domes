@@ -72,7 +72,7 @@ private:
      *
      * @param status Status code
      */
-    void sendAck(TraceStatus status);
+    void sendAck(Status status);
 
     /**
      * @brief Send trace metadata (first part of dump)
@@ -114,7 +114,7 @@ private:
      * @param len Payload length
      * @return true on success
      */
-    bool sendFrame(TraceMsgType type, const uint8_t* payload, size_t len);
+    bool sendFrame(MsgType type, const uint8_t* payload, size_t len);
 
     ITransport& transport_;
 };

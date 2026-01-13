@@ -1,0 +1,8 @@
+# nanopb options for trace.proto
+# Sets maximum sizes for variable-length fields
+
+# TaskEntry: max 16 char task name
+domes.trace.TaskEntry.name  max_size:16
+
+# Metadata: max 32 tasks
+domes.trace.Metadata.tasks  max_count:32

@@ -25,26 +25,26 @@ bool CommandHandler::handleCommand(uint8_t type, const uint8_t* payload, size_t 
     (void)payload;  // Most commands don't use payload
     (void)len;
 
-    auto msgType = static_cast<TraceMsgType>(type);
+    auto msgType = static_cast<MsgType>(type);
 
     switch (msgType) {
-        case TraceMsgType::kStart:
+        case MsgType::kStart:
             handleStart();
             return true;
 
-        case TraceMsgType::kStop:
+        case MsgType::kStop:
             handleStop();
             return true;
 
-        case TraceMsgType::kDump:
+        case MsgType::kDump:
             handleDump();
             return true;
 
-        case TraceMsgType::kClear:
+        case MsgType::kClear:
             handleClear();
             return true;
 
-        case TraceMsgType::kStatus:
+        case MsgType::kStatus:
             handleStatus();
             return true;
 
@@ -58,41 +58,41 @@ void CommandHandler::handleStart() {
     ESP_LOGI(kTag, "Received TRACE_START");
 
     if (!Recorder::isInitialized()) {
-        sendAck(TraceStatus::kNotInit);
+        sendAck(Status::kNotInit);
         return;
     }
 
     if (Recorder::isEnabled()) {
-        sendAck(TraceStatus::kAlreadyOn);
+        sendAck(Status::kAlreadyOn);
         return;
     }
 
     Recorder::setEnabled(true);
-    sendAck(TraceStatus::kOk);
+    sendAck(Status::kOk);
 }
 
 void CommandHandler::handleStop() {
     ESP_LOGI(kTag, "Received TRACE_STOP");
 
     if (!Recorder::isInitialized()) {
-        sendAck(TraceStatus::kNotInit);
+        sendAck(Status::kNotInit);
         return;
     }
 
     if (!Recorder::isEnabled()) {
-        sendAck(TraceStatus::kAlreadyOff);
+        sendAck(Status::kAlreadyOff);
         return;
     }
 
     Recorder::setEnabled(false);
-    sendAck(TraceStatus::kOk);
+    sendAck(Status::kOk);
 }
 
 void CommandHandler::handleDump() {
     ESP_LOGI(kTag, "Received TRACE_DUMP");
 
     if (!Recorder::isInitialized()) {
-        sendAck(TraceStatus::kNotInit);
+        sendAck(Status::kNotInit);
         return;
     }
 
@@ -112,7 +112,7 @@ void CommandHandler::handleDump() {
 
     if (events.empty()) {
         ESP_LOGI(kTag, "No events to dump");
-        sendAck(TraceStatus::kBufferEmpty);
+        sendAck(Status::kBufferEmpty);
         Recorder::buffer().resume();
         if (wasEnabled) {
             Recorder::setEnabled(true);
@@ -175,30 +175,30 @@ void CommandHandler::handleClear() {
     ESP_LOGI(kTag, "Received TRACE_CLEAR");
 
     if (!Recorder::isInitialized()) {
-        sendAck(TraceStatus::kNotInit);
+        sendAck(Status::kNotInit);
         return;
     }
 
     Recorder::buffer().clear();
-    sendAck(TraceStatus::kOk);
+    sendAck(Status::kOk);
 }
 
 void CommandHandler::handleStatus() {
     ESP_LOGD(kTag, "Received TRACE_STATUS");
 
     if (!Recorder::isInitialized()) {
-        sendAck(TraceStatus::kNotInit);
+        sendAck(Status::kNotInit);
         return;
     }
 
     sendStatusResponse();
 }
 
-void CommandHandler::sendAck(TraceStatus status) {
+void CommandHandler::sendAck(Status status) {
     TraceAckResponse ack;
     ack.status = static_cast<uint8_t>(status);
 
-    sendFrame(TraceMsgType::kAck, reinterpret_cast<const uint8_t*>(&ack), sizeof(ack));
+    sendFrame(MsgType::kAck, reinterpret_cast<const uint8_t*>(&ack), sizeof(ack));
 }
 
 void CommandHandler::sendMetadata(uint32_t eventCount, uint32_t droppedCount, uint32_t startTs,
@@ -236,7 +236,7 @@ void CommandHandler::sendMetadata(uint32_t eventCount, uint32_t droppedCount, ui
         }
     }
 
-    sendFrame(TraceMsgType::kData, payload.data(), payload.size());
+    sendFrame(MsgType::kData, payload.data(), payload.size());
 }
 
 void CommandHandler::sendDataChunk(uint32_t offset, const TraceEvent* events, size_t count) {
@@ -251,7 +251,7 @@ void CommandHandler::sendDataChunk(uint32_t offset, const TraceEvent* events, si
     // Copy events
     std::memcpy(payload.data() + sizeof(TraceDataHeader), events, count * sizeof(TraceEvent));
 
-    sendFrame(TraceMsgType::kData, payload.data(), payload.size());
+    sendFrame(MsgType::kData, payload.data(), payload.size());
 }
 
 void CommandHandler::sendEnd(uint32_t totalEvents, uint32_t checksum) {
@@ -259,7 +259,7 @@ void CommandHandler::sendEnd(uint32_t totalEvents, uint32_t checksum) {
     endMsg.totalEvents = totalEvents;
     endMsg.checksum = checksum;
 
-    sendFrame(TraceMsgType::kEnd, reinterpret_cast<const uint8_t*>(&endMsg), sizeof(endMsg));
+    sendFrame(MsgType::kEnd, reinterpret_cast<const uint8_t*>(&endMsg), sizeof(endMsg));
 }
 
 void CommandHandler::sendStatusResponse() {
@@ -270,10 +270,10 @@ void CommandHandler::sendStatusResponse() {
     status.droppedCount = Recorder::buffer().droppedCount();
     status.bufferSize = TraceBuffer::kDefaultBufferSize;
 
-    sendFrame(TraceMsgType::kStatus, reinterpret_cast<const uint8_t*>(&status), sizeof(status));
+    sendFrame(MsgType::kStatus, reinterpret_cast<const uint8_t*>(&status), sizeof(status));
 }
 
-bool CommandHandler::sendFrame(TraceMsgType type, const uint8_t* payload, size_t len) {
+bool CommandHandler::sendFrame(MsgType type, const uint8_t* payload, size_t len) {
     std::array<uint8_t, kMaxFrameSize> frameBuf;
     size_t frameLen = 0;
 

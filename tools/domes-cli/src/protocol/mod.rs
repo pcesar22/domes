@@ -3,27 +3,17 @@
 //! Wire format handling for communication with firmware.
 //! Uses protobuf encoding via prost for message payloads.
 //!
-//! IMPORTANT: Types (Feature, Status) come from proto::config module,
-//! generated from firmware/common/proto/config.proto.
+//! IMPORTANT: All types come from proto modules, generated from
+//! firmware/common/proto/*.proto. DO NOT hand-roll protocol types here.
 
 use crate::proto::config::{
-    Feature, ListFeaturesResponse, SetFeatureRequest, SetFeatureResponse, Status,
+    Feature, ListFeaturesResponse, MsgType, SetFeatureRequest, SetFeatureResponse, Status,
 };
 use prost::Message;
 use thiserror::Error;
 
-/// Config protocol message types (0x20-0x2F range)
-/// These are frame-level identifiers, separate from protobuf encoding.
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ConfigMsgType {
-    ListFeaturesReq = 0x20,
-    ListFeaturesRsp = 0x21,
-    SetFeatureReq = 0x22,
-    SetFeatureRsp = 0x23,
-    GetFeatureReq = 0x24,
-    GetFeatureRsp = 0x25,
-}
+// Re-export config MsgType with clearer name for use in commands
+pub use crate::proto::config::MsgType as ConfigMsgType;
 
 impl TryFrom<u8> for ConfigMsgType {
     type Error = ProtocolError;

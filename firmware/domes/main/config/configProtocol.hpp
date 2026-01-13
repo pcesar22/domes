@@ -4,14 +4,9 @@
  * @file configProtocol.hpp
  * @brief Wire protocol definitions for runtime configuration commands
  *
- * Type definitions are sourced from nanopb-generated config.pb.h (the single
- * source of truth from config.proto). This file provides C++ enum wrappers
- * for type safety.
- *
- * Message payloads use protobuf encoding via nanopb (firmware) and prost (CLI).
- *
- * Message types are in the 0x20-0x2F range to avoid conflicts with
- * OTA message types (0x01-0x05) and trace types (0x10-0x1F).
+ * ALL TYPE DEFINITIONS ARE SOURCED FROM config.proto via nanopb-generated config.pb.h.
+ * This file provides C++ enum class wrappers for type safety only.
+ * DO NOT add new message types or enums here - add them to config.proto instead.
  */
 
 #include <cstdint>
@@ -23,9 +18,20 @@
 namespace domes::config {
 
 /**
+ * @brief Config protocol message types (sourced from config.proto)
+ */
+enum class MsgType : uint8_t {
+    kUnknown         = domes_config_MsgType_MSG_TYPE_UNKNOWN,
+    kListFeaturesReq = domes_config_MsgType_MSG_TYPE_LIST_FEATURES_REQ,
+    kListFeaturesRsp = domes_config_MsgType_MSG_TYPE_LIST_FEATURES_RSP,
+    kSetFeatureReq   = domes_config_MsgType_MSG_TYPE_SET_FEATURE_REQ,
+    kSetFeatureRsp   = domes_config_MsgType_MSG_TYPE_SET_FEATURE_RSP,
+    kGetFeatureReq   = domes_config_MsgType_MSG_TYPE_GET_FEATURE_REQ,
+    kGetFeatureRsp   = domes_config_MsgType_MSG_TYPE_GET_FEATURE_RSP,
+};
+
+/**
  * @brief Runtime-toggleable features (sourced from config.proto)
- *
- * Feature IDs are defined in firmware/common/proto/config.proto.
  */
 enum class Feature : uint8_t {
     kUnknown        = domes_config_Feature_FEATURE_UNKNOWN,
@@ -36,14 +42,13 @@ enum class Feature : uint8_t {
     kTouch          = domes_config_Feature_FEATURE_TOUCH,
     kHaptic         = domes_config_Feature_FEATURE_HAPTIC,
     kAudio          = domes_config_Feature_FEATURE_AUDIO,
-    // NOTE: Add new features to config.proto, not here!
     kCount          = _domes_config_Feature_ARRAYSIZE,
 };
 
 /**
  * @brief Config command status codes (sourced from config.proto)
  */
-enum class ConfigStatus : uint8_t {
+enum class Status : uint8_t {
     kOk             = domes_config_Status_STATUS_OK,
     kError          = domes_config_Status_STATUS_ERROR,
     kInvalidFeature = domes_config_Status_STATUS_INVALID_FEATURE,
@@ -51,23 +56,11 @@ enum class ConfigStatus : uint8_t {
 };
 
 /**
- * @brief Config protocol message types (frame-level, not protobuf)
- */
-enum class ConfigMsgType : uint8_t {
-    kListFeaturesReq = 0x20,  ///< List all features (host -> device)
-    kListFeaturesRsp = 0x21,  ///< Feature list response (device -> host)
-    kSetFeatureReq   = 0x22,  ///< Set feature state (host -> device)
-    kSetFeatureRsp   = 0x23,  ///< Set feature response (device -> host)
-    kGetFeatureReq   = 0x24,  ///< Get single feature state (host -> device)
-    kGetFeatureRsp   = 0x25,  ///< Get feature response (device -> host)
-};
-
-/**
- * @brief Check if a message type is a config command
+ * @brief Check if a message type is a config command (0x20-0x2F range)
  */
 inline bool isConfigMessage(uint8_t type) {
-    return type >= static_cast<uint8_t>(ConfigMsgType::kListFeaturesReq) &&
-           type <= static_cast<uint8_t>(ConfigMsgType::kGetFeatureRsp);
+    return type >= static_cast<uint8_t>(MsgType::kListFeaturesReq) &&
+           type <= static_cast<uint8_t>(MsgType::kGetFeatureRsp);
 }
 
 /**
@@ -89,13 +82,13 @@ inline const char* featureToString(Feature feature) {
 /**
  * @brief Get human-readable name for a config status
  */
-inline const char* configStatusToString(ConfigStatus status) {
+inline const char* statusToString(Status status) {
     switch (status) {
-        case ConfigStatus::kOk:             return "ok";
-        case ConfigStatus::kError:          return "error";
-        case ConfigStatus::kInvalidFeature: return "invalid-feature";
-        case ConfigStatus::kBusy:           return "busy";
-        default:                            return "unknown";
+        case Status::kOk:             return "ok";
+        case Status::kError:          return "error";
+        case Status::kInvalidFeature: return "invalid-feature";
+        case Status::kBusy:           return "busy";
+        default:                      return "unknown";
     }
 }
 

@@ -68,21 +68,21 @@ TEST(Feature, FeatureToString) {
 }
 
 // =============================================================================
-// ConfigStatus Tests
+// Status Tests
 // =============================================================================
 
-TEST(ConfigStatus, StatusValues) {
-    EXPECT_EQ(static_cast<uint8_t>(ConfigStatus::kOk), 0x00);
-    EXPECT_EQ(static_cast<uint8_t>(ConfigStatus::kError), 0x01);
-    EXPECT_EQ(static_cast<uint8_t>(ConfigStatus::kInvalidFeature), 0x02);
-    EXPECT_EQ(static_cast<uint8_t>(ConfigStatus::kBusy), 0x03);
+TEST(Status, StatusValues) {
+    EXPECT_EQ(static_cast<uint8_t>(Status::kOk), 0x00);
+    EXPECT_EQ(static_cast<uint8_t>(Status::kError), 0x01);
+    EXPECT_EQ(static_cast<uint8_t>(Status::kInvalidFeature), 0x02);
+    EXPECT_EQ(static_cast<uint8_t>(Status::kBusy), 0x03);
 }
 
-TEST(ConfigStatus, StatusToString) {
-    EXPECT_STREQ(configStatusToString(ConfigStatus::kOk), "ok");
-    EXPECT_STREQ(configStatusToString(ConfigStatus::kError), "error");
-    EXPECT_STREQ(configStatusToString(ConfigStatus::kInvalidFeature), "invalid-feature");
-    EXPECT_STREQ(configStatusToString(ConfigStatus::kBusy), "busy");
+TEST(Status, StatusToString) {
+    EXPECT_STREQ(statusToString(Status::kOk), "ok");
+    EXPECT_STREQ(statusToString(Status::kError), "error");
+    EXPECT_STREQ(statusToString(Status::kInvalidFeature), "invalid-feature");
+    EXPECT_STREQ(statusToString(Status::kBusy), "busy");
 }
 
 // =============================================================================

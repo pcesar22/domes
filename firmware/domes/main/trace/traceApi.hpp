@@ -13,18 +13,18 @@
  *
  * void processGameTick() {
  *     // Automatic scope tracing
- *     TRACE_SCOPE(TRACE_ID("Game.Tick"), TraceCategory::kGame);
+ *     TRACE_SCOPE(TRACE_ID("Game.Tick"), Category::kGame);
  *
  *     // Manual begin/end
- *     TRACE_BEGIN(TRACE_ID("Game.Input"), TraceCategory::kGame);
+ *     TRACE_BEGIN(TRACE_ID("Game.Input"), Category::kGame);
  *     processInput();
- *     TRACE_END(TRACE_ID("Game.Input"), TraceCategory::kGame);
+ *     TRACE_END(TRACE_ID("Game.Input"), Category::kGame);
  *
  *     // Instant event
- *     TRACE_INSTANT(TRACE_ID("Game.Event"), TraceCategory::kGame);
+ *     TRACE_INSTANT(TRACE_ID("Game.Event"), Category::kGame);
  *
  *     // Counter value
- *     TRACE_COUNTER(TRACE_ID("Game.Score"), score, TraceCategory::kGame);
+ *     TRACE_COUNTER(TRACE_ID("Game.Score"), score, Category::kGame);
  * }
  * @endcode
  */
@@ -68,7 +68,7 @@ inline uint32_t getTimestampUs() {
  * @param arg2 Secondary argument
  * @return Populated TraceEvent
  */
-inline TraceEvent makeEvent(TraceEventType type, TraceCategory category, uint32_t arg1 = 0,
+inline TraceEvent makeEvent(EventType type, Category category, uint32_t arg1 = 0,
                             uint32_t arg2 = 0) {
     TraceEvent event;
     event.timestamp = getTimestampUs();
@@ -94,9 +94,9 @@ public:
      * @param spanId Span identifier (use TRACE_ID("name"))
      * @param category Event category
      */
-    ScopeTrace(uint32_t spanId, TraceCategory category) : spanId_(spanId), category_(category) {
+    ScopeTrace(uint32_t spanId, Category category) : spanId_(spanId), category_(category) {
         if (Recorder::isEnabled()) {
-            Recorder::record(makeEvent(TraceEventType::kSpanBegin, category_, spanId_));
+            Recorder::record(makeEvent(EventType::kSpanBegin, category_, spanId_));
         }
     }
 
@@ -105,7 +105,7 @@ public:
      */
     ~ScopeTrace() {
         if (Recorder::isEnabled()) {
-            Recorder::record(makeEvent(TraceEventType::kSpanEnd, category_, spanId_));
+            Recorder::record(makeEvent(EventType::kSpanEnd, category_, spanId_));
         }
     }
 
@@ -115,7 +115,7 @@ public:
 
 private:
     uint32_t spanId_;
-    TraceCategory category_;
+    Category category_;
 };
 
 }  // namespace domes::trace
@@ -126,13 +126,13 @@ private:
  * Must be paired with TRACE_END using the same spanId.
  *
  * @param spanId Span identifier (use TRACE_ID("name"))
- * @param category TraceCategory enum value
+ * @param category Category enum value
  */
 #define TRACE_BEGIN(spanId, category)                                               \
     do {                                                                            \
         if (::domes::trace::Recorder::isEnabled()) {                                \
             ::domes::trace::Recorder::record(::domes::trace::makeEvent(             \
-                ::domes::trace::TraceEventType::kSpanBegin, (category), (spanId))); \
+                ::domes::trace::EventType::kSpanBegin, (category), (spanId))); \
         }                                                                           \
     } while (0)
 
@@ -142,13 +142,13 @@ private:
  * Must be paired with TRACE_BEGIN using the same spanId.
  *
  * @param spanId Span identifier (use TRACE_ID("name"))
- * @param category TraceCategory enum value
+ * @param category Category enum value
  */
 #define TRACE_END(spanId, category)                                               \
     do {                                                                          \
         if (::domes::trace::Recorder::isEnabled()) {                              \
             ::domes::trace::Recorder::record(::domes::trace::makeEvent(           \
-                ::domes::trace::TraceEventType::kSpanEnd, (category), (spanId))); \
+                ::domes::trace::EventType::kSpanEnd, (category), (spanId))); \
         }                                                                         \
     } while (0)
 
@@ -158,13 +158,13 @@ private:
  * Use for marking specific moments in time without duration.
  *
  * @param eventId Event identifier (use TRACE_ID("name"))
- * @param category TraceCategory enum value
+ * @param category Category enum value
  */
 #define TRACE_INSTANT(eventId, category)                                           \
     do {                                                                           \
         if (::domes::trace::Recorder::isEnabled()) {                               \
             ::domes::trace::Recorder::record(::domes::trace::makeEvent(            \
-                ::domes::trace::TraceEventType::kInstant, (category), (eventId))); \
+                ::domes::trace::EventType::kInstant, (category), (eventId))); \
         }                                                                          \
     } while (0)
 
@@ -175,13 +175,13 @@ private:
  *
  * @param counterId Counter identifier (use TRACE_ID("name"))
  * @param value Current counter value
- * @param category TraceCategory enum value
+ * @param category Category enum value
  */
 #define TRACE_COUNTER(counterId, value, category)                                               \
     do {                                                                                        \
         if (::domes::trace::Recorder::isEnabled()) {                                            \
             ::domes::trace::Recorder::record(                                                   \
-                ::domes::trace::makeEvent(::domes::trace::TraceEventType::kCounter, (category), \
+                ::domes::trace::makeEvent(::domes::trace::EventType::kCounter, (category), \
                                           (counterId), static_cast<uint32_t>(value)));          \
         }                                                                                       \
     } while (0)
@@ -192,7 +192,7 @@ private:
  * Records begin on entry, end on scope exit (including early returns).
  *
  * @param spanId Span identifier (use TRACE_ID("name"))
- * @param category TraceCategory enum value
+ * @param category Category enum value
  */
 #define TRACE_SCOPE(spanId, category) \
     ::domes::trace::ScopeTrace _scopeTrace_##__LINE__((spanId), (category))

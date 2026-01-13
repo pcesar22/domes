@@ -36,7 +36,7 @@ public:
     /**
      * @brief Handle an incoming config command
      *
-     * @param type Message type (ConfigMsgType value)
+     * @param type Message type (MsgType value)
      * @param payload Command payload (may be nullptr)
      * @param len Payload length
      * @return true if command was handled successfully
@@ -77,7 +77,7 @@ private:
      * @param feature Feature that was set
      * @param enabled New enabled state
      */
-    void sendSetFeatureResponse(ConfigStatus status, Feature feature, bool enabled);
+    void sendSetFeatureResponse(Status status, Feature feature, bool enabled);
 
     /**
      * @brief Send get feature response
@@ -86,7 +86,7 @@ private:
      * @param feature Feature that was queried
      * @param enabled Current enabled state
      */
-    void sendGetFeatureResponse(ConfigStatus status, Feature feature, bool enabled);
+    void sendGetFeatureResponse(Status status, Feature feature, bool enabled);
 
     /**
      * @brief Send a frame with given type and payload
@@ -96,7 +96,7 @@ private:
      * @param len Payload length
      * @return true on success
      */
-    bool sendFrame(ConfigMsgType type, const uint8_t* payload, size_t len);
+    bool sendFrame(MsgType type, const uint8_t* payload, size_t len);
 
     ITransport& transport_;
     FeatureManager& features_;
