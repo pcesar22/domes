@@ -1,10 +1,15 @@
 /**
  * @file test_config_protocol.cpp
  * @brief Unit tests for config protocol serialization/deserialization
+ *
+ * Tests protobuf encoding/decoding using nanopb.
  */
 
 #include <gtest/gtest.h>
 #include "config/configProtocol.hpp"
+#include "config.pb.h"
+#include "pb_encode.h"
+#include "pb_decode.h"
 
 #include <array>
 #include <cstring>
@@ -81,100 +86,100 @@ TEST(ConfigStatus, StatusToString) {
 }
 
 // =============================================================================
-// Payload Structure Tests
+// Protobuf Serialization Tests
 // =============================================================================
 
-TEST(FeatureState, StructSize) {
-    EXPECT_EQ(sizeof(FeatureState), 2u);
+TEST(Protobuf, SetFeatureRequestEncodeDecode) {
+    // Create a SetFeatureRequest
+    domes_config_SetFeatureRequest req = domes_config_SetFeatureRequest_init_zero;
+    req.feature = domes_config_Feature_FEATURE_LED_EFFECTS;
+    req.enabled = true;
+
+    // Encode
+    std::array<uint8_t, 64> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SetFeatureRequest_fields, &req));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    // Decode
+    domes_config_SetFeatureRequest decoded = domes_config_SetFeatureRequest_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SetFeatureRequest_fields, &decoded));
+
+    EXPECT_EQ(decoded.feature, domes_config_Feature_FEATURE_LED_EFFECTS);
+    EXPECT_TRUE(decoded.enabled);
 }
 
-TEST(ListFeaturesResponse, StructSize) {
-    EXPECT_EQ(sizeof(ListFeaturesResponse), 2u);
+TEST(Protobuf, SetFeatureResponseEncodeDecode) {
+    // Create a SetFeatureResponse with a FeatureState
+    domes_config_SetFeatureResponse resp = domes_config_SetFeatureResponse_init_zero;
+    resp.has_feature = true;
+    resp.feature.feature = domes_config_Feature_FEATURE_WIFI;
+    resp.feature.enabled = false;
+
+    // Encode
+    std::array<uint8_t, 64> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SetFeatureResponse_fields, &resp));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    // Decode
+    domes_config_SetFeatureResponse decoded = domes_config_SetFeatureResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SetFeatureResponse_fields, &decoded));
+
+    EXPECT_TRUE(decoded.has_feature);
+    EXPECT_EQ(decoded.feature.feature, domes_config_Feature_FEATURE_WIFI);
+    EXPECT_FALSE(decoded.feature.enabled);
 }
 
-TEST(SetFeatureRequest, StructSize) {
-    EXPECT_EQ(sizeof(SetFeatureRequest), 2u);
+TEST(Protobuf, ListFeaturesResponseEncodeDecode) {
+    // Create a ListFeaturesResponse with multiple features
+    domes_config_ListFeaturesResponse resp = domes_config_ListFeaturesResponse_init_zero;
+    resp.features_count = 3;
+    resp.features[0].feature = domes_config_Feature_FEATURE_LED_EFFECTS;
+    resp.features[0].enabled = true;
+    resp.features[1].feature = domes_config_Feature_FEATURE_BLE_ADVERTISING;
+    resp.features[1].enabled = false;
+    resp.features[2].feature = domes_config_Feature_FEATURE_WIFI;
+    resp.features[2].enabled = true;
+
+    // Encode
+    std::array<uint8_t, 128> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_ListFeaturesResponse_fields, &resp));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    // Decode
+    domes_config_ListFeaturesResponse decoded = domes_config_ListFeaturesResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_ListFeaturesResponse_fields, &decoded));
+
+    EXPECT_EQ(decoded.features_count, 3u);
+    EXPECT_EQ(decoded.features[0].feature, domes_config_Feature_FEATURE_LED_EFFECTS);
+    EXPECT_TRUE(decoded.features[0].enabled);
+    EXPECT_EQ(decoded.features[1].feature, domes_config_Feature_FEATURE_BLE_ADVERTISING);
+    EXPECT_FALSE(decoded.features[1].enabled);
+    EXPECT_EQ(decoded.features[2].feature, domes_config_Feature_FEATURE_WIFI);
+    EXPECT_TRUE(decoded.features[2].enabled);
 }
 
-TEST(SetFeatureResponse, StructSize) {
-    EXPECT_EQ(sizeof(SetFeatureResponse), 3u);
-}
+TEST(Protobuf, EmptyListFeaturesResponse) {
+    // Empty response
+    domes_config_ListFeaturesResponse resp = domes_config_ListFeaturesResponse_init_zero;
+    resp.features_count = 0;
 
-TEST(GetFeatureRequest, StructSize) {
-    EXPECT_EQ(sizeof(GetFeatureRequest), 1u);
-}
+    // Encode
+    std::array<uint8_t, 64> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_ListFeaturesResponse_fields, &resp));
 
-TEST(GetFeatureResponse, StructSize) {
-    EXPECT_EQ(sizeof(GetFeatureResponse), 3u);
-}
+    // Decode
+    domes_config_ListFeaturesResponse decoded = domes_config_ListFeaturesResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_ListFeaturesResponse_fields, &decoded));
 
-// =============================================================================
-// Serialization Round-trip Tests
-// =============================================================================
-
-TEST(SetFeatureRequest, SerializationRoundTrip) {
-    SetFeatureRequest req;
-    req.feature = static_cast<uint8_t>(Feature::kLedEffects);
-    req.enabled = 1;
-
-    // Serialize (just casting to bytes)
-    const auto* bytes = reinterpret_cast<const uint8_t*>(&req);
-
-    // Deserialize
-    const auto* parsed = reinterpret_cast<const SetFeatureRequest*>(bytes);
-
-    EXPECT_EQ(parsed->feature, static_cast<uint8_t>(Feature::kLedEffects));
-    EXPECT_EQ(parsed->enabled, 1);
-}
-
-TEST(SetFeatureResponse, SerializationRoundTrip) {
-    SetFeatureResponse resp;
-    resp.status = static_cast<uint8_t>(ConfigStatus::kOk);
-    resp.feature = static_cast<uint8_t>(Feature::kBleAdvertising);
-    resp.enabled = 0;
-
-    // Serialize
-    const auto* bytes = reinterpret_cast<const uint8_t*>(&resp);
-
-    // Deserialize
-    const auto* parsed = reinterpret_cast<const SetFeatureResponse*>(bytes);
-
-    EXPECT_EQ(parsed->status, static_cast<uint8_t>(ConfigStatus::kOk));
-    EXPECT_EQ(parsed->feature, static_cast<uint8_t>(Feature::kBleAdvertising));
-    EXPECT_EQ(parsed->enabled, 0);
-}
-
-TEST(ListFeaturesResponse, MultipleFeatures) {
-    // Simulate a response with multiple features
-    std::array<uint8_t, 16> buffer{};
-
-    // Header
-    auto* header = reinterpret_cast<ListFeaturesResponse*>(buffer.data());
-    header->status = static_cast<uint8_t>(ConfigStatus::kOk);
-    header->count = 3;
-
-    // Feature states
-    auto* states = reinterpret_cast<FeatureState*>(buffer.data() + sizeof(ListFeaturesResponse));
-    states[0].feature = static_cast<uint8_t>(Feature::kLedEffects);
-    states[0].enabled = 1;
-    states[1].feature = static_cast<uint8_t>(Feature::kBleAdvertising);
-    states[1].enabled = 0;
-    states[2].feature = static_cast<uint8_t>(Feature::kWifi);
-    states[2].enabled = 1;
-
-    // Parse back
-    const auto* parsedHeader = reinterpret_cast<const ListFeaturesResponse*>(buffer.data());
-    const auto* parsedStates = reinterpret_cast<const FeatureState*>(buffer.data() + sizeof(ListFeaturesResponse));
-
-    EXPECT_EQ(parsedHeader->status, static_cast<uint8_t>(ConfigStatus::kOk));
-    EXPECT_EQ(parsedHeader->count, 3);
-
-    EXPECT_EQ(parsedStates[0].feature, static_cast<uint8_t>(Feature::kLedEffects));
-    EXPECT_EQ(parsedStates[0].enabled, 1);
-    EXPECT_EQ(parsedStates[1].feature, static_cast<uint8_t>(Feature::kBleAdvertising));
-    EXPECT_EQ(parsedStates[1].enabled, 0);
-    EXPECT_EQ(parsedStates[2].feature, static_cast<uint8_t>(Feature::kWifi));
-    EXPECT_EQ(parsedStates[2].enabled, 1);
+    EXPECT_EQ(decoded.features_count, 0u);
 }
 
 // =============================================================================
@@ -185,7 +190,6 @@ TEST(Constants, MaxFeatures) {
     EXPECT_EQ(kMaxFeatures, static_cast<size_t>(Feature::kCount));
 }
 
-TEST(Constants, MaxListFeaturesPayload) {
-    size_t expected = sizeof(ListFeaturesResponse) + (kMaxFeatures * sizeof(FeatureState));
-    EXPECT_EQ(kMaxListFeaturesPayload, expected);
+TEST(Constants, MaxFrameSize) {
+    EXPECT_EQ(kMaxFrameSize, 256u);
 }

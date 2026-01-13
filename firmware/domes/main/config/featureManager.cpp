@@ -29,14 +29,14 @@ bool FeatureManager::setEnabled(Feature feature, bool enabled) {
     return true;
 }
 
-size_t FeatureManager::getAll(FeatureState* states) const {
+size_t FeatureManager::getAll(domes_config_FeatureState* states) const {
     const uint32_t mask = enabledMask_.load(std::memory_order_acquire);
     size_t count = 0;
 
     // Iterate over all valid features (skip kUnknown and kCount)
     for (uint8_t i = 1; i < static_cast<uint8_t>(Feature::kCount); ++i) {
-        states[count].feature = i;
-        states[count].enabled = ((mask & (1U << i)) != 0) ? 1 : 0;
+        states[count].feature = static_cast<domes_config_Feature>(i);
+        states[count].enabled = ((mask & (1U << i)) != 0);
         ++count;
     }
 

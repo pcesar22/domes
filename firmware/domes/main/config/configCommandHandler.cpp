@@ -1,10 +1,16 @@
 /**
  * @file configCommandHandler.cpp
  * @brief Config command handler implementation
+ *
+ * Uses nanopb for protobuf encoding/decoding of config messages.
  */
 
 #include "configCommandHandler.hpp"
 #include "protocol/frameCodec.hpp"
+
+#include "config.pb.h"
+#include "pb_encode.h"
+#include "pb_decode.h"
 
 #include "esp_log.h"
 
@@ -52,23 +58,26 @@ void ConfigCommandHandler::handleListFeatures() {
 }
 
 void ConfigCommandHandler::handleSetFeature(const uint8_t* payload, size_t len) {
-    if (len < sizeof(SetFeatureRequest)) {
-        ESP_LOGW(kTag, "SET_FEATURE payload too short: %zu", len);
+    // Decode protobuf message
+    domes_config_SetFeatureRequest req = domes_config_SetFeatureRequest_init_zero;
+    pb_istream_t stream = pb_istream_from_buffer(payload, len);
+
+    if (!pb_decode(&stream, domes_config_SetFeatureRequest_fields, &req)) {
+        ESP_LOGW(kTag, "Failed to decode SET_FEATURE: %s", PB_GET_ERROR(&stream));
         sendSetFeatureResponse(ConfigStatus::kError, Feature::kUnknown, false);
         return;
     }
 
-    const auto* req = reinterpret_cast<const SetFeatureRequest*>(payload);
-    auto feature = static_cast<Feature>(req->feature);
-    bool enabled = req->enabled != 0;
+    auto feature = static_cast<Feature>(req.feature);
+    bool enabled = req.enabled;
 
     ESP_LOGI(kTag, "Setting feature %s (%d) to %s",
              featureToString(feature),
-             req->feature,
+             static_cast<int>(req.feature),
              enabled ? "enabled" : "disabled");
 
     if (!features_.setEnabled(feature, enabled)) {
-        ESP_LOGW(kTag, "Invalid feature ID: %d", req->feature);
+        ESP_LOGW(kTag, "Invalid feature ID: %d", static_cast<int>(req.feature));
         sendSetFeatureResponse(ConfigStatus::kInvalidFeature, feature, false);
         return;
     }
@@ -77,19 +86,23 @@ void ConfigCommandHandler::handleSetFeature(const uint8_t* payload, size_t len) 
 }
 
 void ConfigCommandHandler::handleGetFeature(const uint8_t* payload, size_t len) {
-    if (len < sizeof(GetFeatureRequest)) {
-        ESP_LOGW(kTag, "GET_FEATURE payload too short: %zu", len);
+    // Decode using SetFeatureRequest (ignore enabled field for get)
+    // TODO: Add GetFeatureRequest to proto if distinct message needed
+    domes_config_SetFeatureRequest req = domes_config_SetFeatureRequest_init_zero;
+    pb_istream_t stream = pb_istream_from_buffer(payload, len);
+
+    if (!pb_decode(&stream, domes_config_SetFeatureRequest_fields, &req)) {
+        ESP_LOGW(kTag, "Failed to decode GET_FEATURE: %s", PB_GET_ERROR(&stream));
         sendGetFeatureResponse(ConfigStatus::kError, Feature::kUnknown, false);
         return;
     }
 
-    const auto* req = reinterpret_cast<const GetFeatureRequest*>(payload);
-    auto feature = static_cast<Feature>(req->feature);
+    auto feature = static_cast<Feature>(req.feature);
 
     // Check if feature is valid
     if (feature == Feature::kUnknown ||
         static_cast<uint8_t>(feature) >= static_cast<uint8_t>(Feature::kCount)) {
-        ESP_LOGW(kTag, "Invalid feature ID: %d", req->feature);
+        ESP_LOGW(kTag, "Invalid feature ID: %d", static_cast<int>(req.feature));
         sendGetFeatureResponse(ConfigStatus::kInvalidFeature, feature, false);
         return;
     }
@@ -99,20 +112,27 @@ void ConfigCommandHandler::handleGetFeature(const uint8_t* payload, size_t len) 
 }
 
 void ConfigCommandHandler::sendListFeaturesResponse() {
-    // Build response with all feature states
-    std::array<uint8_t, kMaxListFeaturesPayload> payload;
+    // Build protobuf response
+    domes_config_ListFeaturesResponse resp = domes_config_ListFeaturesResponse_init_zero;
 
-    auto* header = reinterpret_cast<ListFeaturesResponse*>(payload.data());
-    auto* states = reinterpret_cast<FeatureState*>(payload.data() + sizeof(ListFeaturesResponse));
+    // Get all feature states
+    for (uint8_t i = 1; i < static_cast<uint8_t>(Feature::kCount); ++i) {
+        auto feature = static_cast<Feature>(i);
+        resp.features[resp.features_count].feature = static_cast<domes_config_Feature>(i);
+        resp.features[resp.features_count].enabled = features_.isEnabled(feature);
+        resp.features_count++;
+    }
 
-    size_t count = features_.getAll(states);
+    // Encode to buffer
+    std::array<uint8_t, domes_config_ListFeaturesResponse_size + 10> payload;
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data(), payload.size());
 
-    header->status = static_cast<uint8_t>(ConfigStatus::kOk);
-    header->count = static_cast<uint8_t>(count);
+    if (!pb_encode(&stream, domes_config_ListFeaturesResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode ListFeaturesResponse: %s", PB_GET_ERROR(&stream));
+        return;
+    }
 
-    size_t payloadLen = sizeof(ListFeaturesResponse) + count * sizeof(FeatureState);
-
-    sendFrame(ConfigMsgType::kListFeaturesRsp, payload.data(), payloadLen);
+    sendFrame(ConfigMsgType::kListFeaturesRsp, payload.data(), stream.bytes_written);
 }
 
 void ConfigCommandHandler::sendSetFeatureResponse(
@@ -120,14 +140,23 @@ void ConfigCommandHandler::sendSetFeatureResponse(
     Feature feature,
     bool enabled
 ) {
-    SetFeatureResponse resp;
-    resp.status = static_cast<uint8_t>(status);
-    resp.feature = static_cast<uint8_t>(feature);
-    resp.enabled = enabled ? 1 : 0;
+    // Build protobuf response
+    domes_config_SetFeatureResponse resp = domes_config_SetFeatureResponse_init_zero;
+    resp.has_feature = true;
+    resp.feature.feature = static_cast<domes_config_Feature>(feature);
+    resp.feature.enabled = enabled;
 
-    sendFrame(ConfigMsgType::kSetFeatureRsp,
-              reinterpret_cast<const uint8_t*>(&resp),
-              sizeof(resp));
+    // Encode to buffer: [status_byte][SetFeatureResponse_proto]
+    std::array<uint8_t, domes_config_SetFeatureResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(status);
+
+    pb_ostream_t resp_stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&resp_stream, domes_config_SetFeatureResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode SetFeatureResponse: %s", PB_GET_ERROR(&resp_stream));
+        return;
+    }
+
+    sendFrame(ConfigMsgType::kSetFeatureRsp, payload.data(), 1 + resp_stream.bytes_written);
 }
 
 void ConfigCommandHandler::sendGetFeatureResponse(
@@ -135,14 +164,22 @@ void ConfigCommandHandler::sendGetFeatureResponse(
     Feature feature,
     bool enabled
 ) {
-    GetFeatureResponse resp;
-    resp.status = static_cast<uint8_t>(status);
-    resp.feature = static_cast<uint8_t>(feature);
-    resp.enabled = enabled ? 1 : 0;
+    // Use same format as SetFeatureResponse: [status][SetFeatureResponse_proto]
+    domes_config_SetFeatureResponse resp = domes_config_SetFeatureResponse_init_zero;
+    resp.has_feature = true;
+    resp.feature.feature = static_cast<domes_config_Feature>(feature);
+    resp.feature.enabled = enabled;
 
-    sendFrame(ConfigMsgType::kGetFeatureRsp,
-              reinterpret_cast<const uint8_t*>(&resp),
-              sizeof(resp));
+    std::array<uint8_t, domes_config_SetFeatureResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(status);
+
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&stream, domes_config_SetFeatureResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode GetFeatureResponse: %s", PB_GET_ERROR(&stream));
+        return;
+    }
+
+    sendFrame(ConfigMsgType::kGetFeatureRsp, payload.data(), 1 + stream.bytes_written);
 }
 
 bool ConfigCommandHandler::sendFrame(ConfigMsgType type, const uint8_t* payload, size_t len) {

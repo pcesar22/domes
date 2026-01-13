@@ -1,15 +1,15 @@
 //! Protocol definitions for DOMES CLI
 //!
 //! Wire format handling for communication with firmware.
+//! Uses protobuf encoding via prost for message payloads.
 //!
-//! IMPORTANT: Enum types (Feature, Status) come from proto::config module,
-//! which is generated from firmware/common/proto/config.proto.
-//! DO NOT define enums here - use the generated types.
-//!
-//! TODO: Switch to full protobuf encoding (prost::Message) when firmware
-//! is updated to use nanopb for serialization.
+//! IMPORTANT: Types (Feature, Status) come from proto::config module,
+//! generated from firmware/common/proto/config.proto.
 
-use crate::proto::config::{Feature, Status};
+use crate::proto::config::{
+    Feature, ListFeaturesResponse, SetFeatureRequest, SetFeatureResponse, Status,
+};
+use prost::Message;
 use thiserror::Error;
 
 /// Config protocol message types (0x20-0x2F range)
@@ -58,85 +58,76 @@ pub enum ProtocolError {
 
     #[error("Device returned error: {0:?}")]
     DeviceError(Status),
+
+    #[error("Protobuf decode error: {0}")]
+    DecodeError(#[from] prost::DecodeError),
 }
 
-/// Feature state (feature ID + enabled flag)
-/// Uses the proto-generated Feature enum.
+/// Feature state for CLI use
 #[derive(Debug, Clone, Copy)]
-pub struct FeatureState {
+pub struct CliFeatureState {
     pub feature: Feature,
     pub enabled: bool,
 }
 
-/// Serialize SetFeatureRequest payload (legacy binary format)
-/// TODO: Replace with prost::Message::encode when firmware uses nanopb
-pub fn serialize_set_feature(feature: Feature, enabled: bool) -> [u8; 2] {
-    [feature as i32 as u8, if enabled { 1 } else { 0 }]
+/// Serialize SetFeatureRequest using protobuf encoding
+pub fn serialize_set_feature(feature: Feature, enabled: bool) -> Vec<u8> {
+    let req = SetFeatureRequest {
+        feature: feature as i32,
+        enabled,
+    };
+    req.encode_to_vec()
 }
 
-/// Parse ListFeaturesResponse payload (legacy binary format)
-/// TODO: Replace with prost::Message::decode when firmware uses nanopb
-pub fn parse_list_features_response(payload: &[u8]) -> Result<Vec<FeatureState>, ProtocolError> {
-    if payload.len() < 2 {
-        return Err(ProtocolError::PayloadTooShort {
-            expected: 2,
-            actual: payload.len(),
+/// Parse ListFeaturesResponse payload (protobuf encoded)
+pub fn parse_list_features_response(payload: &[u8]) -> Result<Vec<CliFeatureState>, ProtocolError> {
+    let resp = ListFeaturesResponse::decode(payload)?;
+
+    let mut features = Vec::with_capacity(resp.features.len());
+    for fs in resp.features {
+        let feature = Feature::try_from(fs.feature)
+            .map_err(|_| ProtocolError::UnknownFeature(fs.feature))?;
+        features.push(CliFeatureState {
+            feature,
+            enabled: fs.enabled,
         });
-    }
-
-    let status_val = payload[0] as i32;
-    let status = Status::try_from(status_val)
-        .map_err(|_| ProtocolError::UnknownStatus(status_val))?;
-
-    if status != Status::Ok {
-        return Err(ProtocolError::DeviceError(status));
-    }
-
-    let count = payload[1] as usize;
-    let expected_len = 2 + count * 2;
-
-    if payload.len() < expected_len {
-        return Err(ProtocolError::PayloadTooShort {
-            expected: expected_len,
-            actual: payload.len(),
-        });
-    }
-
-    let mut features = Vec::with_capacity(count);
-    for i in 0..count {
-        let offset = 2 + i * 2;
-        let feature_val = payload[offset] as i32;
-        let feature = Feature::try_from(feature_val)
-            .map_err(|_| ProtocolError::UnknownFeature(feature_val))?;
-        let enabled = payload[offset + 1] != 0;
-        features.push(FeatureState { feature, enabled });
     }
 
     Ok(features)
 }
 
-/// Parse SetFeatureResponse or GetFeatureResponse payload (legacy binary format)
-/// TODO: Replace with prost::Message::decode when firmware uses nanopb
-pub fn parse_feature_response(payload: &[u8]) -> Result<FeatureState, ProtocolError> {
-    if payload.len() < 3 {
+/// Parse SetFeatureResponse or GetFeatureResponse payload
+/// Format: [status_byte][protobuf_SetFeatureResponse]
+pub fn parse_feature_response(payload: &[u8]) -> Result<CliFeatureState, ProtocolError> {
+    if payload.is_empty() {
         return Err(ProtocolError::PayloadTooShort {
-            expected: 3,
-            actual: payload.len(),
+            expected: 1,
+            actual: 0,
         });
     }
 
+    // First byte is status
     let status_val = payload[0] as i32;
-    let status = Status::try_from(status_val)
-        .map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
 
     if status != Status::Ok {
         return Err(ProtocolError::DeviceError(status));
     }
 
-    let feature_val = payload[1] as i32;
-    let feature = Feature::try_from(feature_val)
-        .map_err(|_| ProtocolError::UnknownFeature(feature_val))?;
-    let enabled = payload[2] != 0;
+    // Rest is protobuf-encoded SetFeatureResponse
+    let resp = SetFeatureResponse::decode(&payload[1..])?;
 
-    Ok(FeatureState { feature, enabled })
+    let fs = resp.feature.ok_or(ProtocolError::PayloadTooShort {
+        expected: 3,
+        actual: payload.len(),
+    })?;
+
+    let feature =
+        Feature::try_from(fs.feature).map_err(|_| ProtocolError::UnknownFeature(fs.feature))?;
+
+    Ok(CliFeatureState {
+        feature,
+        enabled: fs.enabled,
+    })
 }

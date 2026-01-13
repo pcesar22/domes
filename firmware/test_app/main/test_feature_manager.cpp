@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include "config/featureManager.hpp"
 #include "config/configProtocol.hpp"
+#include "config.pb.h"
 
 #include <array>
 
@@ -109,7 +110,7 @@ TEST(FeatureManager, OutOfRangeFeatureReturnsFalse) {
 
 TEST(FeatureManager, GetAllReturnsAllFeatures) {
     FeatureManager manager;
-    std::array<FeatureState, kMaxFeatures> states{};
+    std::array<domes_config_FeatureState, kMaxFeatures> states{};
 
     size_t count = manager.getAll(states.data());
 
@@ -124,7 +125,7 @@ TEST(FeatureManager, GetAllReturnsCorrectStates) {
     manager.setEnabled(Feature::kLedEffects, false);
     manager.setEnabled(Feature::kWifi, false);
 
-    std::array<FeatureState, kMaxFeatures> states{};
+    std::array<domes_config_FeatureState, kMaxFeatures> states{};
     size_t count = manager.getAll(states.data());
 
     // Find the LED effects state
@@ -133,17 +134,17 @@ TEST(FeatureManager, GetAllReturnsCorrectStates) {
     bool foundBle = false;
 
     for (size_t i = 0; i < count; ++i) {
-        if (states[i].feature == static_cast<uint8_t>(Feature::kLedEffects)) {
+        if (states[i].feature == static_cast<int>(Feature::kLedEffects)) {
             foundLed = true;
-            EXPECT_EQ(states[i].enabled, 0);
+            EXPECT_FALSE(states[i].enabled);
         }
-        if (states[i].feature == static_cast<uint8_t>(Feature::kWifi)) {
+        if (states[i].feature == static_cast<int>(Feature::kWifi)) {
             foundWifi = true;
-            EXPECT_EQ(states[i].enabled, 0);
+            EXPECT_FALSE(states[i].enabled);
         }
-        if (states[i].feature == static_cast<uint8_t>(Feature::kBleAdvertising)) {
+        if (states[i].feature == static_cast<int>(Feature::kBleAdvertising)) {
             foundBle = true;
-            EXPECT_EQ(states[i].enabled, 1);
+            EXPECT_TRUE(states[i].enabled);
         }
     }
 
