@@ -10,6 +10,16 @@ A wireless reaction training pod system for athletic training, physical therapy,
 - **Firmware**: ESP-IDF v5.x with FreeRTOS, written in C++20
 - **Communication**: Hybrid ESP-NOW + BLE for pod-to-pod and phone connectivity
 
+## Hardware
+
+| Platform | Description | Use Case |
+|----------|-------------|----------|
+| [ESP32-S3-DevKitC-1](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/hw-reference/esp32s3/user-guide-devkitc-1.html) | Off-the-shelf dev board | Initial firmware development |
+| [NFF Development Board](hardware/nff-devboard/) | Custom sensor board with LED ring, IMU, haptics, audio | Full feature development and testing |
+| Production PCB | Final form-factor (planned) | Enclosed pod units |
+
+The **NFF devboard** is the primary development platform for testing all DOMES features. See [`hardware/nff-devboard/README.md`](hardware/nff-devboard/README.md) for specifications, pin mappings, and ordering instructions.
+
 ## Getting Started
 
 Requires [ESP-IDF v5.x](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/).

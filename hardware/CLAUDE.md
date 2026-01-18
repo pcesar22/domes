@@ -9,6 +9,9 @@ DOMES (Distributed Open-source Motion & Exercise System) is a reaction training 
 - `research/ID_REQUIREMENTS.md` - Form factor and industrial design constraints
 - `BOM.csv` - Current bill of materials with part numbers
 
+**Reference Implementation:**
+- [`nff-devboard/`](nff-devboard/) - Complete fabrication files for the NFF development board (Gerbers, BOM, pick-and-place, schematic, EasyEDA source)
+
 ---
 
 ## Your Role

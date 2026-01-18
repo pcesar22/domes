@@ -13,6 +13,14 @@
 | **Testing** | System validation on DevKit FIRST, then POSIX unit tests |
 | **CI** | Host unit tests + target compile (every PR) + DevKit smoke (nightly) |
 
+## Hardware Terminology
+
+| Term | Refers To | Description |
+|------|-----------|-------------|
+| **Dev Boards** | ESP32-S3-DevKitC-1 | Off-the-shelf boards for initial firmware development |
+| **Dev PCB / NFF Devboard** | [`hardware/nff-devboard/`](../hardware/nff-devboard/) | Custom sensor board with all peripherals (LEDs, IMU, haptics, audio) |
+| **Form-Factor PCB** | Production PCB | Final integrated design for enclosed pods |
+
 ---
 
 ## MILESTONE SEQUENCE
@@ -526,17 +534,17 @@ sudo ./svc.sh start
 
 ### Track A: Hardware (You)
 
-| Task | Depends On | Blocks |
-|------|------------|--------|
-| **A1: Order Dev Boards** (3x ESP32-S3-DevKitC) | - | M2 |
-| **A2: Order PCB Components** | - | A7 |
-| **A3: Design Schematic** | - | A5 |
-| **A5: Design PCB Layout** | A3 | A6 |
-| **A6: Order Dev PCB** | A5 | A7 |
-| **A7: Assemble Dev Units** | A2, A6 | M7 |
-| **A8: Design Form-Factor PCB** | M8 | A9 |
-| **A9: Order Form-Factor PCB** | A8 | A10 |
-| **A10: Assemble Final Units** | A9 | M9 |
+| Task | Depends On | Blocks | Notes |
+|------|------------|--------|-------|
+| **A1: Order Dev Boards** (3x ESP32-S3-DevKitC) | - | M2 | Off-the-shelf boards |
+| **A2: Order PCB Components** | - | A7 | BOM from `hardware/nff-devboard/production/bom.csv` |
+| **A3: Design Schematic** | - | A5 | ✅ Complete - see `hardware/nff-devboard/docs/schematic.pdf` |
+| **A5: Design PCB Layout** | A3 | A6 | ✅ Complete - NFF devboard |
+| **A6: Order Dev PCB** | A5 | A7 | Upload `hardware/nff-devboard/production/gerbers/` to JLCPCB |
+| **A7: Assemble Dev Units** | A2, A6 | M7 | NFF devboard + DevKit modules |
+| **A8: Design Form-Factor PCB** | M8 | A9 | Production PCB (future) |
+| **A9: Order Form-Factor PCB** | A8 | A10 | - |
+| **A10: Assemble Final Units** | A9 | M9 | - |
 
 ### Track B: System Validation (Claude + DevKit)
 
