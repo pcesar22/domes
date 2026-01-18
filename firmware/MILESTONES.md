@@ -1,5 +1,13 @@
 # DOMES Firmware Development Milestones
 
+## Hardware Progression
+
+| Stage | Platform | Features Available |
+|-------|----------|-------------------|
+| **Current** | ESP32-S3-DevKitC-1 | 1x LED, USB, touch pins |
+| **Next** | [NFF Development Board](../hardware/nff-devboard/) | 16x RGBW LEDs, IMU, haptics, audio |
+| **Future** | Production PCB | Full system in enclosure |
+
 ## Current Hardware: ESP32-S3-DevKitC-1 (bare, no peripherals)
 
 ---
@@ -171,6 +179,20 @@ Real coexistence validation happens during Phase 8 with actual game traffic.
 | USB D+ | 20 | Internal |
 | USB D- | 19 | Internal |
 | Touch Test | 1-4 | Touch with finger |
+
+### NFF Development Board (Next)
+| Function | GPIO | Notes |
+|----------|------|-------|
+| LED Ring | 48 | 16x SK6812MINI-E via level shifter |
+| I2S BCLK | 12 | MAX98357A |
+| I2S LRCLK | 11 | MAX98357A |
+| I2S DATA | 10 | MAX98357A |
+| Audio SD | 13 | Amplifier shutdown |
+| I2C SDA | 8 | LIS2DW12, DRV2605L |
+| I2C SCL | 9 | LIS2DW12, DRV2605L |
+| IMU INT1 | 3 | Accelerometer interrupt |
+
+See [`hardware/nff-devboard/README.md`](../hardware/nff-devboard/README.md) for full pinout and schematic.
 
 ### Target DOMES Pod (Future)
 | Function | GPIO | Notes |
