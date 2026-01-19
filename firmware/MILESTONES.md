@@ -1,5 +1,47 @@
 # DOMES Firmware Development Milestones
 
+## Current Status Summary
+
+**Last Updated:** 2026-01-18
+
+| Category | Status |
+|----------|--------|
+| **Implemented & Tested** | LED driver, FreeRTOS infrastructure, NVS config, watchdog, logging, runtime config protocol, OTA system, performance tracing |
+| **Implemented (Needs Hardware)** | WiFi manager, TCP config server, BLE OTA service |
+| **Not Started** | Touch driver, I2C drivers (haptic, IMU), audio driver, game engine |
+| **Blocking** | NFF devboard assembly (enables I2C/audio/full LED ring testing) |
+
+### What Actually Works Right Now
+
+On **ESP32-S3-DevKitC-1**:
+- ✅ Firmware boots and runs stable
+- ✅ Single LED color cycling demo
+- ✅ USB-CDC serial communication
+- ✅ Runtime config protocol (list/set features)
+- ✅ Serial OTA firmware updates
+- ✅ Performance tracing with Perfetto export
+- ✅ NVS persistence (boot counter, settings)
+- ✅ WiFi connection (if credentials configured)
+- ✅ TCP config server (if WiFi enabled)
+
+On **NFF Development Board** (pending assembly):
+- 🔲 16x RGBW LED ring
+- 🔲 LIS2DW12 accelerometer + tap detection
+- 🔲 DRV2605L haptic feedback
+- 🔲 MAX98357A audio playback
+
+---
+
+## Hardware Progression
+
+| Stage | Platform | Features Available |
+|-------|----------|-------------------|
+| **Current** | ESP32-S3-DevKitC-1 | 1x LED, USB, touch pins |
+| **Next** | [NFF Development Board](../hardware/nff-devboard/) | 16x RGBW LEDs, IMU, haptics, audio |
+| **Future** | Production PCB | Full system in enclosure |
+
+**Pin Reference:** See [`docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md) for complete GPIO mappings.
+
 ## Current Hardware: ESP32-S3-DevKitC-1 (bare, no peripherals)
 
 ---
@@ -163,26 +205,18 @@ Real coexistence validation happens during Phase 8 with actual game traffic.
 
 ## Pin Mapping Reference
 
-### ESP32-S3-DevKitC-1 (Current)
-| Function | GPIO | Notes |
-|----------|------|-------|
-| RGB LED | 38 (v1.1) / 48 (v1.0) | WS2812, use SPI backend with PSRAM |
-| Boot Button | 0 | Active low |
-| USB D+ | 20 | Internal |
-| USB D- | 19 | Internal |
-| Touch Test | 1-4 | Touch with finger |
+**Single source of truth:** [`docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md)
 
-### Target DOMES Pod (Future)
-| Function | GPIO | Notes |
-|----------|------|-------|
-| LED Ring | 14 | 16x SK6812 RGBW |
-| I2S BCLK | 12 | MAX98357A |
-| I2S LRCLK | 11 | MAX98357A |
-| I2S DIN | 13 | MAX98357A |
-| I2C SDA | 8 | DRV2605L, LIS2DW12 |
-| I2C SCL | 9 | DRV2605L, LIS2DW12 |
-| Touch | 1-4 | Capacitive pads |
-| Battery ADC | 5 | Voltage divider |
+Quick reference for common platforms:
+
+| Function | DevKitC-1 v1.1 | NFF Devboard | Production |
+|----------|----------------|--------------|------------|
+| LED Data | GPIO38 | GPIO48 | GPIO14 |
+| I2C SDA | - | GPIO8 | GPIO8 |
+| I2C SCL | - | GPIO9 | GPIO9 |
+| I2S BCLK | - | GPIO12 | GPIO12 |
+
+See the full pin reference for complete mappings and peripheral specifications.
 
 ---
 

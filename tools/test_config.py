@@ -1,7 +1,20 @@
 #!/usr/bin/env python3
 """
-Quick test script to verify the config protocol works on the device.
-Sends a LIST_FEATURES command and verifies the response.
+Config Protocol Test Script (Serial/USB)
+
+Tests the DOMES config protocol over USB-CDC serial connection.
+Sends LIST_FEATURES and SET_FEATURE commands to verify the protocol works.
+
+Usage:
+    python3 test_config.py /dev/ttyACM0          # Linux
+    python3 test_config.py /dev/cu.usbmodem*     # macOS
+    python3 test_config.py COM3                  # Windows
+
+Requirements:
+    pip install pyserial
+
+Note: This script requires the device to be connected via USB and the
+firmware to be running with serial config handler enabled.
 """
 
 import serial

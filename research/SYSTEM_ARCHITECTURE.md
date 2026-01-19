@@ -60,6 +60,44 @@ graph TB
 
 ---
 
+## 1.3 Development Board Variants
+
+The firmware supports multiple hardware platforms during development:
+
+| Platform | Form Factor | Features | Primary Use |
+|----------|-------------|----------|-------------|
+| **ESP32-S3-DevKitC-1** | Bare dev board | 1x WS2812 LED, USB, GPIO access | Initial bring-up, CI testing |
+| **NFF Development Board** | Custom PCB + DevKit | 16x SK6812 RGBW, LIS2DW12 IMU, DRV2605L haptics, MAX98357A audio, speaker | Full feature development |
+| **Production PCB** | Integrated (planned) | All features in final enclosure | End-user devices |
+
+### NFF Development Board
+
+The NFF devboard is the primary platform for feature development. It provides all sensors and actuators from the production design in a development-friendly form factor.
+
+**Key Differences from DevKitC-1:**
+- 16x SK6812MINI-E RGBW LEDs (vs 1x WS2812 on DevKit)
+- LED data on GPIO48 via level shifter (vs GPIO38 direct on DevKit v1.1)
+- LIS2DW12 accelerometer on I2C bus
+- DRV2605L haptic driver on I2C bus
+- MAX98357A I2S audio amplifier with 23mm speaker
+- GPIO breakouts at corners for expansion
+
+**Pin Mapping (NFF Devboard):**
+| Function | GPIO | Notes |
+|----------|------|-------|
+| LED Data | 48 | Via SN74AHCT1G125 level shifter |
+| I2C SDA | 8 | Shared: LIS2DW12, DRV2605L |
+| I2C SCL | 9 | Shared: LIS2DW12, DRV2605L |
+| IMU INT1 | 3 | Accelerometer interrupt |
+| I2S BCLK | 12 | Audio bit clock |
+| I2S LRCLK | 11 | Audio word select |
+| I2S DATA | 10 | Audio data out |
+| Audio SD | 13 | Amplifier shutdown |
+
+See [`hardware/nff-devboard/README.md`](../hardware/nff-devboard/README.md) for full specifications and fabrication files.
+
+---
+
 ## 2. CONNECTIVITY ARCHITECTURE
 
 ### 2.1 Protocol Options Analysis
