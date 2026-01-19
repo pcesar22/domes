@@ -1,11 +1,32 @@
 #!/usr/bin/env python3
 """
-Test script for config protocol over WiFi (TCP).
-Connects to the device's TCP config server and runs the same tests as test_config.py.
+Config Protocol Test Script (WiFi/TCP)
+
+Tests the DOMES config protocol over TCP connection to the device's config server.
+Connects to port 5000 (default) and runs the same tests as test_config.py.
 
 Usage:
     python3 test_config_wifi.py 192.168.1.100:5000
     python3 test_config_wifi.py 192.168.1.100  # Uses default port 5000
+
+Requirements:
+    - Device must be connected to WiFi with TCP config server enabled
+    - Your machine must be on the same network as the device
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  WSL2 USERS: WiFi testing will NOT work from WSL2!                          ║
+║                                                                              ║
+║  WSL2 uses NAT networking and cannot reach devices on your WiFi network.    ║
+║  You must use one of these workarounds:                                     ║
+║                                                                              ║
+║  Option 1: Use Windows Python (recommended)                                 ║
+║    /mnt/c/Python313/python.exe tools/test_config_wifi.py 192.168.1.100      ║
+║                                                                              ║
+║  Option 2: Connect Windows WiFi to the same network as the ESP32            ║
+║    See CLAUDE.md "WSL2 WiFi Testing Limitation" for setup instructions      ║
+║                                                                              ║
+║  Option 3: Use native Linux (not WSL2)                                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
 import socket

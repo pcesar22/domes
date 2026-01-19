@@ -132,10 +132,12 @@ Pin assignments are in `research/SYSTEM_ARCHITECTURE.md`.
 - Use CMock for driver mocks
 - Test business logic without hardware
 
-### Smoke Tests (Device)
-- Built into firmware, triggered by button hold
-- Validates each peripheral individually
+### Smoke Tests (Device) - PLANNED, NOT YET IMPLEMENTED
+- Will be built into firmware, triggered by button hold at boot
+- Will validate each peripheral individually (LED, audio, haptic, IMU, touch)
 - Used for hardware bring-up and CI
+- **Status:** Planned for E7 milestone (see `MILESTONES.md`)
+- **Current alternative:** Use `test_config.py` for protocol validation
 
 ---
 
