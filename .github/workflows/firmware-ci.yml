@@ -62,20 +62,49 @@ jobs:
             firmware/domes/build/domes.bin.sha256
           retention-days: 30
 
-  # Unit tests are currently disabled until Linux target support is added
-  # unit-tests:
-  #   name: Run Unit Tests
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Set up ESP-IDF
-  #       uses: espressif/esp-idf-ci-action@v1
-  #       with:
-  #         esp_idf_version: v5.2.2
-  #         target: linux
-  #     - name: Build and run tests
-  #       run: |
-  #         cd firmware/domes
-  #         idf.py --preview set-target linux
-  #         idf.py build
-  #         ./build/domes.elf -t version -t wifi -t ota
+  # Standalone unit tests using Google Test (host-only, no ESP-IDF target)
+  unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Build and run tests
+        working-directory: firmware/test_app
+        run: |
+          mkdir -p build
+          cd build
+          cmake ..
+          make -j$(nproc)
+          ctest --output-on-failure
+
+  # Rust CLI build and tests
+  cli-build:
+    name: Build CLI Tool
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build CLI
+        working-directory: tools/domes-cli
+        run: cargo build --release
+
+      - name: Run CLI tests
+        working-directory: tools/domes-cli
+        run: cargo test

@@ -22,6 +22,8 @@ The **NFF devboard** is the primary development platform for testing all DOMES f
 
 ## Getting Started
 
+**New to the project?** Start with [`DEVELOPER_QUICKSTART.md`](DEVELOPER_QUICKSTART.md) for a guided onboarding.
+
 Requires [ESP-IDF v5.x](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/).
 
 ```bash
