@@ -41,8 +41,8 @@ cd tools/domes-cli && cargo build
 | Config/runtime | Flash firmware, use CLI to change settings, verify settings applied |
 | LED/display | Flash firmware, visually confirm behavior |
 | Sensors/input | Flash firmware, trigger input, verify response in logs |
-| WiFi transport | Flash, connect Windows WiFi to same network, run `test_config_wifi.py` |
-| Serial transport | Flash, run `test_config.py /dev/ttyACM0` |
+| WiFi transport | Flash, connect to same network, run `domes-cli --wifi <IP>:5000 feature list` |
+| Serial transport | Flash, run `domes-cli --port /dev/ttyACM0 feature list` |
 | OTA updates | Flash, run `domes-cli ota flash`, verify device reboots and responds |
 
 ### Available Skills & Commands
@@ -59,7 +59,7 @@ cd tools/domes-cli && cargo build
 - **Firmware unit tests**: `firmware/test_app/main/test_*.cpp`
 - **Protocol tests**: `test_frame_codec.cpp`, `test_ota_protocol.cpp`, `test_config_protocol.cpp`
 - **Feature tests**: `test_feature_manager.cpp`
-- **Host integration tests**: `tools/test_config.py` (serial), `tools/test_config_wifi.py` (TCP)
+- **CLI integration tests**: Use `domes-cli` commands against device (serial or WiFi)
 
 **DO NOT** mark a task as complete if:
 - Build fails
@@ -241,14 +241,11 @@ The firmware supports runtime feature toggles via a binary protocol over USB ser
 
 ```bash
 # Test over USB serial
-python3 tools/test_config.py /dev/ttyACM0
+domes-cli --port /dev/ttyACM0 feature list
+domes-cli --port /dev/ttyACM0 wifi status
 
-# Test over WiFi (requires Windows WiFi on same network - see WSL2 limitation above)
-/mnt/c/Python313/python.exe tools/test_config_wifi.py <ESP32_IP>
-
-# Using the Rust CLI
-cd tools/domes-cli && cargo run -- --port /dev/ttyACM0 feature list
-cd tools/domes-cli && cargo run -- --port /dev/ttyACM0 wifi status
+# Test over WiFi (requires same network)
+domes-cli --wifi <ESP32_IP>:5000 feature list
 ```
 
 ### Key Files
@@ -260,8 +257,7 @@ cd tools/domes-cli && cargo run -- --port /dev/ttyACM0 wifi status
 | `tools/domes-cli/build.rs` | prost code generation for CLI |
 | `firmware/domes/main/config/configCommandHandler.hpp` | Command handler (shared by serial/TCP) |
 | `firmware/domes/main/config/featureManager.hpp` | Feature state management |
-| `tools/test_config.py` | Serial protocol test |
-| `tools/test_config_wifi.py` | WiFi/TCP protocol test |
+| `tools/domes-cli/` | CLI tool for testing and OTA |
 
 ---
 
@@ -406,8 +402,8 @@ cp /tmp/wifi_profile.xml /mnt/c/Users/Public/wifi_profile.xml
 # Verify connection
 /mnt/c/Windows/System32/netsh.exe wlan show interfaces
 
-# Now use Windows Python to test WiFi features
-/mnt/c/Python313/python.exe tools/test_config_wifi.py <ESP32_IP>
+# Now test WiFi features with the CLI
+domes-cli --wifi <ESP32_IP>:5000 feature list
 ```
 
 ## Best Practices
@@ -451,9 +447,6 @@ grep -r "kWifiSsid\|kWifiPassword" firmware/
 
 # Feature flags and config
 grep -r "CONFIG_DOMES" firmware/domes/sdkconfig*
-
-# Find test scripts
-find tools -name "test_*.py"
 ```
 
 ### Initialization Order Matters
@@ -479,4 +472,4 @@ WSL2 is NAT'd and cannot reach WiFi devices. Always:
 
 ---
 
-*Last updated: 2026-01-12*
+*Last updated: 2026-01-20*
