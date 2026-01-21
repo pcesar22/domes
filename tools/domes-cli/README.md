@@ -22,8 +22,13 @@ domes-cli --port /dev/ttyACM0 <command>
 # WiFi (TCP)
 domes-cli --wifi 192.168.1.100:5000 <command>
 
-# List available serial ports
-domes-cli --list-ports
+# Bluetooth Low Energy (requires native Linux, not WSL2)
+domes-cli --ble "DOMES-Pod" <command>        # Connect by device name
+domes-cli --ble "94:A9:90:0A:EA:52" <command> # Connect by MAC address
+
+# Discovery
+domes-cli --list-ports                        # List serial ports
+domes-cli --scan-ble                          # Scan for BLE devices
 ```
 
 ### Feature Management
@@ -52,6 +57,29 @@ domes-cli --port /dev/ttyACM0 wifi enable
 
 # Disable WiFi
 domes-cli --port /dev/ttyACM0 wifi disable
+```
+
+### LED Pattern Control
+
+```bash
+# Get current LED pattern
+domes-cli --port /dev/ttyACM0 led get
+
+# Turn LEDs off
+domes-cli --port /dev/ttyACM0 led off
+
+# Solid color (hex RGB)
+domes-cli --port /dev/ttyACM0 led solid --color ff0000        # Red
+domes-cli --port /dev/ttyACM0 led solid --color 00ff00        # Green
+
+# Breathing effect
+domes-cli --port /dev/ttyACM0 led breathing --color 0000ff --period 3000
+
+# Color cycle (rainbow)
+domes-cli --port /dev/ttyACM0 led cycle --period 2000
+
+# Set brightness (0-255)
+domes-cli --port /dev/ttyACM0 led solid --color ffffff --brightness 128
 ```
 
 ### OTA Firmware Updates
@@ -87,13 +115,21 @@ Open the trace file in [Perfetto UI](https://ui.perfetto.dev) for visualization.
 
 ## Protocol
 
-The CLI communicates using a binary frame protocol:
+The CLI communicates using a binary frame protocol over serial, TCP, or BLE:
 
 ```
 [0xAA][0x55][LenLE16][MsgType][Payload][CRC32LE]
 ```
 
 Message payloads use Protocol Buffers (prost) for serialization, matching the firmware's nanopb encoding.
+
+### BLE Transport
+
+- **Service UUID**: `12345678-1234-5678-1234-56789abcdef0`
+- **Data Characteristic** (Write): `...def1` - Send frames to device
+- **Status Characteristic** (Notify): `...def2` - Receive responses
+
+The CLI uses [btleplug](https://github.com/deviceplug/btleplug) for cross-platform BLE support. BLE requires native Linux (not WSL2).
 
 ## Development
 

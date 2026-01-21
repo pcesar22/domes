@@ -43,6 +43,7 @@ cd tools/domes-cli && cargo build
 | Sensors/input | Flash firmware, trigger input, verify response in logs |
 | WiFi transport | Flash, connect to same network, run `domes-cli --wifi <IP>:5000 feature list` |
 | Serial transport | Flash, run `domes-cli --port /dev/ttyACM0 feature list` |
+| BLE transport | Flash, run `domes-cli --ble "DOMES-Pod" feature list` (requires native Linux) |
 | OTA updates | Flash, run `domes-cli ota flash`, verify device reboots and responds |
 
 ### Available Skills & Commands
@@ -59,7 +60,7 @@ cd tools/domes-cli && cargo build
 - **Firmware unit tests**: `firmware/test_app/main/test_*.cpp`
 - **Protocol tests**: `test_frame_codec.cpp`, `test_ota_protocol.cpp`, `test_config_protocol.cpp`
 - **Feature tests**: `test_feature_manager.cpp`
-- **CLI integration tests**: Use `domes-cli` commands against device (serial or WiFi)
+- **CLI integration tests**: Use `domes-cli` commands against device (serial, WiFi, or BLE)
 
 **DO NOT** mark a task as complete if:
 - Build fails
@@ -213,7 +214,7 @@ Provides ESP32 firmware build/flash/monitor commands.
 
 ## Runtime Configuration Protocol
 
-The firmware supports runtime feature toggles via a binary protocol over USB serial or WiFi TCP.
+The firmware supports runtime feature toggles via a binary protocol over USB serial, WiFi TCP, or Bluetooth Low Energy (BLE).
 
 **IMPORTANT**: See "CRITICAL: Protocol Buffers" section above. All message types are defined in `firmware/common/proto/config.proto`.
 
@@ -221,7 +222,7 @@ The firmware supports runtime feature toggles via a binary protocol over USB ser
 
 - **Frame format**: `[0xAA][0x55][LenLE16][Type][Payload][CRC32LE]`
 - **Payload**: Protobuf-encoded messages (nanopb on firmware, prost on CLI)
-- **Transports**: USB-CDC (serial), TCP port 5000 (WiFi)
+- **Transports**: USB-CDC (serial), TCP port 5000 (WiFi), BLE GATT (notifications)
 
 ### Available Features (defined in config.proto)
 
@@ -246,6 +247,11 @@ domes-cli --port /dev/ttyACM0 wifi status
 
 # Test over WiFi (requires same network)
 domes-cli --wifi <ESP32_IP>:5000 feature list
+
+# Test over BLE (requires native Linux, not WSL2)
+domes-cli --scan-ble                           # Discover devices
+domes-cli --ble "DOMES-Pod" feature list       # Connect by name
+domes-cli --ble "94:A9:90:0A:EA:52" led get    # Connect by MAC
 ```
 
 ### Key Files
@@ -255,8 +261,10 @@ domes-cli --wifi <ESP32_IP>:5000 feature list
 | `firmware/common/proto/config.proto` | **SOURCE OF TRUTH** for protocol definitions |
 | `firmware/common/proto/config.options` | nanopb size constraints |
 | `tools/domes-cli/build.rs` | prost code generation for CLI |
-| `firmware/domes/main/config/configCommandHandler.hpp` | Command handler (shared by serial/TCP) |
+| `firmware/domes/main/config/configCommandHandler.hpp` | Command handler (shared by serial/TCP/BLE) |
 | `firmware/domes/main/config/featureManager.hpp` | Feature state management |
+| `firmware/domes/main/transport/bleOtaService.hpp` | BLE GATT service (NimBLE) |
+| `tools/domes-cli/src/transport/ble.rs` | CLI BLE transport (btleplug) |
 | `tools/domes-cli/` | CLI tool for testing and OTA |
 
 ---
@@ -452,9 +460,12 @@ grep -r "CONFIG_DOMES" firmware/domes/sdkconfig*
 ### Initialization Order Matters
 
 In `main.cpp`, components must be initialized in the correct order:
-1. **FeatureManager** before TCP/Serial config handlers
-2. **WiFi** before TCP config server
-3. **TCP config server** before Serial OTA (to see logs)
+1. **WiFi** before TCP config server and BLE (for coexistence)
+2. **BLE OTA service** early (advertising starts automatically)
+3. **FeatureManager** before TCP/Serial/BLE config handlers
+4. **TCP config server** before Serial OTA (to see logs)
+
+**BLE Note**: The BLE GATT characteristic handle is only valid after NimBLE syncs. The firmware uses the global `g_statusCharHandle` populated by NimBLE after sync.
 
 ### USB-CDC Console Takeover
 
