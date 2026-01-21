@@ -45,6 +45,7 @@ cd tools/domes-cli && cargo build
 | Serial transport | Flash, run `domes-cli --port /dev/ttyACM0 feature list` |
 | BLE transport | Flash, run `domes-cli --ble "DOMES-Pod" feature list` (requires native Linux) |
 | OTA updates | Flash, run `domes-cli ota flash`, verify device reboots and responds |
+| **CI verification** | Add `hw-test` label to PR, wait for CI to pass |
 
 ### Available Skills & Commands
 
@@ -54,6 +55,26 @@ cd tools/domes-cli && cargo build
 | `/lint-fw` | Check coding standards | Before committing firmware code |
 | `/size` | Analyze binary size | After adding new features |
 | `/debug-esp32` | GDB debugging | When investigating runtime issues |
+
+### CI Hardware Testing
+
+When the user requests **on-device testing via CI**, add the `hw-test` label to the PR:
+
+```bash
+# Add hw-test label to trigger hardware CI
+gh pr edit --add-label "hw-test"
+```
+
+The CI will queue the PR for hardware testing (only one test runs at a time). Tests include:
+- Firmware build and flash
+- Feature list verification
+- Serial OTA update
+- Post-OTA boot verification
+
+**When to add `hw-test` label:**
+- User explicitly requests "run hardware tests" or "test on device"
+- Before merging significant firmware changes
+- After fixing hardware-related bugs
 
 ### Test Files
 
@@ -432,6 +453,60 @@ cp /tmp/wifi_profile.xml /mnt/c/Users/Public/wifi_profile.xml
 domes-cli --wifi <ESP32_IP>:5000 feature list
 ```
 
+## CI/CD Infrastructure
+
+### Self-Hosted Runner Setup
+
+The hardware tests require a self-hosted GitHub Actions runner on a machine with an ESP32 device attached.
+
+**One-time setup on the test machine:**
+
+```bash
+# 1. Create runner directory
+mkdir -p ~/actions-runner && cd ~/actions-runner
+
+# 2. Download the runner (get latest URL from GitHub repo settings)
+curl -o actions-runner-linux-x64.tar.gz -L \
+  https://github.com/actions/runner/releases/download/v2.321.0/actions-runner-linux-x64-2.321.0.tar.gz
+tar xzf actions-runner-linux-x64.tar.gz
+
+# 3. Configure the runner (get token from GitHub repo → Settings → Actions → Runners)
+./config.sh --url https://github.com/YOUR_ORG/domes --token YOUR_TOKEN
+
+# 4. Install as service (runs on boot)
+sudo ./svc.sh install
+sudo ./svc.sh start
+
+# 5. Verify ESP-IDF is available for the runner
+# The runner needs access to ESP-IDF (typically in ~/esp/esp-idf)
+```
+
+**Required on the runner machine:**
+- ESP-IDF v5.2.2+ installed at `~/esp/esp-idf`
+- Rust toolchain for building domes-cli
+- ESP32 device connected at `/dev/ttyACM0`
+- User must be in `dialout` group for serial access
+
+### Hardware Test Workflow
+
+The `hw-test` label triggers queued hardware testing:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  PR with 'hw-test' label → Queued for self-hosted runner       │
+│  concurrency: group: hardware-test-queue                        │
+│  cancel-in-progress: false (jobs queue, don't cancel)          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**What the CI tests:**
+1. Build firmware
+2. Build domes-cli
+3. Flash via JTAG/USB
+4. Verify feature list command works
+5. Perform Serial OTA update
+6. Verify device boots after OTA
+
 ## Best Practices
 
 - Keep commits atomic and well-described
@@ -501,4 +576,4 @@ WSL2 is NAT'd and cannot reach WiFi devices. Always:
 
 ---
 
-*Last updated: 2026-01-20*
+*Last updated: 2026-01-21*
