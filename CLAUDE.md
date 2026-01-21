@@ -71,6 +71,24 @@ cd tools/domes-cli && cargo build
 
 ---
 
+## MANDATORY: Use Git Worktrees for Features
+
+For new features or significant changes, **always** use a worktree:
+
+```bash
+mkdir -p .worktrees
+git worktree add .worktrees/<name> -b claude/<type>/<description>
+cd .worktrees/<name>
+# Types: feat, fix, refactor, docs
+```
+
+**Rules**:
+- Never work directly on `main` for features/fixes
+- **Always ask** before creating a PR - only create when user says yes
+- Clean up: `git worktree remove .worktrees/<name>`
+
+---
+
 ## CRITICAL: Protocol Buffers (nanopb/prost) - READ THIS FIRST
 
 **THIS IS NON-NEGOTIABLE. DO NOT SKIP THIS SECTION.**
