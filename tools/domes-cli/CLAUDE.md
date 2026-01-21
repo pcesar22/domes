@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Rust CLI tool for communicating with DOMES firmware over USB serial or WiFi TCP.
+Rust CLI tool for communicating with DOMES firmware over USB serial, WiFi TCP, or Bluetooth Low Energy (BLE).
 
 ## Architecture
 
@@ -13,11 +13,14 @@ src/
 ├── protocol/
 │   └── mod.rs        # Frame encoding, protobuf helpers
 ├── transport/
-│   └── mod.rs        # Serial and TCP transports
+│   ├── mod.rs        # Transport trait, Serial and TCP
+│   ├── ble.rs        # BLE transport (btleplug)
+│   └── frame.rs      # Frame encoder/decoder
 └── commands/
     ├── mod.rs        # Command exports
     ├── feature.rs    # Feature list/enable/disable
     ├── wifi.rs       # WiFi enable/disable/status
+    ├── led.rs        # LED pattern control
     ├── ota.rs        # OTA firmware updates
     └── trace.rs      # Performance tracing
 ```
@@ -40,7 +43,7 @@ All protocol definitions come from `firmware/common/proto/*.proto` files. The CL
 |-------|----------|
 | 0x01-0x05 | OTA |
 | 0x10-0x17 | Trace |
-| 0x20-0x25 | Config |
+| 0x20-0x29 | Config (features, LED patterns) |
 
 ## Adding New Commands
 
@@ -61,6 +64,11 @@ cargo run -- --port /dev/ttyACM0 feature list
 
 # Test against device (WiFi)
 cargo run -- --wifi 192.168.1.100:5000 feature list
+
+# Test against device (BLE) - requires native Linux
+cargo run -- --scan-ble                        # Discover devices
+cargo run -- --ble "DOMES-Pod" feature list    # Connect by name
+cargo run -- --ble "DOMES-Pod" led solid --color ff0000
 ```
 
 ## Common Issues
@@ -80,3 +88,13 @@ sudo usermod -a -G dialout $USER
 ```bash
 cargo clean && cargo build
 ```
+
+### BLE "No adapter found"
+- BLE requires native Linux (Arch, Ubuntu, etc.)
+- WSL2 does NOT support BLE - use serial or WiFi instead
+- Ensure Bluetooth adapter is enabled: `bluetoothctl power on`
+
+### BLE "Timeout waiting for response"
+- Ensure device firmware is recent (has BLE config handler fix)
+- Check device is advertising: `bluetoothctl scan on`
+- Try reconnecting or power cycling the device

@@ -13,7 +13,7 @@ sdkconfig
 .idea/
 
 # Git worktrees
-/worktree/
+.worktrees/
 
 # Python
 __pycache__/
