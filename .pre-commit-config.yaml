@@ -1,0 +1,68 @@
+# Pre-commit hooks for DOMES project
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+#
+# See https://pre-commit.com for more information
+
+repos:
+  # General hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.patch$'
+      - id: end-of-file-fixer
+        exclude: '\.patch$|\.bin$|\.pdf$'
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+        exclude: '\.pdf$|\.png$|\.zip$|\.epro$'
+      - id: check-merge-conflict
+      - id: check-case-conflict
+
+  # C/C++ formatting with clang-format
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v17.0.6
+    hooks:
+      - id: clang-format
+        types_or: [c, c++]
+        files: ^firmware/
+        exclude: '\.pb\.(c|h)$|third_party/'
+
+  # Python formatting and linting
+  - repo: https://github.com/psf/black
+    rev: 24.1.1
+    hooks:
+      - id: black
+        language_version: python3
+        files: ^tools/
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+        files: ^tools/
+
+  # Rust formatting (for domes-cli)
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: fmt
+        args: ['--manifest-path', 'tools/domes-cli/Cargo.toml', '--']
+      - id: cargo-check
+        args: ['--manifest-path', 'tools/domes-cli/Cargo.toml']
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.39.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix', '--disable', 'MD013', 'MD033', 'MD041', '--']
+        exclude: 'CHANGELOG\.md$'
+
+# CI configuration
+ci:
+  autofix_commit_msg: 'style: auto-fix from pre-commit hooks'
+  autoupdate_commit_msg: 'chore: update pre-commit hooks'
