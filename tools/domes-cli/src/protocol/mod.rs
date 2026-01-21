@@ -8,8 +8,7 @@
 
 use crate::proto::config::{
     Color, Feature, GetLedPatternResponse, LedPattern, LedPatternType, ListFeaturesResponse,
-    MsgType, SetFeatureRequest, SetFeatureResponse, SetLedPatternRequest, SetLedPatternResponse,
-    Status,
+    SetFeatureRequest, SetFeatureResponse, SetLedPatternRequest, SetLedPatternResponse, Status,
 };
 use prost::Message;
 use thiserror::Error;

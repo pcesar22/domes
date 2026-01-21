@@ -9,6 +9,7 @@
 //! 3. Update code that uses the types
 
 /// Config protocol types (generated from config.proto)
+#[allow(dead_code)]
 pub mod config {
     include!(concat!(env!("OUT_DIR"), "/domes.config.rs"));
 
@@ -65,6 +66,7 @@ pub mod config {
 }
 
 /// Trace protocol types (generated from trace.proto)
+#[allow(dead_code)]
 pub mod trace {
     include!(concat!(env!("OUT_DIR"), "/domes.trace.rs"));
 
