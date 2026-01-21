@@ -15,6 +15,10 @@
 #include <cstdint>
 #include <cstddef>
 
+namespace domes {
+class LedService;  // Forward declaration
+}
+
 namespace domes::config {
 
 /**
@@ -32,6 +36,13 @@ public:
      * @param features Feature manager for toggle state
      */
     ConfigCommandHandler(ITransport& transport, FeatureManager& features);
+
+    /**
+     * @brief Set LED service for pattern commands
+     *
+     * @param ledService LED service instance (may be nullptr to disable LED commands)
+     */
+    void setLedService(LedService* ledService) { ledService_ = ledService; }
 
     /**
      * @brief Handle an incoming config command
@@ -66,6 +77,19 @@ private:
     void handleGetFeature(const uint8_t* payload, size_t len);
 
     /**
+     * @brief Handle SET_LED_PATTERN request
+     *
+     * @param payload Payload containing SetLedPatternRequest
+     * @param len Payload length
+     */
+    void handleSetLedPattern(const uint8_t* payload, size_t len);
+
+    /**
+     * @brief Handle GET_LED_PATTERN request
+     */
+    void handleGetLedPattern();
+
+    /**
      * @brief Send list features response
      */
     void sendListFeaturesResponse();
@@ -89,6 +113,13 @@ private:
     void sendGetFeatureResponse(Status status, Feature feature, bool enabled);
 
     /**
+     * @brief Send LED pattern response
+     *
+     * @param status Status code
+     */
+    void sendLedPatternResponse(Status status);
+
+    /**
      * @brief Send a frame with given type and payload
      *
      * @param type Message type
@@ -100,6 +131,7 @@ private:
 
     ITransport& transport_;
     FeatureManager& features_;
+    LedService* ledService_ = nullptr;
 };
 
 }  // namespace domes::config

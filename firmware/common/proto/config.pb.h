@@ -19,7 +19,11 @@ typedef enum _domes_config_MsgType {
     domes_config_MsgType_MSG_TYPE_SET_FEATURE_REQ = 34,
     domes_config_MsgType_MSG_TYPE_SET_FEATURE_RSP = 35,
     domes_config_MsgType_MSG_TYPE_GET_FEATURE_REQ = 36,
-    domes_config_MsgType_MSG_TYPE_GET_FEATURE_RSP = 37
+    domes_config_MsgType_MSG_TYPE_GET_FEATURE_RSP = 37,
+    domes_config_MsgType_MSG_TYPE_SET_LED_PATTERN_REQ = 38,
+    domes_config_MsgType_MSG_TYPE_SET_LED_PATTERN_RSP = 39,
+    domes_config_MsgType_MSG_TYPE_GET_LED_PATTERN_REQ = 40,
+    domes_config_MsgType_MSG_TYPE_GET_LED_PATTERN_RSP = 41
 } domes_config_MsgType;
 
 /* Status codes for responses */
@@ -27,8 +31,17 @@ typedef enum _domes_config_Status {
     domes_config_Status_STATUS_OK = 0,
     domes_config_Status_STATUS_ERROR = 1,
     domes_config_Status_STATUS_INVALID_FEATURE = 2,
-    domes_config_Status_STATUS_BUSY = 3
+    domes_config_Status_STATUS_BUSY = 3,
+    domes_config_Status_STATUS_INVALID_PATTERN = 4
 } domes_config_Status;
+
+/* LED pattern types */
+typedef enum _domes_config_LedPatternType {
+    domes_config_LedPatternType_LED_PATTERN_OFF = 0,
+    domes_config_LedPatternType_LED_PATTERN_SOLID = 1,
+    domes_config_LedPatternType_LED_PATTERN_BREATHING = 2,
+    domes_config_LedPatternType_LED_PATTERN_COLOR_CYCLE = 3
+} domes_config_LedPatternType;
 
 /* Runtime-toggleable features */
 typedef enum _domes_config_Feature {
@@ -43,6 +56,14 @@ typedef enum _domes_config_Feature {
 } domes_config_Feature;
 
 /* Struct definitions */
+/* RGBW color (0-255 per channel) */
+typedef struct _domes_config_Color {
+    uint32_t r;
+    uint32_t g;
+    uint32_t b;
+    uint32_t w; /* White channel (ignored for RGB-only LEDs) */
+} domes_config_Color;
+
 /* Feature with its current state */
 typedef struct _domes_config_FeatureState {
     domes_config_Feature feature;
@@ -59,6 +80,26 @@ typedef struct _domes_config_SetFeatureRequest {
     bool enabled;
 } domes_config_SetFeatureRequest;
 
+/* LED pattern with parameters */
+typedef struct _domes_config_LedPattern {
+    domes_config_LedPatternType type;
+    bool has_color;
+    domes_config_Color color; /* Primary color (for solid/breathing) */
+    pb_size_t colors_count;
+    domes_config_Color colors[8]; /* Color list (for color_cycle) */
+    uint32_t period_ms; /* Animation period in ms */
+    uint32_t brightness; /* Global brightness (0-255) */
+} domes_config_LedPattern;
+
+typedef struct _domes_config_SetLedPatternRequest {
+    bool has_pattern;
+    domes_config_LedPattern pattern;
+} domes_config_SetLedPatternRequest;
+
+typedef struct _domes_config_GetLedPatternRequest { /* Empty - returns current pattern */
+    char dummy_field;
+} domes_config_GetLedPatternRequest;
+
 /* Response messages */
 typedef struct _domes_config_ListFeaturesResponse {
     pb_size_t features_count;
@@ -69,6 +110,16 @@ typedef struct _domes_config_SetFeatureResponse {
     bool has_feature;
     domes_config_FeatureState feature;
 } domes_config_SetFeatureResponse;
+
+typedef struct _domes_config_SetLedPatternResponse {
+    bool has_pattern;
+    domes_config_LedPattern pattern;
+} domes_config_SetLedPatternResponse;
+
+typedef struct _domes_config_GetLedPatternResponse {
+    bool has_pattern;
+    domes_config_LedPattern pattern;
+} domes_config_GetLedPatternResponse;
 
 /* Top-level request envelope */
 typedef struct _domes_config_ConfigRequest {
@@ -96,21 +147,32 @@ extern "C" {
 
 /* Helper constants for enums */
 #define _domes_config_MsgType_MIN domes_config_MsgType_MSG_TYPE_UNKNOWN
-#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_GET_FEATURE_RSP
-#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_GET_FEATURE_RSP+1))
+#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_GET_LED_PATTERN_RSP
+#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_GET_LED_PATTERN_RSP+1))
 
 #define _domes_config_Status_MIN domes_config_Status_STATUS_OK
-#define _domes_config_Status_MAX domes_config_Status_STATUS_BUSY
-#define _domes_config_Status_ARRAYSIZE ((domes_config_Status)(domes_config_Status_STATUS_BUSY+1))
+#define _domes_config_Status_MAX domes_config_Status_STATUS_INVALID_PATTERN
+#define _domes_config_Status_ARRAYSIZE ((domes_config_Status)(domes_config_Status_STATUS_INVALID_PATTERN+1))
+
+#define _domes_config_LedPatternType_MIN domes_config_LedPatternType_LED_PATTERN_OFF
+#define _domes_config_LedPatternType_MAX domes_config_LedPatternType_LED_PATTERN_COLOR_CYCLE
+#define _domes_config_LedPatternType_ARRAYSIZE ((domes_config_LedPatternType)(domes_config_LedPatternType_LED_PATTERN_COLOR_CYCLE+1))
 
 #define _domes_config_Feature_MIN domes_config_Feature_FEATURE_UNKNOWN
 #define _domes_config_Feature_MAX domes_config_Feature_FEATURE_AUDIO
 #define _domes_config_Feature_ARRAYSIZE ((domes_config_Feature)(domes_config_Feature_FEATURE_AUDIO+1))
 
+
 #define domes_config_FeatureState_feature_ENUMTYPE domes_config_Feature
 
 
 #define domes_config_SetFeatureRequest_feature_ENUMTYPE domes_config_Feature
+
+#define domes_config_LedPattern_type_ENUMTYPE domes_config_LedPatternType
+
+
+
+
 
 
 
@@ -119,28 +181,52 @@ extern "C" {
 
 
 /* Initializer values for message structs */
+#define domes_config_Color_init_default          {0, 0, 0, 0}
 #define domes_config_FeatureState_init_default   {_domes_config_Feature_MIN, 0}
 #define domes_config_ListFeaturesRequest_init_default {0}
 #define domes_config_SetFeatureRequest_init_default {_domes_config_Feature_MIN, 0}
+#define domes_config_LedPattern_init_default     {_domes_config_LedPatternType_MIN, false, domes_config_Color_init_default, 0, {domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default}, 0, 0}
+#define domes_config_SetLedPatternRequest_init_default {false, domes_config_LedPattern_init_default}
+#define domes_config_GetLedPatternRequest_init_default {0}
 #define domes_config_ListFeaturesResponse_init_default {0, {domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default}}
 #define domes_config_SetFeatureResponse_init_default {false, domes_config_FeatureState_init_default}
+#define domes_config_SetLedPatternResponse_init_default {false, domes_config_LedPattern_init_default}
+#define domes_config_GetLedPatternResponse_init_default {false, domes_config_LedPattern_init_default}
 #define domes_config_ConfigRequest_init_default  {0, {domes_config_ListFeaturesRequest_init_default}}
 #define domes_config_ConfigResponse_init_default {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_default}}
+#define domes_config_Color_init_zero             {0, 0, 0, 0}
 #define domes_config_FeatureState_init_zero      {_domes_config_Feature_MIN, 0}
 #define domes_config_ListFeaturesRequest_init_zero {0}
 #define domes_config_SetFeatureRequest_init_zero {_domes_config_Feature_MIN, 0}
+#define domes_config_LedPattern_init_zero        {_domes_config_LedPatternType_MIN, false, domes_config_Color_init_zero, 0, {domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero}, 0, 0}
+#define domes_config_SetLedPatternRequest_init_zero {false, domes_config_LedPattern_init_zero}
+#define domes_config_GetLedPatternRequest_init_zero {0}
 #define domes_config_ListFeaturesResponse_init_zero {0, {domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero}}
 #define domes_config_SetFeatureResponse_init_zero {false, domes_config_FeatureState_init_zero}
+#define domes_config_SetLedPatternResponse_init_zero {false, domes_config_LedPattern_init_zero}
+#define domes_config_GetLedPatternResponse_init_zero {false, domes_config_LedPattern_init_zero}
 #define domes_config_ConfigRequest_init_zero     {0, {domes_config_ListFeaturesRequest_init_zero}}
 #define domes_config_ConfigResponse_init_zero    {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_zero}}
 
 /* Field tags (for use in manual encoding/decoding) */
+#define domes_config_Color_r_tag                 1
+#define domes_config_Color_g_tag                 2
+#define domes_config_Color_b_tag                 3
+#define domes_config_Color_w_tag                 4
 #define domes_config_FeatureState_feature_tag    1
 #define domes_config_FeatureState_enabled_tag    2
 #define domes_config_SetFeatureRequest_feature_tag 1
 #define domes_config_SetFeatureRequest_enabled_tag 2
+#define domes_config_LedPattern_type_tag         1
+#define domes_config_LedPattern_color_tag        2
+#define domes_config_LedPattern_colors_tag       3
+#define domes_config_LedPattern_period_ms_tag    4
+#define domes_config_LedPattern_brightness_tag   5
+#define domes_config_SetLedPatternRequest_pattern_tag 1
 #define domes_config_ListFeaturesResponse_features_tag 1
 #define domes_config_SetFeatureResponse_feature_tag 1
+#define domes_config_SetLedPatternResponse_pattern_tag 1
+#define domes_config_GetLedPatternResponse_pattern_tag 1
 #define domes_config_ConfigRequest_list_features_tag 1
 #define domes_config_ConfigRequest_set_feature_tag 2
 #define domes_config_ConfigResponse_status_tag   1
@@ -148,6 +234,14 @@ extern "C" {
 #define domes_config_ConfigResponse_set_feature_tag 3
 
 /* Struct field encoding specification for nanopb */
+#define domes_config_Color_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   r,                 1) \
+X(a, STATIC,   SINGULAR, UINT32,   g,                 2) \
+X(a, STATIC,   SINGULAR, UINT32,   b,                 3) \
+X(a, STATIC,   SINGULAR, UINT32,   w,                 4)
+#define domes_config_Color_CALLBACK NULL
+#define domes_config_Color_DEFAULT NULL
+
 #define domes_config_FeatureState_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UENUM,    feature,           1) \
 X(a, STATIC,   SINGULAR, BOOL,     enabled,           2)
@@ -165,6 +259,28 @@ X(a, STATIC,   SINGULAR, BOOL,     enabled,           2)
 #define domes_config_SetFeatureRequest_CALLBACK NULL
 #define domes_config_SetFeatureRequest_DEFAULT NULL
 
+#define domes_config_LedPattern_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UENUM,    type,              1) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  color,             2) \
+X(a, STATIC,   REPEATED, MESSAGE,  colors,            3) \
+X(a, STATIC,   SINGULAR, UINT32,   period_ms,         4) \
+X(a, STATIC,   SINGULAR, UINT32,   brightness,        5)
+#define domes_config_LedPattern_CALLBACK NULL
+#define domes_config_LedPattern_DEFAULT NULL
+#define domes_config_LedPattern_color_MSGTYPE domes_config_Color
+#define domes_config_LedPattern_colors_MSGTYPE domes_config_Color
+
+#define domes_config_SetLedPatternRequest_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  pattern,           1)
+#define domes_config_SetLedPatternRequest_CALLBACK NULL
+#define domes_config_SetLedPatternRequest_DEFAULT NULL
+#define domes_config_SetLedPatternRequest_pattern_MSGTYPE domes_config_LedPattern
+
+#define domes_config_GetLedPatternRequest_FIELDLIST(X, a) \
+
+#define domes_config_GetLedPatternRequest_CALLBACK NULL
+#define domes_config_GetLedPatternRequest_DEFAULT NULL
+
 #define domes_config_ListFeaturesResponse_FIELDLIST(X, a) \
 X(a, STATIC,   REPEATED, MESSAGE,  features,          1)
 #define domes_config_ListFeaturesResponse_CALLBACK NULL
@@ -176,6 +292,18 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  feature,           1)
 #define domes_config_SetFeatureResponse_CALLBACK NULL
 #define domes_config_SetFeatureResponse_DEFAULT NULL
 #define domes_config_SetFeatureResponse_feature_MSGTYPE domes_config_FeatureState
+
+#define domes_config_SetLedPatternResponse_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  pattern,           1)
+#define domes_config_SetLedPatternResponse_CALLBACK NULL
+#define domes_config_SetLedPatternResponse_DEFAULT NULL
+#define domes_config_SetLedPatternResponse_pattern_MSGTYPE domes_config_LedPattern
+
+#define domes_config_GetLedPatternResponse_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  pattern,           1)
+#define domes_config_GetLedPatternResponse_CALLBACK NULL
+#define domes_config_GetLedPatternResponse_DEFAULT NULL
+#define domes_config_GetLedPatternResponse_pattern_MSGTYPE domes_config_LedPattern
 
 #define domes_config_ConfigRequest_FIELDLIST(X, a) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (request,list_features,request.list_features),   1) \
@@ -194,32 +322,50 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (response,set_feature,response.set_feature), 
 #define domes_config_ConfigResponse_response_list_features_MSGTYPE domes_config_ListFeaturesResponse
 #define domes_config_ConfigResponse_response_set_feature_MSGTYPE domes_config_SetFeatureResponse
 
+extern const pb_msgdesc_t domes_config_Color_msg;
 extern const pb_msgdesc_t domes_config_FeatureState_msg;
 extern const pb_msgdesc_t domes_config_ListFeaturesRequest_msg;
 extern const pb_msgdesc_t domes_config_SetFeatureRequest_msg;
+extern const pb_msgdesc_t domes_config_LedPattern_msg;
+extern const pb_msgdesc_t domes_config_SetLedPatternRequest_msg;
+extern const pb_msgdesc_t domes_config_GetLedPatternRequest_msg;
 extern const pb_msgdesc_t domes_config_ListFeaturesResponse_msg;
 extern const pb_msgdesc_t domes_config_SetFeatureResponse_msg;
+extern const pb_msgdesc_t domes_config_SetLedPatternResponse_msg;
+extern const pb_msgdesc_t domes_config_GetLedPatternResponse_msg;
 extern const pb_msgdesc_t domes_config_ConfigRequest_msg;
 extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
+#define domes_config_Color_fields &domes_config_Color_msg
 #define domes_config_FeatureState_fields &domes_config_FeatureState_msg
 #define domes_config_ListFeaturesRequest_fields &domes_config_ListFeaturesRequest_msg
 #define domes_config_SetFeatureRequest_fields &domes_config_SetFeatureRequest_msg
+#define domes_config_LedPattern_fields &domes_config_LedPattern_msg
+#define domes_config_SetLedPatternRequest_fields &domes_config_SetLedPatternRequest_msg
+#define domes_config_GetLedPatternRequest_fields &domes_config_GetLedPatternRequest_msg
 #define domes_config_ListFeaturesResponse_fields &domes_config_ListFeaturesResponse_msg
 #define domes_config_SetFeatureResponse_fields &domes_config_SetFeatureResponse_msg
+#define domes_config_SetLedPatternResponse_fields &domes_config_SetLedPatternResponse_msg
+#define domes_config_GetLedPatternResponse_fields &domes_config_GetLedPatternResponse_msg
 #define domes_config_ConfigRequest_fields &domes_config_ConfigRequest_msg
 #define domes_config_ConfigResponse_fields &domes_config_ConfigResponse_msg
 
 /* Maximum encoded size of messages (where known) */
-#define DOMES_CONFIG_CONFIG_PB_H_MAX_SIZE        domes_config_ConfigResponse_size
+#define DOMES_CONFIG_CONFIG_PB_H_MAX_SIZE        domes_config_SetLedPatternRequest_size
+#define domes_config_Color_size                  24
 #define domes_config_ConfigRequest_size          6
 #define domes_config_ConfigResponse_size         100
 #define domes_config_FeatureState_size           4
+#define domes_config_GetLedPatternRequest_size   0
+#define domes_config_GetLedPatternResponse_size  251
+#define domes_config_LedPattern_size             248
 #define domes_config_ListFeaturesRequest_size    0
 #define domes_config_ListFeaturesResponse_size   96
 #define domes_config_SetFeatureRequest_size      4
 #define domes_config_SetFeatureResponse_size     6
+#define domes_config_SetLedPatternRequest_size   251
+#define domes_config_SetLedPatternResponse_size  251
 
 #ifdef __cplusplus
 } /* extern "C" */

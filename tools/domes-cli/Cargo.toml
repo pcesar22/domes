@@ -28,6 +28,25 @@ hex = "0.4"
 # Protocol Buffers - generated from firmware/common/proto/*.proto
 prost = "0.13"
 
+# BLE support via btleplug
+btleplug = "0.11"
+
+# Async runtime for btleplug (tokio)
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
+
+# Cross-thread channel for notification forwarding
+crossbeam-channel = "0.5"
+
+# UUID handling for BLE service/characteristic UUIDs
+uuid = { version = "1", features = ["v4"] }
+
+# Async stream processing for BLE notifications
+futures = "0.3"
+
+# Logging for debug output
+log = "0.4"
+env_logger = "0.11"
+
 [build-dependencies]
 # Protocol Buffers code generation
 prost-build = "0.13"

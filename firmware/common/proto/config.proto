@@ -16,6 +16,10 @@ enum MsgType {
     MSG_TYPE_SET_FEATURE_RSP = 0x23;
     MSG_TYPE_GET_FEATURE_REQ = 0x24;
     MSG_TYPE_GET_FEATURE_RSP = 0x25;
+    MSG_TYPE_SET_LED_PATTERN_REQ = 0x26;
+    MSG_TYPE_SET_LED_PATTERN_RSP = 0x27;
+    MSG_TYPE_GET_LED_PATTERN_REQ = 0x28;
+    MSG_TYPE_GET_LED_PATTERN_RSP = 0x29;
 }
 
 // Status codes for responses
@@ -24,6 +28,23 @@ enum Status {
     STATUS_ERROR = 1;
     STATUS_INVALID_FEATURE = 2;
     STATUS_BUSY = 3;
+    STATUS_INVALID_PATTERN = 4;
+}
+
+// LED pattern types
+enum LedPatternType {
+    LED_PATTERN_OFF = 0;
+    LED_PATTERN_SOLID = 1;
+    LED_PATTERN_BREATHING = 2;
+    LED_PATTERN_COLOR_CYCLE = 3;
+}
+
+// RGBW color (0-255 per channel)
+message Color {
+    uint32 r = 1;
+    uint32 g = 2;
+    uint32 b = 3;
+    uint32 w = 4;  // White channel (ignored for RGB-only LEDs)
 }
 
 // Runtime-toggleable features
@@ -54,6 +75,23 @@ message SetFeatureRequest {
     bool enabled = 2;
 }
 
+// LED pattern with parameters
+message LedPattern {
+    LedPatternType type = 1;
+    Color color = 2;              // Primary color (for solid/breathing)
+    repeated Color colors = 3;    // Color list (for color_cycle)
+    uint32 period_ms = 4;         // Animation period in ms
+    uint32 brightness = 5;        // Global brightness (0-255)
+}
+
+message SetLedPatternRequest {
+    LedPattern pattern = 1;
+}
+
+message GetLedPatternRequest {
+    // Empty - returns current pattern
+}
+
 // Response messages
 message ListFeaturesResponse {
     repeated FeatureState features = 1;
@@ -61,6 +99,14 @@ message ListFeaturesResponse {
 
 message SetFeatureResponse {
     FeatureState feature = 1;
+}
+
+message SetLedPatternResponse {
+    LedPattern pattern = 1;
+}
+
+message GetLedPatternResponse {
+    LedPattern pattern = 1;
 }
 
 // Top-level request envelope

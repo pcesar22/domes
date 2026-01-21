@@ -7,6 +7,7 @@
 
 #include "configCommandHandler.hpp"
 #include "protocol/frameCodec.hpp"
+#include "services/ledService.hpp"
 
 #include "config.pb.h"
 #include "pb_encode.h"
@@ -45,6 +46,16 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
         case MsgType::kGetFeatureReq:
             ESP_LOGD(kTag, "Received GET_FEATURE");
             handleGetFeature(payload, len);
+            return true;
+
+        case MsgType::kSetLedPatternReq:
+            ESP_LOGD(kTag, "Received SET_LED_PATTERN");
+            handleSetLedPattern(payload, len);
+            return true;
+
+        case MsgType::kGetLedPatternReq:
+            ESP_LOGD(kTag, "Received GET_LED_PATTERN");
+            handleGetLedPattern();
             return true;
 
         default:
@@ -207,6 +218,83 @@ bool ConfigCommandHandler::sendFrame(MsgType type, const uint8_t* payload, size_
     }
 
     return true;
+}
+
+void ConfigCommandHandler::handleSetLedPattern(const uint8_t* payload, size_t len) {
+    if (!ledService_) {
+        ESP_LOGW(kTag, "LED service not available");
+        sendLedPatternResponse(Status::kError);
+        return;
+    }
+
+    // Decode protobuf message
+    domes_config_SetLedPatternRequest req = domes_config_SetLedPatternRequest_init_zero;
+    pb_istream_t stream = pb_istream_from_buffer(payload, len);
+
+    if (!pb_decode(&stream, domes_config_SetLedPatternRequest_fields, &req)) {
+        ESP_LOGW(kTag, "Failed to decode SET_LED_PATTERN: %s", PB_GET_ERROR(&stream));
+        sendLedPatternResponse(Status::kError);
+        return;
+    }
+
+    ESP_LOGI(kTag, "Setting LED pattern: type=%d, period=%lu, brightness=%lu",
+             req.pattern.type, req.pattern.period_ms, req.pattern.brightness);
+
+    esp_err_t err = ledService_->setPattern(req.pattern);
+    if (err != ESP_OK) {
+        ESP_LOGW(kTag, "Failed to set LED pattern: %s", esp_err_to_name(err));
+        sendLedPatternResponse(Status::kInvalidPattern);
+        return;
+    }
+
+    sendLedPatternResponse(Status::kOk);
+}
+
+void ConfigCommandHandler::handleGetLedPattern() {
+    if (!ledService_) {
+        ESP_LOGW(kTag, "LED service not available");
+        sendLedPatternResponse(Status::kError);
+        return;
+    }
+
+    // Build response with current pattern
+    domes_config_GetLedPatternResponse resp = domes_config_GetLedPatternResponse_init_zero;
+    resp.has_pattern = true;
+    ledService_->getPattern(resp.pattern);
+
+    // Encode to buffer: [status_byte][GetLedPatternResponse_proto]
+    std::array<uint8_t, domes_config_GetLedPatternResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&ostream, domes_config_GetLedPatternResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode GetLedPatternResponse: %s", PB_GET_ERROR(&ostream));
+        return;
+    }
+
+    sendFrame(MsgType::kGetLedPatternRsp, payload.data(), 1 + ostream.bytes_written);
+}
+
+void ConfigCommandHandler::sendLedPatternResponse(Status status) {
+    // Build response with current pattern
+    domes_config_SetLedPatternResponse resp = domes_config_SetLedPatternResponse_init_zero;
+
+    if (ledService_ && status == Status::kOk) {
+        resp.has_pattern = true;
+        ledService_->getPattern(resp.pattern);
+    }
+
+    // Encode to buffer: [status_byte][SetLedPatternResponse_proto]
+    std::array<uint8_t, domes_config_SetLedPatternResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(status);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&ostream, domes_config_SetLedPatternResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode SetLedPatternResponse: %s", PB_GET_ERROR(&ostream));
+        return;
+    }
+
+    sendFrame(MsgType::kSetLedPatternRsp, payload.data(), 1 + ostream.bytes_written);
 }
 
 }  // namespace domes::config

@@ -28,6 +28,10 @@ enum class MsgType : uint8_t {
     kSetFeatureRsp   = domes_config_MsgType_MSG_TYPE_SET_FEATURE_RSP,
     kGetFeatureReq   = domes_config_MsgType_MSG_TYPE_GET_FEATURE_REQ,
     kGetFeatureRsp   = domes_config_MsgType_MSG_TYPE_GET_FEATURE_RSP,
+    kSetLedPatternReq = domes_config_MsgType_MSG_TYPE_SET_LED_PATTERN_REQ,
+    kSetLedPatternRsp = domes_config_MsgType_MSG_TYPE_SET_LED_PATTERN_RSP,
+    kGetLedPatternReq = domes_config_MsgType_MSG_TYPE_GET_LED_PATTERN_REQ,
+    kGetLedPatternRsp = domes_config_MsgType_MSG_TYPE_GET_LED_PATTERN_RSP,
 };
 
 /**
@@ -53,6 +57,7 @@ enum class Status : uint8_t {
     kError          = domes_config_Status_STATUS_ERROR,
     kInvalidFeature = domes_config_Status_STATUS_INVALID_FEATURE,
     kBusy           = domes_config_Status_STATUS_BUSY,
+    kInvalidPattern = domes_config_Status_STATUS_INVALID_PATTERN,
 };
 
 /**
@@ -60,7 +65,7 @@ enum class Status : uint8_t {
  */
 inline bool isConfigMessage(uint8_t type) {
     return type >= static_cast<uint8_t>(MsgType::kListFeaturesReq) &&
-           type <= static_cast<uint8_t>(MsgType::kGetFeatureRsp);
+           type <= static_cast<uint8_t>(MsgType::kGetLedPatternRsp);
 }
 
 /**
@@ -88,6 +93,7 @@ inline const char* statusToString(Status status) {
         case Status::kError:          return "error";
         case Status::kInvalidFeature: return "invalid-feature";
         case Status::kBusy:           return "busy";
+        case Status::kInvalidPattern: return "invalid-pattern";
         default:                      return "unknown";
     }
 }
