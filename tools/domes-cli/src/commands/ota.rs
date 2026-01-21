@@ -20,6 +20,19 @@ pub enum OtaMsgType {
     Abort = 0x05,
 }
 
+impl OtaMsgType {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0x01 => Some(OtaMsgType::Begin),
+            0x02 => Some(OtaMsgType::Data),
+            0x03 => Some(OtaMsgType::End),
+            0x04 => Some(OtaMsgType::Ack),
+            0x05 => Some(OtaMsgType::Abort),
+            _ => None,
+        }
+    }
+}
+
 /// OTA status codes
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -256,13 +269,9 @@ fn send_and_wait_ack(
         .receive_frame(timeout_ms)
         .context("Timeout waiting for OTA response")?;
 
-    match frame.msg_type {
-        0x04 => {
-            // OTA_ACK
-            deserialize_ota_ack(&frame.payload)
-        }
-        0x05 => {
-            // OTA_ABORT
+    match OtaMsgType::from_u8(frame.msg_type) {
+        Some(OtaMsgType::Ack) => deserialize_ota_ack(&frame.payload),
+        Some(OtaMsgType::Abort) => {
             let reason = deserialize_ota_abort(&frame.payload)?;
             anyhow::bail!("Device aborted OTA: {}", reason.to_string())
         }

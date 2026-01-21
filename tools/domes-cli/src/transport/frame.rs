@@ -20,29 +20,17 @@ pub const MAX_PAYLOAD_SIZE: usize = 1024;
 /// Frame overhead: 2 start + 2 len + 1 type + 4 crc = 9 bytes
 pub const FRAME_OVERHEAD: usize = 9;
 
-/// Maximum frame size
-pub const MAX_FRAME_SIZE: usize = MAX_PAYLOAD_SIZE + FRAME_OVERHEAD;
-
 /// Frame codec errors
 #[derive(Debug, Error)]
 pub enum FrameError {
     #[error("Payload too large: {0} > {MAX_PAYLOAD_SIZE}")]
     PayloadTooLarge(usize),
 
-    #[error("Buffer too small: need {0}, have {1}")]
-    BufferTooSmall(usize, usize),
-
-    #[error("Invalid start bytes")]
-    InvalidStart,
-
     #[error("Invalid length: {0}")]
     InvalidLength(u16),
 
     #[error("CRC mismatch: expected 0x{expected:08X}, got 0x{actual:08X}")]
     CrcMismatch { expected: u32, actual: u32 },
-
-    #[error("Incomplete frame: need {0} more bytes")]
-    Incomplete(usize),
 }
 
 /// Encode a frame with the given type and payload
@@ -249,16 +237,6 @@ impl FrameDecoder {
                 None
             }
         }
-    }
-
-    /// Check if decoder is in error state
-    pub fn is_error(&self) -> bool {
-        self.state == DecoderState::Error
-    }
-
-    /// Check if decoder completed a frame
-    pub fn is_complete(&self) -> bool {
-        self.state == DecoderState::Complete
     }
 }
 

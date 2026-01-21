@@ -27,8 +27,6 @@ const OTA_STATUS_CHAR_UUID: Uuid = Uuid::from_u128(0x12345678_1234_5678_1234_567
 /// Default BLE operation timeout
 const DEFAULT_TIMEOUT_MS: u64 = 5000;
 
-/// Default scan timeout for device discovery
-const DEFAULT_SCAN_TIMEOUT_SECS: u64 = 10;
 
 /// Target device identifier for BLE connection
 #[derive(Clone, Debug)]
@@ -53,13 +51,11 @@ impl BleTarget {
 /// BLE transport for communicating with DOMES device
 pub struct BleTransport {
     runtime: Runtime,
-    adapter: Adapter,
     peripheral: Peripheral,
     data_char: Characteristic,
     status_char: Characteristic,
     rx_receiver: Receiver<Vec<u8>>,
     decoder: FrameDecoder,
-    target: BleTarget,
     device_name: String,
     auto_reconnect: bool,
 }
@@ -136,15 +132,16 @@ impl BleTransport {
         // Set up notification listener
         let rx_receiver = setup_notification_listener(&runtime, &peripheral)?;
 
+        // adapter and target are not stored as they're not needed after connection
+        let _ = adapter;
+
         Ok(Self {
             runtime,
-            adapter,
             peripheral,
             data_char,
             status_char,
             rx_receiver,
             decoder: FrameDecoder::new(),
-            target,
             device_name,
             auto_reconnect,
         })
@@ -232,12 +229,6 @@ impl BleTransport {
             .unwrap_or(false)
     }
 
-    /// Get negotiated MTU (if available)
-    pub fn mtu(&self) -> Option<u16> {
-        // btleplug doesn't expose MTU directly, return None
-        // The actual MTU negotiation happens during connection
-        None
-    }
 
     /// Send a frame to the device
     pub fn send_frame(&mut self, msg_type: u8, payload: &[u8]) -> Result<()> {

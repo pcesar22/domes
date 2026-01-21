@@ -45,28 +45,3 @@ pub fn led_set(transport: &mut dyn Transport, pattern: &CliLedPattern) -> Result
 pub fn led_off(transport: &mut dyn Transport) -> Result<CliLedPattern> {
     led_set(transport, &CliLedPattern::off())
 }
-
-/// Set solid color
-pub fn led_solid(transport: &mut dyn Transport, r: u8, g: u8, b: u8) -> Result<CliLedPattern> {
-    led_set(transport, &CliLedPattern::solid(r, g, b))
-}
-
-/// Set breathing pattern
-pub fn led_breathing(
-    transport: &mut dyn Transport,
-    r: u8,
-    g: u8,
-    b: u8,
-    period_ms: u32,
-) -> Result<CliLedPattern> {
-    led_set(transport, &CliLedPattern::breathing(r, g, b, period_ms))
-}
-
-/// Set color cycle pattern
-pub fn led_color_cycle(
-    transport: &mut dyn Transport,
-    colors: Vec<(u8, u8, u8, u8)>,
-    period_ms: u32,
-) -> Result<CliLedPattern> {
-    led_set(transport, &CliLedPattern::color_cycle(colors, period_ms))
-}

@@ -68,13 +68,6 @@ struct TraceStatusResponse {
     buffer_size: u32,
 }
 
-/// ACK response payload
-#[repr(C, packed)]
-#[derive(Debug, Clone, Copy)]
-struct TraceAckResponse {
-    status: u8,
-}
-
 /// Trace status information
 #[derive(Debug)]
 pub struct TraceStatusInfo {
