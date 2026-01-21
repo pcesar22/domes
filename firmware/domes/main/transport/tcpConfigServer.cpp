@@ -171,6 +171,7 @@ void TcpConfigServer::handleClient(int clientSock) {
 
     // Create config handler for this connection
     config::ConfigCommandHandler handler(transport, features_);
+    handler.setLedService(ledService_);
 
     // Frame decoder
     FrameDecoder decoder;

@@ -217,7 +217,7 @@ static void bleHostTask(void* param) {
 }
 
 static void bleSyncCb() {
-    ESP_LOGI(kTag, ">>> bleSyncCb called - NimBLE host synced");
+    ESP_LOGI(kTag, "NimBLE host synced");
 
     // Generate random address if needed
     int rc = ble_hs_util_ensure_addr(0);
@@ -225,14 +225,12 @@ static void bleSyncCb() {
         ESP_LOGE(kTag, "Failed to ensure address: %d", rc);
         return;
     }
-    ESP_LOGI(kTag, ">>> Address ensured OK");
 
     // Start advertising
     if (g_bleOtaService != nullptr) {
-        ESP_LOGI(kTag, ">>> Calling startAdvertising()...");
         g_bleOtaService->startAdvertising();
     } else {
-        ESP_LOGE(kTag, ">>> g_bleOtaService is null!");
+        ESP_LOGE(kTag, "BLE service instance is null!");
     }
 }
 
@@ -306,8 +304,9 @@ TransportError BleOtaService::init() {
         ESP_LOGW(kTag, "Failed to set device name: %d", rc);
     }
 
-    // Store status char handle
-    statusCharHandle_ = g_statusCharHandle;
+    // NOTE: g_statusCharHandle is populated by NimBLE after host task syncs,
+    // so we can't copy it here. We'll read it directly in send().
+    // statusCharHandle_ will be set after sync in bleSyncCb.
 
     // Set initialized BEFORE starting host task so sync callback can advertise
     initialized_ = true;
@@ -333,6 +332,14 @@ TransportError BleOtaService::send(const uint8_t* data, size_t len) {
         return TransportError::kInvalidArg;
     }
 
+    // Use global status char handle (populated by NimBLE after sync)
+    uint16_t charHandle = g_statusCharHandle;
+
+    if (charHandle == 0) {
+        ESP_LOGE(kTag, "Status characteristic handle not initialized!");
+        return TransportError::kNotInitialized;
+    }
+
     // Send via notification on status characteristic
     struct os_mbuf* om = ble_hs_mbuf_from_flat(data, len);
     if (om == nullptr) {
@@ -340,7 +347,7 @@ TransportError BleOtaService::send(const uint8_t* data, size_t len) {
         return TransportError::kIoError;
     }
 
-    int rc = ble_gatts_notify_custom(connHandle_, statusCharHandle_, om);
+    int rc = ble_gatts_notify_custom(connHandle_, charHandle, om);
     if (rc != 0) {
         ESP_LOGE(kTag, "Failed to send notification: %d", rc);
         return TransportError::kIoError;

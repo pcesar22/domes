@@ -6,6 +6,9 @@
 #error Regenerate this file with the current version of nanopb generator.
 #endif
 
+PB_BIND(domes_config_Color, domes_config_Color, AUTO)
+
+
 PB_BIND(domes_config_FeatureState, domes_config_FeatureState, AUTO)
 
 
@@ -15,16 +18,33 @@ PB_BIND(domes_config_ListFeaturesRequest, domes_config_ListFeaturesRequest, AUTO
 PB_BIND(domes_config_SetFeatureRequest, domes_config_SetFeatureRequest, AUTO)
 
 
+PB_BIND(domes_config_LedPattern, domes_config_LedPattern, AUTO)
+
+
+PB_BIND(domes_config_SetLedPatternRequest, domes_config_SetLedPatternRequest, AUTO)
+
+
+PB_BIND(domes_config_GetLedPatternRequest, domes_config_GetLedPatternRequest, AUTO)
+
+
 PB_BIND(domes_config_ListFeaturesResponse, domes_config_ListFeaturesResponse, AUTO)
 
 
 PB_BIND(domes_config_SetFeatureResponse, domes_config_SetFeatureResponse, AUTO)
 
 
+PB_BIND(domes_config_SetLedPatternResponse, domes_config_SetLedPatternResponse, AUTO)
+
+
+PB_BIND(domes_config_GetLedPatternResponse, domes_config_GetLedPatternResponse, AUTO)
+
+
 PB_BIND(domes_config_ConfigRequest, domes_config_ConfigRequest, AUTO)
 
 
 PB_BIND(domes_config_ConfigResponse, domes_config_ConfigResponse, AUTO)
+
+
 
 
 

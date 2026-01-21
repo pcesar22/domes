@@ -21,6 +21,8 @@
 
 namespace domes {
 
+class LedService;  // Forward declaration
+
 /**
  * @brief FreeRTOS task that receives OTA updates via serial transport
  *
@@ -75,6 +77,17 @@ public:
      * @brief Get expected firmware size
      */
     size_t getFirmwareSize() const { return firmwareSize_; }
+
+    /**
+     * @brief Set LED service for pattern commands
+     *
+     * @param ledService LED service instance
+     */
+    void setLedService(LedService* ledService) {
+        if (configHandler_) {
+            configHandler_->setLedService(ledService);
+        }
+    }
 
 private:
     /**

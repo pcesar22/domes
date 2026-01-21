@@ -7,6 +7,11 @@
 //!   domes-cli --port /dev/ttyACM0 wifi enable
 //!   domes-cli --port /dev/ttyACM0 wifi disable
 //!   domes-cli --port /dev/ttyACM0 wifi status
+//!   domes-cli --port /dev/ttyACM0 led get
+//!   domes-cli --port /dev/ttyACM0 led off
+//!   domes-cli --port /dev/ttyACM0 led solid --color ff0000
+//!   domes-cli --port /dev/ttyACM0 led breathing --color 00ff00 --period 2000
+//!   domes-cli --port /dev/ttyACM0 led cycle --period 3000
 //!   domes-cli --port /dev/ttyACM0 ota flash firmware.bin --version v1.2.3
 //!   domes-cli --port /dev/ttyACM0 trace start
 //!   domes-cli --port /dev/ttyACM0 trace stop
@@ -17,7 +22,13 @@
 //!   domes-cli --wifi 192.168.1.100:5000 feature list
 //!   domes-cli --wifi 192.168.1.100:5000 feature enable led-effects
 //!   domes-cli --wifi 192.168.1.100:5000 wifi status
+//!   domes-cli --wifi 192.168.1.100:5000 led cycle --period 2000
 //!   domes-cli --wifi 192.168.1.100:5000 ota flash firmware.bin
+//!
+//! Usage (BLE):
+//!   domes-cli --scan-ble                           # Scan for nearby DOMES devices
+//!   domes-cli --ble "DOMES-Pod" feature list       # Connect by name
+//!   domes-cli --ble "AA:BB:CC:DD:EE:FF" led solid  # Connect by MAC address
 
 mod commands;
 mod proto;
@@ -27,7 +38,8 @@ mod transport;
 use clap::{Parser, Subcommand};
 use proto::config::Feature;
 use std::path::PathBuf;
-use transport::{SerialTransport, TcpTransport, Transport};
+use std::time::Duration;
+use transport::{BleTarget, BleTransport, SerialTransport, TcpTransport, Transport};
 
 #[derive(Parser)]
 #[command(name = "domes-cli")]
@@ -40,6 +52,14 @@ struct Cli {
     /// WiFi address to connect to (e.g., 192.168.1.100:5000)
     #[arg(short, long)]
     wifi: Option<String>,
+
+    /// BLE device name or address (e.g., "DOMES-Pod" or "AA:BB:CC:DD:EE:FF")
+    #[arg(short, long)]
+    ble: Option<String>,
+
+    /// Scan for nearby BLE devices
+    #[arg(long)]
+    scan_ble: bool,
 
     /// List available serial ports
     #[arg(long)]
@@ -61,6 +81,12 @@ enum Commands {
     Wifi {
         #[command(subcommand)]
         action: WifiAction,
+    },
+
+    /// Control LED patterns
+    Led {
+        #[command(subcommand)]
+        action: LedAction,
     },
 
     /// Over-the-air firmware updates
@@ -141,6 +167,52 @@ enum TraceAction {
     },
 }
 
+#[derive(Subcommand)]
+enum LedAction {
+    /// Get current LED pattern
+    Get,
+
+    /// Turn LEDs off
+    Off,
+
+    /// Set solid color (e.g., led solid --color ff0000)
+    Solid {
+        /// Hex color (e.g., ff0000 for red)
+        #[arg(short, long, default_value = "ffffff")]
+        color: String,
+
+        /// Brightness (0-255)
+        #[arg(short, long, default_value = "128")]
+        brightness: u8,
+    },
+
+    /// Set breathing pattern (pulsing brightness)
+    Breathing {
+        /// Hex color (e.g., 00ff00 for green)
+        #[arg(short, long, default_value = "00ff00")]
+        color: String,
+
+        /// Breathing period in ms (time for one full cycle)
+        #[arg(short, long, default_value = "2000")]
+        period: u32,
+
+        /// Brightness (0-255)
+        #[arg(short, long, default_value = "128")]
+        brightness: u8,
+    },
+
+    /// Set color cycle pattern (automatic color transitions)
+    Cycle {
+        /// Cycle period in ms (time between color changes)
+        #[arg(short, long, default_value = "2000")]
+        period: u32,
+
+        /// Brightness (0-255)
+        #[arg(short, long, default_value = "128")]
+        brightness: u8,
+    },
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -158,14 +230,39 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Commands require a transport (port or wifi)
+    // Handle --scan-ble
+    if cli.scan_ble {
+        println!("Scanning for DOMES devices via BLE (10 seconds)...");
+        let devices = BleTransport::scan_devices(Duration::from_secs(10))?;
+        if devices.is_empty() {
+            println!("No DOMES devices found");
+        } else {
+            println!("Found DOMES devices:");
+            println!("{:<20} {}", "NAME", "ADDRESS");
+            println!("{:-<20} {:-<17}", "", "");
+            for (name, addr) in devices {
+                let display_name = if name.is_empty() { "(unknown)" } else { &name };
+                println!("{:<20} {}", display_name, addr);
+            }
+        }
+        return Ok(());
+    }
+
+    // Commands require a transport (port, wifi, or ble)
     let Some(command) = cli.command else {
         eprintln!("No command specified. Use --help for usage.");
         std::process::exit(1);
     };
 
     // Create transport based on connection type
-    let mut transport: Box<dyn Transport> = if let Some(wifi_addr) = cli.wifi {
+    let mut transport: Box<dyn Transport> = if let Some(ble_target) = cli.ble {
+        // BLE transport
+        let target = BleTarget::parse(&ble_target);
+        println!("Scanning for BLE device '{}'...", ble_target);
+        let ble = BleTransport::connect(target, Duration::from_secs(10), true)?;
+        println!("Connected to {} ({})", ble.device_name(), ble.device_address());
+        Box::new(ble)
+    } else if let Some(wifi_addr) = cli.wifi {
         // WiFi/TCP transport
         println!("Connecting to {} via WiFi...", wifi_addr);
         let tcp = TcpTransport::connect(&wifi_addr)?;
@@ -175,8 +272,9 @@ fn main() -> anyhow::Result<()> {
         // Serial transport
         Box::new(SerialTransport::open(&port)?)
     } else {
-        eprintln!("No transport specified. Use --port <PORT> or --wifi <IP:PORT>");
+        eprintln!("No transport specified. Use --port <PORT>, --wifi <IP:PORT>, or --ble <NAME>");
         eprintln!("Use --list-ports to see available serial ports.");
+        eprintln!("Use --scan-ble to scan for nearby BLE devices.");
         std::process::exit(1);
     };
 
@@ -247,6 +345,55 @@ fn main() -> anyhow::Result<()> {
             }
         },
 
+        Commands::Led { action } => match action {
+            LedAction::Get => {
+                let pattern = commands::led_get(transport.as_mut())?;
+                print_led_pattern(&pattern);
+            }
+
+            LedAction::Off => {
+                let pattern = commands::led_off(transport.as_mut())?;
+                println!("LEDs turned off");
+                print_led_pattern(&pattern);
+            }
+
+            LedAction::Solid { color, brightness } => {
+                let (r, g, b) = parse_hex_color(&color)?;
+                let mut pattern = crate::protocol::CliLedPattern::solid(r, g, b);
+                pattern.brightness = brightness;
+                let pattern = commands::led_set(transport.as_mut(), &pattern)?;
+                println!("LED pattern set to solid");
+                print_led_pattern(&pattern);
+            }
+
+            LedAction::Breathing { color, period, brightness } => {
+                let (r, g, b) = parse_hex_color(&color)?;
+                let mut pattern = crate::protocol::CliLedPattern::breathing(r, g, b, period);
+                pattern.brightness = brightness;
+                let pattern = commands::led_set(transport.as_mut(), &pattern)?;
+                println!("LED pattern set to breathing");
+                print_led_pattern(&pattern);
+            }
+
+            LedAction::Cycle { period, brightness } => {
+                // Default rainbow colors for color cycle
+                let colors = vec![
+                    (255, 0, 0, 0),     // Red
+                    (255, 127, 0, 0),   // Orange
+                    (255, 255, 0, 0),   // Yellow
+                    (0, 255, 0, 0),     // Green
+                    (0, 0, 255, 0),     // Blue
+                    (75, 0, 130, 0),    // Indigo
+                    (148, 0, 211, 0),   // Violet
+                ];
+                let mut pattern = crate::protocol::CliLedPattern::color_cycle(colors, period);
+                pattern.brightness = brightness;
+                let pattern = commands::led_set(transport.as_mut(), &pattern)?;
+                println!("LED pattern set to color cycle");
+                print_led_pattern(&pattern);
+            }
+        },
+
         Commands::Ota { action } => match action {
             OtaAction::Flash { firmware, version } => {
                 commands::ota_flash(
@@ -297,4 +444,46 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Parse hex color string (e.g., "ff0000" or "FF0000") to RGB
+fn parse_hex_color(color: &str) -> anyhow::Result<(u8, u8, u8)> {
+    let color = color.trim_start_matches('#');
+    if color.len() != 6 {
+        anyhow::bail!("Color must be 6 hex characters (e.g., ff0000)");
+    }
+
+    let r = u8::from_str_radix(&color[0..2], 16)
+        .map_err(|_| anyhow::anyhow!("Invalid red component"))?;
+    let g = u8::from_str_radix(&color[2..4], 16)
+        .map_err(|_| anyhow::anyhow!("Invalid green component"))?;
+    let b = u8::from_str_radix(&color[4..6], 16)
+        .map_err(|_| anyhow::anyhow!("Invalid blue component"))?;
+
+    Ok((r, g, b))
+}
+
+/// Print LED pattern in a human-readable format
+fn print_led_pattern(pattern: &crate::protocol::CliLedPattern) {
+    use crate::proto::config::LedPatternType;
+
+    let type_name = match pattern.pattern_type {
+        LedPatternType::LedPatternOff => "off",
+        LedPatternType::LedPatternSolid => "solid",
+        LedPatternType::LedPatternBreathing => "breathing",
+        LedPatternType::LedPatternColorCycle => "color-cycle",
+    };
+
+    println!("  Type:       {}", type_name);
+
+    if let Some((r, g, b, w)) = pattern.color {
+        println!("  Color:      #{:02x}{:02x}{:02x} (RGBW: {},{},{},{})", r, g, b, r, g, b, w);
+    }
+
+    if !pattern.colors.is_empty() {
+        println!("  Colors:     {} colors in cycle", pattern.colors.len());
+    }
+
+    println!("  Period:     {} ms", pattern.period_ms);
+    println!("  Brightness: {}", pattern.brightness);
 }

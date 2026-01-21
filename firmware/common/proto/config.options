@@ -3,3 +3,6 @@
 
 # ListFeaturesResponse: max 16 features in array
 domes.config.ListFeaturesResponse.features  max_count:16
+
+# LedPattern: max 8 colors for color cycle
+domes.config.LedPattern.colors  max_count:8

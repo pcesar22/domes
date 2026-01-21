@@ -21,6 +21,8 @@
 
 namespace domes {
 
+class LedService;  // Forward declaration
+
 /**
  * @brief Default TCP port for config server
  */
@@ -88,6 +90,13 @@ public:
      */
     size_t getClientCount() const { return clientCount_.load(); }
 
+    /**
+     * @brief Set LED service for pattern commands
+     *
+     * @param ledService LED service instance
+     */
+    void setLedService(LedService* ledService) { ledService_ = ledService; }
+
 private:
     /**
      * @brief Handle a single client connection
@@ -101,6 +110,7 @@ private:
 
     config::FeatureManager& features_;
     uint16_t port_;
+    LedService* ledService_ = nullptr;
 
     std::atomic<bool> stopRequested_;
     std::atomic<int> listenSocket_;

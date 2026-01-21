@@ -12,6 +12,7 @@
 #include "infra/taskManager.hpp"
 #include "infra/watchdog.hpp"
 #include "services/githubClient.hpp"
+#include "services/ledService.hpp"
 #include "services/otaManager.hpp"
 #include "trace/traceApi.hpp"
 #include "config/featureManager.hpp"
@@ -62,6 +63,7 @@ static domes::SerialOtaReceiver* serialOtaReceiver = nullptr;
 static domes::BleOtaService* bleOtaService = nullptr;
 static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
 static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
+static domes::LedService* ledService = nullptr;  // LED pattern service
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::TcpConfigServer* tcpConfigServer = nullptr;  // WiFi config server
@@ -212,6 +214,30 @@ static void initFeatureManager() {
 }
 
 /**
+ * @brief Initialize LED service for pattern control
+ *
+ * Requires ledDriver and featureManager to be initialized first.
+ */
+static esp_err_t initLedService() {
+    if (!ledDriver || !featureManager) {
+        ESP_LOGE(kTag, "Cannot init LED service: dependencies not ready");
+        return ESP_FAIL;
+    }
+
+    static domes::LedService service(*ledDriver, *featureManager);
+    ledService = &service;
+
+    esp_err_t err = ledService->start();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "LED service start failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(kTag, "LED service started");
+    return ESP_OK;
+}
+
+/**
  * @brief Initialize serial OTA receiver
  *
  * Sets up USB-CDC transport and starts the serial OTA receiver task.
@@ -234,6 +260,11 @@ static esp_err_t initSerialOta() {
     // Create serial OTA receiver with config support
     static domes::SerialOtaReceiver receiver(*usbCdcTransport, featureManager);
     serialOtaReceiver = &receiver;
+
+    // Wire up LED service for pattern commands
+    if (ledService) {
+        serialOtaReceiver->setLedService(ledService);
+    }
 
     // Create receiver task
     domes::infra::TaskConfig config = {
@@ -279,10 +310,10 @@ static esp_err_t initBleOta() {
     static domes::SerialOtaReceiver receiver(*bleOtaService, featureManager);
     bleOtaReceiver = &receiver;
 
-    // Create receiver task
+    // Create receiver task (needs 8KB stack for config command processing and protobuf)
     domes::infra::TaskConfig config = {
         .name = "ble_ota",
-        .stackSize = 4096,
+        .stackSize = 8192,
         .priority = domes::infra::priority::kMedium,
         .coreAffinity = domes::infra::core::kProtocol,  // Core 0 for BLE
         .subscribeToWatchdog = false                    // OTA can take a long time
@@ -317,6 +348,11 @@ static esp_err_t initTcpConfigServer() {
     // Create TCP config server
     static domes::TcpConfigServer server(*featureManager, domes::kConfigServerPort);
     tcpConfigServer = &server;
+
+    // Wire up LED service for pattern commands
+    if (ledService) {
+        tcpConfigServer->setLedService(ledService);
+    }
 
     // Create server task
     domes::infra::TaskConfig config = {
@@ -537,7 +573,15 @@ extern "C" void app_main() {
         handleOtaVerification();
     }
 
-    // Initialize BLE OTA service (before serial takes over console)
+    // Initialize feature manager FIRST (needed by BLE, TCP config server, and serial OTA)
+    initFeatureManager();
+
+    // Initialize LED service (needed for LED pattern commands)
+    if (initLedService() != ESP_OK) {
+        ESP_LOGW(kTag, "LED service init failed, continuing without LED patterns");
+    }
+
+    // Initialize BLE OTA service (after feature manager so config commands work over BLE)
     ESP_LOGI(kTag, "Initializing BLE stack...");
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
     size_t heapBeforeBle = esp_get_free_heap_size();
@@ -547,13 +591,15 @@ extern "C" void app_main() {
         size_t heapAfterBle = esp_get_free_heap_size();
         ESP_LOGI(kTag, "BLE stack initialized (NimBLE + advertising)");
         ESP_LOGI(kTag, "BLE heap usage: %zu bytes", heapBeforeBle - heapAfterBle);
+
+        // Wire up LED service for pattern commands over BLE
+        if (bleOtaReceiver && ledService) {
+            bleOtaReceiver->setLedService(ledService);
+        }
     }
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
 
     vTaskDelay(pdMS_TO_TICKS(500));  // Let BLE settle
-
-    // Initialize feature manager (needed by both TCP config server and serial OTA)
-    initFeatureManager();
 
     // Initialize TCP config server (WiFi-based config) - BEFORE serial OTA takes console
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
