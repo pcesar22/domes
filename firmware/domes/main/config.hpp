@@ -86,6 +86,17 @@ constexpr uint32_t kWatchdogTimeoutS = 10;
 }  // namespace timing
 
 // =============================================================================
+// Initialization Timing (main.cpp)
+// =============================================================================
+namespace init_timing {
+constexpr uint32_t kLogFlushDelayMs = 100;      // Delay to flush logs before stack init
+constexpr uint32_t kBleSettleDelayMs = 500;     // Let BLE stack settle after init
+constexpr uint32_t kWifiConnectTimeoutS = 30;   // Max wait for WiFi connection
+constexpr uint32_t kStatusIndicatorMs = 2000;   // LED status indication duration
+constexpr uint32_t kMinHeapForSelfTest = 50000; // Minimum heap for self-test pass
+}  // namespace init_timing
+
+// =============================================================================
 // LED Configuration
 // =============================================================================
 namespace led {
