@@ -78,8 +78,8 @@ impl OtaStatus {
     }
 }
 
-/// OTA chunk size (matches firmware kOtaChunkSize)
-const OTA_CHUNK_SIZE: usize = 1016;
+// Note: OTA chunk size is now determined by the transport's max_ota_chunk_size() method
+// to handle different MTU limits (BLE uses smaller chunks than serial/TCP)
 
 /// SHA256 size
 const SHA256_SIZE: usize = 32;
@@ -128,12 +128,17 @@ pub fn ota_flash(
     println!("Device accepted OTA_BEGIN.");
 
     // Send firmware chunks
-    println!("Sending firmware data...");
+    // Use transport-specific chunk size (BLE needs smaller chunks due to MTU limits)
+    let ota_chunk_size = transport.max_ota_chunk_size();
+    println!(
+        "Sending firmware data (chunk size: {} bytes)...",
+        ota_chunk_size
+    );
     let mut offset: usize = 0;
     let total = firmware.len();
 
     while offset < total {
-        let chunk_size = std::cmp::min(OTA_CHUNK_SIZE, total - offset);
+        let chunk_size = std::cmp::min(ota_chunk_size, total - offset);
         let chunk = &firmware[offset..offset + chunk_size];
 
         let data_payload = serialize_ota_data(offset as u32, chunk);
