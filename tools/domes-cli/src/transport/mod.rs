@@ -14,6 +14,15 @@ pub use tcp::TcpTransport;
 
 use anyhow::Result;
 
+/// Default OTA chunk size for serial/TCP (matches firmware kOtaChunkSize)
+pub const OTA_CHUNK_SIZE_DEFAULT: usize = 1016;
+
+/// BLE OTA chunk size - smaller to fit within BLE MTU limits
+/// BLE MTU is typically 512 bytes max, with ATT overhead of 3 bytes = 509 bytes usable
+/// Frame overhead is 9 bytes, so max payload is ~500 bytes
+/// Using 400 bytes to leave margin for safety
+pub const OTA_CHUNK_SIZE_BLE: usize = 400;
+
 /// Transport trait for abstracting serial vs TCP vs BLE communication
 pub trait Transport {
     /// Send a frame to the device
@@ -24,6 +33,12 @@ pub trait Transport {
 
     /// Send a command and wait for response
     fn send_command(&mut self, msg_type: u8, payload: &[u8]) -> Result<Frame>;
+
+    /// Get the maximum OTA chunk size for this transport
+    /// BLE has lower limits due to MTU constraints
+    fn max_ota_chunk_size(&self) -> usize {
+        OTA_CHUNK_SIZE_DEFAULT
+    }
 }
 
 impl Transport for SerialTransport {
@@ -65,5 +80,9 @@ impl Transport for BleTransport {
 
     fn send_command(&mut self, msg_type: u8, payload: &[u8]) -> Result<Frame> {
         self.send_command(msg_type, payload)
+    }
+
+    fn max_ota_chunk_size(&self) -> usize {
+        OTA_CHUNK_SIZE_BLE
     }
 }
