@@ -492,16 +492,76 @@ static esp_err_t initWifiForEspNow() {
 }
 
 static esp_err_t initLedStrip() {
-    static domes::LedStripDriver<pins::kLedCount> driver(pins::kLedData, false);
+    ESP_LOGI(kTag, "LED init: GPIO=%d, count=%d, RGBW=%s",
+             static_cast<int>(pins::kLedData),
+             pins::kLedCount,
+             pins::kLedIsRgbw ? "yes" : "no");
+
+    static domes::LedStripDriver<pins::kLedCount> driver(pins::kLedData, pins::kLedIsRgbw);
     ledDriver = &driver;
 
     esp_err_t err = ledDriver->init();
     if (err != ESP_OK) {
-        ESP_LOGE(kTag, "LED init failed: %s", esp_err_to_name(err));
+        ESP_LOGE(kTag, "LED strip init FAILED: %s", esp_err_to_name(err));
         return err;
     }
+    ESP_LOGI(kTag, "LED strip init OK");
 
     ledDriver->setBrightness(led::kDefaultBrightness);
+    ESP_LOGI(kTag, "LED brightness set to %d", led::kDefaultBrightness);
+
+    // Test pattern: cycle through R, G, B, W (if RGBW) to verify all LEDs work
+    ESP_LOGI(kTag, "LED test: RED");
+    err = ledDriver->setAll(domes::Color::red());
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "LED setAll(red) FAILED: %s", esp_err_to_name(err));
+        return err;
+    }
+    err = ledDriver->refresh();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "LED refresh FAILED: %s", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(kTag, "LED refresh OK - should see RED");
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    ESP_LOGI(kTag, "LED test: GREEN");
+    ledDriver->setAll(domes::Color::green());
+    err = ledDriver->refresh();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "LED refresh FAILED: %s", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(kTag, "LED refresh OK - should see GREEN");
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    ESP_LOGI(kTag, "LED test: BLUE");
+    ledDriver->setAll(domes::Color::blue());
+    err = ledDriver->refresh();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "LED refresh FAILED: %s", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(kTag, "LED refresh OK - should see BLUE");
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    if (pins::kLedIsRgbw) {
+        ESP_LOGI(kTag, "LED test: WHITE (W channel)");
+        ledDriver->setAll(domes::Color::white());
+        err = ledDriver->refresh();
+        if (err != ESP_OK) {
+            ESP_LOGE(kTag, "LED refresh FAILED: %s", esp_err_to_name(err));
+            return err;
+        }
+        ESP_LOGI(kTag, "LED refresh OK - should see WHITE");
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    // Clear LEDs after test
+    ESP_LOGI(kTag, "LED test complete, clearing");
+    ledDriver->clear();
+    ledDriver->refresh();
+
     return ESP_OK;
 }
 
