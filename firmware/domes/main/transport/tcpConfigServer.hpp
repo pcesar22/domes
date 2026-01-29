@@ -22,6 +22,7 @@
 namespace domes {
 
 class LedService;  // Forward declaration
+class ImuService;  // Forward declaration
 
 /**
  * @brief Default TCP port for config server
@@ -97,6 +98,13 @@ public:
      */
     void setLedService(LedService* ledService) { ledService_ = ledService; }
 
+    /**
+     * @brief Set IMU service for triage commands
+     *
+     * @param imuService IMU service instance
+     */
+    void setImuService(ImuService* imuService) { imuService_ = imuService; }
+
 private:
     /**
      * @brief Handle a single client connection
@@ -111,6 +119,7 @@ private:
     config::FeatureManager& features_;
     uint16_t port_;
     LedService* ledService_ = nullptr;
+    ImuService* imuService_ = nullptr;
 
     std::atomic<bool> stopRequested_;
     std::atomic<int> listenSocket_;
