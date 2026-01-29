@@ -238,7 +238,9 @@ static esp_err_t initLedService() {
         return err;
     }
 
-    ESP_LOGI(kTag, "LED service started");
+    // Enable LED effects feature by default
+    featureManager->setEnabled(domes::config::Feature::kLedEffects, true);
+    ESP_LOGI(kTag, "LED service started, LED effects enabled");
     return ESP_OK;
 }
 
@@ -554,6 +556,34 @@ static esp_err_t initLedStrip() {
     }
 
     ledDriver->setBrightness(led::kDefaultBrightness);
+
+    // Startup LED test - cycle through colors to verify LED format
+    ESP_LOGI(kTag, "LED startup test - showing RED");
+    ledDriver->setAll(domes::Color::red());
+    ledDriver->refresh();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    ESP_LOGI(kTag, "LED startup test - showing GREEN");
+    ledDriver->setAll(domes::Color::green());
+    ledDriver->refresh();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    ESP_LOGI(kTag, "LED startup test - showing BLUE");
+    ledDriver->setAll(domes::Color::blue());
+    ledDriver->refresh();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    if (pins::kLedIsRgbw) {
+        ESP_LOGI(kTag, "LED startup test - showing WHITE (W channel only)");
+        ledDriver->setAll(domes::Color::rgbw(0, 0, 0, 255));  // Pure white channel
+        ledDriver->refresh();
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    ESP_LOGI(kTag, "LED startup test complete");
+    ledDriver->clear();
+    ledDriver->refresh();
+
     return ESP_OK;
 }
 

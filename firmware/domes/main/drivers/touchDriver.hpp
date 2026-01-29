@@ -32,6 +32,9 @@ public:
         : pins_(pins), initialized_(false) {
         states_.fill({});
         touchChannels_.fill(TOUCH_PAD_MAX);
+        baselines_.fill(0);
+        lastRawValues_.fill(0);
+        stuckCount_.fill(0);
     }
 
     ~TouchDriver() override {
@@ -125,23 +128,46 @@ public:
 
         for (uint8_t i = 0; i < kNumPads; i++) {
             uint32_t rawValue = 0;
-            uint32_t benchmark = 0;
 
-            // Read both raw and benchmark values
+            // Read raw value
             touch_pad_read_raw_data(touchChannels_[i], &rawValue);
-            touch_pad_read_benchmark(touchChannels_[i], &benchmark);
 
             states_[i].rawValue = rawValue;
 
-            // Touch detected when raw value differs significantly from benchmark
-            // The benchmark tracks the "untouched" baseline automatically
-            if (benchmark > 0) {
-                // If raw is significantly higher than benchmark, touch detected
-                uint32_t diff = (rawValue > benchmark) ? (rawValue - benchmark) : 0;
-                uint32_t diffThreshold = benchmark / 10;  // 10% change threshold
-                states_[i].touched = (diff > diffThreshold);
-                states_[i].threshold = benchmark + diffThreshold;  // For logging
+            // Use our calibrated baseline for comparison
+            uint32_t baseline = baselines_[i];
+            if (baseline == 0) {
+                // Not calibrated yet - skip
+                states_[i].touched = false;
+                continue;
             }
+
+            // Touch detected when raw value is significantly higher than baseline
+            // High values during touch are NORMAL - don't treat as saturation
+            uint32_t diffThreshold = baseline / 20;  // 5% change threshold
+            states_[i].threshold = baseline + diffThreshold;
+
+            if (rawValue > baseline + diffThreshold) {
+                states_[i].touched = true;
+            } else {
+                states_[i].touched = false;
+            }
+
+            // Detect STUCK state: exact same high value for many consecutive reads
+            // This indicates FSM is frozen, not a normal touch
+            if (rawValue == lastRawValues_[i] && rawValue > baseline * 3) {
+                stuckCount_[i]++;
+                if (stuckCount_[i] > kStuckResetThreshold) {
+                    ESP_LOGW(kTag, "Pad %d stuck at %lu, resetting FSM...", i, rawValue);
+                    resetFsm();
+                    stuckCount_[i] = 0;
+                    return ESP_OK;  // Exit early, will re-read next cycle
+                }
+            } else {
+                stuckCount_[i] = 0;
+            }
+
+            lastRawValues_[i] = rawValue;
         }
 
         return ESP_OK;
@@ -168,21 +194,39 @@ public:
             return ESP_ERR_INVALID_STATE;
         }
 
-        ESP_LOGI(kTag, "Calibrating touch pads (using benchmark)...");
+        ESP_LOGI(kTag, "Calibrating touch pads (capturing baseline)...");
 
-        // Read benchmark values which auto-track untouched baseline
+        // Take multiple readings and average to get stable baseline
         for (uint8_t i = 0; i < kNumPads; i++) {
-            uint32_t rawValue = 0;
-            uint32_t benchmark = 0;
+            uint32_t sum = 0;
+            uint8_t validSamples = 0;
+            constexpr int kSamples = 10;
+            constexpr uint32_t kMaxValidReading = 100000;  // Reject readings above this
 
-            touch_pad_read_raw_data(touchChannels_[i], &rawValue);
-            touch_pad_read_benchmark(touchChannels_[i], &benchmark);
+            for (int s = 0; s < kSamples; s++) {
+                uint32_t rawValue = 0;
+                touch_pad_read_raw_data(touchChannels_[i], &rawValue);
 
-            states_[i].rawValue = rawValue;
-            states_[i].threshold = benchmark + (benchmark / 10);  // 10% above benchmark
+                // Only use sane readings for calibration
+                if (rawValue > 0 && rawValue < kMaxValidReading) {
+                    sum += rawValue;
+                    validSamples++;
+                }
+                vTaskDelay(pdMS_TO_TICKS(20));
+            }
 
-            ESP_LOGI(kTag, "Pad %d: raw=%lu, benchmark=%lu, threshold=%lu",
-                     i, rawValue, benchmark, states_[i].threshold);
+            if (validSamples > 0) {
+                baselines_[i] = sum / validSamples;
+                states_[i].rawValue = baselines_[i];
+                states_[i].threshold = baselines_[i] + (baselines_[i] / 20);  // 5% above baseline
+                states_[i].touched = false;
+
+                ESP_LOGI(kTag, "Pad %d: baseline=%lu, threshold=%lu (%d samples)",
+                         i, baselines_[i], states_[i].threshold, validSamples);
+            } else {
+                // All readings were saturated - keep old baseline or set to 0
+                ESP_LOGW(kTag, "Pad %d: all readings saturated, keeping old baseline", i);
+            }
         }
 
         return ESP_OK;
@@ -190,7 +234,52 @@ public:
 
 private:
     static constexpr const char* kTag = "TouchDriver";
-    static constexpr uint32_t kThresholdPercent = 120;  // Touch threshold as % of baseline (ESP32-S3 value rises on touch)
+    static constexpr uint32_t kStuckResetThreshold = 100;  // ~1 second of identical readings at 100Hz
+
+    /**
+     * @brief Reset the touch FSM to recover from saturated state
+     *
+     * This performs a full deinit/reinit of the touch peripheral to
+     * clear hardware saturation state.
+     */
+    void resetFsm() {
+        ESP_LOGI(kTag, "Full touch peripheral reset...");
+
+        // Full deinit
+        touch_pad_fsm_stop();
+        touch_pad_deinit();
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+        // Full reinit
+        touch_pad_init();
+        touch_pad_set_voltage(TOUCH_HVOLT_2V7, TOUCH_LVOLT_0V5, TOUCH_HVOLT_ATTEN_1V);
+
+        // Reconfigure all channels
+        for (uint8_t i = 0; i < kNumPads; i++) {
+            touch_pad_config(touchChannels_[i]);
+        }
+
+        // Re-enable denoise
+        touch_pad_denoise_t denoise = {
+            .grade = TOUCH_PAD_DENOISE_BIT4,
+            .cap_level = TOUCH_PAD_DENOISE_CAP_L4,
+        };
+        touch_pad_denoise_set_config(&denoise);
+        touch_pad_denoise_enable();
+
+        // Restart FSM
+        touch_pad_set_fsm_mode(TOUCH_FSM_MODE_TIMER);
+        touch_pad_fsm_start();
+
+        // Wait for hardware to settle
+        vTaskDelay(pdMS_TO_TICKS(300));
+
+        // Clear last values so we don't detect as "stuck"
+        lastRawValues_.fill(0);
+
+        // Recalibrate baselines
+        calibrate();
+    }
 
     /**
      * @brief Convert GPIO number to ESP32-S3 touch pad channel
@@ -221,6 +310,9 @@ private:
     std::array<gpio_num_t, kNumPads> pins_;
     std::array<TouchPadState, kNumPads> states_;
     std::array<touch_pad_t, kNumPads> touchChannels_;
+    std::array<uint32_t, kNumPads> baselines_;      // Captured at calibration time
+    std::array<uint32_t, kNumPads> lastRawValues_;  // For stuck detection
+    std::array<uint32_t, kNumPads> stuckCount_;     // Per-pad stuck counter
     bool initialized_;
 };
 
