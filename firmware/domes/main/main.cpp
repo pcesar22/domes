@@ -7,6 +7,7 @@
 #include "sdkconfig.h"
 
 #include "drivers/ledStrip.hpp"
+#include "drivers/touchDriver.hpp"
 #include "infra/logging.hpp"
 #include "infra/nvsConfig.hpp"
 #include "infra/taskManager.hpp"
@@ -14,6 +15,7 @@
 #include "services/githubClient.hpp"
 #include "services/ledService.hpp"
 #include "services/otaManager.hpp"
+#include "services/touchService.hpp"
 #include "trace/traceApi.hpp"
 #include "config/featureManager.hpp"
 #include "trace/traceRecorder.hpp"
@@ -35,6 +37,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 
@@ -64,6 +67,8 @@ static domes::BleOtaService* bleOtaService = nullptr;
 static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
 static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
 static domes::LedService* ledService = nullptr;  // LED pattern service
+static domes::TouchDriver<pins::kTouchPadCount>* touchDriver = nullptr;  // Touch pad driver
+static domes::TouchService* touchService = nullptr;  // Touch monitoring service
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::TcpConfigServer* tcpConfigServer = nullptr;  // WiFi config server
@@ -234,6 +239,53 @@ static esp_err_t initLedService() {
     }
 
     ESP_LOGI(kTag, "LED service started");
+    return ESP_OK;
+}
+
+/**
+ * @brief Initialize touch driver and service
+ *
+ * Sets up capacitive touch sensing on 4 pads and starts the touch
+ * monitoring service that controls LED colors based on which pad is touched.
+ *
+ * Requires ledDriver and featureManager to be initialized first.
+ */
+static esp_err_t initTouch() {
+    if (!ledService || !featureManager) {
+        ESP_LOGE(kTag, "Cannot init touch: dependencies not ready");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(kTag, "Initializing touch driver...");
+
+    // Create touch driver with pin configuration from config.hpp
+    static std::array<gpio_num_t, pins::kTouchPadCount> touchPins = {
+        pins::kTouch1, pins::kTouch2, pins::kTouch3, pins::kTouch4
+    };
+    static domes::TouchDriver<pins::kTouchPadCount> driver(touchPins);
+    touchDriver = &driver;
+
+    esp_err_t err = touchDriver->init();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Touch driver init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(kTag, "Touch driver initialized with %d pads", pins::kTouchPadCount);
+
+    // Create touch service (uses LedService to control LEDs)
+    static domes::TouchService service(*touchDriver, *ledService, *featureManager);
+    touchService = &service;
+
+    err = touchService->start();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Touch service start failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Enable touch feature by default
+    featureManager->setEnabled(domes::config::Feature::kTouch, true);
+    ESP_LOGI(kTag, "Touch service started, feature enabled");
+
     return ESP_OK;
 }
 
@@ -492,7 +544,7 @@ static esp_err_t initWifiForEspNow() {
 }
 
 static esp_err_t initLedStrip() {
-    static domes::LedStripDriver<pins::kLedCount> driver(pins::kLedData, false);
+    static domes::LedStripDriver<pins::kLedCount> driver(pins::kLedData, pins::kLedIsRgbw);
     ledDriver = &driver;
 
     esp_err_t err = ledDriver->init();
@@ -579,6 +631,11 @@ extern "C" void app_main() {
     // Initialize LED service (needed for LED pattern commands)
     if (initLedService() != ESP_OK) {
         ESP_LOGW(kTag, "LED service init failed, continuing without LED patterns");
+    }
+
+    // Initialize touch driver and service
+    if (initTouch() != ESP_OK) {
+        ESP_LOGW(kTag, "Touch init failed, continuing without touch support");
     }
 
     // Initialize BLE OTA service (after feature manager so config commands work over BLE)
