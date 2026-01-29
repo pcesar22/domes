@@ -81,7 +81,7 @@ public:
 
         running_ = true;
         BaseType_t ret = xTaskCreatePinnedToCore(
-            taskEntry, "led_svc", 2048, this, 5, &taskHandle_, 1  // Core 1 for responsive LEDs
+            taskEntry, "led_svc", 3072, this, 5, &taskHandle_, 1  // Core 1 for responsive LEDs
         );
 
         if (ret != pdPASS) {
@@ -163,6 +163,19 @@ public:
     }
 
     /**
+     * @brief Request a white flash (thread-safe)
+     *
+     * Can be called from any task. The flash will be executed
+     * by the LedService task on the next iteration.
+     *
+     * @param durationMs Flash duration in milliseconds
+     */
+    void requestFlash(uint32_t durationMs = 100) {
+        flashDurationMs_ = durationMs;
+        flashRequested_ = true;
+    }
+
+    /**
      * @brief Get current pattern configuration
      * @param pattern Output pattern message
      */
@@ -196,6 +209,13 @@ private:
         ESP_LOGI("LedService", "Task loop starting");
 
         while (running_) {
+            // Handle flash request (highest priority)
+            if (flashRequested_.load()) {
+                flashRequested_ = false;
+                executeFlash();
+                continue;
+            }
+
             // Check if LED effects feature is enabled
             if (!features_.isEnabled(config::Feature::kLedEffects)) {
                 // Turn off LEDs when feature is disabled
@@ -220,6 +240,25 @@ private:
             loopCount++;
         }
         ESP_LOGI("LedService", "Task loop exiting");
+    }
+
+    void executeFlash() {
+        ESP_LOGI("LedService", "Executing flash (%lu ms)", flashDurationMs_.load());
+
+        // Save current brightness
+        uint8_t savedBrightness = currentPattern_.brightness;
+
+        // Flash white at full brightness
+        driver_.setBrightness(255);
+        driver_.setAll(Color::white());
+        driver_.refresh();
+
+        vTaskDelay(pdMS_TO_TICKS(flashDurationMs_.load()));
+
+        // Restore previous state
+        driver_.setBrightness(savedBrightness);
+        driver_.clear();
+        driver_.refresh();
     }
 
     void updateAnimation() {
@@ -323,6 +362,10 @@ private:
     LedPatternConfig currentPattern_;
     uint8_t colorCycleIndex_;
     uint32_t lastColorChangeMs_;
+
+    // Flash request (thread-safe)
+    std::atomic<bool> flashRequested_{false};
+    std::atomic<uint32_t> flashDurationMs_{100};
 };
 
 }  // namespace domes
