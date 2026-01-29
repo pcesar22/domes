@@ -8,7 +8,8 @@
 
 use crate::proto::config::{
     Color, Feature, GetLedPatternResponse, LedPattern, LedPatternType, ListFeaturesResponse,
-    SetFeatureRequest, SetFeatureResponse, SetLedPatternRequest, SetLedPatternResponse, Status,
+    SetFeatureRequest, SetFeatureResponse, SetImuTriageRequest, SetImuTriageResponse,
+    SetLedPatternRequest, SetLedPatternResponse, Status,
 };
 use prost::Message;
 use thiserror::Error;
@@ -31,6 +32,8 @@ impl TryFrom<u8> for ConfigMsgType {
             0x27 => Ok(Self::SetLedPatternRsp),
             0x28 => Ok(Self::GetLedPatternReq),
             0x29 => Ok(Self::GetLedPatternRsp),
+            0x2A => Ok(Self::SetImuTriageReq),
+            0x2B => Ok(Self::SetImuTriageRsp),
             _ => Err(ProtocolError::UnknownMessageType(value)),
         }
     }
@@ -277,4 +280,35 @@ pub fn parse_led_pattern_response(payload: &[u8]) -> Result<CliLedPattern, Proto
         period_ms: pattern.period_ms,
         brightness: pattern.brightness as u8,
     })
+}
+
+/// Serialize SetImuTriageRequest using protobuf encoding
+pub fn serialize_set_imu_triage(enabled: bool) -> Vec<u8> {
+    let req = SetImuTriageRequest { enabled };
+    req.encode_to_vec()
+}
+
+/// Parse SetImuTriageResponse payload
+/// Format: [status_byte][protobuf_SetImuTriageResponse]
+pub fn parse_imu_triage_response(payload: &[u8]) -> Result<bool, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    // First byte is status
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    // Rest is protobuf-encoded SetImuTriageResponse
+    let resp = SetImuTriageResponse::decode(&payload[1..])?;
+
+    Ok(resp.enabled)
 }

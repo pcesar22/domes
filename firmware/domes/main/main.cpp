@@ -7,11 +7,13 @@
 #include "sdkconfig.h"
 
 #include "drivers/ledStrip.hpp"
+#include "drivers/lis2dw12.hpp"
 #include "infra/logging.hpp"
 #include "infra/nvsConfig.hpp"
 #include "infra/taskManager.hpp"
 #include "infra/watchdog.hpp"
 #include "services/githubClient.hpp"
+#include "services/imuService.hpp"
 #include "services/ledService.hpp"
 #include "services/otaManager.hpp"
 #include "trace/traceApi.hpp"
@@ -28,6 +30,7 @@
 #include "services/wifiManager.hpp"
 #endif
 
+#include "driver/i2c_master.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -64,6 +67,9 @@ static domes::BleOtaService* bleOtaService = nullptr;
 static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
 static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
 static domes::LedService* ledService = nullptr;  // LED pattern service
+static i2c_master_bus_handle_t i2cBus = nullptr;  // I2C master bus
+static domes::Lis2dw12Driver* imuDriver = nullptr;  // LIS2DW12 IMU driver
+static domes::ImuService* imuService = nullptr;  // IMU triage service
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::TcpConfigServer* tcpConfigServer = nullptr;  // WiFi config server
@@ -238,6 +244,87 @@ static esp_err_t initLedService() {
 }
 
 /**
+ * @brief Initialize I2C master bus
+ *
+ * Sets up the I2C bus for IMU and haptic driver communication.
+ */
+static esp_err_t initI2c() {
+    ESP_LOGI(kTag, "Initializing I2C bus (SDA=%d, SCL=%d)...",
+             static_cast<int>(pins::kI2cSda), static_cast<int>(pins::kI2cScl));
+
+    i2c_master_bus_config_t busConfig = {};
+    busConfig.i2c_port = I2C_NUM_0;
+    busConfig.sda_io_num = pins::kI2cSda;
+    busConfig.scl_io_num = pins::kI2cScl;
+    busConfig.clk_source = I2C_CLK_SRC_DEFAULT;
+    busConfig.glitch_ignore_cnt = 7;
+    busConfig.flags.enable_internal_pullup = true;
+
+    esp_err_t err = i2c_new_master_bus(&busConfig, &i2cBus);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "I2C bus init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(kTag, "I2C bus initialized");
+    return ESP_OK;
+}
+
+/**
+ * @brief Initialize IMU driver
+ *
+ * Creates and initializes the LIS2DW12 IMU driver.
+ * Requires I2C bus to be initialized first.
+ */
+static esp_err_t initImu() {
+    if (!i2cBus) {
+        ESP_LOGE(kTag, "Cannot init IMU: I2C bus not initialized");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(kTag, "Initializing LIS2DW12 IMU at address 0x%02X...", pins::kLis2dw12Addr);
+
+    static domes::Lis2dw12Driver driver(i2cBus, pins::kLis2dw12Addr);
+    imuDriver = &driver;
+
+    esp_err_t err = imuDriver->init();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "IMU init failed: %s", esp_err_to_name(err));
+        imuDriver = nullptr;
+        return err;
+    }
+
+    ESP_LOGI(kTag, "LIS2DW12 IMU initialized");
+    return ESP_OK;
+}
+
+/**
+ * @brief Initialize IMU service
+ *
+ * Creates and starts the IMU service for triage mode.
+ * Requires IMU driver and LED service to be initialized first.
+ */
+static esp_err_t initImuService() {
+    if (!imuDriver || !ledService) {
+        ESP_LOGE(kTag, "Cannot init IMU service: dependencies not ready");
+        return ESP_FAIL;
+    }
+
+    static domes::ImuService service(*imuDriver, *ledService);
+    imuService = &service;
+
+    esp_err_t err = imuService->start();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "IMU service start failed: %s", esp_err_to_name(err));
+        imuService = nullptr;
+        return err;
+    }
+
+    ESP_LOGI(kTag, "IMU service started (triage mode enabled by default)");
+    return ESP_OK;
+}
+
+/**
  * @brief Initialize serial OTA receiver
  *
  * Sets up USB-CDC transport and starts the serial OTA receiver task.
@@ -264,6 +351,11 @@ static esp_err_t initSerialOta() {
     // Wire up LED service for pattern commands
     if (ledService) {
         serialOtaReceiver->setLedService(ledService);
+    }
+
+    // Wire up IMU service for triage commands
+    if (imuService) {
+        serialOtaReceiver->setImuService(imuService);
     }
 
     // Create receiver task
@@ -352,6 +444,11 @@ static esp_err_t initTcpConfigServer() {
     // Wire up LED service for pattern commands
     if (ledService) {
         tcpConfigServer->setLedService(ledService);
+    }
+
+    // Wire up IMU service for triage commands
+    if (imuService) {
+        tcpConfigServer->setImuService(imuService);
     }
 
     // Create server task
@@ -617,6 +714,13 @@ extern "C" void app_main() {
         ESP_LOGW(kTag, "LED init failed, continuing without LED");
     }
 
+    // Initialize I2C and IMU
+    if (initI2c() != ESP_OK) {
+        ESP_LOGW(kTag, "I2C init failed, continuing without I2C devices");
+    } else if (initImu() != ESP_OK) {
+        ESP_LOGW(kTag, "IMU init failed, continuing without IMU");
+    }
+
     // Initialize WiFi stack (required for ESP-NOW and BLE coexistence)
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
     // WiFi auto-connect enabled - WifiManager will initialize WiFi and connect to AP
@@ -646,6 +750,13 @@ extern "C" void app_main() {
         ESP_LOGW(kTag, "LED service init failed, continuing without LED patterns");
     }
 
+    // Initialize IMU service (needed for triage mode)
+    if (imuDriver && ledService) {
+        if (initImuService() != ESP_OK) {
+            ESP_LOGW(kTag, "IMU service init failed, continuing without triage mode");
+        }
+    }
+
     // Initialize BLE OTA service (after feature manager so config commands work over BLE)
     ESP_LOGI(kTag, "Initializing BLE stack...");
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
@@ -660,6 +771,10 @@ extern "C" void app_main() {
         // Wire up LED service for pattern commands over BLE
         if (bleOtaReceiver && ledService) {
             bleOtaReceiver->setLedService(ledService);
+        }
+        // Wire up IMU service for triage commands over BLE
+        if (bleOtaReceiver && imuService) {
+            bleOtaReceiver->setImuService(imuService);
         }
     }
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs

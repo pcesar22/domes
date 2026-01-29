@@ -20,6 +20,8 @@ enum MsgType {
     MSG_TYPE_SET_LED_PATTERN_RSP = 0x27;
     MSG_TYPE_GET_LED_PATTERN_REQ = 0x28;
     MSG_TYPE_GET_LED_PATTERN_RSP = 0x29;
+    MSG_TYPE_SET_IMU_TRIAGE_REQ = 0x2A;
+    MSG_TYPE_SET_IMU_TRIAGE_RSP = 0x2B;
 }
 
 // Status codes for responses
@@ -107,6 +109,15 @@ message SetLedPatternResponse {
 
 message GetLedPatternResponse {
     LedPattern pattern = 1;
+}
+
+// IMU triage mode messages
+message SetImuTriageRequest {
+    bool enabled = 1;
+}
+
+message SetImuTriageResponse {
+    bool enabled = 1;
 }
 
 // Top-level request envelope

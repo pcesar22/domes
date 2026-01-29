@@ -17,6 +17,7 @@
 
 namespace domes {
 class LedService;  // Forward declaration
+class ImuService;  // Forward declaration
 }
 
 namespace domes::config {
@@ -43,6 +44,13 @@ public:
      * @param ledService LED service instance (may be nullptr to disable LED commands)
      */
     void setLedService(LedService* ledService) { ledService_ = ledService; }
+
+    /**
+     * @brief Set IMU service for triage commands
+     *
+     * @param imuService IMU service instance (may be nullptr to disable IMU commands)
+     */
+    void setImuService(ImuService* imuService) { imuService_ = imuService; }
 
     /**
      * @brief Handle an incoming config command
@@ -90,6 +98,14 @@ private:
     void handleGetLedPattern();
 
     /**
+     * @brief Handle SET_IMU_TRIAGE request
+     *
+     * @param payload Payload containing SetImuTriageRequest
+     * @param len Payload length
+     */
+    void handleSetImuTriage(const uint8_t* payload, size_t len);
+
+    /**
      * @brief Send list features response
      */
     void sendListFeaturesResponse();
@@ -120,6 +136,14 @@ private:
     void sendLedPatternResponse(Status status);
 
     /**
+     * @brief Send IMU triage response
+     *
+     * @param status Status code
+     * @param enabled Current triage mode state
+     */
+    void sendImuTriageResponse(Status status, bool enabled);
+
+    /**
      * @brief Send a frame with given type and payload
      *
      * @param type Message type
@@ -132,6 +156,7 @@ private:
     ITransport& transport_;
     FeatureManager& features_;
     LedService* ledService_ = nullptr;
+    ImuService* imuService_ = nullptr;
 };
 
 }  // namespace domes::config

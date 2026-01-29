@@ -6,6 +6,7 @@
 #include "tcpConfigServer.hpp"
 #include "protocol/frameCodec.hpp"
 #include "config/configProtocol.hpp"
+#include "services/imuService.hpp"
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -172,6 +173,7 @@ void TcpConfigServer::handleClient(int clientSock) {
     // Create config handler for this connection
     config::ConfigCommandHandler handler(transport, features_);
     handler.setLedService(ledService_);
+    handler.setImuService(imuService_);
 
     // Frame decoder
     FrameDecoder decoder;

@@ -100,6 +100,12 @@ enum Commands {
         #[command(subcommand)]
         action: TraceAction,
     },
+
+    /// IMU (accelerometer) commands
+    Imu {
+        #[command(subcommand)]
+        action: ImuAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -164,6 +170,20 @@ enum TraceAction {
         /// Output file path (default: trace.json)
         #[arg(short, long, default_value = "trace.json")]
         output: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum ImuAction {
+    /// Set triage mode (flash LEDs on tap)
+    Triage {
+        /// Enable triage mode
+        #[arg(long)]
+        enable: bool,
+
+        /// Disable triage mode
+        #[arg(long)]
+        disable: bool,
     },
 }
 
@@ -439,6 +459,26 @@ fn main() -> anyhow::Result<()> {
                 println!("  Duration: {} us ({:.2} ms)", result.duration_us, result.duration_us as f64 / 1000.0);
                 println!("  Output:   {}", result.output_path.display());
                 println!("\nOpen trace in https://ui.perfetto.dev");
+            }
+        },
+
+        Commands::Imu { action } => match action {
+            ImuAction::Triage { enable, disable } => {
+                let enabled = if enable && disable {
+                    anyhow::bail!("Cannot specify both --enable and --disable");
+                } else if enable {
+                    true
+                } else if disable {
+                    false
+                } else {
+                    anyhow::bail!("Must specify either --enable or --disable");
+                };
+
+                let result = commands::imu_triage_set(transport.as_mut(), enabled)?;
+                println!(
+                    "IMU triage mode {}",
+                    if result { "enabled" } else { "disabled" }
+                );
             }
         },
     }

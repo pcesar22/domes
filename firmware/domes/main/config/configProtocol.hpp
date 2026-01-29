@@ -32,6 +32,8 @@ enum class MsgType : uint8_t {
     kSetLedPatternRsp = domes_config_MsgType_MSG_TYPE_SET_LED_PATTERN_RSP,
     kGetLedPatternReq = domes_config_MsgType_MSG_TYPE_GET_LED_PATTERN_REQ,
     kGetLedPatternRsp = domes_config_MsgType_MSG_TYPE_GET_LED_PATTERN_RSP,
+    kSetImuTriageReq  = domes_config_MsgType_MSG_TYPE_SET_IMU_TRIAGE_REQ,
+    kSetImuTriageRsp  = domes_config_MsgType_MSG_TYPE_SET_IMU_TRIAGE_RSP,
 };
 
 /**
@@ -65,7 +67,7 @@ enum class Status : uint8_t {
  */
 inline bool isConfigMessage(uint8_t type) {
     return type >= static_cast<uint8_t>(MsgType::kListFeaturesReq) &&
-           type <= static_cast<uint8_t>(MsgType::kGetLedPatternRsp);
+           type <= static_cast<uint8_t>(MsgType::kSetImuTriageRsp);
 }
 
 /**

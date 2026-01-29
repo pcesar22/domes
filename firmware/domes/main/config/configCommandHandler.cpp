@@ -7,6 +7,7 @@
 
 #include "configCommandHandler.hpp"
 #include "protocol/frameCodec.hpp"
+#include "services/imuService.hpp"
 #include "services/ledService.hpp"
 
 #include "config.pb.h"
@@ -56,6 +57,11 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
         case MsgType::kGetLedPatternReq:
             ESP_LOGD(kTag, "Received GET_LED_PATTERN");
             handleGetLedPattern();
+            return true;
+
+        case MsgType::kSetImuTriageReq:
+            ESP_LOGD(kTag, "Received SET_IMU_TRIAGE");
+            handleSetImuTriage(payload, len);
             return true;
 
         default:
@@ -295,6 +301,47 @@ void ConfigCommandHandler::sendLedPatternResponse(Status status) {
     }
 
     sendFrame(MsgType::kSetLedPatternRsp, payload.data(), 1 + ostream.bytes_written);
+}
+
+void ConfigCommandHandler::handleSetImuTriage(const uint8_t* payload, size_t len) {
+    if (!imuService_) {
+        ESP_LOGW(kTag, "IMU service not available");
+        sendImuTriageResponse(Status::kError, false);
+        return;
+    }
+
+    // Decode protobuf message
+    domes_config_SetImuTriageRequest req = domes_config_SetImuTriageRequest_init_zero;
+    pb_istream_t stream = pb_istream_from_buffer(payload, len);
+
+    if (!pb_decode(&stream, domes_config_SetImuTriageRequest_fields, &req)) {
+        ESP_LOGW(kTag, "Failed to decode SET_IMU_TRIAGE: %s", PB_GET_ERROR(&stream));
+        sendImuTriageResponse(Status::kError, false);
+        return;
+    }
+
+    ESP_LOGI(kTag, "Setting IMU triage mode to %s", req.enabled ? "enabled" : "disabled");
+
+    imuService_->setTriageMode(req.enabled);
+    sendImuTriageResponse(Status::kOk, req.enabled);
+}
+
+void ConfigCommandHandler::sendImuTriageResponse(Status status, bool enabled) {
+    // Build protobuf response
+    domes_config_SetImuTriageResponse resp = domes_config_SetImuTriageResponse_init_zero;
+    resp.enabled = enabled;
+
+    // Encode to buffer: [status_byte][SetImuTriageResponse_proto]
+    std::array<uint8_t, domes_config_SetImuTriageResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(status);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&ostream, domes_config_SetImuTriageResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode SetImuTriageResponse: %s", PB_GET_ERROR(&ostream));
+        return;
+    }
+
+    sendFrame(MsgType::kSetImuTriageRsp, payload.data(), 1 + ostream.bytes_written);
 }
 
 }  // namespace domes::config
