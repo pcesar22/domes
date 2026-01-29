@@ -81,7 +81,7 @@ public:
 
         running_ = true;
         BaseType_t ret = xTaskCreatePinnedToCore(
-            taskEntry, "led_svc", 3072, this, 5, &taskHandle_, 1  // Core 1 for responsive LEDs
+            taskEntry, "led_svc", 4096, this, 5, &taskHandle_, 1  // Core 1 for responsive LEDs
         );
 
         if (ret != pdPASS) {
@@ -289,10 +289,14 @@ private:
                 driver_.refresh();
                 break;
 
-            case domes_config_LedPatternType_LED_PATTERN_SOLID:
-                driver_.setAll(currentPattern_.primaryColor);
+            case domes_config_LedPatternType_LED_PATTERN_SOLID: {
+                Color c = currentPattern_.primaryColor;
+                ESP_LOGD("LedService", "SOLID: setting all to R=%d G=%d B=%d W=%d",
+                         c.r, c.g, c.b, c.w);
+                driver_.setAll(c);
                 driver_.refresh();
                 break;
+            }
 
             case domes_config_LedPatternType_LED_PATTERN_BREATHING:
                 animator_.update();

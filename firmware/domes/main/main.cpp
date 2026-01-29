@@ -248,7 +248,9 @@ static esp_err_t initLedService() {
         return err;
     }
 
-    ESP_LOGI(kTag, "LED service started");
+    // Enable LED effects feature by default
+    featureManager->setEnabled(domes::config::Feature::kLedEffects, true);
+    ESP_LOGI(kTag, "LED service started, LED effects enabled");
     return ESP_OK;
 }
 

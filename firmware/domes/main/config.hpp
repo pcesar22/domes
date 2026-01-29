@@ -56,11 +56,12 @@ constexpr gpio_num_t kI2sDout = GPIO_NUM_13;
 #ifdef BOARD_NFF_DEVBOARD
 
 namespace pins {
-// LED Ring (16x SK6812MINI-E RGBW via SN74AHCT1G125 level shifter)
+// LED Ring (16x SK6812MINI-E via SN74AHCT1G125 level shifter)
 // H1 pin 9 = LED_DATA_3V3 = ESP32 GPIO16
+// NOTE: The SK6812MINI-E on this board appears to be RGB, not RGBW
 constexpr gpio_num_t kLedData = GPIO_NUM_16;
 constexpr uint8_t kLedCount = 16;
-constexpr bool kLedIsRgbw = true;  // SK6812 has white channel
+constexpr bool kLedIsRgbw = false;  // Using RGB mode
 
 // I2C bus (LIS2DW12 @ 0x19, DRV2605L @ 0x5A)
 // SA0 tied to 3.3V sets LIS2DW12 address to 0x19
