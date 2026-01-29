@@ -8,10 +8,12 @@
 
 #include "drivers/ledStrip.hpp"
 #include "drivers/lis2dw12.hpp"
+#include "drivers/max98357a.hpp"
 #include "infra/logging.hpp"
 #include "infra/nvsConfig.hpp"
 #include "infra/taskManager.hpp"
 #include "infra/watchdog.hpp"
+#include "services/audioService.hpp"
 #include "services/githubClient.hpp"
 #include "services/imuService.hpp"
 #include "services/ledService.hpp"
@@ -70,6 +72,8 @@ static domes::LedService* ledService = nullptr;  // LED pattern service
 static i2c_master_bus_handle_t i2cBus = nullptr;  // I2C master bus
 static domes::Lis2dw12Driver* imuDriver = nullptr;  // LIS2DW12 IMU driver
 static domes::ImuService* imuService = nullptr;  // IMU triage service
+static domes::Max98357aDriver* audioDriver = nullptr;  // MAX98357A audio driver
+static domes::AudioService* audioService = nullptr;  // Audio playback service
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::TcpConfigServer* tcpConfigServer = nullptr;  // WiFi config server
@@ -321,6 +325,60 @@ static esp_err_t initImuService() {
     }
 
     ESP_LOGI(kTag, "IMU service started (triage mode enabled by default)");
+    return ESP_OK;
+}
+
+/**
+ * @brief Initialize audio driver
+ *
+ * Creates and initializes the MAX98357A audio driver.
+ */
+static esp_err_t initAudioDriver() {
+    ESP_LOGI(kTag, "Initializing MAX98357A audio driver...");
+    ESP_LOGI(kTag, "  BCLK=%d, LRCLK=%d, DOUT=%d, SD=%d",
+             static_cast<int>(pins::kI2sBclk),
+             static_cast<int>(pins::kI2sLrclk),
+             static_cast<int>(pins::kI2sDout),
+             static_cast<int>(pins::kAudioSd));
+
+    static domes::Max98357aDriver driver(
+        pins::kI2sBclk, pins::kI2sLrclk, pins::kI2sDout, pins::kAudioSd);
+    audioDriver = &driver;
+
+    esp_err_t err = audioDriver->init();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Audio driver init failed: %s", esp_err_to_name(err));
+        audioDriver = nullptr;
+        return err;
+    }
+
+    ESP_LOGI(kTag, "MAX98357A audio driver initialized");
+    return ESP_OK;
+}
+
+/**
+ * @brief Initialize audio service
+ *
+ * Creates and starts the audio service for playback.
+ * Requires audio driver and feature manager to be initialized first.
+ */
+static esp_err_t initAudioService() {
+    if (!audioDriver || !featureManager) {
+        ESP_LOGE(kTag, "Cannot init audio service: dependencies not ready");
+        return ESP_FAIL;
+    }
+
+    static domes::AudioService service(*audioDriver, *featureManager);
+    audioService = &service;
+
+    esp_err_t err = audioService->start();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Audio service start failed: %s", esp_err_to_name(err));
+        audioService = nullptr;
+        return err;
+    }
+
+    ESP_LOGI(kTag, "Audio service started");
     return ESP_OK;
 }
 
@@ -721,6 +779,11 @@ extern "C" void app_main() {
         ESP_LOGW(kTag, "IMU init failed, continuing without IMU");
     }
 
+    // Initialize audio driver
+    if (initAudioDriver() != ESP_OK) {
+        ESP_LOGW(kTag, "Audio driver init failed, continuing without audio");
+    }
+
     // Initialize WiFi stack (required for ESP-NOW and BLE coexistence)
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
     // WiFi auto-connect enabled - WifiManager will initialize WiFi and connect to AP
@@ -754,6 +817,18 @@ extern "C" void app_main() {
     if (imuDriver && ledService) {
         if (initImuService() != ESP_OK) {
             ESP_LOGW(kTag, "IMU service init failed, continuing without triage mode");
+        }
+    }
+
+    // Initialize audio service (needed for audio playback)
+    if (audioDriver) {
+        if (initAudioService() != ESP_OK) {
+            ESP_LOGW(kTag, "Audio service init failed, continuing without audio");
+        } else {
+            // Wire up audio service to IMU service for tap sounds
+            if (imuService) {
+                imuService->setAudioService(audioService);
+            }
         }
     }
 
