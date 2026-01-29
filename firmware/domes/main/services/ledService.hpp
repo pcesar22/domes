@@ -81,7 +81,7 @@ public:
 
         running_ = true;
         BaseType_t ret = xTaskCreatePinnedToCore(
-            taskEntry, "led_svc", 2048, this, 5, &taskHandle_, 1  // Core 1 for responsive LEDs
+            taskEntry, "led_svc", 4096, this, 5, &taskHandle_, 1  // Core 1 for responsive LEDs
         );
 
         if (ret != pdPASS) {
@@ -163,6 +163,27 @@ public:
     }
 
     /**
+     * @brief Set a solid color directly (convenience method for touch service)
+     * @param color Color to display
+     */
+    void setSolidColor(Color color) {
+        LedPatternConfig config;
+        config.type = domes_config_LedPatternType_LED_PATTERN_SOLID;
+        config.primaryColor = color;
+        config.brightness = currentPattern_.brightness > 0 ? currentPattern_.brightness : 128;
+        applyPattern(config);
+    }
+
+    /**
+     * @brief Turn off LEDs (convenience method)
+     */
+    void setOff() {
+        LedPatternConfig config;
+        config.type = domes_config_LedPatternType_LED_PATTERN_OFF;
+        applyPattern(config);
+    }
+
+    /**
      * @brief Get current pattern configuration
      * @param pattern Output pattern message
      */
@@ -229,10 +250,14 @@ private:
                 driver_.refresh();
                 break;
 
-            case domes_config_LedPatternType_LED_PATTERN_SOLID:
-                driver_.setAll(currentPattern_.primaryColor);
+            case domes_config_LedPatternType_LED_PATTERN_SOLID: {
+                Color c = currentPattern_.primaryColor;
+                ESP_LOGD("LedService", "SOLID: setting all to R=%d G=%d B=%d W=%d",
+                         c.r, c.g, c.b, c.w);
+                driver_.setAll(c);
                 driver_.refresh();
                 break;
+            }
 
             case domes_config_LedPatternType_LED_PATTERN_BREATHING:
                 animator_.update();
