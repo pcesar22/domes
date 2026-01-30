@@ -66,6 +66,11 @@ constexpr bool kLedIsRgbw = true;  // SK6812 has white channel
 constexpr gpio_num_t kI2cSda = GPIO_NUM_8;
 constexpr gpio_num_t kI2cScl = GPIO_NUM_9;
 
+// I2C device addresses
+constexpr uint8_t kLis2dw12Addr = 0x19;  // LIS2DW12 with SA0=high
+constexpr uint8_t kDrv2605lAddr = 0x5A;  // DRV2605L haptic driver
+
+
 // IMU interrupt (LIS2DW12 INT1)
 // H1 pin 5 = IMU_INT = ESP32 GPIO5
 constexpr gpio_num_t kImuInt1 = GPIO_NUM_5;

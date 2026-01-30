@@ -22,6 +22,7 @@
 namespace domes {
 
 class LedService;  // Forward declaration
+class ImuService;  // Forward declaration
 
 /**
  * @brief FreeRTOS task that receives OTA updates via serial transport
@@ -86,6 +87,17 @@ public:
     void setLedService(LedService* ledService) {
         if (configHandler_) {
             configHandler_->setLedService(ledService);
+        }
+    }
+
+    /**
+     * @brief Set IMU service for triage commands
+     *
+     * @param imuService IMU service instance
+     */
+    void setImuService(ImuService* imuService) {
+        if (configHandler_) {
+            configHandler_->setImuService(imuService);
         }
     }
 
