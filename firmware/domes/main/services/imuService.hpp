@@ -9,6 +9,7 @@
  */
 
 #include "interfaces/iImuDriver.hpp"
+#include "services/audioService.hpp"
 #include "services/ledService.hpp"
 #include "trace/traceApi.hpp"
 
@@ -42,7 +43,7 @@ public:
      * @param led LED service reference (must outlive service)
      */
     ImuService(IImuDriver& imu, LedService& led)
-        : imu_(imu), led_(led), taskHandle_(nullptr), running_(false) {}
+        : imu_(imu), led_(led), audio_(nullptr), taskHandle_(nullptr), running_(false) {}
 
     ~ImuService() { stop(); }
 
@@ -115,6 +116,18 @@ public:
      */
     bool isTriageModeEnabled() const { return triageMode_.load(); }
 
+    /**
+     * @brief Set audio service for tap feedback
+     *
+     * When set, a beep will be played on tap detection.
+     *
+     * @param audio Audio service pointer (can be nullptr to disable)
+     */
+    void setAudioService(AudioService* audio) {
+        audio_ = audio;
+        ESP_LOGI(kTag, "Audio service %s", audio ? "connected" : "disconnected");
+    }
+
 private:
     static constexpr const char* kTag = "imu_svc";
 
@@ -165,18 +178,25 @@ private:
     }
 
     /**
-     * @brief Request LED flash (thread-safe)
+     * @brief Request LED flash and audio beep (thread-safe)
      *
-     * Requests LedService to flash white. The flash is executed
-     * by the LedService task to avoid RMT conflicts.
+     * Requests LedService to flash white and AudioService to play a beep.
+     * Both are executed by their respective service tasks.
      */
     void flashWhite() {
         TRACE_INSTANT(TRACE_ID("Imu.FlashRequested"), domes::trace::Category::kLed);
         led_.requestFlash(100);
+
+        // Play beep sound if audio service is available
+        if (audio_) {
+            TRACE_INSTANT(TRACE_ID("Imu.BeepRequested"), domes::trace::Category::kAudio);
+            audio_->playAsset("beep");
+        }
     }
 
     IImuDriver& imu_;
     LedService& led_;
+    AudioService* audio_;
     TaskHandle_t taskHandle_;
     std::atomic<bool> running_;
     std::atomic<bool> triageMode_{true};  // Enabled by default
