@@ -34,6 +34,7 @@ constexpr gpio_num_t kTouch1 = GPIO_NUM_1;
 constexpr gpio_num_t kTouch2 = GPIO_NUM_2;
 constexpr gpio_num_t kTouch3 = GPIO_NUM_3;
 constexpr gpio_num_t kTouch4 = GPIO_NUM_4;
+constexpr uint8_t kTouchPadCount = 4;
 
 // I2C (directly touchable on devkit)
 constexpr gpio_num_t kI2cSda = GPIO_NUM_8;
@@ -55,11 +56,12 @@ constexpr gpio_num_t kI2sDout = GPIO_NUM_13;
 #ifdef BOARD_NFF_DEVBOARD
 
 namespace pins {
-// LED Ring (16x SK6812MINI-E RGBW via SN74AHCT1G125 level shifter)
+// LED Ring (16x SK6812MINI-E via SN74AHCT1G125 level shifter)
 // H1 pin 9 = LED_DATA_3V3 = ESP32 GPIO16
+// NOTE: The SK6812MINI-E on this board appears to be RGB, not RGBW
 constexpr gpio_num_t kLedData = GPIO_NUM_16;
 constexpr uint8_t kLedCount = 16;
-constexpr bool kLedIsRgbw = true;  // SK6812 has white channel
+constexpr bool kLedIsRgbw = false;  // Using RGB mode
 
 // I2C bus (LIS2DW12 @ 0x19, DRV2605L @ 0x5A)
 // SA0 tied to 3.3V sets LIS2DW12 address to 0x19
@@ -69,7 +71,6 @@ constexpr gpio_num_t kI2cScl = GPIO_NUM_9;
 // I2C device addresses
 constexpr uint8_t kLis2dw12Addr = 0x19;  // LIS2DW12 with SA0=high
 constexpr uint8_t kDrv2605lAddr = 0x5A;  // DRV2605L haptic driver
-
 
 // IMU interrupt (LIS2DW12 INT1)
 // H1 pin 5 = IMU_INT = ESP32 GPIO5
@@ -87,6 +88,14 @@ constexpr gpio_num_t kI2sDout = GPIO_NUM_13;
 // H1 pin 7 = AMP_SD = GPIO7
 // High or floating = enabled, Low = shutdown
 constexpr gpio_num_t kAudioSd = GPIO_NUM_7;
+
+// Touch pads (4x 15mm copper pads with 1mm guard ring)
+// From schematic: K1=GPIO1, K2=GPIO2, K3=GPIO4, K4=GPIO6
+constexpr gpio_num_t kTouch1 = GPIO_NUM_1;
+constexpr gpio_num_t kTouch2 = GPIO_NUM_2;
+constexpr gpio_num_t kTouch3 = GPIO_NUM_4;
+constexpr gpio_num_t kTouch4 = GPIO_NUM_6;
+constexpr uint8_t kTouchPadCount = 4;
 }  // namespace pins
 
 #endif  // BOARD_NFF_DEVBOARD
@@ -107,6 +116,7 @@ constexpr gpio_num_t kTouch1 = GPIO_NUM_1;
 constexpr gpio_num_t kTouch2 = GPIO_NUM_2;
 constexpr gpio_num_t kTouch3 = GPIO_NUM_3;
 constexpr gpio_num_t kTouch4 = GPIO_NUM_4;
+constexpr uint8_t kTouchPadCount = 4;
 
 // I2C bus (DRV2605L @ 0x5A, LIS2DW12 @ 0x18)
 constexpr gpio_num_t kI2cSda = GPIO_NUM_8;
