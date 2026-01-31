@@ -8,6 +8,7 @@
  * Used for hardware bring-up and debugging.
  */
 
+#include "interfaces/iHapticDriver.hpp"
 #include "interfaces/iImuDriver.hpp"
 #include "services/audioService.hpp"
 #include "services/ledService.hpp"
@@ -43,7 +44,7 @@ public:
      * @param led LED service reference (must outlive service)
      */
     ImuService(IImuDriver& imu, LedService& led)
-        : imu_(imu), led_(led), audio_(nullptr), taskHandle_(nullptr), running_(false) {}
+        : imu_(imu), led_(led), audio_(nullptr), haptic_(nullptr), taskHandle_(nullptr), running_(false) {}
 
     ~ImuService() { stop(); }
 
@@ -128,6 +129,18 @@ public:
         ESP_LOGI(kTag, "Audio service %s", audio ? "connected" : "disconnected");
     }
 
+    /**
+     * @brief Set haptic driver for tap feedback
+     *
+     * When set, haptic feedback will be triggered on tap detection.
+     *
+     * @param haptic Haptic driver pointer (can be nullptr to disable)
+     */
+    void setHapticDriver(IHapticDriver* haptic) {
+        haptic_ = haptic;
+        ESP_LOGI(kTag, "Haptic driver %s", haptic ? "connected" : "disconnected");
+    }
+
 private:
     static constexpr const char* kTag = "imu_svc";
 
@@ -178,10 +191,10 @@ private:
     }
 
     /**
-     * @brief Request LED flash and audio beep (thread-safe)
+     * @brief Request LED flash, audio beep, and haptic feedback (thread-safe)
      *
-     * Requests LedService to flash white and AudioService to play a beep.
-     * Both are executed by their respective service tasks.
+     * Requests LedService to flash white, AudioService to play a beep,
+     * and haptic driver to buzz. All are executed by their respective tasks.
      */
     void flashWhite() {
         TRACE_INSTANT(TRACE_ID("Imu.FlashRequested"), domes::trace::Category::kLed);
@@ -192,11 +205,18 @@ private:
             TRACE_INSTANT(TRACE_ID("Imu.BeepRequested"), domes::trace::Category::kAudio);
             audio_->playAsset("beep");
         }
+
+        // Trigger haptic feedback if available
+        if (haptic_) {
+            TRACE_INSTANT(TRACE_ID("Imu.HapticRequested"), domes::trace::Category::kHaptic);
+            haptic_->playEffect(47);  // Long buzz - more noticeable
+        }
     }
 
     IImuDriver& imu_;
     LedService& led_;
     AudioService* audio_;
+    IHapticDriver* haptic_;
     TaskHandle_t taskHandle_;
     std::atomic<bool> running_;
     std::atomic<bool> triageMode_{true};  // Enabled by default
