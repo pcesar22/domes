@@ -11,6 +11,7 @@
 
 #include "config/configCommandHandler.hpp"
 #include "config/featureManager.hpp"
+#include "config/modeManager.hpp"
 #include "esp_ota_ops.h"
 #include "interfaces/iTaskRunner.hpp"
 #include "interfaces/iTransport.hpp"
@@ -98,6 +99,17 @@ public:
     void setImuService(ImuService* imuService) {
         if (configHandler_) {
             configHandler_->setImuService(imuService);
+        }
+    }
+
+    /**
+     * @brief Set mode manager for system mode commands
+     *
+     * @param modeManager Mode manager instance
+     */
+    void setModeManager(config::ModeManager* modeManager) {
+        if (configHandler_) {
+            configHandler_->setModeManager(modeManager);
         }
     }
 

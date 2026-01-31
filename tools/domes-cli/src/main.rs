@@ -17,6 +17,9 @@
 //!   domes-cli --port /dev/ttyACM0 trace stop
 //!   domes-cli --port /dev/ttyACM0 trace status
 //!   domes-cli --port /dev/ttyACM0 trace dump -o trace.json
+//!   domes-cli --port /dev/ttyACM0 system mode
+//!   domes-cli --port /dev/ttyACM0 system set-mode triage
+//!   domes-cli --port /dev/ttyACM0 system info
 //!
 //! Usage (WiFi):
 //!   domes-cli --wifi 192.168.1.100:5000 feature list
@@ -36,7 +39,7 @@ mod protocol;
 mod transport;
 
 use clap::{Parser, Subcommand};
-use proto::config::Feature;
+use proto::config::{Feature, SystemMode};
 use std::path::PathBuf;
 use std::time::Duration;
 use transport::{BleTarget, BleTransport, SerialTransport, TcpTransport, Transport};
@@ -105,6 +108,12 @@ enum Commands {
     Imu {
         #[command(subcommand)]
         action: ImuAction,
+    },
+
+    /// System mode and info commands
+    System {
+        #[command(subcommand)]
+        action: SystemAction,
     },
 }
 
@@ -185,6 +194,21 @@ enum ImuAction {
         #[arg(long)]
         disable: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum SystemAction {
+    /// Get current system mode
+    Mode,
+
+    /// Set system mode (e.g., idle, triage, connected, game, error)
+    SetMode {
+        /// Mode name (idle, triage, connected, game, error)
+        mode: String,
+    },
+
+    /// Get system information (version, uptime, heap, etc.)
+    Info,
 }
 
 #[derive(Subcommand)]
@@ -479,6 +503,38 @@ fn main() -> anyhow::Result<()> {
                     "IMU triage mode {}",
                     if result { "enabled" } else { "disabled" }
                 );
+            }
+        },
+
+        Commands::System { action } => match action {
+            SystemAction::Mode => {
+                let info = commands::system_get_mode(transport.as_mut())?;
+                println!("System mode: {}", info.mode);
+                println!("  Time in mode: {} ms", info.time_in_mode_ms);
+            }
+
+            SystemAction::SetMode { mode } => {
+                let mode: SystemMode = mode
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("Unknown mode: {}. Valid: idle, triage, connected, game, error", mode))?;
+
+                let (new_mode, ok) = commands::system_set_mode(transport.as_mut(), mode)?;
+                if ok {
+                    println!("System mode set to: {}", new_mode);
+                } else {
+                    println!("Mode transition rejected (current mode: {})", new_mode);
+                }
+            }
+
+            SystemAction::Info => {
+                let info = commands::system_info(transport.as_mut())?;
+                println!("System Information:");
+                println!("  Firmware:   {}", info.firmware_version);
+                println!("  Mode:       {}", info.mode);
+                println!("  Uptime:     {} s", info.uptime_s);
+                println!("  Free heap:  {} bytes", info.free_heap);
+                println!("  Boot count: {}", info.boot_count);
+                println!("  Features:   0x{:08X}", info.feature_mask);
             }
         },
     }

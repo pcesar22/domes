@@ -63,6 +63,47 @@ pub mod config {
             *self as i32 as u8
         }
     }
+
+    impl SystemMode {
+        /// Get user-friendly name for CLI display
+        pub fn cli_name(&self) -> &'static str {
+            match self {
+                SystemMode::Booting => "booting",
+                SystemMode::Idle => "idle",
+                SystemMode::Triage => "triage",
+                SystemMode::Connected => "connected",
+                SystemMode::Game => "game",
+                SystemMode::Error => "error",
+            }
+        }
+
+        /// Parse from CLI input string
+        pub fn from_cli_name(s: &str) -> Option<SystemMode> {
+            match s.to_lowercase().as_str() {
+                "booting" => Some(SystemMode::Booting),
+                "idle" => Some(SystemMode::Idle),
+                "triage" => Some(SystemMode::Triage),
+                "connected" => Some(SystemMode::Connected),
+                "game" => Some(SystemMode::Game),
+                "error" => Some(SystemMode::Error),
+                _ => None,
+            }
+        }
+    }
+
+    impl std::fmt::Display for SystemMode {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.cli_name())
+        }
+    }
+
+    impl std::str::FromStr for SystemMode {
+        type Err = String;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            Self::from_cli_name(s).ok_or_else(|| format!("Unknown mode: {}", s))
+        }
+    }
 }
 
 /// Trace protocol types (generated from trace.proto)

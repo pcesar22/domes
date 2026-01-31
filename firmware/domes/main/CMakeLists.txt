@@ -17,6 +17,7 @@ idf_component_register(
         "trace/traceHooks.cpp"
         "trace/traceCommandHandler.cpp"
         "config/featureManager.cpp"
+        "config/modeManager.cpp"
         "config/configCommandHandler.cpp"
     INCLUDE_DIRS
         "."

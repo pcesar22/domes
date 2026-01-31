@@ -10,6 +10,7 @@
 
 #include "configProtocol.hpp"
 #include "featureManager.hpp"
+#include "modeManager.hpp"
 #include "interfaces/iTransport.hpp"
 
 #include <cstdint>
@@ -51,6 +52,13 @@ public:
      * @param imuService IMU service instance (may be nullptr to disable IMU commands)
      */
     void setImuService(ImuService* imuService) { imuService_ = imuService; }
+
+    /**
+     * @brief Set mode manager for system mode commands
+     *
+     * @param modeManager Mode manager instance (may be nullptr to disable mode commands)
+     */
+    void setModeManager(ModeManager* modeManager) { modeManager_ = modeManager; }
 
     /**
      * @brief Handle an incoming config command
@@ -106,6 +114,21 @@ private:
     void handleSetImuTriage(const uint8_t* payload, size_t len);
 
     /**
+     * @brief Handle GET_MODE request
+     */
+    void handleGetMode();
+
+    /**
+     * @brief Handle SET_MODE request
+     */
+    void handleSetMode(const uint8_t* payload, size_t len);
+
+    /**
+     * @brief Handle GET_SYSTEM_INFO request
+     */
+    void handleGetSystemInfo();
+
+    /**
      * @brief Send list features response
      */
     void sendListFeaturesResponse();
@@ -157,6 +180,7 @@ private:
     FeatureManager& features_;
     LedService* ledService_ = nullptr;
     ImuService* imuService_ = nullptr;
+    ModeManager* modeManager_ = nullptr;
 };
 
 }  // namespace domes::config
