@@ -22,6 +22,7 @@
 #include "services/touchService.hpp"
 #include "trace/traceApi.hpp"
 #include "config/featureManager.hpp"
+#include "config/modeManager.hpp"
 #include "trace/traceRecorder.hpp"
 #include "transport/bleOtaService.hpp"
 #include "transport/serialOtaReceiver.hpp"
@@ -71,6 +72,7 @@ static domes::SerialOtaReceiver* serialOtaReceiver = nullptr;
 static domes::BleOtaService* bleOtaService = nullptr;
 static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
 static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
+static domes::config::ModeManager* modeManager = nullptr;  // System mode manager
 static domes::LedService* ledService = nullptr;  // LED pattern service
 static i2c_master_bus_handle_t i2cBus = nullptr;  // I2C master bus
 static domes::Lis2dw12Driver* imuDriver = nullptr;  // LIS2DW12 IMU driver
@@ -226,6 +228,34 @@ static void initFeatureManager() {
     static domes::config::FeatureManager features;
     featureManager = &features;
     ESP_LOGI(kTag, "Feature manager initialized");
+}
+
+/**
+ * @brief Initialize system mode manager
+ *
+ * Creates ModeManager and starts a 10Hz tick task for timeout monitoring.
+ * Must be called after initFeatureManager().
+ */
+static void initModeManager() {
+    if (!featureManager) {
+        ESP_LOGE(kTag, "Cannot init mode manager: featureManager not initialized");
+        return;
+    }
+
+    static domes::config::ModeManager manager(*featureManager);
+    modeManager = &manager;
+    ESP_LOGI(kTag, "Mode manager initialized (BOOTING)");
+
+    // Create tick task for timeout monitoring (10Hz)
+    xTaskCreate(
+        [](void* param) {
+            auto* mgr = static_cast<domes::config::ModeManager*>(param);
+            while (true) {
+                mgr->tick();
+                vTaskDelay(pdMS_TO_TICKS(100));  // 10Hz
+            }
+        },
+        "mode_tick", 2048, modeManager, domes::infra::priority::kLow, nullptr);
 }
 
 /**
@@ -459,14 +489,15 @@ static esp_err_t initSerialOta() {
     static domes::SerialOtaReceiver receiver(*usbCdcTransport, featureManager);
     serialOtaReceiver = &receiver;
 
-    // Wire up LED service for pattern commands
+    // Wire up services for config commands
     if (ledService) {
         serialOtaReceiver->setLedService(ledService);
     }
-
-    // Wire up IMU service for triage commands
     if (imuService) {
         serialOtaReceiver->setImuService(imuService);
+    }
+    if (modeManager) {
+        serialOtaReceiver->setModeManager(modeManager);
     }
 
     // Create receiver task
@@ -552,14 +583,15 @@ static esp_err_t initTcpConfigServer() {
     static domes::TcpConfigServer server(*featureManager, domes::kConfigServerPort);
     tcpConfigServer = &server;
 
-    // Wire up LED service for pattern commands
+    // Wire up services for config commands over TCP
     if (ledService) {
         tcpConfigServer->setLedService(ledService);
     }
-
-    // Wire up IMU service for triage commands
     if (imuService) {
         tcpConfigServer->setImuService(imuService);
+    }
+    if (modeManager) {
+        tcpConfigServer->setModeManager(modeManager);
     }
 
     // Create server task
@@ -861,6 +893,9 @@ extern "C" void app_main() {
     // Initialize feature manager FIRST (needed by BLE, TCP config server, and serial OTA)
     initFeatureManager();
 
+    // Initialize mode manager (after feature manager, before services)
+    initModeManager();
+
     // Initialize LED service (needed for LED pattern commands)
     if (initLedService() != ESP_OK) {
         ESP_LOGW(kTag, "LED service init failed, continuing without LED patterns");
@@ -901,13 +936,15 @@ extern "C" void app_main() {
         ESP_LOGI(kTag, "BLE stack initialized (NimBLE + advertising)");
         ESP_LOGI(kTag, "BLE heap usage: %zu bytes", heapBeforeBle - heapAfterBle);
 
-        // Wire up LED service for pattern commands over BLE
+        // Wire up services for config commands over BLE
         if (bleOtaReceiver && ledService) {
             bleOtaReceiver->setLedService(ledService);
         }
-        // Wire up IMU service for triage commands over BLE
         if (bleOtaReceiver && imuService) {
             bleOtaReceiver->setImuService(imuService);
+        }
+        if (bleOtaReceiver && modeManager) {
+            bleOtaReceiver->setModeManager(modeManager);
         }
     }
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
@@ -929,6 +966,12 @@ extern "C" void app_main() {
     // Initialize serial OTA receiver (USB-CDC based) - this takes over console
     if (initSerialOta() != ESP_OK) {
         ESP_LOGW(kTag, "Serial OTA init failed, continuing without serial OTA");
+    }
+
+    // Transition from BOOTING → IDLE now that all services are up
+    if (modeManager) {
+        modeManager->transitionTo(domes::config::SystemMode::kIdle);
+        ESP_LOGI(kTag, "System mode: BOOTING → IDLE");
     }
 
     // Green LED = boot success

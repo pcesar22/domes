@@ -174,6 +174,7 @@ void TcpConfigServer::handleClient(int clientSock) {
     config::ConfigCommandHandler handler(transport, features_);
     handler.setLedService(ledService_);
     handler.setImuService(imuService_);
+    handler.setModeManager(modeManager_);
 
     // Frame decoder
     FrameDecoder decoder;

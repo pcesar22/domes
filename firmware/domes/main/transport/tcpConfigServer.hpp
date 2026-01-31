@@ -14,6 +14,7 @@
 #include "tcpTransport.hpp"
 #include "config/configCommandHandler.hpp"
 #include "config/featureManager.hpp"
+#include "config/modeManager.hpp"
 #include "interfaces/iTaskRunner.hpp"
 
 #include <atomic>
@@ -105,6 +106,13 @@ public:
      */
     void setImuService(ImuService* imuService) { imuService_ = imuService; }
 
+    /**
+     * @brief Set mode manager for system mode commands
+     *
+     * @param modeManager Mode manager instance
+     */
+    void setModeManager(config::ModeManager* modeManager) { modeManager_ = modeManager; }
+
 private:
     /**
      * @brief Handle a single client connection
@@ -120,6 +128,7 @@ private:
     uint16_t port_;
     LedService* ledService_ = nullptr;
     ImuService* imuService_ = nullptr;
+    config::ModeManager* modeManager_ = nullptr;
 
     std::atomic<bool> stopRequested_;
     std::atomic<int> listenSocket_;

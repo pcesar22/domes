@@ -30,6 +30,16 @@ TEST(ConfigMsgType, IsConfigMessageInRange) {
     EXPECT_TRUE(isConfigMessage(0x25));  // GetFeatureRsp
 }
 
+TEST(ConfigMsgType, IsConfigMessageSystemModeRange) {
+    // System mode commands (0x30-0x35) should be config messages
+    EXPECT_TRUE(isConfigMessage(0x30));  // GetModeReq
+    EXPECT_TRUE(isConfigMessage(0x31));  // GetModeRsp
+    EXPECT_TRUE(isConfigMessage(0x32));  // SetModeReq
+    EXPECT_TRUE(isConfigMessage(0x33));  // SetModeRsp
+    EXPECT_TRUE(isConfigMessage(0x34));  // GetSystemInfoReq
+    EXPECT_TRUE(isConfigMessage(0x35));  // GetSystemInfoRsp
+}
+
 TEST(ConfigMsgType, IsConfigMessageOutOfRange) {
     // OTA and trace ranges should not be config messages
     EXPECT_FALSE(isConfigMessage(0x01));  // OTA_BEGIN
@@ -38,6 +48,15 @@ TEST(ConfigMsgType, IsConfigMessageOutOfRange) {
     EXPECT_FALSE(isConfigMessage(0x17));  // TRACE_ACK
     EXPECT_FALSE(isConfigMessage(0x00));  // Unknown
     EXPECT_FALSE(isConfigMessage(0xFF));  // Unknown
+    EXPECT_FALSE(isConfigMessage(0x1F));  // Just before config range
+    EXPECT_FALSE(isConfigMessage(0x36));  // Just past system mode range
+}
+
+TEST(ConfigMsgType, GapValuesAreInRange) {
+    // Gap values 0x2C-0x2F fall within the simple range check.
+    // They're routed to the config handler but safely ignored by the switch.
+    EXPECT_TRUE(isConfigMessage(0x2C));
+    EXPECT_TRUE(isConfigMessage(0x2F));
 }
 
 // =============================================================================
@@ -192,4 +211,86 @@ TEST(Constants, MaxFeatures) {
 
 TEST(Constants, MaxFrameSize) {
     EXPECT_EQ(kMaxFrameSize, 256u);
+}
+
+// =============================================================================
+// System Mode Protobuf Tests
+// =============================================================================
+
+TEST(Protobuf, GetModeResponseEncodeDecode) {
+    domes_config_GetModeResponse resp = domes_config_GetModeResponse_init_zero;
+    resp.mode = domes_config_SystemMode_SYSTEM_MODE_TRIAGE;
+    resp.time_in_mode_ms = 12345;
+
+    std::array<uint8_t, 64> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_GetModeResponse_fields, &resp));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    domes_config_GetModeResponse decoded = domes_config_GetModeResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_GetModeResponse_fields, &decoded));
+
+    EXPECT_EQ(decoded.mode, domes_config_SystemMode_SYSTEM_MODE_TRIAGE);
+    EXPECT_EQ(decoded.time_in_mode_ms, 12345u);
+}
+
+TEST(Protobuf, SetModeRequestEncodeDecode) {
+    domes_config_SetModeRequest req = domes_config_SetModeRequest_init_zero;
+    req.mode = domes_config_SystemMode_SYSTEM_MODE_CONNECTED;
+
+    std::array<uint8_t, 64> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SetModeRequest_fields, &req));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    domes_config_SetModeRequest decoded = domes_config_SetModeRequest_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SetModeRequest_fields, &decoded));
+
+    EXPECT_EQ(decoded.mode, domes_config_SystemMode_SYSTEM_MODE_CONNECTED);
+}
+
+TEST(Protobuf, SetModeResponseEncodeDecode) {
+    domes_config_SetModeResponse resp = domes_config_SetModeResponse_init_zero;
+    resp.mode = domes_config_SystemMode_SYSTEM_MODE_GAME;
+    resp.transition_ok = true;
+
+    std::array<uint8_t, 64> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SetModeResponse_fields, &resp));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    domes_config_SetModeResponse decoded = domes_config_SetModeResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SetModeResponse_fields, &decoded));
+
+    EXPECT_EQ(decoded.mode, domes_config_SystemMode_SYSTEM_MODE_GAME);
+    EXPECT_TRUE(decoded.transition_ok);
+}
+
+TEST(Protobuf, GetSystemInfoResponseEncodeDecode) {
+    domes_config_GetSystemInfoResponse resp = domes_config_GetSystemInfoResponse_init_zero;
+    strncpy(resp.firmware_version, "v1.2.3", sizeof(resp.firmware_version) - 1);
+    resp.uptime_s = 3600;
+    resp.free_heap = 65536;
+    resp.boot_count = 42;
+    resp.mode = domes_config_SystemMode_SYSTEM_MODE_IDLE;
+    resp.feature_mask = 0x000000EE;
+
+    std::array<uint8_t, 128> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_GetSystemInfoResponse_fields, &resp));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    domes_config_GetSystemInfoResponse decoded = domes_config_GetSystemInfoResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_GetSystemInfoResponse_fields, &decoded));
+
+    EXPECT_STREQ(decoded.firmware_version, "v1.2.3");
+    EXPECT_EQ(decoded.uptime_s, 3600u);
+    EXPECT_EQ(decoded.free_heap, 65536u);
+    EXPECT_EQ(decoded.boot_count, 42u);
+    EXPECT_EQ(decoded.mode, domes_config_SystemMode_SYSTEM_MODE_IDLE);
+    EXPECT_EQ(decoded.feature_mask, 0x000000EEu);
 }

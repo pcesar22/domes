@@ -30,6 +30,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../common ${CMAKE_BINARY_DIR}/commo
 # Config module sources (from main firmware)
 set(CONFIG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/config/featureManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/config/modeManager.cpp
 )
 
 # Test executable
@@ -41,10 +42,13 @@ add_executable(test_app
     main/test_version_parser.cpp
     main/test_config_protocol.cpp
     main/test_feature_manager.cpp
+    main/test_mode_manager.cpp
     ${CONFIG_SOURCES}
 )
 
 target_include_directories(test_app PRIVATE
+    # ESP-IDF stubs must come BEFORE firmware includes to override esp_log.h, esp_timer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main
 )
 

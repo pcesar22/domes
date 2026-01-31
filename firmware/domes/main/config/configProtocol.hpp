@@ -22,6 +22,7 @@ namespace domes::config {
  */
 enum class MsgType : uint8_t {
     kUnknown         = domes_config_MsgType_MSG_TYPE_UNKNOWN,
+    // Config commands (0x20-0x2B)
     kListFeaturesReq = domes_config_MsgType_MSG_TYPE_LIST_FEATURES_REQ,
     kListFeaturesRsp = domes_config_MsgType_MSG_TYPE_LIST_FEATURES_RSP,
     kSetFeatureReq   = domes_config_MsgType_MSG_TYPE_SET_FEATURE_REQ,
@@ -34,6 +35,13 @@ enum class MsgType : uint8_t {
     kGetLedPatternRsp = domes_config_MsgType_MSG_TYPE_GET_LED_PATTERN_RSP,
     kSetImuTriageReq  = domes_config_MsgType_MSG_TYPE_SET_IMU_TRIAGE_REQ,
     kSetImuTriageRsp  = domes_config_MsgType_MSG_TYPE_SET_IMU_TRIAGE_RSP,
+    // System mode commands (0x30-0x35)
+    kGetModeReq       = domes_config_MsgType_MSG_TYPE_GET_MODE_REQ,
+    kGetModeRsp       = domes_config_MsgType_MSG_TYPE_GET_MODE_RSP,
+    kSetModeReq       = domes_config_MsgType_MSG_TYPE_SET_MODE_REQ,
+    kSetModeRsp       = domes_config_MsgType_MSG_TYPE_SET_MODE_RSP,
+    kGetSystemInfoReq = domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_REQ,
+    kGetSystemInfoRsp = domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP,
 };
 
 /**
@@ -63,11 +71,11 @@ enum class Status : uint8_t {
 };
 
 /**
- * @brief Check if a message type is a config command (0x20-0x2F range)
+ * @brief Check if a message type is a config/system command (0x20-0x35 range)
  */
 inline bool isConfigMessage(uint8_t type) {
     return type >= static_cast<uint8_t>(MsgType::kListFeaturesReq) &&
-           type <= static_cast<uint8_t>(MsgType::kSetImuTriageRsp);
+           type <= static_cast<uint8_t>(MsgType::kGetSystemInfoRsp);
 }
 
 /**

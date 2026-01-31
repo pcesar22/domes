@@ -15,9 +15,16 @@
 #include "pb_decode.h"
 
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_timer.h"
 
 #include <array>
 #include <cstring>
+
+// Version string from CMake
+#ifndef DOMES_VERSION_STRING
+#define DOMES_VERSION_STRING "v0.0.0-unknown"
+#endif
 
 namespace {
 constexpr const char* kTag = "config_cmd";
@@ -31,6 +38,14 @@ ConfigCommandHandler::ConfigCommandHandler(ITransport& transport, FeatureManager
 }
 
 bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, size_t len) {
+    // Reset activity timer and auto-enter TRIAGE on any config/system command
+    if (modeManager_) {
+        modeManager_->resetActivityTimer();
+        if (modeManager_->currentMode() == SystemMode::kIdle) {
+            modeManager_->transitionTo(SystemMode::kTriage);
+        }
+    }
+
     auto msgType = static_cast<MsgType>(type);
 
     switch (msgType) {
@@ -62,6 +77,21 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
         case MsgType::kSetImuTriageReq:
             ESP_LOGD(kTag, "Received SET_IMU_TRIAGE");
             handleSetImuTriage(payload, len);
+            return true;
+
+        case MsgType::kGetModeReq:
+            ESP_LOGD(kTag, "Received GET_MODE");
+            handleGetMode();
+            return true;
+
+        case MsgType::kSetModeReq:
+            ESP_LOGD(kTag, "Received SET_MODE");
+            handleSetMode(payload, len);
+            return true;
+
+        case MsgType::kGetSystemInfoReq:
+            ESP_LOGD(kTag, "Received GET_SYSTEM_INFO");
+            handleGetSystemInfo();
             return true;
 
         default:
@@ -342,6 +372,112 @@ void ConfigCommandHandler::sendImuTriageResponse(Status status, bool enabled) {
     }
 
     sendFrame(MsgType::kSetImuTriageRsp, payload.data(), 1 + ostream.bytes_written);
+}
+
+void ConfigCommandHandler::handleGetMode() {
+    if (!modeManager_) {
+        ESP_LOGW(kTag, "Mode manager not available");
+        // Send error response
+        std::array<uint8_t, 1> payload;
+        payload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kGetModeRsp, payload.data(), 1);
+        return;
+    }
+
+    domes_config_GetModeResponse resp = domes_config_GetModeResponse_init_zero;
+    resp.mode = static_cast<domes_config_SystemMode>(modeManager_->currentMode());
+    resp.time_in_mode_ms = modeManager_->timeInModeMs();
+
+    // Encode to buffer: [status_byte][protobuf]
+    std::array<uint8_t, domes_config_GetModeResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&stream, domes_config_GetModeResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode GetModeResponse: %s", PB_GET_ERROR(&stream));
+        return;
+    }
+
+    sendFrame(MsgType::kGetModeRsp, payload.data(), 1 + stream.bytes_written);
+}
+
+void ConfigCommandHandler::handleSetMode(const uint8_t* payload, size_t len) {
+    if (!modeManager_) {
+        ESP_LOGW(kTag, "Mode manager not available");
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetModeRsp, errPayload.data(), 1);
+        return;
+    }
+
+    // Decode protobuf
+    domes_config_SetModeRequest req = domes_config_SetModeRequest_init_zero;
+    pb_istream_t stream = pb_istream_from_buffer(payload, len);
+
+    if (!pb_decode(&stream, domes_config_SetModeRequest_fields, &req)) {
+        ESP_LOGW(kTag, "Failed to decode SET_MODE: %s", PB_GET_ERROR(&stream));
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetModeRsp, errPayload.data(), 1);
+        return;
+    }
+
+    auto targetMode = static_cast<SystemMode>(req.mode);
+    ESP_LOGI(kTag, "Set mode request: %s", systemModeToString(targetMode));
+
+    bool ok = modeManager_->transitionTo(targetMode);
+
+    // Build response
+    domes_config_SetModeResponse resp = domes_config_SetModeResponse_init_zero;
+    resp.mode = static_cast<domes_config_SystemMode>(modeManager_->currentMode());
+    resp.transition_ok = ok;
+
+    std::array<uint8_t, domes_config_SetModeResponse_size + 10> respPayload;
+    respPayload[0] = static_cast<uint8_t>(ok ? Status::kOk : Status::kError);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(respPayload.data() + 1, respPayload.size() - 1);
+    if (!pb_encode(&ostream, domes_config_SetModeResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode SetModeResponse: %s", PB_GET_ERROR(&ostream));
+        return;
+    }
+
+    sendFrame(MsgType::kSetModeRsp, respPayload.data(), 1 + ostream.bytes_written);
+}
+
+void ConfigCommandHandler::handleGetSystemInfo() {
+    domes_config_GetSystemInfoResponse resp = domes_config_GetSystemInfoResponse_init_zero;
+
+    // Firmware version
+    strncpy(resp.firmware_version, DOMES_VERSION_STRING, sizeof(resp.firmware_version) - 1);
+
+    // Uptime in seconds
+    resp.uptime_s = static_cast<uint32_t>(esp_timer_get_time() / 1'000'000);
+
+    // Free heap
+    resp.free_heap = static_cast<uint32_t>(esp_get_free_heap_size());
+
+    // Boot count (0 if not available)
+    resp.boot_count = 0;  // TODO: Read from NVS stats
+
+    // Mode and feature mask
+    if (modeManager_) {
+        resp.mode = static_cast<domes_config_SystemMode>(modeManager_->currentMode());
+    } else {
+        resp.mode = domes_config_SystemMode_SYSTEM_MODE_BOOTING;
+    }
+    resp.feature_mask = features_.getMask();
+
+    // Encode to buffer: [status_byte][protobuf]
+    std::array<uint8_t, domes_config_GetSystemInfoResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&stream, domes_config_GetSystemInfoResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode GetSystemInfoResponse: %s", PB_GET_ERROR(&stream));
+        return;
+    }
+
+    sendFrame(MsgType::kGetSystemInfoRsp, payload.data(), 1 + stream.bytes_written);
 }
 
 }  // namespace domes::config

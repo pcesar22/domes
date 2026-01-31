@@ -6,10 +6,12 @@
 syntax = "proto3";
 package domes.config;
 
-// Frame-level message types for config protocol (0x20-0x2F range)
+// Frame-level message types for config protocol
 // Used in the frame header [0xAA 0x55][Len][MsgType][Payload][CRC32]
 enum MsgType {
     MSG_TYPE_UNKNOWN = 0;
+
+    // Config commands (0x20-0x2F range)
     MSG_TYPE_LIST_FEATURES_REQ = 0x20;
     MSG_TYPE_LIST_FEATURES_RSP = 0x21;
     MSG_TYPE_SET_FEATURE_REQ = 0x22;
@@ -22,6 +24,14 @@ enum MsgType {
     MSG_TYPE_GET_LED_PATTERN_RSP = 0x29;
     MSG_TYPE_SET_IMU_TRIAGE_REQ = 0x2A;
     MSG_TYPE_SET_IMU_TRIAGE_RSP = 0x2B;
+
+    // System mode commands (0x30-0x35 range)
+    MSG_TYPE_GET_MODE_REQ = 0x30;
+    MSG_TYPE_GET_MODE_RSP = 0x31;
+    MSG_TYPE_SET_MODE_REQ = 0x32;
+    MSG_TYPE_SET_MODE_RSP = 0x33;
+    MSG_TYPE_GET_SYSTEM_INFO_REQ = 0x34;
+    MSG_TYPE_GET_SYSTEM_INFO_RSP = 0x35;
 }
 
 // Status codes for responses
@@ -118,6 +128,48 @@ message SetImuTriageRequest {
 
 message SetImuTriageResponse {
     bool enabled = 1;
+}
+
+// System operating modes
+enum SystemMode {
+    SYSTEM_MODE_BOOTING = 0;
+    SYSTEM_MODE_IDLE = 1;
+    SYSTEM_MODE_TRIAGE = 2;
+    SYSTEM_MODE_CONNECTED = 3;
+    SYSTEM_MODE_GAME = 4;
+    SYSTEM_MODE_ERROR = 5;
+}
+
+// System mode messages
+message GetModeRequest {
+    // Empty - returns current mode
+}
+
+message GetModeResponse {
+    SystemMode mode = 1;
+    uint32 time_in_mode_ms = 2;
+}
+
+message SetModeRequest {
+    SystemMode mode = 1;
+}
+
+message SetModeResponse {
+    SystemMode mode = 1;
+    bool transition_ok = 2;
+}
+
+message GetSystemInfoRequest {
+    // Empty - returns system info
+}
+
+message GetSystemInfoResponse {
+    string firmware_version = 1;
+    uint32 uptime_s = 2;
+    uint32 free_heap = 3;
+    uint32 boot_count = 4;
+    SystemMode mode = 5;
+    uint32 feature_mask = 6;
 }
 
 // Top-level request envelope

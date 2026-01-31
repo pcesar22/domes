@@ -7,9 +7,10 @@
 //! firmware/common/proto/*.proto. DO NOT hand-roll protocol types here.
 
 use crate::proto::config::{
-    Color, Feature, GetLedPatternResponse, LedPattern, LedPatternType, ListFeaturesResponse,
-    SetFeatureRequest, SetFeatureResponse, SetImuTriageRequest, SetImuTriageResponse,
-    SetLedPatternRequest, SetLedPatternResponse, Status,
+    Color, Feature, GetLedPatternResponse, GetModeResponse, GetSystemInfoResponse, LedPattern,
+    LedPatternType, ListFeaturesResponse, SetFeatureRequest, SetFeatureResponse,
+    SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest, SetLedPatternResponse,
+    SetModeRequest, SetModeResponse, Status, SystemMode,
 };
 use prost::Message;
 use thiserror::Error;
@@ -34,6 +35,12 @@ impl TryFrom<u8> for ConfigMsgType {
             0x29 => Ok(Self::GetLedPatternRsp),
             0x2A => Ok(Self::SetImuTriageReq),
             0x2B => Ok(Self::SetImuTriageRsp),
+            0x30 => Ok(Self::GetModeReq),
+            0x31 => Ok(Self::GetModeRsp),
+            0x32 => Ok(Self::SetModeReq),
+            0x33 => Ok(Self::SetModeRsp),
+            0x34 => Ok(Self::GetSystemInfoReq),
+            0x35 => Ok(Self::GetSystemInfoRsp),
             _ => Err(ProtocolError::UnknownMessageType(value)),
         }
     }
@@ -311,4 +318,112 @@ pub fn parse_imu_triage_response(payload: &[u8]) -> Result<bool, ProtocolError> 
     let resp = SetImuTriageResponse::decode(&payload[1..])?;
 
     Ok(resp.enabled)
+}
+
+/// System mode info for CLI use
+#[derive(Debug, Clone)]
+pub struct CliModeInfo {
+    pub mode: SystemMode,
+    pub time_in_mode_ms: u32,
+}
+
+/// System info for CLI use
+#[derive(Debug, Clone)]
+pub struct CliSystemInfo {
+    pub firmware_version: String,
+    pub uptime_s: u32,
+    pub free_heap: u32,
+    pub boot_count: u32,
+    pub mode: SystemMode,
+    pub feature_mask: u32,
+}
+
+/// Serialize SetModeRequest using protobuf encoding
+pub fn serialize_set_mode(mode: SystemMode) -> Vec<u8> {
+    let req = SetModeRequest {
+        mode: mode as i32,
+    };
+    req.encode_to_vec()
+}
+
+/// Parse GetModeResponse payload
+/// Format: [status_byte][protobuf_GetModeResponse]
+pub fn parse_get_mode_response(payload: &[u8]) -> Result<CliModeInfo, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = GetModeResponse::decode(&payload[1..])?;
+    let mode = SystemMode::try_from(resp.mode).unwrap_or(SystemMode::Booting);
+
+    Ok(CliModeInfo {
+        mode,
+        time_in_mode_ms: resp.time_in_mode_ms,
+    })
+}
+
+/// Parse SetModeResponse payload
+/// Format: [status_byte][protobuf_SetModeResponse]
+pub fn parse_set_mode_response(payload: &[u8]) -> Result<(SystemMode, bool), ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = SetModeResponse::decode(&payload[1..])?;
+    let mode = SystemMode::try_from(resp.mode).unwrap_or(SystemMode::Booting);
+
+    Ok((mode, resp.transition_ok))
+}
+
+/// Parse GetSystemInfoResponse payload
+/// Format: [status_byte][protobuf_GetSystemInfoResponse]
+pub fn parse_get_system_info_response(payload: &[u8]) -> Result<CliSystemInfo, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = GetSystemInfoResponse::decode(&payload[1..])?;
+    let mode = SystemMode::try_from(resp.mode).unwrap_or(SystemMode::Booting);
+
+    Ok(CliSystemInfo {
+        firmware_version: resp.firmware_version,
+        uptime_s: resp.uptime_s,
+        free_heap: resp.free_heap,
+        boot_count: resp.boot_count,
+        mode,
+        feature_mask: resp.feature_mask,
+    })
 }
