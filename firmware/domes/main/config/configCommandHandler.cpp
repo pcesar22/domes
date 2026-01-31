@@ -433,7 +433,7 @@ void ConfigCommandHandler::handleSetMode(const uint8_t* payload, size_t len) {
     resp.transition_ok = ok;
 
     std::array<uint8_t, domes_config_SetModeResponse_size + 10> respPayload;
-    respPayload[0] = static_cast<uint8_t>(ok ? Status::kOk : Status::kError);
+    respPayload[0] = static_cast<uint8_t>(Status::kOk);
 
     pb_ostream_t ostream = pb_ostream_from_buffer(respPayload.data() + 1, respPayload.size() - 1);
     if (!pb_encode(&ostream, domes_config_SetModeResponse_fields, &resp)) {
