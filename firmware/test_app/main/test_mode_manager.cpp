@@ -199,10 +199,10 @@ TEST_F(ModeManagerTest, BootingToGameInvalid) {
     EXPECT_EQ(mgr_->currentMode(), SystemMode::kBooting);
 }
 
-TEST_F(ModeManagerTest, IdleToGameInvalid) {
+TEST_F(ModeManagerTest, SoloDrillIdleToGame) {
     mgr_->transitionTo(SystemMode::kIdle);
-    EXPECT_FALSE(mgr_->transitionTo(SystemMode::kGame));
-    EXPECT_EQ(mgr_->currentMode(), SystemMode::kIdle);
+    EXPECT_TRUE(mgr_->transitionTo(SystemMode::kGame));
+    EXPECT_EQ(mgr_->currentMode(), SystemMode::kGame);
 }
 
 TEST_F(ModeManagerTest, TriageToGameInvalid) {
@@ -298,7 +298,7 @@ TEST_F(ModeManagerTest, ErrorRecoveryTimeout) {
     EXPECT_EQ(mgr_->currentMode(), SystemMode::kIdle);
 }
 
-TEST_F(ModeManagerTest, GameTimeoutToConnected) {
+TEST_F(ModeManagerTest, PeerDrillTimeoutToConnected) {
     mgr_->transitionTo(SystemMode::kIdle);
     mgr_->transitionTo(SystemMode::kConnected);
     mgr_->transitionTo(SystemMode::kGame);
@@ -307,6 +307,7 @@ TEST_F(ModeManagerTest, GameTimeoutToConnected) {
     advanceTimeS(301);
     mgr_->tick();
 
+    // Entered GAME from CONNECTED, so timeout returns to CONNECTED
     EXPECT_EQ(mgr_->currentMode(), SystemMode::kConnected);
 }
 
@@ -342,4 +343,95 @@ TEST_F(ModeManagerTest, ModeToString) {
     EXPECT_STREQ(systemModeToString(SystemMode::kConnected), "CONNECTED");
     EXPECT_STREQ(systemModeToString(SystemMode::kGame), "GAME");
     EXPECT_STREQ(systemModeToString(SystemMode::kError), "ERROR");
+}
+
+// =============================================================================
+// Game Entry Tracking Tests (gameEnteredFrom_)
+// =============================================================================
+
+TEST_F(ModeManagerTest, GameEnteredFromTracksConnected) {
+    mgr_->transitionTo(SystemMode::kIdle);
+    mgr_->transitionTo(SystemMode::kConnected);
+    mgr_->transitionTo(SystemMode::kGame);
+
+    EXPECT_EQ(mgr_->gameEnteredFrom(), SystemMode::kConnected);
+}
+
+TEST_F(ModeManagerTest, GameEnteredFromTracksIdle) {
+    mgr_->transitionTo(SystemMode::kIdle);
+    mgr_->transitionTo(SystemMode::kGame);  // solo drill
+
+    EXPECT_EQ(mgr_->gameEnteredFrom(), SystemMode::kIdle);
+}
+
+TEST_F(ModeManagerTest, SoloDrillTimeoutToIdle) {
+    mgr_->transitionTo(SystemMode::kIdle);
+    mgr_->transitionTo(SystemMode::kGame);  // solo drill from IDLE
+
+    // Advance past the 5 min (300s) timeout
+    advanceTimeS(301);
+    mgr_->tick();
+
+    // Entered GAME from IDLE, so timeout returns to IDLE
+    EXPECT_EQ(mgr_->currentMode(), SystemMode::kIdle);
+}
+
+// =============================================================================
+// Mode Transition Callback Tests
+// =============================================================================
+
+TEST_F(ModeManagerTest, TransitionCallbackInvoked) {
+    SystemMode cbFrom = SystemMode::kError;
+    SystemMode cbTo = SystemMode::kError;
+    int callCount = 0;
+
+    mgr_->onTransition([&](SystemMode from, SystemMode to) {
+        cbFrom = from;
+        cbTo = to;
+        callCount++;
+    });
+
+    mgr_->transitionTo(SystemMode::kIdle);
+
+    EXPECT_EQ(callCount, 1);
+    EXPECT_EQ(cbFrom, SystemMode::kBooting);
+    EXPECT_EQ(cbTo, SystemMode::kIdle);
+}
+
+TEST_F(ModeManagerTest, TransitionCallbackCalledOnEachTransition) {
+    int callCount = 0;
+    mgr_->onTransition([&](SystemMode, SystemMode) {
+        callCount++;
+    });
+
+    mgr_->transitionTo(SystemMode::kIdle);
+    mgr_->transitionTo(SystemMode::kConnected);
+    mgr_->transitionTo(SystemMode::kGame);
+
+    EXPECT_EQ(callCount, 3);
+}
+
+TEST_F(ModeManagerTest, TransitionCallbackNotCalledOnInvalid) {
+    int callCount = 0;
+    mgr_->onTransition([&](SystemMode, SystemMode) {
+        callCount++;
+    });
+
+    // BOOTING -> GAME is invalid
+    mgr_->transitionTo(SystemMode::kGame);
+
+    EXPECT_EQ(callCount, 0);
+}
+
+TEST_F(ModeManagerTest, TransitionCallbackNotCalledOnSameMode) {
+    mgr_->transitionTo(SystemMode::kIdle);
+
+    int callCount = 0;
+    mgr_->onTransition([&](SystemMode, SystemMode) {
+        callCount++;
+    });
+
+    // Same-mode transition returns true but doesn't fire callback
+    EXPECT_TRUE(mgr_->transitionTo(SystemMode::kIdle));
+    EXPECT_EQ(callCount, 0);
 }
