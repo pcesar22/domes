@@ -23,6 +23,7 @@
 #include "trace/traceApi.hpp"
 #include "config/featureManager.hpp"
 #include "config/modeManager.hpp"
+#include "game/gameEngine.hpp"
 #include "trace/traceRecorder.hpp"
 #include "transport/bleOtaService.hpp"
 #include "transport/serialOtaReceiver.hpp"
@@ -81,6 +82,7 @@ static domes::Max98357aDriver* audioDriver = nullptr;  // MAX98357A audio driver
 static domes::AudioService* audioService = nullptr;  // Audio playback service
 static domes::TouchDriver<pins::kTouchPadCount>* touchDriver = nullptr;  // Touch pad driver
 static domes::TouchService* touchService = nullptr;  // Touch monitoring service
+static domes::game::GameEngine* gameEngine = nullptr;  // Game logic FSM
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::TcpConfigServer* tcpConfigServer = nullptr;  // WiFi config server
@@ -462,6 +464,65 @@ static esp_err_t initTouch() {
     // Enable touch feature by default
     featureManager->setEnabled(domes::config::Feature::kTouch, true);
     ESP_LOGI(kTag, "Touch service started, feature enabled");
+    return ESP_OK;
+}
+
+/**
+ * @brief Initialize game engine
+ *
+ * Creates the GameEngine, wires feedback callbacks to LED/audio services,
+ * and starts the game tick task on Core 1.
+ *
+ * Requires touchDriver, ledService, and audioService to be initialized first.
+ */
+static esp_err_t initGameEngine() {
+    if (!touchDriver) {
+        ESP_LOGE(kTag, "Cannot init game engine: touchDriver not initialized");
+        return ESP_FAIL;
+    }
+
+    static domes::game::GameEngine engine(*touchDriver);
+    gameEngine = &engine;
+
+    // Wire feedback callbacks to real services
+    domes::game::FeedbackCallbacks cbs;
+    if (ledService) {
+        cbs.flashWhite = [](uint32_t ms) { ledService->requestFlash(ms); };
+        cbs.flashColor = [](domes::Color c, uint32_t /*ms*/) { ledService->setSolidColor(c); };
+    }
+    if (audioService) {
+        cbs.playSound = [](const char* name) { audioService->playAsset(name); };
+    }
+    gameEngine->setFeedbackCallbacks(std::move(cbs));
+
+    // Wire event callback for logging
+    gameEngine->setEventCallback([](const domes::game::GameEvent& event) {
+        if (event.type == domes::game::GameEvent::Type::kHit) {
+            ESP_LOGI(kTag, "Game: HIT pad=%u reaction=%lu us",
+                     event.padIndex, static_cast<unsigned long>(event.reactionTimeUs));
+        } else {
+            ESP_LOGI(kTag, "Game: MISS (timeout)");
+        }
+    });
+
+    // Create game tick task on Core 1 at ~100Hz (10ms period)
+    xTaskCreatePinnedToCore(
+        [](void* param) {
+            auto* ge = static_cast<domes::game::GameEngine*>(param);
+            while (true) {
+                // Only tick when in GAME mode
+                if (modeManager && modeManager->currentMode() == domes::config::SystemMode::kGame) {
+                    ge->tick();
+                }
+                vTaskDelay(pdMS_TO_TICKS(10));  // 100Hz
+            }
+        },
+        "game_tick", 4096, gameEngine,
+        domes::infra::priority::kMedium,
+        nullptr,
+        domes::infra::core::kApplication);
+
+    ESP_LOGI(kTag, "Game engine initialized");
     return ESP_OK;
 }
 
@@ -923,6 +984,13 @@ extern "C" void app_main() {
     // Initialize touch driver and service
     if (initTouch() != ESP_OK) {
         ESP_LOGW(kTag, "Touch init failed, continuing without touch support");
+    }
+
+    // Initialize game engine (after touch, LED, and audio services)
+    if (touchDriver) {
+        if (initGameEngine() != ESP_OK) {
+            ESP_LOGW(kTag, "Game engine init failed, continuing without game support");
+        }
     }
 
     // Initialize BLE OTA service (after feature manager so config commands work over BLE)

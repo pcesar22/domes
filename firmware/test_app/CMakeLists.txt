@@ -33,6 +33,11 @@ set(CONFIG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/config/modeManager.cpp
 )
 
+# Game module sources (from main firmware)
+set(GAME_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/game/gameEngine.cpp
+)
+
 # Test executable
 add_executable(test_app
     main/test_main.cpp
@@ -43,7 +48,9 @@ add_executable(test_app
     main/test_config_protocol.cpp
     main/test_feature_manager.cpp
     main/test_mode_manager.cpp
+    main/test_game_engine.cpp
     ${CONFIG_SOURCES}
+    ${GAME_SOURCES}
 )
 
 target_include_directories(test_app PRIVATE
