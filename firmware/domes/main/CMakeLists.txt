@@ -19,6 +19,7 @@ idf_component_register(
         "config/featureManager.cpp"
         "config/modeManager.cpp"
         "config/configCommandHandler.cpp"
+        "game/gameEngine.cpp"
     INCLUDE_DIRS
         "."
         "interfaces"
@@ -29,6 +30,7 @@ idf_component_register(
         "transport"
         "trace"
         "config"
+        "game"
     REQUIRES
         driver
         esp_timer
