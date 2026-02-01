@@ -68,6 +68,11 @@ bool ModeManager::transitionTo(SystemMode newMode) {
         return false;
     }
 
+    // Track which mode we entered GAME from (for timeout exit destination)
+    if (newMode == SystemMode::kGame) {
+        gameEnteredFrom_ = oldMode;
+    }
+
     // Apply feature mask first, then update mode
     applyFeatureMask(newMode);
 
@@ -81,6 +86,10 @@ bool ModeManager::transitionTo(SystemMode newMode) {
              systemModeToString(newMode),
              static_cast<unsigned long>(featureMaskForMode(newMode)));
 
+    if (transitionCb_) {
+        transitionCb_(oldMode, newMode);
+    }
+
     return true;
 }
 
@@ -92,6 +101,10 @@ uint32_t ModeManager::timeInModeMs() const {
 
 void ModeManager::resetActivityTimer() {
     lastActivityAt_.store(esp_timer_get_time(), std::memory_order_release);
+}
+
+void ModeManager::onTransition(ModeTransitionCallback callback) {
+    transitionCb_ = std::move(callback);
 }
 
 void ModeManager::tick() {
@@ -120,8 +133,9 @@ void ModeManager::tick() {
         case SystemMode::kGame: {
             int64_t entered = modeEnteredAt_.load(std::memory_order_acquire);
             if ((now - entered) > kGameTimeoutUs) {
-                ESP_LOGW(kTag, "Game timeout (5min), returning to CONNECTED");
-                transitionTo(SystemMode::kConnected);
+                ESP_LOGW(kTag, "Game timeout (5min), returning to %s",
+                         systemModeToString(gameEnteredFrom_));
+                transitionTo(gameEnteredFrom_);
             }
             break;
         }
@@ -151,7 +165,9 @@ bool ModeManager::isValidTransition(SystemMode from, SystemMode to) const {
             return to == SystemMode::kIdle;
 
         case SystemMode::kIdle:
-            return to == SystemMode::kTriage || to == SystemMode::kConnected;
+            return to == SystemMode::kTriage
+                || to == SystemMode::kConnected
+                || to == SystemMode::kGame;  // solo drill
 
         case SystemMode::kTriage:
             return to == SystemMode::kConnected;
