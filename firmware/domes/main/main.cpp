@@ -6,6 +6,7 @@
 #include "config.hpp"
 #include "sdkconfig.h"
 
+#include "drivers/drv2605l.hpp"
 #include "drivers/ledStrip.hpp"
 #include "drivers/lis2dw12.hpp"
 #include "drivers/max98357a.hpp"
@@ -78,6 +79,7 @@ static domes::LedService* ledService = nullptr;  // LED pattern service
 static i2c_master_bus_handle_t i2cBus = nullptr;  // I2C master bus
 static domes::Lis2dw12Driver* imuDriver = nullptr;  // LIS2DW12 IMU driver
 static domes::ImuService* imuService = nullptr;  // IMU triage service
+static domes::Drv2605lDriver* hapticDriver = nullptr;  // DRV2605L haptic driver
 static domes::Max98357aDriver* audioDriver = nullptr;  // MAX98357A audio driver
 static domes::AudioService* audioService = nullptr;  // Audio playback service
 static domes::TouchDriver<pins::kTouchPadCount>* touchDriver = nullptr;  // Touch pad driver
@@ -338,6 +340,37 @@ static esp_err_t initImu() {
     }
 
     ESP_LOGI(kTag, "LIS2DW12 IMU initialized");
+    return ESP_OK;
+}
+
+/**
+ * @brief Initialize haptic driver
+ *
+ * Creates and initializes the DRV2605L haptic driver.
+ * Requires I2C bus to be initialized first.
+ */
+static esp_err_t initHaptic() {
+    if (!i2cBus) {
+        ESP_LOGE(kTag, "Cannot init haptic: I2C bus not initialized");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(kTag, "Initializing DRV2605L haptic driver at address 0x%02X...", pins::kDrv2605lAddr);
+
+    static domes::Drv2605lDriver driver(i2cBus, pins::kDrv2605lAddr);
+    hapticDriver = &driver;
+
+    esp_err_t err = hapticDriver->init();
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Haptic driver init failed: %s", esp_err_to_name(err));
+        hapticDriver = nullptr;
+        return err;
+    }
+
+    // Play a short click to confirm haptic is working
+    hapticDriver->playEffect(domes::HapticEffect::kSharpClick100);
+
+    ESP_LOGI(kTag, "DRV2605L haptic driver initialized");
     return ESP_OK;
 }
 
@@ -918,11 +951,16 @@ extern "C" void app_main() {
         ESP_LOGW(kTag, "LED init failed, continuing without LED");
     }
 
-    // Initialize I2C and IMU
+    // Initialize I2C and I2C devices (IMU, haptic)
     if (initI2c() != ESP_OK) {
         ESP_LOGW(kTag, "I2C init failed, continuing without I2C devices");
-    } else if (initImu() != ESP_OK) {
-        ESP_LOGW(kTag, "IMU init failed, continuing without IMU");
+    } else {
+        if (initImu() != ESP_OK) {
+            ESP_LOGW(kTag, "IMU init failed, continuing without IMU");
+        }
+        if (initHaptic() != ESP_OK) {
+            ESP_LOGW(kTag, "Haptic init failed, continuing without haptic");
+        }
     }
 
     // Initialize audio driver
@@ -966,6 +1004,9 @@ extern "C" void app_main() {
     if (imuDriver && ledService) {
         if (initImuService() != ESP_OK) {
             ESP_LOGW(kTag, "IMU service init failed, continuing without triage mode");
+        } else if (hapticDriver) {
+            // Wire up haptic driver to IMU service for tap feedback
+            imuService->setHapticDriver(hapticDriver);
         }
     }
 
