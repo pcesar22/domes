@@ -101,6 +101,23 @@ pub fn connect_device(entry: &DeviceEntry) -> Result<Box<dyn Transport>> {
     }
 }
 
+/// Deduplicate a list of addresses, warning on duplicates
+fn dedup_addresses(addrs: &[String], transport_label: &str) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+    for addr in addrs {
+        if seen.insert(addr.clone()) {
+            result.push(addr.clone());
+        } else {
+            eprintln!(
+                "Warning: duplicate {} address '{}' ignored",
+                transport_label, addr
+            );
+        }
+    }
+    result
+}
+
 /// Resolve CLI arguments into device connections
 ///
 /// Priority:
@@ -115,6 +132,11 @@ pub fn resolve_devices(
     all: bool,
 ) -> Result<Vec<DeviceConnection>> {
     let mut connections = Vec::new();
+
+    // Deduplicate addresses to prevent double-open corruption
+    let ports = dedup_addresses(ports, "serial");
+    let wifis = dedup_addresses(wifis, "wifi");
+    let bles = dedup_addresses(bles, "ble");
 
     // If --all, load entire registry
     if all {

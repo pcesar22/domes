@@ -342,15 +342,20 @@ fn main() -> anyhow::Result<()> {
     if cli.connect_all_ble {
         println!("Scanning for DOMES BLE devices (10 seconds)...");
         let ble_devices = BleTransport::scan_devices(Duration::from_secs(10))?;
+        let existing: std::collections::HashSet<String> = cli.ble.iter().cloned().collect();
         for (name, addr) in &ble_devices {
-            if name.starts_with("DOMES-Pod") {
+            if name.starts_with("DOMES-Pod") && !existing.contains(addr) {
                 println!("  Found: {} ({})", name, addr);
                 cli.ble.push(addr.clone());
             }
         }
-        if cli.ble.is_empty() {
+        let has_other_transports =
+            !cli.port.is_empty() || !cli.wifi.is_empty() || !cli.target.is_empty() || cli.all;
+        if cli.ble.is_empty() && !has_other_transports {
             eprintln!("No DOMES BLE devices found");
             std::process::exit(1);
+        } else if cli.ble.is_empty() {
+            eprintln!("Warning: no DOMES BLE devices found via scan, using other transports");
         }
         println!();
     }
@@ -524,6 +529,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let multi = devices.len() > 1;
+    let mut failures: Vec<String> = Vec::new();
 
     // Execute command on each device
     for dev in devices.iter_mut() {
@@ -533,18 +539,17 @@ fn main() -> anyhow::Result<()> {
             String::new()
         };
         let transport = dev.transport.as_mut();
+        let dev_label = if dev.name.is_empty() {
+            "device".to_string()
+        } else {
+            dev.name.clone()
+        };
 
         if multi {
-            println!(
-                "--- {} ---",
-                if dev.name.is_empty() {
-                    "device"
-                } else {
-                    &dev.name
-                }
-            );
+            println!("--- {} ---", dev_label);
         }
 
+        let result: anyhow::Result<()> = (|| {
         match &command {
             Commands::Feature { action } => match action {
                 FeatureAction::List => {
@@ -786,10 +791,30 @@ fn main() -> anyhow::Result<()> {
 
             Commands::Devices { .. } => unreachable!(), // Handled above
         }
+        Ok(())
+        })();
+
+        if let Err(e) = result {
+            if multi {
+                eprintln!("{}Error: {:#}", prefix, e);
+                failures.push(dev_label);
+            } else {
+                return Err(e);
+            }
+        }
 
         if multi {
             println!(); // Blank line between devices
         }
+    }
+
+    if !failures.is_empty() {
+        eprintln!(
+            "Failed on {} device(s): {}",
+            failures.len(),
+            failures.join(", ")
+        );
+        std::process::exit(1);
     }
 
     Ok(())

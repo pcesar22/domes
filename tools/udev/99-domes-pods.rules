@@ -10,8 +10,8 @@
 #   sudo udevadm trigger
 #
 # After installation, devices appear as:
-#   /dev/domes-pod-usb1  (first USB port)
-#   /dev/domes-pod-usb2  (second USB port)
+#   /dev/domes-pod-usb0  (first device)
+#   /dev/domes-pod-usb1  (second device)
 #   ... plus the original /dev/ttyACMx still works
 #
 # To find your USB topology paths:
