@@ -23,13 +23,14 @@ ESP-IDF is installed at `~/esp/esp-idf` (v5.2.2). Python venv is at `~/.espressi
 | Flash | `idf.py -p /dev/ttyACM0 flash` |
 | Monitor | `idf.py -p /dev/ttyACM0 monitor` |
 | Flash + Monitor | `idf.py -p /dev/ttyACM0 flash monitor` |
+| Flash all | `for p in /dev/ttyACM*; do idf.py -p $p flash; done` |
 | Clean | `idf.py fullclean` |
 | Set Target | `idf.py set-target esp32s3` |
 | Menuconfig | `idf.py menuconfig` |
 
 ## Device Information
 
-- **Port**: `/dev/ttyACM0` (USB-Serial/JTAG)
+- **Port**: `/dev/ttyACM0` (first device), `/dev/ttyACM1` (second device, if connected)
 - **Chip**: ESP32-S3 (QFN56, revision v0.2)
 - **Features**: WiFi, BLE, 8MB PSRAM, 16MB Flash
 - **Console**: USB Serial/JTAG (configured via `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y`)
@@ -209,3 +210,79 @@ cmake -B build && cd build && make simple_ota_sender
 - **Project firmware guidelines**: See [firmware/GUIDELINES.md](../../firmware/GUIDELINES.md)
 - **ESP-IDF documentation**: https://docs.espressif.com/projects/esp-idf/en/v5.2.2/
 - **OTA architecture**: See `research/architecture/08-ota-updates.md`
+
+## Multi-Device Workflows
+
+### Identifying Connected Devices
+
+```bash
+# List all connected ESP32 serial ports
+ls -la /dev/ttyACM*
+
+# List with USB device info (to distinguish devices)
+for port in /dev/ttyACM*; do
+  echo "$port -> $(udevadm info --name=$port --query=property 2>/dev/null | grep ID_SERIAL_SHORT || echo 'unknown')"
+done
+```
+
+### Flash Multiple Devices
+
+```bash
+. ~/esp/esp-idf/export.sh
+cd /home/pncosta/domes/firmware/domes
+
+# Build once
+idf.py build
+
+# Flash each device
+for port in /dev/ttyACM0 /dev/ttyACM1; do
+  echo "=== Flashing $port ==="
+  idf.py -p "$port" flash
+done
+```
+
+### Monitor Multiple Devices
+
+```bash
+# Using the multi-device monitor script (colored output per device)
+python3 .claude/skills/esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 10
+```
+
+### Test Both Devices with CLI
+
+```bash
+CLI=tools/domes-cli/target/release/domes-cli
+
+# Feature list on both devices
+$CLI --port /dev/ttyACM0 --port /dev/ttyACM1 feature list
+
+# Or using device registry
+$CLI devices add pod1 serial /dev/ttyACM0
+$CLI devices add pod2 serial /dev/ttyACM1
+$CLI --all feature list
+
+# Set LED on both devices
+$CLI --all led solid --color ff0000
+```
+
+### OTA Both Devices
+
+```bash
+# Flash firmware to both devices sequentially
+$CLI --port /dev/ttyACM0 ota flash firmware/domes/build/domes.bin --version v1.0.0
+$CLI --port /dev/ttyACM1 ota flash firmware/domes/build/domes.bin --version v1.0.0
+
+# Or using multi-device targeting
+$CLI --all ota flash firmware/domes/build/domes.bin --version v1.0.0
+```
+
+### ESP-NOW Testing (Two Devices Required)
+
+```bash
+# Enable ESP-NOW on both pods
+$CLI --port /dev/ttyACM0 feature enable esp-now
+$CLI --port /dev/ttyACM1 feature enable esp-now
+
+# Monitor both for ESP-NOW discovery messages
+python3 .claude/skills/esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+```

@@ -58,6 +58,7 @@ struct GameEvent {
     };
 
     Type type;
+    uint8_t podId;            ///< Source pod ID (from NVS, 0 if not set)
     uint32_t reactionTimeUs;  ///< Microseconds from arm to touch (0 for miss)
     uint8_t padIndex;         ///< Which pad was touched (0 for miss)
 };
@@ -162,6 +163,8 @@ private:
     // Pending triggered event (from kTriggered -> kFeedback)
     uint8_t triggeredPadIndex_ = 0;
     uint32_t triggeredReactionUs_ = 0;
+
+    uint8_t podId_ = 0;  ///< Pod identity from NVS (set at construction)
 
     FeedbackCallbacks feedbackCbs_;
     GameEventCallback eventCb_;

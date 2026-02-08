@@ -263,7 +263,7 @@ The primary hardware validation flow. Activates when a CLI tool connects (via an
 #### Triage on Slave Pods
 
 Doc 12 defines that only the master pod has BLE from the phone. However, **any pod can be triaged individually** via:
-- **USB serial**: `domes-cli --port /dev/ttyACM0 feature list` -- always available, no BLE needed
+- **USB serial**: `domes-cli --port <PORT> feature list` -- always available, no BLE needed
 - **WiFi TCP**: `domes-cli --wifi <IP>:5000 feature list` -- if WiFi is enabled
 - **BLE direct**: `domes-cli --ble "DOMES-Pod-3"` -- when the pod is not in a game session
 
@@ -273,7 +273,7 @@ Triage is a per-pod operation. It does not require or interact with the multi-po
 
 ```bash
 # Step 1: Connect to device
-domes-cli --port /dev/ttyACM0       # Serial
+domes-cli --port <PORT>             # Serial
 domes-cli --ble "DOMES-Pod"         # BLE
 domes-cli --wifi 192.168.1.x:5000   # WiFi
 
@@ -1026,18 +1026,18 @@ TEST(ModeManager, PeerDrillExitsToConnected) {
 # Expected: slow breathing LED, BLE advertising visible
 
 # Connect via CLI -- should auto-transition to TRIAGE
-domes-cli --port /dev/ttyACM0 system mode
+domes-cli --port <PORT> system mode
 # Expected: TRIAGE
 
 # Verify all sensors active in TRIAGE
-domes-cli --port /dev/ttyACM0 feature list
+domes-cli --port <PORT> feature list
 # Expected: led, ble, touch, haptic, audio all enabled
 
 # Wait 30s without sending commands
 # Expected: device returns to IDLE (breathing LED)
 
 # Query mode again
-domes-cli --port /dev/ttyACM0 system mode
+domes-cli --port <PORT> system mode
 # Expected: TRIAGE (because the query itself resets the timer)
 ```
 
@@ -1057,6 +1057,25 @@ domes-cli --port /dev/ttyACM0 system mode
 | Multi-pod coordination | Not implemented | Mode transitions driven by doc 12 events |
 | Error handling | Log and continue | ERROR mode with recovery timeout |
 | Observability | `feature list` only | `system mode`, `system info` |
+
+---
+
+## Multi-Device Mode Queries
+
+Each pod manages its own `ModeManager` independently. When multiple pods are connected, their modes can be queried in a single CLI invocation:
+
+```bash
+# Check mode of all registered pods
+domes-cli --all system mode
+# Output:
+#   pod1 (/dev/ttyACM0): IDLE (5.2s)
+#   pod2 (/dev/ttyACM1): TRIAGE (1.8s)
+
+# Force both pods into a specific mode
+domes-cli --all system mode set triage
+```
+
+Modes are not synchronized across pods. A master pod may be in CONNECTED while a slave pod is still in IDLE. Mode coordination is handled by the orchestration layer (see doc 12), not by the ModeManager itself.
 
 ---
 

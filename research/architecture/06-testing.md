@@ -631,5 +631,44 @@ void runAll() {
 
 ---
 
+## Multi-Device Testing
+
+When testing multi-pod features (ESP-NOW, coordinated drills, orchestration), two ESP32 pods must be connected via USB simultaneously. They appear as `/dev/ttyACM0` and `/dev/ttyACM1`.
+
+### Device Discovery and Registry
+
+```bash
+# Scan for all connected pods (serial + BLE)
+domes-cli devices scan
+
+# Register pods by name for easier targeting
+domes-cli devices add pod1 serial /dev/ttyACM0
+domes-cli devices add pod2 serial /dev/ttyACM1
+```
+
+### Multi-Device CLI Commands
+
+```bash
+# Run a command against all registered devices
+domes-cli --all feature list
+
+# Target specific named devices
+domes-cli --target pod1 --target pod2 feature list
+
+# Direct multi-port (no registry needed)
+domes-cli --port /dev/ttyACM0 --port /dev/ttyACM1 system info
+```
+
+### ESP-NOW Testing
+
+ESP-NOW peer-to-peer communication requires two physical pods. Enable ESP-NOW on both and monitor serial output for discovery and message exchange:
+
+```bash
+domes-cli --all feature enable esp-now
+python .claude/skills/esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+```
+
+---
+
 *Prerequisites: 03-driver-development.md*
 *Related: 02-build-system.md (CI config)*

@@ -42,8 +42,10 @@ cd tools/domes-cli && cargo build
 | LED/display | Flash firmware, visually confirm behavior |
 | Sensors/input | Flash firmware, trigger input, verify response in logs |
 | WiFi transport | Flash, connect to same network, run `domes-cli --wifi <IP>:5000 feature list` |
-| Serial transport | Flash, run `domes-cli --port /dev/ttyACM0 feature list` |
-| BLE transport | Flash, run `domes-cli --ble "DOMES-Pod" feature list` (requires native Linux) |
+| Serial transport | Flash, run `domes-cli --port <PORT> feature list` |
+| BLE transport | Flash, run `domes-cli --ble "DOMES-Pod-XX" feature list` (requires native Linux) |
+| Multi-device | Flash all, run `domes-cli --all feature list` to verify both devices |
+| ESP-NOW | Flash both, enable esp-now on both, monitor serial for peer discovery |
 | OTA updates | Flash, run `domes-cli ota flash`, verify device reboots and responds |
 | **CI verification** | Add `hw-test` label to PR, wait for CI to pass |
 
@@ -280,16 +282,25 @@ The firmware supports runtime feature toggles via a binary protocol over USB ser
 ### Testing Config Protocol
 
 ```bash
-# Test over USB serial
+# Test over USB serial (single device)
 domes-cli --port /dev/ttyACM0 feature list
 domes-cli --port /dev/ttyACM0 wifi status
+
+# Test multiple devices
+domes-cli --port /dev/ttyACM0 --port /dev/ttyACM1 feature list
+domes-cli --all led solid --color ff0000
+
+# Device registry
+domes-cli devices add pod1 serial /dev/ttyACM0
+domes-cli devices add pod2 serial /dev/ttyACM1
+domes-cli --target pod1 --target pod2 feature list
 
 # Test over WiFi (requires same network)
 domes-cli --wifi <ESP32_IP>:5000 feature list
 
 # Test over BLE (requires native Linux, not WSL2)
 domes-cli --scan-ble                           # Discover devices
-domes-cli --ble "DOMES-Pod" feature list       # Connect by name
+domes-cli --ble "DOMES-Pod-01" feature list    # Connect by name (unique per pod)
 domes-cli --ble "94:A9:90:0A:EA:52" led get    # Connect by MAC
 ```
 
@@ -323,6 +334,9 @@ domes-cli --port /dev/ttyACM0 ota flash firmware/domes/build/domes.bin --version
 
 # WiFi OTA (wireless) - requires device on same network
 domes-cli --wifi 192.168.1.100:5000 ota flash firmware/domes/build/domes.bin
+
+# Multi-device OTA (flash both pods)
+domes-cli --all ota flash firmware/domes/build/domes.bin --version v1.0.0
 ```
 
 ### OTA Protocol Flow
@@ -356,6 +370,9 @@ After OTA completes, the device reboots. Verify it's running:
 ```bash
 # Wait for reboot, then check features
 domes-cli --port /dev/ttyACM0 feature list
+
+# Verify all devices after multi-device OTA
+domes-cli --all feature list
 ```
 
 ### Key Files
@@ -378,6 +395,10 @@ The firmware includes a lightweight tracing framework for performance profiling.
 ```bash
 # Dump traces
 python tools/trace/trace_dump.py -p /dev/ttyACM0 -o trace.json -n tools/trace/trace_names.json
+
+# Multi-device trace dump
+python tools/trace/trace_dump.py --ports /dev/ttyACM0,/dev/ttyACM1 -o trace.json
+# Creates trace-dev0.json, trace-dev1.json for Perfetto
 
 # Visualize at https://ui.perfetto.dev
 ```
@@ -484,7 +505,8 @@ sudo ./svc.sh start
 **Required on the runner machine:**
 - ESP-IDF v5.2.2+ installed at `~/esp/esp-idf`
 - Rust toolchain for building domes-cli
-- ESP32 device connected at `/dev/ttyACM0`
+- ESP32 device(s) connected (auto-detected at /dev/ttyACM*)
+- For multi-device testing: two ESP32 devices required
 - User must be in `dialout` group for serial access
 
 ### Hardware Test Workflow
@@ -506,6 +528,73 @@ The `hw-test` label triggers queued hardware testing:
 4. Verify feature list command works
 5. Perform Serial OTA update
 6. Verify device boots after OTA
+7. Multi-device feature list (if 2+ devices connected)
+8. ESP-NOW communication test (placeholder, 2+ devices)
+
+## Multi-Device Testing
+
+### Setup
+
+Two ESP32 devices connected via USB. They appear as `/dev/ttyACM0` and `/dev/ttyACM1`.
+
+### Device Registry
+
+```bash
+# Register both devices
+domes-cli devices add pod1 serial /dev/ttyACM0
+domes-cli devices add pod2 serial /dev/ttyACM1
+
+# List registered devices
+domes-cli devices list
+
+# Scan for all connected devices (serial + BLE)
+domes-cli devices scan
+```
+
+### Common Multi-Device Operations
+
+```bash
+# Feature list on all devices
+domes-cli --all feature list
+
+# Set LED pattern on all devices
+domes-cli --all led solid --color ff0000
+
+# OTA update all devices
+domes-cli --all ota flash firmware/domes/build/domes.bin
+
+# Target specific devices
+domes-cli --target pod1 --target pod2 wifi status
+
+# Direct multi-port
+domes-cli --port /dev/ttyACM0 --port /dev/ttyACM1 system info
+```
+
+### BLE Device Naming
+
+Each pod advertises a unique BLE name based on its pod ID or MAC address:
+- `DOMES-Pod-01` (pod_id = 1)
+- `DOMES-Pod-02` (pod_id = 2)
+- `DOMES-Pod-3A2B` (fallback: last 2 bytes of BT MAC)
+
+### ESP-NOW Testing
+
+ESP-NOW requires two devices for peer-to-peer communication:
+
+```bash
+# Enable ESP-NOW on both
+domes-cli --all feature enable esp-now
+
+# Monitor both devices for discovery messages
+python tools/trace/trace_dump.py --ports /dev/ttyACM0,/dev/ttyACM1 -o trace.json
+```
+
+### Multi-Device Serial Monitoring
+
+```bash
+# Colored, labeled output from both devices
+python .claude/skills/esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+```
 
 ## Best Practices
 

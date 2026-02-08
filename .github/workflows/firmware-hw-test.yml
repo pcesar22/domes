@@ -15,10 +15,18 @@ on:
   # Keep manual trigger as backup
   workflow_dispatch:
     inputs:
-      port:
-        description: 'Serial port (e.g., /dev/ttyACM0)'
+      ports:
+        description: 'Comma-separated serial ports (e.g., /dev/ttyACM0,/dev/ttyACM1)'
         required: false
         default: '/dev/ttyACM0'
+      device_count:
+        description: 'Number of devices to test (1 or 2)'
+        required: false
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '2'
 
 # CRITICAL: Only one hardware test can run at a time
 # Jobs are queued (not cancelled) when another is running
@@ -27,7 +35,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SERIAL_PORT: ${{ github.event.inputs.port || '/dev/ttyACM0' }}
+  # Comma-separated list of serial ports
+  SERIAL_PORTS: ${{ github.event.inputs.ports || '/dev/ttyACM0' }}
+  DEVICE_COUNT: ${{ github.event.inputs.device_count || '1' }}
 
 jobs:
   hardware-test:
@@ -50,16 +60,56 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Verify device connected
+      - name: Detect devices
+        id: detect
         run: |
-          echo "Looking for device at $SERIAL_PORT..."
-          if [ ! -e "$SERIAL_PORT" ]; then
-            echo "::error::Device not found at $SERIAL_PORT"
-            echo "Available serial ports:"
-            ls -la /dev/ttyACM* /dev/ttyUSB* 2>/dev/null || echo "No serial devices found"
+          echo "=== Detecting connected DOMES devices ==="
+
+          # Parse comma-separated ports into array
+          IFS=',' read -ra PORTS <<< "$SERIAL_PORTS"
+
+          # Auto-detect if only default port specified
+          if [ "${#PORTS[@]}" -eq 1 ] && [ "${PORTS[0]}" = "/dev/ttyACM0" ]; then
+            DETECTED=()
+            for port in /dev/ttyACM*; do
+              if [ -e "$port" ]; then
+                DETECTED+=("$port")
+              fi
+            done
+            if [ ${#DETECTED[@]} -gt 0 ]; then
+              PORTS=("${DETECTED[@]}")
+            fi
+          fi
+
+          echo "Detected ${#PORTS[@]} device(s):"
+          for port in "${PORTS[@]}"; do
+            if [ -e "$port" ]; then
+              echo "  OK: $port"
+            else
+              echo "  MISSING: $port"
+            fi
+          done
+
+          # Export for subsequent steps
+          PORT_LIST=$(IFS=','; echo "${PORTS[*]}")
+          echo "ports=$PORT_LIST" >> $GITHUB_OUTPUT
+          echo "count=${#PORTS[@]}" >> $GITHUB_OUTPUT
+          echo "primary=${PORTS[0]}" >> $GITHUB_OUTPUT
+
+          if [ ${#PORTS[@]} -ge 2 ]; then
+            echo "secondary=${PORTS[1]}" >> $GITHUB_OUTPUT
+            echo "multi=true" >> $GITHUB_OUTPUT
+          else
+            echo "secondary=" >> $GITHUB_OUTPUT
+            echo "multi=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Fail if no devices found
+          if [ ! -e "${PORTS[0]}" ]; then
+            echo "::error::No devices found. Available serial ports:"
+            ls -la /dev/ttyACM* /dev/ttyUSB* 2>/dev/null || echo "None"
             exit 1
           fi
-          echo "Device found at $SERIAL_PORT"
 
       - name: Build firmware
         working-directory: firmware/domes
@@ -75,54 +125,123 @@ jobs:
           cargo build --release
           echo "CLI built successfully"
 
-      - name: Flash firmware via JTAG/USB
+      - name: Flash all devices
         working-directory: firmware/domes
         run: |
           . ~/esp/esp-idf/export.sh
-          idf.py -p $SERIAL_PORT flash
-          echo "Waiting for device to boot..."
+
+          IFS=',' read -ra PORTS <<< "${{ steps.detect.outputs.ports }}"
+          FAILED=0
+
+          for port in "${PORTS[@]}"; do
+            echo "=== Flashing $port ==="
+            if idf.py -p "$port" flash; then
+              echo "Flashed $port successfully"
+            else
+              echo "::error::Failed to flash $port"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+
+          echo "Waiting for devices to boot..."
           sleep 5
 
-      - name: Test - Feature List
-        run: |
-          echo "Testing feature list command..."
-          tools/domes-cli/target/release/domes-cli --port $SERIAL_PORT feature list
-          echo "Feature list test passed"
+          if [ $FAILED -gt 0 ]; then
+            echo "::error::$FAILED device(s) failed to flash"
+            exit 1
+          fi
 
-      - name: Test - Serial OTA
+      - name: Test - Feature List (all devices)
         run: |
-          echo "Testing Serial OTA update..."
+          IFS=',' read -ra PORTS <<< "${{ steps.detect.outputs.ports }}"
+          CLI=tools/domes-cli/target/release/domes-cli
+
+          for port in "${PORTS[@]}"; do
+            echo "=== Feature list: $port ==="
+            $CLI --port "$port" feature list
+            echo ""
+          done
+          echo "Feature list test passed on all devices"
+
+      - name: Test - Serial OTA (primary device)
+        run: |
+          PRIMARY="${{ steps.detect.outputs.primary }}"
+          echo "Testing Serial OTA on $PRIMARY..."
+
           tools/domes-cli/target/release/domes-cli \
-            --port $SERIAL_PORT \
+            --port "$PRIMARY" \
             ota flash firmware/domes/build/domes.bin \
-            --version v0.0.0-ci-${{ github.sha }}
+            --version "v0.0.0-ci-${{ github.sha }}"
 
           echo "OTA complete, waiting for reboot..."
           sleep 5
 
-      - name: Test - Post-OTA Verification
+      - name: Test - Post-OTA Verification (primary device)
         run: |
-          echo "Verifying device responds after OTA..."
-          tools/domes-cli/target/release/domes-cli --port $SERIAL_PORT feature list
+          PRIMARY="${{ steps.detect.outputs.primary }}"
+          echo "Verifying $PRIMARY responds after OTA..."
+          tools/domes-cli/target/release/domes-cli --port "$PRIMARY" feature list
           echo "Post-OTA verification passed"
 
-      - name: Test - WiFi Status (if enabled)
-        continue-on-error: true  # WiFi may not be configured
+      - name: Test - Multi-Device Feature List
+        if: steps.detect.outputs.multi == 'true'
         run: |
-          echo "Checking WiFi status..."
-          tools/domes-cli/target/release/domes-cli --port $SERIAL_PORT wifi status || true
+          echo "Testing multi-device feature list..."
+          CLI=tools/domes-cli/target/release/domes-cli
+
+          # Test with multiple --port flags
+          $CLI \
+            --port "${{ steps.detect.outputs.primary }}" \
+            --port "${{ steps.detect.outputs.secondary }}" \
+            feature list
+
+          echo "Multi-device feature list passed"
+
+      - name: Test - ESP-NOW Communication
+        if: steps.detect.outputs.multi == 'true'
+        continue-on-error: true  # ESP-NOW may not be implemented yet
+        run: |
+          echo "Testing ESP-NOW between devices..."
+          echo "NOTE: This test requires ESP-NOW firmware support (may not be implemented yet)"
+
+          CLI=tools/domes-cli/target/release/domes-cli
+          PRIMARY="${{ steps.detect.outputs.primary }}"
+          SECONDARY="${{ steps.detect.outputs.secondary }}"
+
+          # Enable ESP-NOW on both devices
+          $CLI --port "$PRIMARY" feature enable esp-now || echo "ESP-NOW not available on primary"
+          $CLI --port "$SECONDARY" feature enable esp-now || echo "ESP-NOW not available on secondary"
+
+          echo "ESP-NOW test placeholder - full test pending firmware implementation"
+
+      - name: Test - WiFi Status (if enabled)
+        continue-on-error: true
+        run: |
+          IFS=',' read -ra PORTS <<< "${{ steps.detect.outputs.ports }}"
+          CLI=tools/domes-cli/target/release/domes-cli
+
+          for port in "${PORTS[@]}"; do
+            echo "Checking WiFi status on $port..."
+            $CLI --port "$port" wifi status || true
+          done
 
       - name: Summary
         run: |
           echo "## Hardware Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Device**: $SERIAL_PORT" >> $GITHUB_STEP_SUMMARY
+          echo "- **Devices**: ${{ steps.detect.outputs.count }} (${{ steps.detect.outputs.ports }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **Multi-device**: ${{ steps.detect.outputs.multi }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch**: ${{ github.head_ref || github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Tests Passed" >> $GITHUB_STEP_SUMMARY
           echo "- [x] Firmware build" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Flash via JTAG" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Feature list command" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Serial OTA update" >> $GITHUB_STEP_SUMMARY
+          echo "- [x] CLI build" >> $GITHUB_STEP_SUMMARY
+          echo "- [x] Flash all devices" >> $GITHUB_STEP_SUMMARY
+          echo "- [x] Feature list (all devices)" >> $GITHUB_STEP_SUMMARY
+          echo "- [x] Serial OTA (primary)" >> $GITHUB_STEP_SUMMARY
           echo "- [x] Post-OTA verification" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.detect.outputs.multi }}" = "true" ]; then
+            echo "- [x] Multi-device feature list" >> $GITHUB_STEP_SUMMARY
+            echo "- [ ] ESP-NOW communication (placeholder)" >> $GITHUB_STEP_SUMMARY
+          fi

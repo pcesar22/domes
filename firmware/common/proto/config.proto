@@ -25,13 +25,15 @@ enum MsgType {
     MSG_TYPE_SET_IMU_TRIAGE_REQ = 0x2A;
     MSG_TYPE_SET_IMU_TRIAGE_RSP = 0x2B;
 
-    // System mode commands (0x30-0x35 range)
+    // System mode commands (0x30-0x37 range)
     MSG_TYPE_GET_MODE_REQ = 0x30;
     MSG_TYPE_GET_MODE_RSP = 0x31;
     MSG_TYPE_SET_MODE_REQ = 0x32;
     MSG_TYPE_SET_MODE_RSP = 0x33;
     MSG_TYPE_GET_SYSTEM_INFO_REQ = 0x34;
     MSG_TYPE_GET_SYSTEM_INFO_RSP = 0x35;
+    MSG_TYPE_SET_POD_ID_REQ = 0x36;
+    MSG_TYPE_SET_POD_ID_RSP = 0x37;
 }
 
 // Status codes for responses
@@ -107,6 +109,7 @@ message GetLedPatternRequest {
 // Response messages
 message ListFeaturesResponse {
     repeated FeatureState features = 1;
+    uint32 pod_id = 2;  // Pod identity (0 = not set)
 }
 
 message SetFeatureResponse {
@@ -170,6 +173,16 @@ message GetSystemInfoResponse {
     uint32 boot_count = 4;
     SystemMode mode = 5;
     uint32 feature_mask = 6;
+    uint32 pod_id = 7;  // Pod identity (0 = not set)
+}
+
+// Set pod ID (persisted to NVS)
+message SetPodIdRequest {
+    uint32 pod_id = 1;  // 1-255
+}
+
+message SetPodIdResponse {
+    uint32 pod_id = 1;  // New pod ID after write
 }
 
 // Top-level request envelope

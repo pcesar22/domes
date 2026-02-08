@@ -9,6 +9,7 @@ Rust CLI tool for communicating with DOMES firmware over USB serial, WiFi TCP, o
 ```
 src/
 ├── main.rs           # CLI argument parsing (clap)
+├── device.rs         # Multi-device registry & targeting
 ├── proto.rs          # Generated protobuf modules
 ├── protocol/
 │   └── mod.rs        # Frame encoding, protobuf helpers
@@ -69,6 +70,12 @@ cargo run -- --wifi 192.168.1.100:5000 feature list
 cargo run -- --scan-ble                        # Discover devices
 cargo run -- --ble "DOMES-Pod" feature list    # Connect by name
 cargo run -- --ble "DOMES-Pod" led solid --color ff0000
+
+# Multi-device testing
+cargo run -- --port /dev/ttyACM0 --port /dev/ttyACM1 feature list
+cargo run -- --all feature list
+cargo run -- devices scan
+cargo run -- devices list
 ```
 
 ## Common Issues

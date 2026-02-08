@@ -40,6 +40,12 @@ TEST(ConfigMsgType, IsConfigMessageSystemModeRange) {
     EXPECT_TRUE(isConfigMessage(0x35));  // GetSystemInfoRsp
 }
 
+TEST(ConfigMsgType, IsConfigMessagePodIdRange) {
+    // Pod ID commands (0x36-0x37) should be config messages
+    EXPECT_TRUE(isConfigMessage(0x36));  // SetPodIdReq
+    EXPECT_TRUE(isConfigMessage(0x37));  // SetPodIdRsp
+}
+
 TEST(ConfigMsgType, IsConfigMessageOutOfRange) {
     // OTA and trace ranges should not be config messages
     EXPECT_FALSE(isConfigMessage(0x01));  // OTA_BEGIN
@@ -49,7 +55,7 @@ TEST(ConfigMsgType, IsConfigMessageOutOfRange) {
     EXPECT_FALSE(isConfigMessage(0x00));  // Unknown
     EXPECT_FALSE(isConfigMessage(0xFF));  // Unknown
     EXPECT_FALSE(isConfigMessage(0x1F));  // Just before config range
-    EXPECT_FALSE(isConfigMessage(0x36));  // Just past system mode range
+    EXPECT_FALSE(isConfigMessage(0x38));  // Just past pod ID range
 }
 
 TEST(ConfigMsgType, GapValuesAreInRange) {

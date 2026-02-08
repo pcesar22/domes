@@ -129,6 +129,11 @@ private:
     void handleGetSystemInfo();
 
     /**
+     * @brief Handle SET_POD_ID request
+     */
+    void handleSetPodId(const uint8_t* payload, size_t len);
+
+    /**
      * @brief Send list features response
      */
     void sendListFeaturesResponse();

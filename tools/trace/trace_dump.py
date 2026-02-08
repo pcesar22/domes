@@ -4,8 +4,12 @@ ESP32 Trace Dump Tool
 
 Dumps trace buffer from ESP32 and converts to Chrome Trace Format (Perfetto).
 
-Usage:
-    python trace_dump.py --port /dev/ttyUSB0 --output trace.json
+Usage (single device):
+    python trace_dump.py --port /dev/ttyACM0 --output trace.json
+
+Usage (multi-device):
+    python trace_dump.py --ports /dev/ttyACM0,/dev/ttyACM1 --output trace.json
+    # Creates trace-dev0.json, trace-dev1.json
 
 Output can be opened in:
     - Perfetto: https://ui.perfetto.dev
@@ -540,8 +544,11 @@ def main():
     )
     parser.add_argument(
         '--port', '-p',
-        required=True,
         help='Serial port (e.g., /dev/ttyUSB0, COM3)'
+    )
+    parser.add_argument(
+        '--ports',
+        help='Comma-separated serial ports for multi-device dump (e.g., /dev/ttyACM0,/dev/ttyACM1)'
     )
     parser.add_argument(
         '--output', '-o',
@@ -594,6 +601,46 @@ def main():
             raw = json.load(f)
             for k, v in raw.items():
                 span_names[int(k)] = v
+
+    # Validate that at least one port option is provided
+    if not args.port and not args.ports:
+        parser.error('one of --port/-p or --ports is required')
+
+    # Multi-device support
+    if args.ports:
+        ports = [p.strip() for p in args.ports.split(',')]
+        output_base = Path(args.output)
+        stem = output_base.stem
+        suffix = output_base.suffix or '.json'
+
+        for i, port in enumerate(ports):
+            device_label = f"dev{i}"
+            device_output = output_base.with_name(f"{stem}-{device_label}{suffix}")
+            print(f"\n{'='*50}")
+            print(f"[{device_label}] Dumping from {port} -> {device_output}")
+            print(f"{'='*50}")
+
+            try:
+                dumper = TraceDumper(port, args.baudrate)
+                dumper.verbose = args.verbose
+
+                metadata, events = dumper.dump_trace()
+                if events:
+                    chrome_json = convert_to_chrome_json(metadata, events, span_names)
+                    # Tag process name with device label
+                    for evt in chrome_json.get('traceEvents', []):
+                        if evt.get('name') == 'process_name':
+                            evt['args']['name'] = f'ESP32-S3 ({device_label} @ {port})'
+                    with open(device_output, 'w') as f:
+                        json.dump(chrome_json, f, indent=2)
+                    print(f"[{device_label}] Written {len(events)} events to {device_output}")
+                else:
+                    print(f"[{device_label}] No events to dump")
+                dumper.close()
+            except Exception as e:
+                print(f"[{device_label}] Error: {e}", file=sys.stderr)
+
+        return
 
     try:
         dumper = TraceDumper(args.port, args.baudrate)

@@ -5,6 +5,11 @@
 
 #include "game/gameEngine.hpp"
 
+// NVS is only available on device builds (not in host test builds)
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+#include "infra/nvsConfig.hpp"
+#endif
+
 #include "esp_log.h"
 
 namespace domes::game {
@@ -22,7 +27,16 @@ const char* gameStateToString(GameState state) {
 }
 
 GameEngine::GameEngine(ITouchDriver& touch)
-    : touch_(touch) {}
+    : touch_(touch) {
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+    // Read pod ID from NVS for event tagging (device builds only)
+    domes::infra::NvsConfig config;
+    if (config.open(domes::infra::nvs_ns::kConfig) == ESP_OK) {
+        podId_ = config.getOrDefault<uint8_t>(domes::infra::config_key::kPodId, 0);
+        config.close();
+    }
+#endif
+}
 
 bool GameEngine::arm(const ArmConfig& config) {
     if (state_ != GameState::kReady) {
@@ -141,7 +155,7 @@ void GameEngine::enterFeedback(GameEvent::Type type, uint32_t reactionTimeUs, ui
 
     // Emit game event
     if (eventCb_) {
-        GameEvent event{type, reactionTimeUs, padIndex};
+        GameEvent event{type, podId_, reactionTimeUs, padIndex};
         eventCb_(event);
     }
 }

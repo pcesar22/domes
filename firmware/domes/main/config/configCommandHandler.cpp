@@ -10,6 +10,8 @@
 #include "services/imuService.hpp"
 #include "services/ledService.hpp"
 
+#include "infra/nvsConfig.hpp"
+
 #include "config.pb.h"
 #include "pb_encode.h"
 #include "pb_decode.h"
@@ -28,6 +30,15 @@
 
 namespace {
 constexpr const char* kTag = "config_cmd";
+
+/// Read pod_id from NVS (0 if not set)
+uint8_t readPodIdFromNvs() {
+    domes::infra::NvsConfig config;
+    if (config.open(domes::infra::nvs_ns::kConfig) != ESP_OK) return 0;
+    uint8_t id = config.getOrDefault<uint8_t>(domes::infra::config_key::kPodId, 0);
+    config.close();
+    return id;
+}
 }
 
 namespace domes::config {
@@ -92,6 +103,11 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
         case MsgType::kGetSystemInfoReq:
             ESP_LOGD(kTag, "Received GET_SYSTEM_INFO");
             handleGetSystemInfo();
+            return true;
+
+        case MsgType::kSetPodIdReq:
+            ESP_LOGD(kTag, "Received SET_POD_ID");
+            handleSetPodId(payload, len);
             return true;
 
         default:
@@ -161,6 +177,9 @@ void ConfigCommandHandler::handleGetFeature(const uint8_t* payload, size_t len) 
 void ConfigCommandHandler::sendListFeaturesResponse() {
     // Build protobuf response
     domes_config_ListFeaturesResponse resp = domes_config_ListFeaturesResponse_init_zero;
+
+    // Include pod identity
+    resp.pod_id = readPodIdFromNvs();
 
     // Get all feature states
     for (uint8_t i = 1; i < static_cast<uint8_t>(Feature::kCount); ++i) {
@@ -467,6 +486,9 @@ void ConfigCommandHandler::handleGetSystemInfo() {
     }
     resp.feature_mask = features_.getMask();
 
+    // Pod identity
+    resp.pod_id = readPodIdFromNvs();
+
     // Encode to buffer: [status_byte][protobuf]
     std::array<uint8_t, domes_config_GetSystemInfoResponse_size + 10> payload;
     payload[0] = static_cast<uint8_t>(Status::kOk);
@@ -478,6 +500,58 @@ void ConfigCommandHandler::handleGetSystemInfo() {
     }
 
     sendFrame(MsgType::kGetSystemInfoRsp, payload.data(), 1 + stream.bytes_written);
+}
+
+void ConfigCommandHandler::handleSetPodId(const uint8_t* payload, size_t len) {
+    domes_config_SetPodIdRequest req = domes_config_SetPodIdRequest_init_zero;
+    pb_istream_t stream = pb_istream_from_buffer(payload, len);
+
+    if (!pb_decode(&stream, domes_config_SetPodIdRequest_fields, &req)) {
+        ESP_LOGW(kTag, "Failed to decode SET_POD_ID: %s", PB_GET_ERROR(&stream));
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetPodIdRsp, errPayload.data(), 1);
+        return;
+    }
+
+    if (req.pod_id == 0 || req.pod_id > 255) {
+        ESP_LOGW(kTag, "Invalid pod_id: %lu (must be 1-255)", req.pod_id);
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetPodIdRsp, errPayload.data(), 1);
+        return;
+    }
+
+    // Write to NVS
+    infra::NvsConfig config;
+    if (config.open(infra::nvs_ns::kConfig) != ESP_OK) {
+        ESP_LOGE(kTag, "Failed to open NVS for pod_id write");
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetPodIdRsp, errPayload.data(), 1);
+        return;
+    }
+
+    config.setU8(infra::config_key::kPodId, static_cast<uint8_t>(req.pod_id));
+    config.commit();
+    config.close();
+
+    ESP_LOGI(kTag, "Pod ID set to %lu (reboot to apply BLE name change)", req.pod_id);
+
+    // Send response
+    domes_config_SetPodIdResponse resp = domes_config_SetPodIdResponse_init_zero;
+    resp.pod_id = req.pod_id;
+
+    std::array<uint8_t, domes_config_SetPodIdResponse_size + 10> respPayload;
+    respPayload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(respPayload.data() + 1, respPayload.size() - 1);
+    if (!pb_encode(&ostream, domes_config_SetPodIdResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode SetPodIdResponse: %s", PB_GET_ERROR(&ostream));
+        return;
+    }
+
+    sendFrame(MsgType::kSetPodIdRsp, respPayload.data(), 1 + ostream.bytes_written);
 }
 
 }  // namespace domes::config

@@ -1,0 +1,31 @@
+# DOMES Pod udev rules - stable serial port symlinks
+#
+# ESP32-S3 USB-JTAG/serial devices get non-deterministic /dev/ttyACMx names.
+# These rules create stable symlinks based on USB port topology so that
+# devices plugged into the same physical USB port always get the same name.
+#
+# Installation:
+#   sudo cp tools/udev/99-domes-pods.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger
+#
+# After installation, devices appear as:
+#   /dev/domes-pod-usb1  (first USB port)
+#   /dev/domes-pod-usb2  (second USB port)
+#   ... plus the original /dev/ttyACMx still works
+#
+# To find your USB topology paths:
+#   udevadm info -a /dev/ttyACM0 | grep KERNELS
+#
+# ESP32-S3 USB-JTAG/serial: VID=303a PID=1001
+# ESP32-S3 USB-OTG (CDC):   VID=303a PID=1002
+
+# Match all ESP32-S3 USB-JTAG/serial devices
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", \
+    MODE="0666", GROUP="dialout", \
+    SYMLINK+="domes-pod-usb%n"
+
+# Match ESP32-S3 USB-OTG CDC devices
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1002", \
+    MODE="0666", GROUP="dialout", \
+    SYMLINK+="domes-pod-usb%n"

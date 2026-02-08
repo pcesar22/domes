@@ -6,8 +6,10 @@
 #include "bleOtaService.hpp"
 
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "infra/nvsConfig.hpp"
 
 // NimBLE headers (must include esp_nimble_hci.h first in ESP-IDF)
 #include "esp_nimble_hci.h"
@@ -298,10 +300,31 @@ TransportError BleOtaService::init() {
         return TransportError::kIoError;
     }
 
-    // Set device name
-    rc = ble_svc_gap_device_name_set("DOMES-Pod");
-    if (rc != 0) {
-        ESP_LOGW(kTag, "Failed to set device name: %d", rc);
+    // Build dynamic device name from pod_id (NVS) or BT MAC suffix
+    {
+        char bleName[32] = {};
+        domes::infra::NvsConfig nvsConfig;
+        uint8_t podId = 0;
+        if (nvsConfig.open(domes::infra::nvs_ns::kConfig) == ESP_OK) {
+            podId = nvsConfig.getOrDefault<uint8_t>(domes::infra::config_key::kPodId, 0);
+            nvsConfig.close();
+        }
+
+        if (podId > 0) {
+            snprintf(bleName, sizeof(bleName), "DOMES-Pod-%02u", podId);
+        } else {
+            // Fall back to last 2 bytes of Bluetooth MAC address
+            uint8_t mac[6] = {};
+            esp_read_mac(mac, ESP_MAC_BT);
+            snprintf(bleName, sizeof(bleName), "DOMES-Pod-%02X%02X", mac[4], mac[5]);
+        }
+
+        rc = ble_svc_gap_device_name_set(bleName);
+        if (rc != 0) {
+            ESP_LOGW(kTag, "Failed to set device name: %d", rc);
+        } else {
+            ESP_LOGI(kTag, "BLE device name: %s", bleName);
+        }
     }
 
     // NOTE: g_statusCharHandle is populated by NimBLE after host task syncs,

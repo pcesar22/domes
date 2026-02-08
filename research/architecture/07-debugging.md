@@ -542,5 +542,44 @@ idf.py coredump-info -p /dev/ttyUSB0
 
 ---
 
+## Multi-Device Debugging
+
+When debugging two pods simultaneously, each pod requires its own OpenOCD and GDB session on separate ports.
+
+### Simultaneous GDB Sessions
+
+```bash
+# Terminal 1: OpenOCD for Pod 1 (default port 3333)
+openocd -f board/esp32s3-builtin.cfg
+
+# Terminal 2: OpenOCD for Pod 2 (port 3334)
+openocd -f board/esp32s3-builtin.cfg -c "gdb_port 3334" -c "telnet_port 4445"
+
+# Terminal 3: GDB for Pod 1
+xtensa-esp32s3-elf-gdb -ex "target remote :3333" build/domes.elf
+
+# Terminal 4: GDB for Pod 2
+xtensa-esp32s3-elf-gdb -ex "target remote :3334" build/domes.elf
+```
+
+### Multi-Device Serial Monitoring
+
+Use the monitor script with comma-separated ports for color-coded, labeled output from both pods:
+
+```bash
+python .claude/skills/esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+```
+
+### Multi-Device Trace Dump
+
+Dump traces from both pods in a single invocation. Separate output files are created per device for Perfetto visualization:
+
+```bash
+python tools/trace/trace_dump.py --ports /dev/ttyACM0,/dev/ttyACM1 -o trace.json -n tools/trace/trace_names.json
+# Creates trace-dev0.json, trace-dev1.json
+```
+
+---
+
 *Prerequisites: 00-getting-started.md*
 *Related: 02-build-system.md (debug builds)*

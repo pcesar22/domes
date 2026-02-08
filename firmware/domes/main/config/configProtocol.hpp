@@ -42,6 +42,8 @@ enum class MsgType : uint8_t {
     kSetModeRsp       = domes_config_MsgType_MSG_TYPE_SET_MODE_RSP,
     kGetSystemInfoReq = domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_REQ,
     kGetSystemInfoRsp = domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP,
+    kSetPodIdReq      = domes_config_MsgType_MSG_TYPE_SET_POD_ID_REQ,
+    kSetPodIdRsp      = domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP,
 };
 
 /**
@@ -75,7 +77,7 @@ enum class Status : uint8_t {
  */
 inline bool isConfigMessage(uint8_t type) {
     return type >= static_cast<uint8_t>(MsgType::kListFeaturesReq) &&
-           type <= static_cast<uint8_t>(MsgType::kGetSystemInfoRsp);
+           type <= static_cast<uint8_t>(MsgType::kSetPodIdRsp);
 }
 
 /**
