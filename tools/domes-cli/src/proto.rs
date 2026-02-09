@@ -154,6 +154,7 @@ pub mod trace {
                 Category::Haptic => "haptic",
                 Category::Ble => "ble",
                 Category::Nvs => "nvs",
+                Category::Espnow => "espnow",
             }
         }
     }

@@ -3,6 +3,8 @@
 
 typedef int32_t BaseType_t;
 typedef uint32_t TickType_t;
+typedef void* TaskHandle_t;
+typedef uint32_t UBaseType_t;
 
 #define pdTRUE  1
 #define pdFALSE 0

@@ -10,6 +10,8 @@
  * - Color cycle (automatic color transitions)
  */
 
+#include "trace/traceApi.hpp"
+
 #include "config.pb.h"
 #include "config/featureManager.hpp"
 #include "esp_log.h"
@@ -283,6 +285,7 @@ private:
     }
 
     void updateAnimation() {
+        TRACE_SCOPE(TRACE_ID("LED.UpdateAnimation"), domes::trace::Category::kLed);
         switch (currentPattern_.type) {
             case domes_config_LedPatternType_LED_PATTERN_OFF:
                 driver_.clear();
@@ -329,6 +332,7 @@ private:
     }
 
     esp_err_t applyPattern(const LedPatternConfig& config) {
+        TRACE_INSTANT(TRACE_ID("LED.PatternChange"), domes::trace::Category::kLed);
         ESP_LOGI("LedService", "applyPattern: type=%d, brightness=%d, color=(%d,%d,%d,%d)",
                  config.type, config.brightness,
                  config.primaryColor.r, config.primaryColor.g,

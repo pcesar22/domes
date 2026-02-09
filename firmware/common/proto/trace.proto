@@ -44,6 +44,7 @@ enum Category {
     CATEGORY_HAPTIC = 9;     // Haptic feedback
     CATEGORY_BLE = 10;       // BLE operations
     CATEGORY_NVS = 11;       // NVS storage operations
+    CATEGORY_ESPNOW = 12;   // ESP-NOW peer-to-peer operations
 }
 
 // Types of trace events

@@ -32,6 +32,7 @@ enum class Category : uint8_t {
     kHaptic    = domes_trace_Category_CATEGORY_HAPTIC,
     kBle       = domes_trace_Category_CATEGORY_BLE,
     kNvs       = domes_trace_Category_CATEGORY_NVS,
+    kEspNow    = domes_trace_Category_CATEGORY_ESPNOW,
 };
 
 /**
@@ -107,6 +108,7 @@ constexpr const char* kCategoryNames[] = {
     "haptic",     // 9
     "ble",        // 10
     "nvs",        // 11
+    "espnow",     // 12
 };
 
 }  // namespace domes::trace

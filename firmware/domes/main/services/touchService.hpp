@@ -12,6 +12,8 @@
  * - Pad 4: Yellow
  */
 
+#include "trace/traceApi.hpp"
+
 #include "config/featureManager.hpp"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -132,6 +134,7 @@ private:
 
             // Update touch readings
             touchDriver_.update();
+            TRACE_SCOPE(TRACE_ID("Touch.Poll"), domes::trace::Category::kTouch);
 
             // Find which pad (if any) is being touched
             int8_t activePad = -1;
@@ -147,11 +150,13 @@ private:
                 lastActivepad_ = activePad;
 
                 if (activePad >= 0) {
+                    TRACE_INSTANT(TRACE_ID("Touch.PadTouched"), domes::trace::Category::kTouch);
                     // Pad touched - set all LEDs to the pad's color via LedService
                     ESP_LOGI(kTag, "Pad %d touched - setting LEDs to %s",
                              activePad, getColorName(activePad));
                     ledService_.setSolidColor(kPadColors[activePad]);
                 } else {
+                    TRACE_INSTANT(TRACE_ID("Touch.PadReleased"), domes::trace::Category::kTouch);
                     // No pad touched - turn off LEDs
                     ESP_LOGI(kTag, "No touch - clearing LEDs");
                     ledService_.setOff();

@@ -9,6 +9,7 @@
 #ifdef CONFIG_IDF_TARGET_ESP32S3
 #include "infra/nvsConfig.hpp"
 #endif
+#include "trace/traceApi.hpp"
 
 #include "esp_log.h"
 
@@ -39,6 +40,7 @@ GameEngine::GameEngine(ITouchDriver& touch)
 }
 
 bool GameEngine::arm(const ArmConfig& config) {
+    TRACE_SCOPE(TRACE_ID("Game.Arm"), domes::trace::Category::kGame);
     if (state_ != GameState::kReady) {
         ESP_LOGW(kTag, "Cannot arm: state is %s", gameStateToString(state_));
         return false;
@@ -61,6 +63,7 @@ void GameEngine::disarm() {
 }
 
 void GameEngine::tick() {
+    TRACE_SCOPE(TRACE_ID("Game.Tick"), domes::trace::Category::kGame);
     switch (state_) {
         case GameState::kReady:
             break;
@@ -87,6 +90,7 @@ void GameEngine::setEventCallback(GameEventCallback callback) {
 }
 
 void GameEngine::handleArmed() {
+    TRACE_SCOPE(TRACE_ID("Game.HandleArmed"), domes::trace::Category::kGame);
     // Poll touch pads
     touch_.update();
 
@@ -99,6 +103,7 @@ void GameEngine::handleArmed() {
             ESP_LOGI(kTag, "Touch on pad %u, reaction: %lu us",
                      i, static_cast<unsigned long>(reactionUs));
 
+            TRACE_INSTANT(TRACE_ID("Game.TouchHit"), domes::trace::Category::kGame);
             // Store for handleTriggered to process
             triggeredPadIndex_ = i;
             triggeredReactionUs_ = reactionUs;
@@ -114,17 +119,20 @@ void GameEngine::handleArmed() {
     int64_t timeoutUs = static_cast<int64_t>(config_.timeoutMs) * 1000;
 
     if (elapsedUs >= timeoutUs) {
+        TRACE_INSTANT(TRACE_ID("Game.TouchMiss"), domes::trace::Category::kGame);
         ESP_LOGI(kTag, "Timeout — miss");
         enterFeedback(GameEvent::Type::kMiss, 0, 0);
     }
 }
 
 void GameEngine::handleTriggered() {
+    TRACE_SCOPE(TRACE_ID("Game.HandleTriggered"), domes::trace::Category::kGame);
     // Auto-advance to feedback with hit
     enterFeedback(GameEvent::Type::kHit, triggeredReactionUs_, triggeredPadIndex_);
 }
 
 void GameEngine::handleFeedback() {
+    TRACE_SCOPE(TRACE_ID("Game.HandleFeedback"), domes::trace::Category::kGame);
     int64_t now = esp_timer_get_time();
     int64_t elapsedUs = now - feedbackAtUs_;
 
@@ -135,6 +143,8 @@ void GameEngine::handleFeedback() {
 }
 
 void GameEngine::enterFeedback(GameEvent::Type type, uint32_t reactionTimeUs, uint8_t padIndex) {
+    TRACE_SCOPE(TRACE_ID("Game.EnterFeedback"), domes::trace::Category::kGame);
+    TRACE_COUNTER(TRACE_ID("Game.ReactionTimeUs"), reactionTimeUs, domes::trace::Category::kGame);
     feedbackAtUs_ = esp_timer_get_time();
     state_ = GameState::kFeedback;
 
