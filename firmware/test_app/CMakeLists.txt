@@ -38,6 +38,12 @@ set(GAME_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/game/gameEngine.cpp
 )
 
+# Trace module sources (HOST version, NOT firmware traceBuffer.cpp)
+set(TRACE_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/sim/hostTraceBuffer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/trace/traceRecorder.cpp
+)
+
 # Test executable
 add_executable(test_app
     main/test_main.cpp
@@ -49,14 +55,18 @@ add_executable(test_app
     main/test_feature_manager.cpp
     main/test_mode_manager.cpp
     main/test_game_engine.cpp
+    main/test_multi_pod_sim.cpp
+    main/test_sim_drill.cpp
     ${CONFIG_SOURCES}
     ${GAME_SOURCES}
+    ${TRACE_SOURCES}
 )
 
 target_include_directories(test_app PRIVATE
     # ESP-IDF stubs must come BEFORE firmware includes to override esp_log.h, esp_timer.h
     ${CMAKE_CURRENT_SOURCE_DIR}/stubs
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(test_app PRIVATE
@@ -76,3 +86,23 @@ target_compile_options(test_app PRIVATE
 # Enable CTest integration
 include(GoogleTest)
 gtest_discover_tests(test_app)
+
+# Trace generator (standalone, no gtest)
+add_executable(trace_generator
+    main/generate_trace.cpp
+    ${CONFIG_SOURCES}
+    ${GAME_SOURCES}
+    ${TRACE_SOURCES}
+)
+
+target_include_directories(trace_generator PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stubs
+    ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(trace_generator PRIVATE domes_common)
+
+target_compile_options(trace_generator PRIVATE
+    -Wall -Wextra -Wpedantic -Wno-unused-parameter
+)
