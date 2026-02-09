@@ -802,5 +802,21 @@ WSL2 USB passthrough can be finicky.
 
 ---
 
+## Multi-Device Simulation Support
+
+The host simulation and master simulator support multiple pods via comma-separated serial ports. This is the primary way to test multi-pod coordination without ESP-NOW:
+
+```bash
+# Master simulator relaying to two pods
+./domes-sim master --port 8080 --pods /dev/ttyACM0,/dev/ttyACM1
+
+# Direct multi-port operations via domes-cli
+domes-cli --port /dev/ttyACM0 --port /dev/ttyACM1 feature list
+```
+
+When using `domes-cli --all`, the tool iterates over all registered devices in the device registry and connects to each one sequentially. This allows testing coordinated behaviors (e.g., OTA to both pods, feature toggling on both) without needing ESP-NOW or BLE.
+
+---
+
 *Prerequisites: 04-communication.md, 08-ota-updates.md*
 *Related: 06-testing.md (test strategy)*

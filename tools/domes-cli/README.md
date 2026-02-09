@@ -31,6 +31,80 @@ domes-cli --list-ports                        # List serial ports
 domes-cli --scan-ble                          # Scan for BLE devices
 ```
 
+## Multi-Device Usage
+
+### Device Registry
+
+```bash
+# Register devices
+domes-cli devices add pod1 serial /dev/ttyACM0
+domes-cli devices add pod2 serial /dev/ttyACM1
+
+# List registered devices
+domes-cli devices list
+
+# Remove a device
+domes-cli devices remove pod1
+
+# Scan for all connected DOMES devices
+domes-cli devices scan
+```
+
+### Targeting Multiple Devices
+
+```bash
+# By registry name
+domes-cli --target pod1 --target pod2 feature list
+
+# All registered devices
+domes-cli --all feature list
+
+# Multiple ports directly
+domes-cli --port /dev/ttyACM0 --port /dev/ttyACM1 led solid --color ff0000
+
+# Mix transports
+domes-cli --port /dev/ttyACM0 --wifi 192.168.1.100:5000 system info
+```
+
+### Multi-Device Output
+
+When targeting multiple devices, output is labeled per device:
+
+```
+--- pod1 ---
+[pod1] Features:
+[pod1] NAME             STATUS
+[pod1] led-effects      enabled
+[pod1] wifi             disabled
+
+--- pod2 ---
+[pod2] Features:
+[pod2] NAME             STATUS
+[pod2] led-effects      enabled
+[pod2] wifi             enabled
+```
+
+### Multi-Device OTA
+
+```bash
+# Flash all registered devices
+domes-cli --all ota flash firmware/domes/build/domes.bin --version v1.0.0
+```
+
+### Device Registry File
+
+Devices are stored in `~/.domes/devices.toml`:
+
+```toml
+[devices.pod1]
+transport = "serial"
+address = "/dev/ttyACM0"
+
+[devices.pod2]
+transport = "serial"
+address = "/dev/ttyACM1"
+```
+
 ### Feature Management
 
 ```bash

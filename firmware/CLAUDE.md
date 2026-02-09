@@ -287,6 +287,31 @@ The firmware supports runtime feature toggles via a binary protocol.
 | FeatureManager | `config/featureManager.hpp` | Feature state (atomic bitmask) |
 | FrameDecoder | `protocol/frameCodec.hpp` | Frame parsing |
 
+### Multi-Device Architecture
+
+Each pod is a standalone device with per-pod singletons (FeatureManager, ModeManager, GameEngine, TraceRecorder). Multi-device coordination happens via the host CLI (for dev/test) or ESP-NOW (for production games).
+
+**Per-pod identity:**
+- `pod_id` stored in NVS (`config_key::kPodId`, uint8_t 1-255)
+- Read at boot in `main.cpp::readPodId()`
+- Used for BLE device name: `DOMES-Pod-01` (or MAC fallback: `DOMES-Pod-3A2B`)
+- Included in protocol responses (`ListFeaturesResponse.pod_id`, `GetSystemInfoResponse.pod_id`)
+- Set via CLI: `domes-cli system set-pod-id 1` (persisted to NVS, reboot for BLE name)
+
+**mDNS (WiFi-connected pods):**
+- Service: `_domes._tcp.local.` on port 5000
+- Hostname: `domes-pod-{pod_id}.local`
+- TXT records: `pod_id`, `version`
+
+**GameEvent tagging:**
+- `GameEvent.podId` is populated from NVS at `GameEngine` construction
+- Enables per-pod attribution of hits/misses in multi-pod games
+
+**What NOT to change:**
+- FeatureManager, ModeManager, GameEngine are per-pod singletons — correct by design
+- Transport trait is single-connection — multi-device is handled at CLI dispatch layer
+- WiFi TCP config server on port 5000 per-IP — already fine
+
 ### Adding New Features
 
 1. Add feature ID to `config/configProtocol.hpp`:

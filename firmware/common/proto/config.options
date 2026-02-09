@@ -9,3 +9,6 @@ domes.config.LedPattern.colors  max_count:8
 
 # GetSystemInfoResponse: firmware version string max 32 chars
 domes.config.GetSystemInfoResponse.firmware_version  max_size:32
+
+# GetModeResponse: no variable-length fields, no options needed
+# SetPodIdRequest/Response: no variable-length fields, no options needed

@@ -10,7 +10,7 @@ use crate::proto::config::{
     Color, Feature, GetLedPatternResponse, GetModeResponse, GetSystemInfoResponse, LedPattern,
     LedPatternType, ListFeaturesResponse, SetFeatureRequest, SetFeatureResponse,
     SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest, SetLedPatternResponse,
-    SetModeRequest, SetModeResponse, Status, SystemMode,
+    SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse, Status, SystemMode,
 };
 use prost::Message;
 use thiserror::Error;
@@ -41,6 +41,8 @@ impl TryFrom<u8> for ConfigMsgType {
             0x33 => Ok(Self::SetModeRsp),
             0x34 => Ok(Self::GetSystemInfoReq),
             0x35 => Ok(Self::GetSystemInfoRsp),
+            0x36 => Ok(Self::SetPodIdReq),
+            0x37 => Ok(Self::SetPodIdRsp),
             _ => Err(ProtocolError::UnknownMessageType(value)),
         }
     }
@@ -336,6 +338,7 @@ pub struct CliSystemInfo {
     pub boot_count: u32,
     pub mode: SystemMode,
     pub feature_mask: u32,
+    pub pod_id: u32,
 }
 
 /// Serialize SetModeRequest using protobuf encoding
@@ -425,5 +428,34 @@ pub fn parse_get_system_info_response(payload: &[u8]) -> Result<CliSystemInfo, P
         boot_count: resp.boot_count,
         mode,
         feature_mask: resp.feature_mask,
+        pod_id: resp.pod_id,
     })
+}
+
+/// Serialize SetPodIdRequest
+pub fn serialize_set_pod_id(pod_id: u32) -> Vec<u8> {
+    let req = SetPodIdRequest { pod_id };
+    req.encode_to_vec()
+}
+
+/// Parse SetPodIdResponse payload
+/// Format: [status_byte][protobuf_SetPodIdResponse]
+pub fn parse_set_pod_id_response(payload: &[u8]) -> Result<u32, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = SetPodIdResponse::decode(&payload[1..])?;
+    Ok(resp.pod_id)
 }

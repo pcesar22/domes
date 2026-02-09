@@ -63,6 +63,12 @@ PB_BIND(domes_config_GetSystemInfoRequest, domes_config_GetSystemInfoRequest, AU
 PB_BIND(domes_config_GetSystemInfoResponse, domes_config_GetSystemInfoResponse, AUTO)
 
 
+PB_BIND(domes_config_SetPodIdRequest, domes_config_SetPodIdRequest, AUTO)
+
+
+PB_BIND(domes_config_SetPodIdResponse, domes_config_SetPodIdResponse, AUTO)
+
+
 PB_BIND(domes_config_ConfigRequest, domes_config_ConfigRequest, AUTO)
 
 

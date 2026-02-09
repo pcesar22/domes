@@ -27,13 +27,15 @@ typedef enum _domes_config_MsgType {
     domes_config_MsgType_MSG_TYPE_GET_LED_PATTERN_RSP = 41,
     domes_config_MsgType_MSG_TYPE_SET_IMU_TRIAGE_REQ = 42,
     domes_config_MsgType_MSG_TYPE_SET_IMU_TRIAGE_RSP = 43,
-    /* System mode commands (0x30-0x35 range) */
+    /* System mode commands (0x30-0x37 range) */
     domes_config_MsgType_MSG_TYPE_GET_MODE_REQ = 48,
     domes_config_MsgType_MSG_TYPE_GET_MODE_RSP = 49,
     domes_config_MsgType_MSG_TYPE_SET_MODE_REQ = 50,
     domes_config_MsgType_MSG_TYPE_SET_MODE_RSP = 51,
     domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_REQ = 52,
-    domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP = 53
+    domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP = 53,
+    domes_config_MsgType_MSG_TYPE_SET_POD_ID_REQ = 54,
+    domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP = 55
 } domes_config_MsgType;
 
 /* Status codes for responses */
@@ -124,6 +126,7 @@ typedef struct _domes_config_GetLedPatternRequest { /* Empty - returns current p
 typedef struct _domes_config_ListFeaturesResponse {
     pb_size_t features_count;
     domes_config_FeatureState features[16];
+    uint32_t pod_id; /* Pod identity (0 = not set) */
 } domes_config_ListFeaturesResponse;
 
 typedef struct _domes_config_SetFeatureResponse {
@@ -180,7 +183,17 @@ typedef struct _domes_config_GetSystemInfoResponse {
     uint32_t boot_count;
     domes_config_SystemMode mode;
     uint32_t feature_mask;
+    uint32_t pod_id; /* Pod identity (0 = not set) */
 } domes_config_GetSystemInfoResponse;
+
+/* Set pod ID (persisted to NVS) */
+typedef struct _domes_config_SetPodIdRequest {
+    uint32_t pod_id; /* 1-255 */
+} domes_config_SetPodIdRequest;
+
+typedef struct _domes_config_SetPodIdResponse {
+    uint32_t pod_id; /* New pod ID after write */
+} domes_config_SetPodIdResponse;
 
 /* Top-level request envelope */
 typedef struct _domes_config_ConfigRequest {
@@ -208,8 +221,8 @@ extern "C" {
 
 /* Helper constants for enums */
 #define _domes_config_MsgType_MIN domes_config_MsgType_MSG_TYPE_UNKNOWN
-#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP
-#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP+1))
+#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP
+#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP+1))
 
 #define _domes_config_Status_MIN domes_config_Status_STATUS_OK
 #define _domes_config_Status_MAX domes_config_Status_STATUS_INVALID_PATTERN
@@ -254,6 +267,8 @@ extern "C" {
 #define domes_config_GetSystemInfoResponse_mode_ENUMTYPE domes_config_SystemMode
 
 
+
+
 #define domes_config_ConfigResponse_status_ENUMTYPE domes_config_Status
 
 
@@ -265,7 +280,7 @@ extern "C" {
 #define domes_config_LedPattern_init_default     {_domes_config_LedPatternType_MIN, false, domes_config_Color_init_default, 0, {domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default}, 0, 0}
 #define domes_config_SetLedPatternRequest_init_default {false, domes_config_LedPattern_init_default}
 #define domes_config_GetLedPatternRequest_init_default {0}
-#define domes_config_ListFeaturesResponse_init_default {0, {domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default}}
+#define domes_config_ListFeaturesResponse_init_default {0, {domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default}, 0}
 #define domes_config_SetFeatureResponse_init_default {false, domes_config_FeatureState_init_default}
 #define domes_config_SetLedPatternResponse_init_default {false, domes_config_LedPattern_init_default}
 #define domes_config_GetLedPatternResponse_init_default {false, domes_config_LedPattern_init_default}
@@ -276,7 +291,9 @@ extern "C" {
 #define domes_config_SetModeRequest_init_default {_domes_config_SystemMode_MIN}
 #define domes_config_SetModeResponse_init_default {_domes_config_SystemMode_MIN, 0}
 #define domes_config_GetSystemInfoRequest_init_default {0}
-#define domes_config_GetSystemInfoResponse_init_default {"", 0, 0, 0, _domes_config_SystemMode_MIN, 0}
+#define domes_config_GetSystemInfoResponse_init_default {"", 0, 0, 0, _domes_config_SystemMode_MIN, 0, 0}
+#define domes_config_SetPodIdRequest_init_default {0}
+#define domes_config_SetPodIdResponse_init_default {0}
 #define domes_config_ConfigRequest_init_default  {0, {domes_config_ListFeaturesRequest_init_default}}
 #define domes_config_ConfigResponse_init_default {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_default}}
 #define domes_config_Color_init_zero             {0, 0, 0, 0}
@@ -286,7 +303,7 @@ extern "C" {
 #define domes_config_LedPattern_init_zero        {_domes_config_LedPatternType_MIN, false, domes_config_Color_init_zero, 0, {domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero}, 0, 0}
 #define domes_config_SetLedPatternRequest_init_zero {false, domes_config_LedPattern_init_zero}
 #define domes_config_GetLedPatternRequest_init_zero {0}
-#define domes_config_ListFeaturesResponse_init_zero {0, {domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero}}
+#define domes_config_ListFeaturesResponse_init_zero {0, {domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero}, 0}
 #define domes_config_SetFeatureResponse_init_zero {false, domes_config_FeatureState_init_zero}
 #define domes_config_SetLedPatternResponse_init_zero {false, domes_config_LedPattern_init_zero}
 #define domes_config_GetLedPatternResponse_init_zero {false, domes_config_LedPattern_init_zero}
@@ -297,7 +314,9 @@ extern "C" {
 #define domes_config_SetModeRequest_init_zero    {_domes_config_SystemMode_MIN}
 #define domes_config_SetModeResponse_init_zero   {_domes_config_SystemMode_MIN, 0}
 #define domes_config_GetSystemInfoRequest_init_zero {0}
-#define domes_config_GetSystemInfoResponse_init_zero {"", 0, 0, 0, _domes_config_SystemMode_MIN, 0}
+#define domes_config_GetSystemInfoResponse_init_zero {"", 0, 0, 0, _domes_config_SystemMode_MIN, 0, 0}
+#define domes_config_SetPodIdRequest_init_zero   {0}
+#define domes_config_SetPodIdResponse_init_zero  {0}
 #define domes_config_ConfigRequest_init_zero     {0, {domes_config_ListFeaturesRequest_init_zero}}
 #define domes_config_ConfigResponse_init_zero    {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_zero}}
 
@@ -317,6 +336,7 @@ extern "C" {
 #define domes_config_LedPattern_brightness_tag   5
 #define domes_config_SetLedPatternRequest_pattern_tag 1
 #define domes_config_ListFeaturesResponse_features_tag 1
+#define domes_config_ListFeaturesResponse_pod_id_tag 2
 #define domes_config_SetFeatureResponse_feature_tag 1
 #define domes_config_SetLedPatternResponse_pattern_tag 1
 #define domes_config_GetLedPatternResponse_pattern_tag 1
@@ -333,6 +353,9 @@ extern "C" {
 #define domes_config_GetSystemInfoResponse_boot_count_tag 4
 #define domes_config_GetSystemInfoResponse_mode_tag 5
 #define domes_config_GetSystemInfoResponse_feature_mask_tag 6
+#define domes_config_GetSystemInfoResponse_pod_id_tag 7
+#define domes_config_SetPodIdRequest_pod_id_tag  1
+#define domes_config_SetPodIdResponse_pod_id_tag 1
 #define domes_config_ConfigRequest_list_features_tag 1
 #define domes_config_ConfigRequest_set_feature_tag 2
 #define domes_config_ConfigResponse_status_tag   1
@@ -388,7 +411,8 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  pattern,           1)
 #define domes_config_GetLedPatternRequest_DEFAULT NULL
 
 #define domes_config_ListFeaturesResponse_FIELDLIST(X, a) \
-X(a, STATIC,   REPEATED, MESSAGE,  features,          1)
+X(a, STATIC,   REPEATED, MESSAGE,  features,          1) \
+X(a, STATIC,   SINGULAR, UINT32,   pod_id,            2)
 #define domes_config_ListFeaturesResponse_CALLBACK NULL
 #define domes_config_ListFeaturesResponse_DEFAULT NULL
 #define domes_config_ListFeaturesResponse_features_MSGTYPE domes_config_FeatureState
@@ -454,9 +478,20 @@ X(a, STATIC,   SINGULAR, UINT32,   uptime_s,          2) \
 X(a, STATIC,   SINGULAR, UINT32,   free_heap,         3) \
 X(a, STATIC,   SINGULAR, UINT32,   boot_count,        4) \
 X(a, STATIC,   SINGULAR, UENUM,    mode,              5) \
-X(a, STATIC,   SINGULAR, UINT32,   feature_mask,      6)
+X(a, STATIC,   SINGULAR, UINT32,   feature_mask,      6) \
+X(a, STATIC,   SINGULAR, UINT32,   pod_id,            7)
 #define domes_config_GetSystemInfoResponse_CALLBACK NULL
 #define domes_config_GetSystemInfoResponse_DEFAULT NULL
+
+#define domes_config_SetPodIdRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   pod_id,            1)
+#define domes_config_SetPodIdRequest_CALLBACK NULL
+#define domes_config_SetPodIdRequest_DEFAULT NULL
+
+#define domes_config_SetPodIdResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   pod_id,            1)
+#define domes_config_SetPodIdResponse_CALLBACK NULL
+#define domes_config_SetPodIdResponse_DEFAULT NULL
 
 #define domes_config_ConfigRequest_FIELDLIST(X, a) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (request,list_features,request.list_features),   1) \
@@ -494,6 +529,8 @@ extern const pb_msgdesc_t domes_config_SetModeRequest_msg;
 extern const pb_msgdesc_t domes_config_SetModeResponse_msg;
 extern const pb_msgdesc_t domes_config_GetSystemInfoRequest_msg;
 extern const pb_msgdesc_t domes_config_GetSystemInfoResponse_msg;
+extern const pb_msgdesc_t domes_config_SetPodIdRequest_msg;
+extern const pb_msgdesc_t domes_config_SetPodIdResponse_msg;
 extern const pb_msgdesc_t domes_config_ConfigRequest_msg;
 extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 
@@ -517,6 +554,8 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_SetModeResponse_fields &domes_config_SetModeResponse_msg
 #define domes_config_GetSystemInfoRequest_fields &domes_config_GetSystemInfoRequest_msg
 #define domes_config_GetSystemInfoResponse_fields &domes_config_GetSystemInfoResponse_msg
+#define domes_config_SetPodIdRequest_fields &domes_config_SetPodIdRequest_msg
+#define domes_config_SetPodIdResponse_fields &domes_config_SetPodIdResponse_msg
 #define domes_config_ConfigRequest_fields &domes_config_ConfigRequest_msg
 #define domes_config_ConfigResponse_fields &domes_config_ConfigResponse_msg
 
@@ -524,17 +563,17 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define DOMES_CONFIG_CONFIG_PB_H_MAX_SIZE        domes_config_SetLedPatternRequest_size
 #define domes_config_Color_size                  24
 #define domes_config_ConfigRequest_size          6
-#define domes_config_ConfigResponse_size         100
+#define domes_config_ConfigResponse_size         106
 #define domes_config_FeatureState_size           4
 #define domes_config_GetLedPatternRequest_size   0
 #define domes_config_GetLedPatternResponse_size  251
 #define domes_config_GetModeRequest_size         0
 #define domes_config_GetModeResponse_size        8
 #define domes_config_GetSystemInfoRequest_size   0
-#define domes_config_GetSystemInfoResponse_size  59
+#define domes_config_GetSystemInfoResponse_size  65
 #define domes_config_LedPattern_size             248
 #define domes_config_ListFeaturesRequest_size    0
-#define domes_config_ListFeaturesResponse_size   96
+#define domes_config_ListFeaturesResponse_size   102
 #define domes_config_SetFeatureRequest_size      4
 #define domes_config_SetFeatureResponse_size     6
 #define domes_config_SetImuTriageRequest_size    2
@@ -543,6 +582,8 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_SetLedPatternResponse_size  251
 #define domes_config_SetModeRequest_size         2
 #define domes_config_SetModeResponse_size        4
+#define domes_config_SetPodIdRequest_size        6
+#define domes_config_SetPodIdResponse_size       6
 
 #ifdef __cplusplus
 } /* extern "C" */

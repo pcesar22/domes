@@ -490,5 +490,36 @@ python -m http.server 8080 --directory build/
 
 ---
 
+## Multi-Device OTA
+
+When multiple pods are connected, `domes-cli` can flash all of them in a single command. OTA is performed sequentially to each device (one at a time) to avoid USB bandwidth contention.
+
+### Flash All Registered Devices
+
+```bash
+# Flash all pods in the device registry
+domes-cli --all ota flash firmware/domes/build/domes.bin --version v1.0.0
+```
+
+### Flash Specific Ports Directly
+
+```bash
+# Explicit multi-port OTA (no registry needed)
+domes-cli --port /dev/ttyACM0 --port /dev/ttyACM1 ota flash firmware/domes/build/domes.bin
+```
+
+### Verification After Multi-Device OTA
+
+Each device reboots independently after its OTA completes. Verify all pods are running:
+
+```bash
+# Wait for all reboots, then check
+domes-cli --all feature list
+```
+
+**Note:** If one device fails OTA (bad connection, timeout), the CLI reports the failure and continues to the next device. Failed devices retain their previous firmware and can be retried individually.
+
+---
+
 *Prerequisites: 02-build-system.md, 04-communication.md*
 *Related: 09-reference.md (partition layout)*

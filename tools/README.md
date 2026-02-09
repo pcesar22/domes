@@ -10,6 +10,10 @@ Tests the runtime configuration protocol over USB serial.
 
 ```bash
 python3 test_config.py /dev/ttyACM0
+
+# Test multiple devices
+python3 test_config.py /dev/ttyACM0
+python3 test_config.py /dev/ttyACM1
 ```
 
 **What it tests:**
@@ -55,8 +59,13 @@ cargo run -- --port /dev/ttyACM0 feature list
 cargo run -- --port /dev/ttyACM0 feature enable led-effects
 cargo run -- --port /dev/ttyACM0 feature disable ble
 
-# WiFi transport (future)
+# WiFi transport
 cargo run -- --wifi 192.168.50.173:5000 feature list
+
+# Multi-device commands
+cargo run -- --port /dev/ttyACM0 --port /dev/ttyACM1 feature list
+cargo run -- --all led solid --color ff0000
+cargo run -- devices scan
 ```
 
 ## Trace Tools
@@ -68,6 +77,9 @@ Dumps trace events from firmware and exports to Chrome JSON format.
 ```bash
 python3 trace/trace_dump.py -p /dev/ttyACM0 -o trace.json
 # Open trace.json in https://ui.perfetto.dev
+
+# Multi-device trace dump
+python3 trace/trace_dump.py --ports /dev/ttyACM0,/dev/ttyACM1 -o trace.json
 ```
 
 ## Protocol Reference

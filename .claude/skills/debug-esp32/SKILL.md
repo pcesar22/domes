@@ -254,3 +254,51 @@ esp32_gdb_command(sessionId, "info locals")
 # 9. Continue to next color
 esp32_gdb_command(sessionId, "c &")
 ```
+
+## Multi-Device Debugging
+
+When debugging with two devices connected, each device needs its own OpenOCD + GDB instance. Only ONE debug session can use the USB-JTAG port at a time.
+
+### Debugging Device on /dev/ttyACM0 (default)
+
+Follow the standard workflow above. The MCP debug tools default to `/dev/ttyACM0`.
+
+### Debugging Second Device
+
+The second device cannot share the same JTAG interface. Options:
+
+1. **Debug one at a time**: Stop the first debug session before starting one on the second device
+2. **Use serial logging for the second device**: While debugging one device via GDB, monitor the other via serial:
+   ```bash
+   python3 .claude/skills/esp32-firmware/scripts/monitor_serial.py /dev/ttyACM1 30
+   ```
+3. **Separate JTAG adapters**: If using external JTAG (not built-in USB), two adapters can debug simultaneously
+
+### Multi-Device Debug Workflow
+
+```
+Device 1 (/dev/ttyACM0): Full GDB debugging
+Device 2 (/dev/ttyACM1): Serial log monitoring
+
+# Terminal 1: GDB debug device 1
+esp32_start_debug(projectPath="/home/pncosta/domes/firmware/domes")
+esp32_gdb_command(sessionId, "monitor reset halt")
+
+# Terminal 2: Monitor device 2
+python3 -c "
+import serial, time
+ser = serial.Serial('/dev/ttyACM1', 115200, timeout=1)
+start = time.time()
+while time.time() - start < 60:
+    if ser.in_waiting:
+        print(ser.read(ser.in_waiting).decode('utf-8', errors='ignore'), end='')
+    time.sleep(0.1)
+ser.close()
+"
+```
+
+### ESP-NOW Debugging Tips
+
+- Set breakpoints in ESP-NOW callback functions on the device being debugged
+- Monitor the other device's serial output for corresponding messages
+- Use trace points (`TRACE_SCOPE`) to measure ESP-NOW latency across pods

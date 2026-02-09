@@ -41,7 +41,9 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_mac.h"
 #include "esp_wifi.h"
+#include "mdns.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -91,6 +93,31 @@ static domes::TcpConfigServer* tcpConfigServer = nullptr;  // WiFi config server
 static domes::WifiManager* wifiManager = nullptr;
 static domes::infra::NvsConfig wifiStorage;
 #endif
+
+/**
+ * @brief Read pod_id from NVS and log it at boot
+ *
+ * Pod ID determines the BLE device name suffix and identifies the pod
+ * in a multi-pod setup (0 = not set, will use MAC suffix for BLE name).
+ *
+ * @return pod_id value (0 if not set)
+ */
+static uint8_t readPodId() {
+    domes::infra::NvsConfig config;
+    if (config.open(domes::infra::nvs_ns::kConfig) != ESP_OK) {
+        ESP_LOGW(kTag, "Failed to open NVS config for pod_id");
+        return 0;
+    }
+    uint8_t podId = config.getOrDefault<uint8_t>(domes::infra::config_key::kPodId, 0);
+    config.close();
+
+    if (podId > 0) {
+        ESP_LOGI(kTag, "Pod ID: %u", podId);
+    } else {
+        ESP_LOGI(kTag, "Pod ID: not set (will use MAC suffix for BLE name)");
+    }
+    return podId;
+}
 
 /**
  * @brief Perform post-OTA self-test
@@ -757,6 +784,45 @@ static esp_err_t initWifi() {
         return ESP_ERR_TIMEOUT;
     }
 }
+/**
+ * @brief Initialize mDNS service advertisement
+ *
+ * Advertises _domes._tcp.local. on port 5000 so the CLI can auto-discover
+ * pods on the same network. Hostname is domes-pod-{pod_id}.local.
+ *
+ * @param podId Pod ID from NVS (0 = use MAC suffix)
+ */
+static esp_err_t initMdns(uint8_t podId) {
+    esp_err_t err = mdns_init();
+    if (err != ESP_OK) {
+        ESP_LOGW(kTag, "mDNS init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Set hostname: domes-pod-1 or domes-pod-xxxx
+    char hostname[32] = {};
+    if (podId > 0) {
+        snprintf(hostname, sizeof(hostname), "domes-pod-%u", podId);
+    } else {
+        uint8_t mac[6] = {};
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        snprintf(hostname, sizeof(hostname), "domes-pod-%02x%02x", mac[4], mac[5]);
+    }
+    mdns_hostname_set(hostname);
+    mdns_instance_name_set("DOMES Pod");
+
+    // Advertise TCP config service
+    mdns_service_add("DOMES Config", "_domes", "_tcp", 5000, nullptr, 0);
+
+    // Add TXT records with pod info
+    char podIdStr[8] = {};
+    snprintf(podIdStr, sizeof(podIdStr), "%u", podId);
+    mdns_service_txt_item_set("_domes", "_tcp", "pod_id", podIdStr);
+    mdns_service_txt_item_set("_domes", "_tcp", "version", DOMES_VERSION_STRING);
+
+    ESP_LOGI(kTag, "mDNS: %s.local (_domes._tcp:5000)", hostname);
+    return ESP_OK;
+}
 #endif  // CONFIG_DOMES_WIFI_AUTO_CONNECT
 
 /**
@@ -946,6 +1012,9 @@ extern "C" void app_main() {
     }
     ESP_LOGI(kTag, "Infrastructure initialized");
 
+    // Read pod ID from NVS (used for BLE naming and multi-pod identification)
+    [[maybe_unused]] uint8_t podId = readPodId();
+
     // Initialize hardware drivers
     if (initLedStrip() != ESP_OK) {
         ESP_LOGW(kTag, "LED init failed, continuing without LED");
@@ -1067,6 +1136,8 @@ extern "C" void app_main() {
         if (initTcpConfigServer() != ESP_OK) {
             ESP_LOGW(kTag, "TCP config server init failed");
         }
+        // Advertise via mDNS for device discovery
+        initMdns(podId);
     } else {
         ESP_LOGI(kTag, "TCP config server not started (WiFi not connected)");
     }

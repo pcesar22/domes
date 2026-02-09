@@ -92,11 +92,36 @@ domes-cli --port /dev/ttyACM0 led pattern rainbow
 domes-cli --wifi 192.168.1.100:5000 feature list
 
 # BLE transport (Linux only)
-domes-cli --scan-ble                      # Discover devices
-domes-cli --ble "DOMES-Pod" feature list  # Connect by name
+domes-cli --scan-ble                           # Discover devices
+domes-cli --ble "DOMES-Pod-01" feature list    # Connect by name
 
 # OTA firmware update
 domes-cli --port /dev/ttyACM0 ota flash firmware.bin --version v1.0.0
+```
+
+### Multi-Pod Operations
+
+```bash
+# Scan and discover all connected pods
+domes-cli devices scan
+
+# Register devices
+domes-cli devices add pod1 serial /dev/ttyACM0
+domes-cli devices add pod2 serial /dev/ttyACM1
+
+# Commands across multiple devices
+domes-cli --all feature list
+domes-cli --target pod1 --target pod2 led solid --color ff0000
+
+# Set unique pod IDs (persisted to NVS)
+domes-cli --port /dev/ttyACM0 system set-pod-id 1
+domes-cli --port /dev/ttyACM1 system set-pod-id 2
+
+# BLE: auto-connect to all DOMES pods
+domes-cli --connect-all-ble feature list
+
+# OTA all devices
+domes-cli --all ota flash firmware.bin --version v1.0.0
 ```
 
 ## Hardware Platforms

@@ -184,6 +184,58 @@ domes/
 └── research/               # Architecture documentation
 ```
 
+## Working with Multiple Pods
+
+DOMES is a multi-pod system. For full testing, you need two ESP32 devices connected via USB.
+
+### Identifying Connected Devices
+
+```bash
+# List serial ports
+domes-cli --list-ports
+
+# Scan for all DOMES devices (serial + BLE)
+domes-cli devices scan
+```
+
+Devices typically appear as `/dev/ttyACM0` and `/dev/ttyACM1`.
+
+### Registering Devices
+
+```bash
+# Register each device with a friendly name
+domes-cli devices add pod1 serial /dev/ttyACM0
+domes-cli devices add pod2 serial /dev/ttyACM1
+
+# Verify registration
+domes-cli devices list
+```
+
+### Flashing and Testing Both Pods
+
+```bash
+# Flash firmware to both devices
+domes-cli --all ota flash firmware/domes/build/domes.bin --version v1.0.0
+
+# Verify both are running
+domes-cli --all feature list
+
+# Test LED on both
+domes-cli --all led solid --color 00ff00
+```
+
+### ESP-NOW (Pod-to-Pod Communication)
+
+```bash
+# Enable ESP-NOW on both pods
+domes-cli --all feature enable esp-now
+
+# Monitor both for discovery messages
+python .claude/skills/esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+```
+
+For full multi-device documentation, see `CLAUDE.md` section "Multi-Device Testing".
+
 ## Getting Help
 
 - **Stuck?** Check `research/architecture/` for design decisions

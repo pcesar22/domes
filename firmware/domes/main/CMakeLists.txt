@@ -46,4 +46,5 @@ idf_component_register(
         mbedtls
         common
         bt
+        mdns
 )
