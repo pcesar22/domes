@@ -4,6 +4,10 @@
  */
 
 #include "tcpConfigServer.hpp"
+
+#include "infra/diagnostics.hpp"
+#include "trace/traceApi.hpp"
+
 #include "protocol/frameCodec.hpp"
 #include "config/configProtocol.hpp"
 #include "services/imuService.hpp"
@@ -126,11 +130,13 @@ void TcpConfigServer::run() {
         }
 
         clientCount_.fetch_add(1);
+        TRACE_INSTANT(TRACE_ID("TcpServer.ClientConnect"), domes::trace::Category::kTransport);
 
         // Handle client in current task (simple sequential handling)
         // For truly concurrent clients, would spawn separate tasks
         handleClient(clientSock);
 
+        TRACE_INSTANT(TRACE_ID("TcpServer.ClientDisconnect"), domes::trace::Category::kTransport);
         clientCount_.fetch_sub(1);
         ESP_LOGI(TAG, "Client from %s disconnected", addrStr);
     }
@@ -216,6 +222,7 @@ void TcpConfigServer::handleClient(int clientSock) {
                 decoder.reset();
             } else if (decoder.isError()) {
                 ESP_LOGW(TAG, "Frame decode error");
+                domes::infra::Diagnostics::recordCrcError();
                 decoder.reset();
             }
         }

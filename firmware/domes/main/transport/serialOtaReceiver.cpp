@@ -5,6 +5,9 @@
 
 #include "serialOtaReceiver.hpp"
 
+#include "infra/diagnostics.hpp"
+#include "trace/traceApi.hpp"
+
 #include "config/configProtocol.hpp"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -61,6 +64,7 @@ void SerialOtaReceiver::run() {
             decoder.feedByte(rxBuf[i]);
 
             if (decoder.isComplete()) {
+                TRACE_SCOPE(TRACE_ID("SerialOta.Dispatch"), domes::trace::Category::kTransport);
                 uint8_t msgTypeByte = decoder.getType();
                 const uint8_t* payload = decoder.getPayload();
                 size_t payloadLen = decoder.getPayloadLen();
@@ -107,7 +111,9 @@ void SerialOtaReceiver::run() {
 
                 decoder.reset();
             } else if (decoder.isError()) {
+                TRACE_INSTANT(TRACE_ID("SerialOta.FrameError"), domes::trace::Category::kTransport);
                 ESP_LOGW(TAG, "Frame decode error (CRC mismatch or invalid length)");
+                domes::infra::Diagnostics::recordCrcError();
                 decoder.reset();
             }
         }

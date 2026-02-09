@@ -6,6 +6,9 @@
  */
 
 #include "configCommandHandler.hpp"
+
+#include "trace/traceApi.hpp"
+
 #include "protocol/frameCodec.hpp"
 #include "services/imuService.hpp"
 #include "services/ledService.hpp"
@@ -49,6 +52,7 @@ ConfigCommandHandler::ConfigCommandHandler(ITransport& transport, FeatureManager
 }
 
 bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, size_t len) {
+    TRACE_SCOPE(TRACE_ID("Config.HandleCommand"), domes::trace::Category::kTransport);
     // Reset activity timer and auto-enter TRIAGE on any config/system command
     if (modeManager_) {
         modeManager_->resetActivityTimer();

@@ -47,7 +47,8 @@ typedef enum _domes_trace_Category {
     domes_trace_Category_CATEGORY_USER = 8, /* User-defined events */
     domes_trace_Category_CATEGORY_HAPTIC = 9, /* Haptic feedback */
     domes_trace_Category_CATEGORY_BLE = 10, /* BLE operations */
-    domes_trace_Category_CATEGORY_NVS = 11 /* NVS storage operations */
+    domes_trace_Category_CATEGORY_NVS = 11, /* NVS storage operations */
+    domes_trace_Category_CATEGORY_ESPNOW = 12 /* ESP-NOW peer-to-peer operations */
 } domes_trace_Category;
 
 /* Types of trace events */
@@ -142,8 +143,8 @@ extern "C" {
 #define _domes_trace_Status_ARRAYSIZE ((domes_trace_Status)(domes_trace_Status_STATUS_ERROR+1))
 
 #define _domes_trace_Category_MIN domes_trace_Category_CATEGORY_KERNEL
-#define _domes_trace_Category_MAX domes_trace_Category_CATEGORY_NVS
-#define _domes_trace_Category_ARRAYSIZE ((domes_trace_Category)(domes_trace_Category_CATEGORY_NVS+1))
+#define _domes_trace_Category_MAX domes_trace_Category_CATEGORY_ESPNOW
+#define _domes_trace_Category_ARRAYSIZE ((domes_trace_Category)(domes_trace_Category_CATEGORY_ESPNOW+1))
 
 #define _domes_trace_EventType_MIN domes_trace_EventType_EVENT_TYPE_UNKNOWN
 #define _domes_trace_EventType_MAX domes_trace_EventType_EVENT_TYPE_COMPLETE

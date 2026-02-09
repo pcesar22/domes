@@ -5,6 +5,8 @@
 
 #include "usbCdcTransport.hpp"
 
+#include "trace/traceApi.hpp"
+
 #include "driver/usb_serial_jtag.h"
 #include "esp_log.h"
 
@@ -62,6 +64,7 @@ TransportError UsbCdcTransport::init() {
 }
 
 TransportError UsbCdcTransport::send(const uint8_t* data, size_t len) {
+    TRACE_SCOPE(TRACE_ID("UsbCdc.Send"), domes::trace::Category::kTransport);
     if (!initialized_) {
         return TransportError::kNotInitialized;
     }
@@ -92,11 +95,13 @@ TransportError UsbCdcTransport::send(const uint8_t* data, size_t len) {
         totalWritten += static_cast<size_t>(written);
     }
 
+    TRACE_COUNTER(TRACE_ID("UsbCdc.BytesSent"), totalWritten, domes::trace::Category::kTransport);
     xSemaphoreGive(txMutex_);
     return TransportError::kOk;
 }
 
 TransportError UsbCdcTransport::receive(uint8_t* buf, size_t* len, uint32_t timeoutMs) {
+    TRACE_SCOPE(TRACE_ID("UsbCdc.Receive"), domes::trace::Category::kTransport);
     if (!initialized_) {
         return TransportError::kNotInitialized;
     }
@@ -117,6 +122,7 @@ TransportError UsbCdcTransport::receive(uint8_t* buf, size_t* len, uint32_t time
     }
 
     *len = static_cast<size_t>(bytesRead);
+    TRACE_COUNTER(TRACE_ID("UsbCdc.BytesReceived"), *len, domes::trace::Category::kTransport);
     return TransportError::kOk;
 }
 

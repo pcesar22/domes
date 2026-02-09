@@ -5,6 +5,8 @@
 
 #include "bleOtaService.hpp"
 
+#include "trace/traceApi.hpp"
+
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
@@ -343,6 +345,7 @@ TransportError BleOtaService::init() {
 }
 
 TransportError BleOtaService::send(const uint8_t* data, size_t len) {
+    TRACE_SCOPE(TRACE_ID("Ble.Send"), domes::trace::Category::kBle);
     if (!initialized_) {
         return TransportError::kNotInitialized;
     }
@@ -381,6 +384,7 @@ TransportError BleOtaService::send(const uint8_t* data, size_t len) {
 }
 
 TransportError BleOtaService::receive(uint8_t* buf, size_t* len, uint32_t timeoutMs) {
+    TRACE_SCOPE(TRACE_ID("Ble.Receive"), domes::trace::Category::kBle);
     if (!initialized_) {
         return TransportError::kNotInitialized;
     }
@@ -500,6 +504,7 @@ void BleOtaService::setDeviceName(const char* name) {
 }
 
 void BleOtaService::onDataReceived(const uint8_t* data, size_t len) {
+    TRACE_INSTANT(TRACE_ID("Ble.DataReceived"), domes::trace::Category::kBle);
     ESP_LOGD(kTag, "Received %zu bytes via BLE", len);
 
     xSemaphoreTake(static_cast<SemaphoreHandle_t>(rxMutex_), portMAX_DELAY);
@@ -522,6 +527,11 @@ void BleOtaService::onDataReceived(const uint8_t* data, size_t len) {
 }
 
 void BleOtaService::onConnectionStateChanged(bool connected, uint16_t connHandle) {
+    if (connected) {
+        TRACE_INSTANT(TRACE_ID("Ble.Connected"), domes::trace::Category::kBle);
+    } else {
+        TRACE_INSTANT(TRACE_ID("Ble.Disconnected"), domes::trace::Category::kBle);
+    }
     connected_ = connected;
     connHandle_ = connHandle;
 

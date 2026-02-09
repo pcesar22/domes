@@ -11,6 +11,7 @@
 #include "drivers/lis2dw12.hpp"
 #include "drivers/max98357a.hpp"
 #include "drivers/touchDriver.hpp"
+#include "infra/diagnostics.hpp"
 #include "infra/logging.hpp"
 #include "infra/nvsConfig.hpp"
 #include "infra/taskManager.hpp"
@@ -27,6 +28,7 @@
 #include "game/gameEngine.hpp"
 #include "trace/traceRecorder.hpp"
 #include "transport/bleOtaService.hpp"
+#include "transport/espNowTransport.hpp"
 #include "transport/serialOtaReceiver.hpp"
 #include "transport/tcpConfigServer.hpp"
 #include "transport/usbCdcTransport.hpp"
@@ -75,6 +77,8 @@ static domes::UsbCdcTransport* usbCdcTransport = nullptr;
 static domes::SerialOtaReceiver* serialOtaReceiver = nullptr;
 static domes::BleOtaService* bleOtaService = nullptr;
 static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
+static domes::EspNowTransport* espNowTransport = nullptr;
+static domes::SerialOtaReceiver* espNowReceiver = nullptr;
 static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
 static domes::config::ModeManager* modeManager = nullptr;  // System mode manager
 static domes::LedService* ledService = nullptr;  // LED pattern service
@@ -587,6 +591,58 @@ static esp_err_t initGameEngine() {
 }
 
 /**
+ * @brief Initialize ESP-NOW transport
+ *
+ * Creates ESP-NOW transport and receiver task.
+ * Requires WiFi stack to be initialized first.
+ * Only initializes if ESP-NOW feature is enabled.
+ */
+static esp_err_t initEspNow() {
+    if (!featureManager || !featureManager->isEnabled(domes::config::Feature::kEspNow)) {
+        ESP_LOGI(kTag, "ESP-NOW feature not enabled, skipping init");
+        return ESP_OK;
+    }
+
+    ESP_LOGI(kTag, "Initializing ESP-NOW transport...");
+
+    static domes::EspNowTransport transport;
+    espNowTransport = &transport;
+
+    domes::TransportError err = espNowTransport->init();
+    if (!domes::isOk(err)) {
+        ESP_LOGE(kTag, "ESP-NOW transport init failed: %s", domes::transportErrorToString(err));
+        espNowTransport = nullptr;
+        return ESP_FAIL;
+    }
+
+    // Create receiver task for ESP-NOW frames
+    static domes::SerialOtaReceiver receiver(*espNowTransport, featureManager);
+    espNowReceiver = &receiver;
+
+    // Wire up services
+    if (ledService) espNowReceiver->setLedService(ledService);
+    if (imuService) espNowReceiver->setImuService(imuService);
+    if (modeManager) espNowReceiver->setModeManager(modeManager);
+
+    domes::infra::TaskConfig config = {
+        .name = "espnow_rx",
+        .stackSize = 4096,
+        .priority = domes::infra::priority::kHigh,
+        .coreAffinity = domes::infra::core::kProtocol,
+        .subscribeToWatchdog = false
+    };
+
+    esp_err_t espErr = taskManager.createTask(config, receiver);
+    if (espErr != ESP_OK) {
+        ESP_LOGE(kTag, "Failed to create ESP-NOW receiver task: %s", esp_err_to_name(espErr));
+        return espErr;
+    }
+
+    ESP_LOGI(kTag, "ESP-NOW transport initialized with receiver task");
+    return ESP_OK;
+}
+
+/**
  * @brief Initialize serial OTA receiver
  *
  * Sets up USB-CDC transport and starts the serial OTA receiver task.
@@ -1064,6 +1120,10 @@ extern "C" void app_main() {
     // Initialize mode manager (after feature manager, before services)
     initModeManager();
 
+    // Initialize diagnostics (after trace, before services)
+    domes::infra::Diagnostics::init();
+    domes::infra::Diagnostics::startTask();
+
     // Initialize LED service (needed for LED pattern commands)
     if (initLedService() != ESP_OK) {
         ESP_LOGW(kTag, "LED service init failed, continuing without LED patterns");
@@ -1128,6 +1188,11 @@ extern "C" void app_main() {
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
 
     vTaskDelay(pdMS_TO_TICKS(500));  // Let BLE settle
+
+    // Initialize ESP-NOW transport (after WiFi init, after BLE)
+    if (initEspNow() != ESP_OK) {
+        ESP_LOGW(kTag, "ESP-NOW init failed, continuing without ESP-NOW");
+    }
 
     // Initialize TCP config server (WiFi-based config) - BEFORE serial OTA takes console
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT

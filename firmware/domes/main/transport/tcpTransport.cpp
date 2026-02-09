@@ -5,6 +5,8 @@
 
 #include "tcpTransport.hpp"
 
+#include "trace/traceApi.hpp"
+
 #include "esp_log.h"
 #include "lwip/sockets.h"
 
@@ -56,6 +58,7 @@ TransportError TcpTransport::init() {
 }
 
 TransportError TcpTransport::send(const uint8_t* data, size_t len) {
+    TRACE_SCOPE(TRACE_ID("Tcp.Send"), domes::trace::Category::kTransport);
     if (!initialized_.load()) {
         return TransportError::kNotInitialized;
     }
@@ -92,10 +95,12 @@ TransportError TcpTransport::send(const uint8_t* data, size_t len) {
         totalSent += static_cast<size_t>(sent);
     }
 
+    TRACE_COUNTER(TRACE_ID("Tcp.BytesSent"), totalSent, domes::trace::Category::kTransport);
     return TransportError::kOk;
 }
 
 TransportError TcpTransport::receive(uint8_t* buf, size_t* len, uint32_t timeoutMs) {
+    TRACE_SCOPE(TRACE_ID("Tcp.Receive"), domes::trace::Category::kTransport);
     if (!initialized_.load()) {
         return TransportError::kNotInitialized;
     }
@@ -153,6 +158,7 @@ TransportError TcpTransport::receive(uint8_t* buf, size_t* len, uint32_t timeout
     }
 
     *len = static_cast<size_t>(received);
+    TRACE_COUNTER(TRACE_ID("Tcp.BytesReceived"), *len, domes::trace::Category::kTransport);
     return TransportError::kOk;
 }
 
