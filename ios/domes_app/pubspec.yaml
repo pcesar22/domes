@@ -1,0 +1,31 @@
+name: domes_app
+description: "DOMES game controller app for iOS and Linux"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+  flutter_blue_plus: ^1.32.0
+  protobuf: ^6.0.0
+  crypto: ^3.0.3
+  fl_chart: ^0.69.0
+  file_picker: ^8.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.8
+  riverpod_generator: ^2.4.0
+  mockito: ^5.4.4
+
+flutter:
+  uses-material-design: true
