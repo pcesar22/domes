@@ -32,6 +32,7 @@
 #include "transport/serialOtaReceiver.hpp"
 #include "transport/tcpConfigServer.hpp"
 #include "transport/usbCdcTransport.hpp"
+#include "services/espNowService.hpp"
 
 // WiFi manager and secrets are only needed when WiFi auto-connect is enabled
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
@@ -78,7 +79,6 @@ static domes::SerialOtaReceiver* serialOtaReceiver = nullptr;
 static domes::BleOtaService* bleOtaService = nullptr;
 static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
 static domes::EspNowTransport* espNowTransport = nullptr;
-static domes::SerialOtaReceiver* espNowReceiver = nullptr;
 static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
 static domes::config::ModeManager* modeManager = nullptr;  // System mode manager
 static domes::LedService* ledService = nullptr;  // LED pattern service
@@ -598,11 +598,7 @@ static esp_err_t initGameEngine() {
  * Only initializes if ESP-NOW feature is enabled.
  */
 static esp_err_t initEspNow() {
-    if (!featureManager || !featureManager->isEnabled(domes::config::Feature::kEspNow)) {
-        ESP_LOGI(kTag, "ESP-NOW feature not enabled, skipping init");
-        return ESP_OK;
-    }
-
+    // Always init ESP-NOW hardware — feature flag gates runtime behavior, not init
     ESP_LOGI(kTag, "Initializing ESP-NOW transport...");
 
     static domes::EspNowTransport transport;
@@ -615,30 +611,35 @@ static esp_err_t initEspNow() {
         return ESP_FAIL;
     }
 
-    // Create receiver task for ESP-NOW frames
-    static domes::SerialOtaReceiver receiver(*espNowTransport, featureManager);
-    espNowReceiver = &receiver;
+    // Start ESP-NOW service (discovery + role negotiation + game loop)
+    static domes::EspNowService service(*espNowTransport);
 
-    // Wire up services
-    if (ledService) espNowReceiver->setLedService(ledService);
-    if (imuService) espNowReceiver->setImuService(imuService);
-    if (modeManager) espNowReceiver->setModeManager(modeManager);
+    // Wire dependencies for game protocol
+    if (gameEngine) {
+        service.setGameEngine(gameEngine);
+    }
+    if (ledService) {
+        service.setLedService(ledService);
+    }
+    if (modeManager) {
+        service.setModeManager(modeManager);
+    }
 
-    domes::infra::TaskConfig config = {
-        .name = "espnow_rx",
-        .stackSize = 4096,
-        .priority = domes::infra::priority::kHigh,
+    domes::infra::TaskConfig serviceConfig = {
+        .name = "espnow_svc",
+        .stackSize = 6144,  // Larger stack for game protocol
+        .priority = domes::infra::priority::kMedium,
         .coreAffinity = domes::infra::core::kProtocol,
         .subscribeToWatchdog = false
     };
 
-    esp_err_t espErr = taskManager.createTask(config, receiver);
+    esp_err_t espErr = taskManager.createTask(serviceConfig, service);
     if (espErr != ESP_OK) {
-        ESP_LOGE(kTag, "Failed to create ESP-NOW receiver task: %s", esp_err_to_name(espErr));
+        ESP_LOGE(kTag, "Failed to create ESP-NOW service task: %s", esp_err_to_name(espErr));
         return espErr;
     }
 
-    ESP_LOGI(kTag, "ESP-NOW transport initialized with receiver task");
+    ESP_LOGI(kTag, "ESP-NOW transport initialized with game service");
     return ESP_OK;
 }
 
@@ -939,9 +940,20 @@ static esp_err_t initWifiForEspNow() {
         return err;
     }
 
+    // Pin to channel 1 so all pods use the same channel for ESP-NOW.
+    // Without this, STA mode without an AP connection has an undefined channel,
+    // and pods may fail to discover each other.
+    static constexpr uint8_t kEspNowChannel = 1;
+    err = esp_wifi_set_channel(kEspNowChannel, WIFI_SECOND_CHAN_NONE);
+    if (err != ESP_OK) {
+        ESP_LOGW(kTag, "esp_wifi_set_channel(%d) failed: %s", kEspNowChannel, esp_err_to_name(err));
+    } else {
+        ESP_LOGI(kTag, "WiFi channel pinned to %d for ESP-NOW", kEspNowChannel);
+    }
+
     // Log success and heap usage
     size_t heapAfter = esp_get_free_heap_size();
-    ESP_LOGI(kTag, "WiFi stack initialized (STA mode, not connected)");
+    ESP_LOGI(kTag, "WiFi stack initialized (STA mode, channel %d, not connected)", kEspNowChannel);
     ESP_LOGI(kTag, "WiFi heap usage: %zu bytes", heapBefore - heapAfter);
 
     return ESP_OK;
