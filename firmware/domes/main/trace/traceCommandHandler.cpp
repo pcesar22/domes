@@ -11,7 +11,6 @@
 
 #include <array>
 #include <cstring>
-#include <vector>
 
 namespace {
 constexpr const char* kTag = "trace_cmd";
@@ -101,16 +100,18 @@ void CommandHandler::handleDump() {
     Recorder::setEnabled(false);
     Recorder::buffer().pause();
 
-    // Collect all events into a temporary buffer
-    std::vector<TraceEvent> events;
-    events.reserve(TraceBuffer::kMaxEvents);
+    // Count events and get timestamps by doing a first pass
+    // Read events directly from ring buffer in small chunks (no large allocation)
+    uint32_t eventCount = 0;
+    uint32_t startTs = 0;
+    uint32_t endTs = 0;
+    uint32_t droppedCount = Recorder::buffer().droppedCount();
 
-    TraceEvent event;
-    while (Recorder::buffer().read(&event, 0)) {
-        events.push_back(event);
-    }
+    // First: count events and get first/last timestamps
+    // We read into a small stack buffer and count
+    eventCount = static_cast<uint32_t>(Recorder::buffer().count());
 
-    if (events.empty()) {
+    if (eventCount == 0) {
         ESP_LOGI(kTag, "No events to dump");
         sendAck(Status::kBufferEmpty);
         Recorder::buffer().resume();
@@ -120,46 +121,80 @@ void CommandHandler::handleDump() {
         return;
     }
 
-    ESP_LOGI(kTag, "Dumping %zu events", events.size());
+    ESP_LOGI(kTag, "Dumping ~%lu events", static_cast<unsigned long>(eventCount));
 
-    // Get timestamps
-    uint32_t startTs = events.front().timestamp;
-    uint32_t endTs = events.back().timestamp;
-    uint32_t droppedCount = Recorder::buffer().droppedCount();
-
-    // Send metadata
-    sendMetadata(static_cast<uint32_t>(events.size()), droppedCount, startTs, endTs);
-
-    // Send events in chunks
-    uint32_t offset = 0;
-    uint32_t checksum = 0;
-
-    while (offset < events.size()) {
-        size_t remaining = events.size() - offset;
-        size_t chunkSize = std::min(remaining, kEventsPerChunk);
-
-        sendDataChunk(offset, &events[offset], chunkSize);
-
-        // Give USB CDC time to transmit (prevent buffer overflow)
-        // Smaller chunks (128 bytes) need less delay
-        vTaskDelay(pdMS_TO_TICKS(20));
-
-        // Update checksum (simple sum of all bytes)
-        for (size_t i = 0; i < chunkSize; ++i) {
-            const auto* bytes = reinterpret_cast<const uint8_t*>(&events[offset + i]);
-            for (size_t j = 0; j < sizeof(TraceEvent); ++j) {
-                checksum += bytes[j];
-            }
-        }
-
-        offset += static_cast<uint32_t>(chunkSize);
+    // Peek first event for start timestamp
+    TraceEvent firstEvent;
+    if (Recorder::buffer().read(&firstEvent, 0)) {
+        startTs = firstEvent.timestamp;
     }
 
-    // Send end marker
-    sendEnd(static_cast<uint32_t>(events.size()), checksum);
+    // Suppress ALL logging during binary data transfer to prevent
+    // ESP_LOG text from corrupting the frame protocol on the shared serial port
+    esp_log_level_set("*", ESP_LOG_NONE);
 
-    ESP_LOGI(kTag, "Dump complete: %zu events, checksum 0x%08lX", events.size(),
-             static_cast<unsigned long>(checksum));
+    // Send metadata (eventCount is approximate — we send actual count in END)
+    sendMetadata(eventCount, droppedCount, startTs, 0);
+
+    // Stream events directly from ring buffer in chunks
+    std::array<TraceEvent, kEventsPerChunk> chunk;
+    uint32_t offset = 0;
+    uint32_t checksum = 0;
+    uint32_t totalSent = 0;
+
+    // First chunk already has one event read (firstEvent)
+    chunk[0] = firstEvent;
+    size_t chunkFill = 1;
+
+    // Update checksum for first event
+    {
+        const auto* bytes = reinterpret_cast<const uint8_t*>(&firstEvent);
+        for (size_t j = 0; j < sizeof(TraceEvent); ++j) {
+            checksum += bytes[j];
+        }
+    }
+
+    TraceEvent event;
+    while (Recorder::buffer().read(&event, 0)) {
+        chunk[chunkFill] = event;
+        endTs = event.timestamp;
+
+        // Update checksum
+        const auto* bytes = reinterpret_cast<const uint8_t*>(&event);
+        for (size_t j = 0; j < sizeof(TraceEvent); ++j) {
+            checksum += bytes[j];
+        }
+
+        chunkFill++;
+
+        if (chunkFill >= kEventsPerChunk) {
+            sendDataChunk(offset, chunk.data(), chunkFill);
+            vTaskDelay(pdMS_TO_TICKS(20));
+            offset += static_cast<uint32_t>(chunkFill);
+            totalSent += static_cast<uint32_t>(chunkFill);
+            chunkFill = 0;
+        }
+    }
+
+    // Send remaining events in partial chunk
+    if (chunkFill > 0) {
+        sendDataChunk(offset, chunk.data(), chunkFill);
+        totalSent += static_cast<uint32_t>(chunkFill);
+    }
+
+    // Use last event timestamp if we didn't get any after the first
+    if (endTs == 0) {
+        endTs = startTs;
+    }
+
+    // Send end marker with actual total
+    sendEnd(totalSent, checksum);
+
+    // Restore logging
+    esp_log_level_set("*", ESP_LOG_INFO);
+
+    ESP_LOGI(kTag, "Dump complete: %lu events, checksum 0x%08lX",
+             static_cast<unsigned long>(totalSent), static_cast<unsigned long>(checksum));
 
     // Clear buffer and reset dropped count
     Recorder::buffer().resetDroppedCount();
@@ -204,6 +239,7 @@ void CommandHandler::sendAck(Status status) {
 void CommandHandler::sendMetadata(uint32_t eventCount, uint32_t droppedCount, uint32_t startTs,
                                   uint32_t endTs) {
     // Calculate total size: metadata + task entries
+    // Max payload: 17 + 16*18 = 305 bytes — fits in kMaxFrameSize
     const auto& taskNames = Recorder::getTaskNames();
     size_t validTaskCount = 0;
     for (const auto& entry : taskNames) {
@@ -212,9 +248,10 @@ void CommandHandler::sendMetadata(uint32_t eventCount, uint32_t droppedCount, ui
         }
     }
 
+    // Stack-allocated payload buffer (max ~305 bytes)
+    constexpr size_t kMaxMetadataPayload = sizeof(TraceMetadata) + 16 * sizeof(TraceTaskEntry);
+    std::array<uint8_t, kMaxMetadataPayload> payload = {};
     size_t payloadSize = sizeof(TraceMetadata) + validTaskCount * sizeof(TraceTaskEntry);
-
-    std::vector<uint8_t> payload(payloadSize);
 
     // Fill metadata
     auto* meta = reinterpret_cast<TraceMetadata*>(payload.data());
@@ -228,7 +265,7 @@ void CommandHandler::sendMetadata(uint32_t eventCount, uint32_t droppedCount, ui
     auto* taskEntry = reinterpret_cast<TraceTaskEntry*>(payload.data() + sizeof(TraceMetadata));
 
     for (const auto& entry : taskNames) {
-        if (entry.valid) {
+        if (entry.valid && validTaskCount > 0) {
             taskEntry->taskId = entry.taskId;
             std::strncpy(taskEntry->name, entry.name, kMaxTaskNameLength);
             taskEntry->name[kMaxTaskNameLength - 1] = '\0';
@@ -236,12 +273,13 @@ void CommandHandler::sendMetadata(uint32_t eventCount, uint32_t droppedCount, ui
         }
     }
 
-    sendFrame(MsgType::kData, payload.data(), payload.size());
+    sendFrame(MsgType::kData, payload.data(), payloadSize);
 }
 
 void CommandHandler::sendDataChunk(uint32_t offset, const TraceEvent* events, size_t count) {
+    // Stack-allocated payload: header(6) + 8*16 = 134 bytes max
+    std::array<uint8_t, sizeof(TraceDataHeader) + kEventsPerChunk * sizeof(TraceEvent)> payload = {};
     size_t payloadSize = sizeof(TraceDataHeader) + count * sizeof(TraceEvent);
-    std::vector<uint8_t> payload(payloadSize);
 
     // Fill header
     auto* header = reinterpret_cast<TraceDataHeader*>(payload.data());
@@ -251,7 +289,7 @@ void CommandHandler::sendDataChunk(uint32_t offset, const TraceEvent* events, si
     // Copy events
     std::memcpy(payload.data() + sizeof(TraceDataHeader), events, count * sizeof(TraceEvent));
 
-    sendFrame(MsgType::kData, payload.data(), payload.size());
+    sendFrame(MsgType::kData, payload.data(), payloadSize);
 }
 
 void CommandHandler::sendEnd(uint32_t totalEvents, uint32_t checksum) {

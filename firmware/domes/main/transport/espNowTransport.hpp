@@ -70,6 +70,19 @@ public:
     // =========================================================================
 
     /**
+     * @brief Send data to a specific peer (unicast)
+     *
+     * Peer must be registered via addPeer() first.
+     *
+     * @param macAddr 6-byte destination MAC address
+     * @param data Payload buffer
+     * @param len Payload length (max 250 bytes)
+     * @return TransportError::kOk on success
+     */
+    TransportError sendTo(const uint8_t macAddr[ESP_NOW_ETH_ALEN],
+                          const uint8_t* data, size_t len);
+
+    /**
      * @brief Add a peer by MAC address
      * @param macAddr 6-byte MAC address
      * @return TransportError::kOk on success

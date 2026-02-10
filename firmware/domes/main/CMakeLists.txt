@@ -14,6 +14,7 @@ idf_component_register(
         "transport/tcpTransport.cpp"
         "transport/tcpConfigServer.cpp"
         "transport/espNowTransport.cpp"
+        "services/espNowService.cpp"
         "trace/traceBuffer.cpp"
         "trace/traceRecorder.cpp"
         "trace/traceHooks.cpp"

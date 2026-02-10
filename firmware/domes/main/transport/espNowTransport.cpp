@@ -66,7 +66,10 @@ TransportError EspNowTransport::init() {
     }
 
     // Create semaphores
-    rxSemaphore_ = xSemaphoreCreateBinary();
+    // Counting semaphore: each onReceive() gives once, receive() takes once.
+    // Binary semaphore would silently drop signals when multiple messages arrive
+    // before the consumer reads — causing stuck messages in the ring buffer.
+    rxSemaphore_ = xSemaphoreCreateCounting(32, 0);
     txMutex_ = xSemaphoreCreateMutex();
     txDoneSemaphore_ = xSemaphoreCreateBinary();
 
@@ -143,6 +146,11 @@ TransportError EspNowTransport::send(const uint8_t* data, size_t len) {
         return TransportError::kTimeout;
     }
 
+    // Drain any stale send-complete signal from a previous timed-out send.
+    // Without this, a late callback from a timed-out send poisons the next
+    // send by letting it immediately take the semaphore with wrong status.
+    xSemaphoreTake(txDoneSemaphore_, 0);
+
     // Send to broadcast address
     esp_err_t err = esp_now_send(kEspNowBroadcastAddr, data, len);
     if (err != ESP_OK) {
@@ -151,18 +159,63 @@ TransportError EspNowTransport::send(const uint8_t* data, size_t len) {
         return TransportError::kIoError;
     }
 
-    // Wait for send callback (1 second timeout)
-    if (xSemaphoreTake(txDoneSemaphore_, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        ESP_LOGW(kTag, "Send callback timeout");
+    // Wait for send callback. Broadcast has no MAC-level ACK so the callback
+    // fires when the frame leaves the radio. 200ms is generous but avoids
+    // desync from BLE coexistence delays.
+    if (xSemaphoreTake(txDoneSemaphore_, pdMS_TO_TICKS(200)) != pdTRUE) {
+        ESP_LOGW(kTag, "Broadcast send callback timeout");
         xSemaphoreGive(txMutex_);
         return TransportError::kTimeout;
     }
 
     xSemaphoreGive(txMutex_);
 
-    // Check send result
+    // Broadcast always reports success (no peer ACK), so don't check status.
+    TRACE_COUNTER(TRACE_ID("EspNow.BytesSent"), static_cast<uint32_t>(len), trace::Category::kEspNow);
+    return TransportError::kOk;
+}
+
+TransportError EspNowTransport::sendTo(const uint8_t macAddr[ESP_NOW_ETH_ALEN],
+                                       const uint8_t* data, size_t len) {
+    TRACE_SCOPE(TRACE_ID("EspNow.Send"), trace::Category::kEspNow);
+
+    if (!initialized_) {
+        return TransportError::kNotInitialized;
+    }
+
+    if (!data || len == 0) {
+        return TransportError::kInvalidArg;
+    }
+
+    if (len > kEspNowMaxPayload) {
+        ESP_LOGW(kTag, "Payload too large: %zu > %zu", len, kEspNowMaxPayload);
+        return TransportError::kInvalidArg;
+    }
+
+    if (xSemaphoreTake(txMutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return TransportError::kTimeout;
+    }
+
+    // Drain stale send-complete signal (see comment in send())
+    xSemaphoreTake(txDoneSemaphore_, 0);
+
+    esp_err_t err = esp_now_send(macAddr, data, len);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "esp_now_send (unicast) failed: %s", esp_err_to_name(err));
+        xSemaphoreGive(txMutex_);
+        return TransportError::kIoError;
+    }
+
+    if (xSemaphoreTake(txDoneSemaphore_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(kTag, "Send callback timeout (unicast)");
+        xSemaphoreGive(txMutex_);
+        return TransportError::kTimeout;
+    }
+
+    xSemaphoreGive(txMutex_);
+
     if (lastSendStatus_.load() != ESP_NOW_SEND_SUCCESS) {
-        ESP_LOGW(kTag, "Send failed (no ACK)");
+        ESP_LOGW(kTag, "Unicast send failed (no ACK)");
         TRACE_INSTANT(TRACE_ID("EspNow.SendFail"), trace::Category::kEspNow);
         return TransportError::kIoError;
     }
@@ -182,19 +235,23 @@ TransportError EspNowTransport::receive(uint8_t* buf, size_t* len, uint32_t time
         return TransportError::kInvalidArg;
     }
 
-    // Wait for data
-    TickType_t ticks = (timeoutMs == 0) ? 0 : pdMS_TO_TICKS(timeoutMs);
-    if (xSemaphoreTake(rxSemaphore_, ticks) != pdTRUE) {
-        *len = 0;
-        return TransportError::kTimeout;
-    }
-
-    // Read from ring buffer
+    // Try non-blocking read first — items may already be queued from prior signals
     size_t itemSize = 0;
     void* item = xRingbufferReceive(rxRingBuf_, &itemSize, 0);
+
     if (!item) {
-        *len = 0;
-        return TransportError::kTimeout;
+        // Ring buffer empty — block on semaphore for new data
+        TickType_t ticks = (timeoutMs == 0) ? 0 : pdMS_TO_TICKS(timeoutMs);
+        if (xSemaphoreTake(rxSemaphore_, ticks) != pdTRUE) {
+            *len = 0;
+            return TransportError::kTimeout;
+        }
+
+        item = xRingbufferReceive(rxRingBuf_, &itemSize, 0);
+        if (!item) {
+            *len = 0;
+            return TransportError::kTimeout;
+        }
     }
 
     size_t toCopy = (*len < itemSize) ? *len : itemSize;
