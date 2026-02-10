@@ -48,6 +48,9 @@
 │   M6: ESP-NOW Latency Validated                                              │
 │         │                                                                    │
 │         ▼                                                                    │
+│   M6.5: Observability & Diagnostics                                          │
+│         │                                                                    │
+│         ▼                                                                    │
 │   M7: Dev PCB Works                                                          │
 │         │                                                                    │
 │         ▼                                                                    │
@@ -130,6 +133,17 @@ graph TD
         F6[Final Validation]
     end
 
+    subgraph "Track G: Observability (Claude)"
+        G1[Runtime Diagnostics<br/>system health + espnow status]
+        G2[Multi-Device Trace<br/>Correlation Tool]
+        G3[ESP-NOW Latency<br/>Benchmark CLI]
+        G4[Sync Instrumentation<br/>mutex/semaphore tracing]
+        G5[Protocol Sniffer]
+        G6[CI Trace Collection]
+        G7[Multi-Device CI]
+        G8[Crash Dump Handler]
+    end
+
     subgraph "Milestones"
         M1((M1: Target<br/>Compiles))
         M2((M2: DevKit<br/>Boots))
@@ -137,6 +151,7 @@ graph TD
         M4((M4: RF<br/>Init))
         M5((M5: Unit<br/>Tests))
         M6((M6: ESP-NOW<br/>Latency))
+        M6_5((M6.5: Observability<br/>& Diagnostics))
         M7((M7: Dev PCB<br/>Works))
         M8((M8: 6-Pod<br/>Demo))
         M9((M9: Demo<br/>Ready))
@@ -174,6 +189,20 @@ graph TD
     %% ESP-NOW latency (after RF validated)
     M4 --> B9
     B9 --> M6
+
+    %% Observability (after ESP-NOW working)
+    M6 --> G1
+    M6 --> G2
+    M6 --> G3
+    G1 --> G4
+    G1 --> G5
+    G3 --> G6
+    G3 --> G7
+    G4 --> G8
+    G1 --> M6_5
+    G2 --> M6_5
+    G3 --> M6_5
+    M6_5 --> F4
 
     %% Application layer
     M5 --> E1
@@ -223,9 +252,10 @@ graph TD
 | M1 | Target Compiles | COMPLETE |
 | M2 | DevKit Boots | COMPLETE |
 | M3 | Debug Infrastructure | COMPLETE |
-| M4 | RF Stacks Init | Not Started |
-| M5 | Unit Tests Pass | Not Started |
-| M6 | ESP-NOW Latency Validated | Not Started |
+| M4 | RF Stacks Init | COMPLETE |
+| M5 | Unit Tests Pass | COMPLETE (195 tests) |
+| M6 | ESP-NOW Latency Validated | IN PROGRESS (2-pod drill works, latency needs formal bench) |
+| M6.5 | Observability & Diagnostics | Not Started |
 | M7 | Dev PCB Works | Not Started |
 | M8 | 6-Pod Demo | Not Started |
 | M9 | Demo Ready | Not Started |
@@ -293,55 +323,125 @@ graph TD
 
 ### M4: RF Stacks Init
 
-| Check | Method | Pass Criteria |
-|-------|--------|---------------|
-| WiFi init | UART log | `wifi:mode : sta`, no errors |
-| BLE init | UART log | `NimBLE: GAP` init, no errors |
-| BLE advertise | nRF Connect app | Device visible |
-| Memory stable | heap check | No leak after WiFi+BLE init |
+**Status:** COMPLETE (January 2026)
+
+| Check | Method | Pass Criteria | Result |
+|-------|--------|---------------|--------|
+| WiFi init | UART log | `wifi:mode : sta`, no errors | Pass |
+| BLE init | UART log | `NimBLE: GAP` init, no errors | Pass |
+| BLE advertise | nRF Connect app | Device visible | Pass (DOMES-Pod-XX) |
+| BLE GATT service | domes-cli --ble | Config protocol works | Pass |
+| ESP-NOW init | UART log | Transport initialized | Pass |
+| Memory stable | heap check | No leak after WiFi+BLE init | Pass |
 
 **Owner:** Claude
 **Depends On:** M3
 **Blocks:** M5, M6
 
-**Note:** WiFi stack is only initialized as a dependency for ESP-NOW (direct P2P radio).
-We don't connect to any AP or use WiFi networking. OTA updates are done via BLE.
-Full RF validation happens during M7/M8 integration with actual game traffic.
+**Note:** WiFi + BLE + ESP-NOW all coexist. WiFi is STA mode pinned to channel 1
+for ESP-NOW. BLE OTA service runs concurrently. Coexistence causes occasional
+~80ms latency spikes on ESP-NOW (BLE scan interference) but is functionally stable.
 
 ---
 
 ### M5: Unit Tests Pass
 
-| Check | Method | Pass Criteria |
-|-------|--------|---------------|
-| CMock integrated | Build system | Compiles with mocks |
-| Host build works | `idf.py --preview set-target linux` | Exit code 0 |
-| Tests run | `./build/test_app` | All tests execute |
-| All pass | Test output | 0 failures |
-| Coverage > 70% | `gcov` | Line coverage ≥ 70% |
-| CI pipeline | GitHub Actions | Runs on every PR |
+**Status:** COMPLETE (January 2026)
+
+| Check | Method | Pass Criteria | Result |
+|-------|--------|---------------|--------|
+| Test framework | Google Test + GMock | Compiles with mocks | Pass |
+| Host build works | CMake (native Linux) | Exit code 0 | Pass |
+| Tests run | `./build/test_app` | All tests execute | Pass |
+| All pass | Test output | 0 failures | 195/195 pass |
+| CI pipeline | GitHub Actions | Runs on every PR | Pass |
+| Multi-pod sim | SimOrchestrator | Deterministic sim tests | 25 sim tests pass |
 
 **Owner:** Claude
 **Depends On:** M4
 **Blocks:** Application development
 
+**Test suites:** Frame codec, OTA protocol, config protocol, feature manager,
+game engine, mode manager, trace recorder, multi-pod simulation, drill orchestration.
+
 ---
 
 ### M6: ESP-NOW Latency Validated
 
-| Check | Method | Pass Criteria |
-|-------|--------|---------------|
-| ESP-NOW init | UART log | `ESPNOW: initialized` |
-| Peer discovery | 2 DevKits | Devices find each other |
-| Ping-pong test | 1000 iterations | All packets received |
-| Latency P50 | Measurement | < 1ms |
-| Latency P95 | Measurement | < 2ms |
-| Latency P99 | Measurement | < 5ms |
-| Coex impact | BLE active | Latency still < 5ms P99 |
+**Status:** IN PROGRESS (February 2026)
+
+| Check | Method | Pass Criteria | Result |
+|-------|--------|---------------|--------|
+| ESP-NOW init | UART log | `ESPNOW: initialized` | Pass |
+| Peer discovery | 2 DevKits | Devices find each other | Pass (beacons + addPeer) |
+| Ping-pong test | 10 iterations | All packets received | Pass (10/10) |
+| Full game drill | 2 pods, 10 rounds | All rounds complete | Pass (MASTER/SLAVE, SET_COLOR, ARM, TIMEOUT_EVENT, STOP_ALL) |
+| Auto-restart | After drill | Discovery restarts | Pass |
+| Latency typical | Manual measurement | < 10ms | Pass (3-8ms typical) |
+| Latency P50 | Formal benchmark | < 1ms | **Not yet measured (needs bench tool)** |
+| Latency P95 | Formal benchmark | < 2ms | **Not yet measured** |
+| Latency P99 | Formal benchmark | < 5ms | **Not yet measured** |
+| Coex impact | BLE active | Latency still < 5ms P99 | Spikes to ~80-99ms observed (BLE coex) |
 
 **Owner:** Claude (requires 2+ DevKits)
 **Depends On:** M4
-**Blocks:** E1 (ESP-NOW Service)
+**Blocks:** M6.5, E1 (ESP-NOW Service)
+
+**What works:** Full 3-phase lifecycle (discovery → role assignment → game loop) with
+10-round drills completing end-to-end on 2 physical pods. 10 bugs fixed during bringup
+(PR #63). See `firmware/domes/main/services/espNowService.cpp`.
+
+**Remaining:** Formal latency benchmark tool (`espnow bench` CLI command) to measure
+P50/P95/P99 over 1000+ iterations. BLE coexistence tuning to reduce ~80ms spikes.
+
+---
+
+### M6.5: Observability & Diagnostics
+
+**Status:** Not Started
+
+**Goal:** Fill observability gaps exposed during ESP-NOW bringup (10 bugs required
+manual log reading and code review to find). Build the tooling to make complex
+multi-pod, multi-transport debugging fast and systematic.
+
+**Depends On:** M6 (ESP-NOW working end-to-end)
+**Blocks:** M7 (critical for debugging 6-pod integration on custom PCB)
+
+#### Tier 1: Immediate (highest value, lowest effort)
+
+| Task | Description | Location | Priority |
+|------|-------------|----------|----------|
+| **G1: Runtime diagnostics command** | `system health` → heap, stack high-water, uptime, reset reason. `espnow status` → peer table, channel, TX/RX counts, drops | Firmware: new proto messages + handler. CLI: new commands | HIGH |
+| **G2: Multi-device trace correlation** | Align N per-device trace dumps to shared timeline using sync markers (beacon timestamps). Output unified Perfetto JSON with pod-tagged tracks | `tools/trace/correlate_traces.py` | HIGH |
+| **G3: ESP-NOW latency benchmark** | `domes-cli espnow bench` → run N pings, collect RTTs, output min/max/mean/P50/P95/P99 histogram. Replaces manual log reading | CLI: new command. Firmware: respond to bench pings | HIGH |
+
+#### Tier 2: Short-term (high value, moderate effort)
+
+| Task | Description | Location | Priority |
+|------|-------------|----------|----------|
+| **G4: Synchronization instrumentation** | TRACE_MUTEX_TAKE/GIVE macros that log blocking duration. Instrument FreeRTOS hooks for semaphore contention visibility | `trace/traceApi.hpp`, `trace/traceHooks.cpp` | MEDIUM |
+| **G5: Protocol sniffer** | `domes-cli sniff` captures raw frames on serial/TCP/BLE, decodes message types, shows request/response latency | CLI: new command | MEDIUM |
+| **G6: CI trace collection** | After hw-test flash+OTA, dump trace buffer and upload as artifact. Enables post-mortem CI debugging | `.github/workflows/firmware-hw-test.yml` | MEDIUM |
+| **G7: Multi-device CI** | Extend hw-test to detect 2+ devices, flash both, verify ESP-NOW discovery + ping-pong completes | `.github/workflows/firmware-hw-test.yml` | MEDIUM |
+
+#### Tier 3: Medium-term (important for 6-pod scale)
+
+| Task | Description | Location | Priority |
+|------|-------------|----------|----------|
+| **G8: Crash dump handler** | On panic: save registers + backtrace to NVS. CLI retrieves with `system crash-dump`, decodes against ELF | Firmware: `services/crashService.hpp`. CLI: new command | MEDIUM |
+| **G9: Live trace streaming** | Stream trace events over WiFi/TCP to host in real-time (not post-mortem). Enables "watch in Perfetto" during test | Firmware: `trace/traceStreamer.hpp` | LOW |
+| **G10: Memory profiler** | Track heap allocations by task, report in `system stats`, detect leaks over time | Firmware: `infra/memProfiler.hpp` | LOW |
+| **G11: Simulation-to-hardware diff** | Run sim scenario → export expected trace. Run on hardware → collect actual trace. Diff-view showing divergence | `tools/trace/sim_vs_hw_diff.py` | LOW |
+
+#### Pass Criteria
+
+| Check | Method | Pass Criteria |
+|-------|--------|---------------|
+| Runtime diagnostics | `domes-cli system health` | Returns heap, stack, uptime on both pods |
+| Trace correlation | `correlate_traces.py` | Unified Perfetto JSON shows both pods on shared timeline |
+| Latency bench | `domes-cli espnow bench -n 1000` | Outputs P50/P95/P99, all values measured |
+| CI trace dump | hw-test workflow | Trace artifact uploaded after flash |
+| Crash recovery | Trigger panic, reboot, `system crash-dump` | Backtrace decoded from NVS |
 
 ---
 
@@ -599,9 +699,22 @@ sudo ./svc.sh start
 | **F1: Flash to Dev PCB** | A7, E7 | F2 |
 | **F2: Debug GPIO/Timing** | F1 | F3 |
 | **F3: Calibrate Sensors** | F2 | F4 |
-| **F4: Multi-Pod Test** | F3 | M7 |
+| **F4: Multi-Pod Test** | F3, M6.5 | M7 |
 | **F5: Flash Form-Factor** | A10, M8 | F6 |
 | **F6: Final Validation** | F5 | M9 |
+
+### Track G: Observability & Diagnostics (Claude)
+
+| Task | Depends On | Blocks | Notes |
+|------|------------|--------|-------|
+| **G1: Runtime Diagnostics** | M6 | G4, G5, M6.5 | `system health` + `espnow status` CLI commands; new proto messages |
+| **G2: Multi-Device Trace Correlation** | M6 | M6.5 | Align N trace files → unified Perfetto JSON with pod-tagged tracks |
+| **G3: ESP-NOW Latency Benchmark** | M6 | G6, G7, M6.5 | `espnow bench` CLI: N pings → P50/P95/P99 histogram |
+| **G4: Sync Instrumentation** | G1 | G8 | TRACE_MUTEX macros, FreeRTOS semaphore/mutex tracing |
+| **G5: Protocol Sniffer** | G1 | - | `domes-cli sniff`: capture + decode frames, show latency |
+| **G6: CI Trace Collection** | G3 | - | Dump trace buffer after hw-test, upload as artifact |
+| **G7: Multi-Device CI** | G3 | - | 2-pod flash + ESP-NOW discovery + ping verification |
+| **G8: Crash Dump Handler** | G4 | - | Panic → NVS, `system crash-dump` CLI retrieval + decode |
 
 ---
 
@@ -715,5 +828,5 @@ config issues, not fundamental blockers. Validated during M7/M8 integration.
 
 ---
 
-*Document Updated: 2026-01-11*
+*Document Updated: 2026-02-09*
 *Project: DOMES*
