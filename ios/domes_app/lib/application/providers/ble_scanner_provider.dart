@@ -27,7 +27,13 @@ class BleScannerNotifier extends StateNotifier<List<PodDevice>> {
   BleScannerNotifier() : super([]);
 
   /// Start scanning for DOMES pods.
-  void startScan({Duration timeout = const Duration(seconds: 10)}) {
+  Future<void> startScan({Duration timeout = const Duration(seconds: 10)}) async {
+    // Check adapter state before scanning
+    final adapterState = await FlutterBluePlus.adapterState.first;
+    if (adapterState != BluetoothAdapterState.on) {
+      throw Exception('Bluetooth is not enabled (state: $adapterState)');
+    }
+
     state = [];
     FlutterBluePlus.startScan(
       withServices: [Guid(kServiceUuid)],
@@ -70,6 +76,6 @@ class BleScannerNotifier extends StateNotifier<List<PodDevice>> {
 
 /// Provider for the BLE scanner.
 final bleScannerProvider =
-    StateNotifierProvider<BleScannerNotifier, List<PodDevice>>((ref) {
+    StateNotifierProvider.autoDispose<BleScannerNotifier, List<PodDevice>>((ref) {
   return BleScannerNotifier();
 });

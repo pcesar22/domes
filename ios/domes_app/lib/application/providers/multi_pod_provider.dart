@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/proto/generated/config.pbenum.dart';
 import '../../data/protocol/config_protocol.dart';
-import '../../data/protocol/msg_types.dart';
 import '../../data/transport/ble_transport.dart';
 import '../../domain/models/pod_device.dart';
 import '../../domain/repositories/pod_repository.dart';
@@ -113,7 +112,8 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
     final entry = state[address];
     if (entry?.transport == null) return;
     final payload = serializeSetLedPattern(pattern);
-    await entry!.transport!.sendCommand(kSetLedPatternReq, payload);
+    await entry!.transport!.sendCommand(
+        MsgType.MSG_TYPE_SET_LED_PATTERN_REQ.value, payload);
   }
 
   /// Send SET_MODE to a specific pod.
@@ -121,7 +121,8 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
     final entry = state[address];
     if (entry?.transport == null) return;
     final payload = serializeSetMode(mode);
-    await entry!.transport!.sendCommand(kSetModeReq, payload);
+    await entry!.transport!.sendCommand(
+        MsgType.MSG_TYPE_SET_MODE_REQ.value, payload);
   }
 
   @override

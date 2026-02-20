@@ -89,6 +89,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
   final Random _random = Random();
   Timer? _delayTimer;
   Timer? _timeoutTimer;
+  Timer? _ledOffTimer;
   DateTime? _drillStartTime;
 
   DrillNotifier(this._ref) : super(const DrillState());
@@ -133,6 +134,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
   void stopDrill() {
     _delayTimer?.cancel();
     _timeoutTimer?.cancel();
+    _ledOffTimer?.cancel();
 
     if (state.results.isNotEmpty) {
       state = state.copyWith(phase: DrillPhase.finished);
@@ -253,7 +255,9 @@ class DrillNotifier extends StateNotifier<DrillState> {
     // Turn LED red briefly then off
     final multiPod = _ref.read(multiPodProvider.notifier);
     multiPod.setLedPattern(activePod, AppLedPattern.solid(255, 0, 0));
-    Future.delayed(const Duration(milliseconds: 500), () {
+    _ledOffTimer?.cancel();
+    _ledOffTimer = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
       multiPod.setLedPattern(activePod, AppLedPattern.off());
     });
 
@@ -309,6 +313,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
   void reset() {
     _delayTimer?.cancel();
     _timeoutTimer?.cancel();
+    _ledOffTimer?.cancel();
     state = const DrillState();
   }
 
@@ -316,6 +321,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
   void dispose() {
     _delayTimer?.cancel();
     _timeoutTimer?.cancel();
+    _ledOffTimer?.cancel();
     super.dispose();
   }
 }
