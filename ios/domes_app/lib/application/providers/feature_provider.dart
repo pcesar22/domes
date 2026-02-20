@@ -48,7 +48,7 @@ class FeatureNotifier extends StateNotifier<AsyncValue<List<AppFeatureState>>> {
 }
 
 final featureProvider =
-    StateNotifierProvider<FeatureNotifier, AsyncValue<List<AppFeatureState>>>(
+    StateNotifierProvider.autoDispose<FeatureNotifier, AsyncValue<List<AppFeatureState>>>(
         (ref) {
   return FeatureNotifier(ref);
 });

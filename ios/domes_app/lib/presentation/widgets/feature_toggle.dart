@@ -28,41 +28,35 @@ class FeatureToggle extends StatelessWidget {
   }
 
   String _featureName(Feature feature) {
-    return switch (feature) {
-      Feature.FEATURE_LED_EFFECTS => 'LED Effects',
-      Feature.FEATURE_BLE_ADVERTISING => 'BLE Advertising',
-      Feature.FEATURE_WIFI => 'WiFi',
-      Feature.FEATURE_ESP_NOW => 'ESP-NOW',
-      Feature.FEATURE_TOUCH => 'Touch',
-      Feature.FEATURE_HAPTIC => 'Haptic',
-      Feature.FEATURE_AUDIO => 'Audio',
-      _ => 'Unknown',
-    };
+    if (feature == Feature.FEATURE_LED_EFFECTS) return 'LED Effects';
+    if (feature == Feature.FEATURE_BLE_ADVERTISING) return 'BLE Advertising';
+    if (feature == Feature.FEATURE_WIFI) return 'WiFi';
+    if (feature == Feature.FEATURE_ESP_NOW) return 'ESP-NOW';
+    if (feature == Feature.FEATURE_TOUCH) return 'Touch';
+    if (feature == Feature.FEATURE_HAPTIC) return 'Haptic';
+    if (feature == Feature.FEATURE_AUDIO) return 'Audio';
+    return 'Feature ${feature.value}';
   }
 
   String _featureDescription(Feature feature) {
-    return switch (feature) {
-      Feature.FEATURE_LED_EFFECTS => 'LED animations and effects',
-      Feature.FEATURE_BLE_ADVERTISING => 'Bluetooth Low Energy advertising',
-      Feature.FEATURE_WIFI => 'WiFi connectivity',
-      Feature.FEATURE_ESP_NOW => 'ESP-NOW peer-to-peer',
-      Feature.FEATURE_TOUCH => 'Touch sensing',
-      Feature.FEATURE_HAPTIC => 'Haptic feedback',
-      Feature.FEATURE_AUDIO => 'Audio output',
-      _ => '',
-    };
+    if (feature == Feature.FEATURE_LED_EFFECTS) return 'LED animations and effects';
+    if (feature == Feature.FEATURE_BLE_ADVERTISING) return 'Bluetooth Low Energy advertising';
+    if (feature == Feature.FEATURE_WIFI) return 'WiFi connectivity';
+    if (feature == Feature.FEATURE_ESP_NOW) return 'ESP-NOW peer-to-peer';
+    if (feature == Feature.FEATURE_TOUCH) return 'Touch sensing';
+    if (feature == Feature.FEATURE_HAPTIC) return 'Haptic feedback';
+    if (feature == Feature.FEATURE_AUDIO) return 'Audio output';
+    return '';
   }
 
   IconData _featureIcon(Feature feature) {
-    return switch (feature) {
-      Feature.FEATURE_LED_EFFECTS => Icons.lightbulb,
-      Feature.FEATURE_BLE_ADVERTISING => Icons.bluetooth,
-      Feature.FEATURE_WIFI => Icons.wifi,
-      Feature.FEATURE_ESP_NOW => Icons.cell_tower,
-      Feature.FEATURE_TOUCH => Icons.touch_app,
-      Feature.FEATURE_HAPTIC => Icons.vibration,
-      Feature.FEATURE_AUDIO => Icons.volume_up,
-      _ => Icons.help_outline,
-    };
+    if (feature == Feature.FEATURE_LED_EFFECTS) return Icons.lightbulb;
+    if (feature == Feature.FEATURE_BLE_ADVERTISING) return Icons.bluetooth;
+    if (feature == Feature.FEATURE_WIFI) return Icons.wifi;
+    if (feature == Feature.FEATURE_ESP_NOW) return Icons.cell_tower;
+    if (feature == Feature.FEATURE_TOUCH) return Icons.touch_app;
+    if (feature == Feature.FEATURE_HAPTIC) return Icons.vibration;
+    if (feature == Feature.FEATURE_AUDIO) return Icons.volume_up;
+    return Icons.help_outline;
   }
 }

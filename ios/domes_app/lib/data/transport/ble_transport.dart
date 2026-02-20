@@ -30,8 +30,9 @@ class BleTransport extends Transport {
   BluetoothCharacteristic? _dataChar;
   BluetoothCharacteristic? _statusChar;
   StreamSubscription<List<int>>? _notificationSub;
+  StreamSubscription<BluetoothConnectionState>? _connectionStateSub;
   final FrameDecoder _decoder = FrameDecoder();
-  final StreamController<Frame> _frameController =
+  StreamController<Frame> _frameController =
       StreamController<Frame>.broadcast();
   bool _connected = false;
 
@@ -90,7 +91,7 @@ class BleTransport extends Transport {
     });
 
     // Listen for disconnection
-    _device.connectionState.listen((state) {
+    _connectionStateSub = _device.connectionState.listen((state) {
       if (state == BluetoothConnectionState.disconnected) {
         _connected = false;
       }
@@ -125,11 +126,17 @@ class BleTransport extends Transport {
   Future<void> disconnect() async {
     await _notificationSub?.cancel();
     _notificationSub = null;
+    await _connectionStateSub?.cancel();
+    _connectionStateSub = null;
     if (_connected) {
       await _device.disconnect();
     }
     _connected = false;
+    _decoder.reset();
+    // Close old controller and create a fresh one so this transport
+    // can be reconnected without "stream already closed" errors.
     await _frameController.close();
+    _frameController = StreamController<Frame>.broadcast();
   }
 
   @override

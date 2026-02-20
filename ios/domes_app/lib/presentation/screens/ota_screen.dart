@@ -22,6 +22,19 @@ class _OtaScreenState extends ConsumerState<OtaScreen> {
   Uint8List? _firmwareBytes;
   String? _fileName;
   String _version = 'v1.0.0';
+  late final TextEditingController _versionController;
+
+  @override
+  void initState() {
+    super.initState();
+    _versionController = TextEditingController(text: _version);
+  }
+
+  @override
+  void dispose() {
+    _versionController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -102,7 +115,7 @@ class _OtaScreenState extends ConsumerState<OtaScreen> {
                       hintText: 'e.g. v1.0.0',
                       border: OutlineInputBorder(),
                     ),
-                    controller: TextEditingController(text: _version),
+                    controller: _versionController,
                     onChanged: (v) => _version = v,
                     enabled: otaState.phase != OtaPhase.transferring,
                   ),
