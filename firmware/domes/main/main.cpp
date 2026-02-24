@@ -11,8 +11,10 @@
 #include "drivers/lis2dw12.hpp"
 #include "drivers/max98357a.hpp"
 #include "drivers/touchDriver.hpp"
+#include "infra/crashDumpHandler.hpp"
 #include "infra/diagnostics.hpp"
 #include "infra/logging.hpp"
+#include "infra/memoryProfiler.hpp"
 #include "infra/nvsConfig.hpp"
 #include "infra/taskManager.hpp"
 #include "infra/watchdog.hpp"
@@ -27,6 +29,7 @@
 #include "config/modeManager.hpp"
 #include "game/gameEngine.hpp"
 #include "trace/traceRecorder.hpp"
+#include "trace/traceStreamServer.hpp"
 #include "transport/bleOtaService.hpp"
 #include "transport/espNowTransport.hpp"
 #include "transport/serialOtaReceiver.hpp"
@@ -1094,6 +1097,11 @@ extern "C" void app_main() {
     }
     ESP_LOGI(kTag, "Infrastructure initialized");
 
+    // Initialize crash dump handler early (registers shutdown handler for panic capture)
+    if (domes::infra::CrashDumpHandler::init() != ESP_OK) {
+        ESP_LOGW(kTag, "Crash dump handler init failed");
+    }
+
     // Read pod ID from NVS (used for BLE naming and multi-pod identification)
     [[maybe_unused]] uint8_t podId = readPodId();
 
@@ -1149,6 +1157,14 @@ extern "C" void app_main() {
     // Initialize diagnostics (after trace, before services)
     domes::infra::Diagnostics::init();
     domes::infra::Diagnostics::startTask();
+
+    // Initialize memory profiler (periodic heap sampling + trace counters)
+    if (domes::infra::MemoryProfiler::init() == ESP_OK) {
+        domes::infra::MemoryProfiler::startTask();
+        ESP_LOGI(kTag, "Memory profiler initialized (5s interval)");
+    } else {
+        ESP_LOGW(kTag, "Memory profiler init failed");
+    }
 
     // Initialize LED service (needed for LED pattern commands)
     if (initLedService() != ESP_OK) {
@@ -1235,6 +1251,16 @@ extern "C" void app_main() {
         }
         // Advertise via mDNS for device discovery
         initMdns(podId);
+
+        // Start trace stream server (port 5001 for live trace streaming)
+        static domes::trace::TraceStreamServer traceStreamServer;
+        xTaskCreate(
+            [](void* param) {
+                static_cast<domes::trace::TraceStreamServer*>(param)->run();
+                vTaskDelete(nullptr);
+            },
+            "trace_stream", 4096, &traceStreamServer, domes::infra::priority::kLow, nullptr);
+        ESP_LOGI(kTag, "Trace stream server started on port 5001");
     } else {
         ESP_LOGI(kTag, "TCP config server not started (WiFi not connected)");
     }

@@ -26,3 +26,11 @@ domes.config.EspNowPeer.mac  max_size:6
 # GetEspNowStatusResponse: discovery state string max 16 chars, max 8 peers
 domes.config.GetEspNowStatusResponse.discovery_state  max_size:16
 domes.config.GetEspNowStatusResponse.peers  max_count:8
+
+# Crash dump messages
+domes.config.CrashDumpResponse.reason  max_size:64
+domes.config.CrashDumpResponse.task_name  max_size:16
+domes.config.CrashDumpResponse.backtrace  max_count:16
+
+# Memory profiler messages
+domes.config.GetMemoryProfileResponse.samples  max_count:60

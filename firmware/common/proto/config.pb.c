@@ -93,6 +93,27 @@ PB_BIND(domes_config_EspNowBenchRequest, domes_config_EspNowBenchRequest, AUTO)
 PB_BIND(domes_config_EspNowBenchResponse, domes_config_EspNowBenchResponse, AUTO)
 
 
+PB_BIND(domes_config_GetCrashDumpRequest, domes_config_GetCrashDumpRequest, AUTO)
+
+
+PB_BIND(domes_config_CrashDumpResponse, domes_config_CrashDumpResponse, AUTO)
+
+
+PB_BIND(domes_config_ClearCrashDumpRequest, domes_config_ClearCrashDumpRequest, AUTO)
+
+
+PB_BIND(domes_config_ClearCrashDumpResponse, domes_config_ClearCrashDumpResponse, AUTO)
+
+
+PB_BIND(domes_config_HeapSample, domes_config_HeapSample, AUTO)
+
+
+PB_BIND(domes_config_GetMemoryProfileRequest, domes_config_GetMemoryProfileRequest, AUTO)
+
+
+PB_BIND(domes_config_GetMemoryProfileResponse, domes_config_GetMemoryProfileResponse, 2)
+
+
 PB_BIND(domes_config_ConfigRequest, domes_config_ConfigRequest, AUTO)
 
 

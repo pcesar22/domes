@@ -16,6 +16,9 @@ pub use health::system_health;
 pub use imu::imu_triage_set;
 pub use led::{led_get, led_off, led_set};
 pub use ota::ota_flash;
-pub use system::{system_get_mode, system_info, system_set_mode, system_set_pod_id};
-pub use trace::{trace_clear, trace_dump, trace_start, trace_status, trace_stop};
+pub use system::{
+    system_clear_crash_dump, system_crash_dump, system_get_mode, system_info,
+    system_memory_profile, system_set_mode, system_set_pod_id,
+};
+pub use trace::{trace_clear, trace_dump, trace_start, trace_status, trace_stop, trace_stream};
 pub use wifi::{wifi_disable, wifi_enable, wifi_status};

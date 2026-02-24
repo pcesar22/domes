@@ -44,13 +44,21 @@ enum class MsgType : uint8_t {
     kGetSystemInfoRsp = domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP,
     kSetPodIdReq      = domes_config_MsgType_MSG_TYPE_SET_POD_ID_REQ,
     kSetPodIdRsp      = domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP,
-    // Observability commands (0x38-0x3D)
+    // Observability commands (0x38-0x43)
     kGetHealthReq         = domes_config_MsgType_MSG_TYPE_GET_HEALTH_REQ,
     kGetHealthRsp         = domes_config_MsgType_MSG_TYPE_GET_HEALTH_RSP,
     kGetEspNowStatusReq   = domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_REQ,
     kGetEspNowStatusRsp   = domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_RSP,
     kEspNowBenchReq       = domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_REQ,
     kEspNowBenchRsp       = domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_RSP,
+    // Crash dump commands (0x3E-0x41)
+    kGetCrashDumpReq      = domes_config_MsgType_MSG_TYPE_GET_CRASH_DUMP_REQ,
+    kGetCrashDumpRsp      = domes_config_MsgType_MSG_TYPE_GET_CRASH_DUMP_RSP,
+    kClearCrashDumpReq    = domes_config_MsgType_MSG_TYPE_CLEAR_CRASH_DUMP_REQ,
+    kClearCrashDumpRsp    = domes_config_MsgType_MSG_TYPE_CLEAR_CRASH_DUMP_RSP,
+    // Memory profiler commands (0x42-0x43)
+    kGetMemoryProfileReq  = domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_REQ,
+    kGetMemoryProfileRsp  = domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_RSP,
 };
 
 /**
@@ -77,6 +85,7 @@ enum class Status : uint8_t {
     kInvalidFeature = domes_config_Status_STATUS_INVALID_FEATURE,
     kBusy           = domes_config_Status_STATUS_BUSY,
     kInvalidPattern = domes_config_Status_STATUS_INVALID_PATTERN,
+    kNoData         = domes_config_Status_STATUS_NO_DATA,
 };
 
 /**
@@ -84,7 +93,7 @@ enum class Status : uint8_t {
  */
 inline bool isConfigMessage(uint8_t type) {
     return type >= static_cast<uint8_t>(MsgType::kListFeaturesReq) &&
-           type <= static_cast<uint8_t>(MsgType::kEspNowBenchRsp);
+           type <= static_cast<uint8_t>(MsgType::kGetMemoryProfileRsp);
 }
 
 /**
@@ -113,6 +122,7 @@ inline const char* statusToString(Status status) {
         case Status::kInvalidFeature: return "invalid-feature";
         case Status::kBusy:           return "busy";
         case Status::kInvalidPattern: return "invalid-pattern";
+        case Status::kNoData:         return "no-data";
         default:                      return "unknown";
     }
 }
@@ -120,7 +130,7 @@ inline const char* statusToString(Status status) {
 /// Maximum features supported
 constexpr size_t kMaxFeatures = static_cast<size_t>(Feature::kCount);
 
-/// Maximum frame size for config messages
-constexpr size_t kMaxFrameSize = 256;
+/// Maximum frame size for config messages (increased for memory profile response)
+constexpr size_t kMaxFrameSize = 1200;
 
 }  // namespace domes::config

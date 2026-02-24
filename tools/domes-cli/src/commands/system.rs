@@ -1,10 +1,11 @@
-//! System mode commands
+//! System mode and diagnostics commands
 
 use crate::proto::config::SystemMode;
 use crate::protocol::{
-    parse_get_mode_response, parse_get_system_info_response, parse_set_mode_response,
-    parse_set_pod_id_response, serialize_set_mode, serialize_set_pod_id, CliModeInfo,
-    CliSystemInfo, ConfigMsgType,
+    parse_clear_crash_dump_response, parse_crash_dump_response, parse_get_mode_response,
+    parse_get_system_info_response, parse_memory_profile_response, parse_set_mode_response,
+    parse_set_pod_id_response, serialize_set_mode, serialize_set_pod_id, CliCrashDump,
+    CliMemoryProfile, CliModeInfo, CliSystemInfo, ConfigMsgType,
 };
 use crate::transport::Transport;
 use anyhow::{Context, Result};
@@ -81,4 +82,57 @@ pub fn system_set_pod_id(transport: &mut dyn Transport, pod_id: u32) -> Result<u
     }
 
     parse_set_pod_id_response(&frame.payload).context("Failed to parse set pod id response")
+}
+
+/// Get crash dump from device
+pub fn system_crash_dump(transport: &mut dyn Transport) -> Result<CliCrashDump> {
+    let frame = transport
+        .send_command(ConfigMsgType::GetCrashDumpReq as u8, &[])
+        .context("Failed to send get crash dump command")?;
+
+    if frame.msg_type != ConfigMsgType::GetCrashDumpRsp as u8 {
+        anyhow::bail!(
+            "Unexpected response type: 0x{:02X}, expected 0x{:02X}",
+            frame.msg_type,
+            ConfigMsgType::GetCrashDumpRsp as u8
+        );
+    }
+
+    parse_crash_dump_response(&frame.payload).context("Failed to parse crash dump response")
+}
+
+/// Clear crash dump from device
+pub fn system_clear_crash_dump(transport: &mut dyn Transport) -> Result<bool> {
+    let frame = transport
+        .send_command(ConfigMsgType::ClearCrashDumpReq as u8, &[])
+        .context("Failed to send clear crash dump command")?;
+
+    if frame.msg_type != ConfigMsgType::ClearCrashDumpRsp as u8 {
+        anyhow::bail!(
+            "Unexpected response type: 0x{:02X}, expected 0x{:02X}",
+            frame.msg_type,
+            ConfigMsgType::ClearCrashDumpRsp as u8
+        );
+    }
+
+    parse_clear_crash_dump_response(&frame.payload)
+        .context("Failed to parse clear crash dump response")
+}
+
+/// Get memory profile from device
+pub fn system_memory_profile(transport: &mut dyn Transport) -> Result<CliMemoryProfile> {
+    let frame = transport
+        .send_command(ConfigMsgType::GetMemoryProfileReq as u8, &[])
+        .context("Failed to send get memory profile command")?;
+
+    if frame.msg_type != ConfigMsgType::GetMemoryProfileRsp as u8 {
+        anyhow::bail!(
+            "Unexpected response type: 0x{:02X}, expected 0x{:02X}",
+            frame.msg_type,
+            ConfigMsgType::GetMemoryProfileRsp as u8
+        );
+    }
+
+    parse_memory_profile_response(&frame.payload)
+        .context("Failed to parse memory profile response")
 }

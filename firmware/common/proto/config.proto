@@ -35,13 +35,23 @@ enum MsgType {
     MSG_TYPE_SET_POD_ID_REQ = 0x36;
     MSG_TYPE_SET_POD_ID_RSP = 0x37;
 
-    // Observability commands (0x38-0x3F range)
+    // Observability commands (0x38-0x4F range)
     MSG_TYPE_GET_HEALTH_REQ = 0x38;
     MSG_TYPE_GET_HEALTH_RSP = 0x39;
     MSG_TYPE_GET_ESPNOW_STATUS_REQ = 0x3A;
     MSG_TYPE_GET_ESPNOW_STATUS_RSP = 0x3B;
     MSG_TYPE_ESPNOW_BENCH_REQ = 0x3C;
     MSG_TYPE_ESPNOW_BENCH_RSP = 0x3D;
+
+    // Crash dump commands (0x3E-0x41)
+    MSG_TYPE_GET_CRASH_DUMP_REQ = 0x3E;
+    MSG_TYPE_GET_CRASH_DUMP_RSP = 0x3F;
+    MSG_TYPE_CLEAR_CRASH_DUMP_REQ = 0x40;
+    MSG_TYPE_CLEAR_CRASH_DUMP_RSP = 0x41;
+
+    // Memory profiler commands (0x42-0x43)
+    MSG_TYPE_GET_MEMORY_PROFILE_REQ = 0x42;
+    MSG_TYPE_GET_MEMORY_PROFILE_RSP = 0x43;
 }
 
 // Status codes for responses
@@ -51,6 +61,7 @@ enum Status {
     STATUS_INVALID_FEATURE = 2;
     STATUS_BUSY = 3;
     STATUS_INVALID_PATTERN = 4;
+    STATUS_NO_DATA = 5;
 }
 
 // LED pattern types
@@ -255,6 +266,57 @@ message EspNowBenchResponse {
     uint32 p50_rtt_us = 6;
     uint32 p95_rtt_us = 7;
     uint32 p99_rtt_us = 8;
+}
+
+// ============================================================================
+// Crash dump messages
+// ============================================================================
+
+// Crash dump stored in NVS after a panic
+message GetCrashDumpRequest {
+    // Empty - returns last crash dump if present
+}
+
+message CrashDumpResponse {
+    bool has_dump = 1;           // true if a crash dump exists
+    string reason = 2;           // Panic reason string
+    string task_name = 3;        // Task that crashed
+    uint32 uptime_s = 4;         // Uptime at crash (seconds)
+    uint32 free_heap = 5;        // Free heap at crash
+    repeated uint32 backtrace = 6; // Program counter values (up to 16)
+    uint32 timestamp = 7;        // Boot count when crash occurred
+}
+
+message ClearCrashDumpRequest {
+    // Empty - clears stored crash dump
+}
+
+message ClearCrashDumpResponse {
+    bool cleared = 1;            // true if dump was cleared
+}
+
+// ============================================================================
+// Memory profiler messages
+// ============================================================================
+
+// Single heap sample
+message HeapSample {
+    uint32 timestamp_s = 1;      // Uptime when sample was taken (seconds)
+    uint32 free_heap = 2;        // Free heap bytes
+    uint32 largest_block = 3;    // Largest free block bytes
+    uint32 min_free_heap = 4;    // Historical minimum free heap
+}
+
+message GetMemoryProfileRequest {
+    // Empty - returns heap samples + current stats
+}
+
+message GetMemoryProfileResponse {
+    uint32 current_free_heap = 1;
+    uint32 current_min_free_heap = 2;
+    uint32 current_largest_block = 3;
+    uint32 total_heap = 4;
+    repeated HeapSample samples = 5;  // Last N heap samples (circular buffer)
 }
 
 // Top-level request envelope

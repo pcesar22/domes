@@ -7,9 +7,10 @@
 //! firmware/common/proto/*.proto. DO NOT hand-roll protocol types here.
 
 use crate::proto::config::{
-    Color, EspNowBenchRequest, EspNowBenchResponse, Feature, GetEspNowStatusResponse,
-    GetHealthResponse, GetLedPatternResponse, GetModeResponse, GetSystemInfoResponse, LedPattern,
-    LedPatternType, ListFeaturesResponse, SetFeatureRequest, SetFeatureResponse,
+    ClearCrashDumpResponse, Color, CrashDumpResponse, EspNowBenchRequest, EspNowBenchResponse,
+    Feature, GetEspNowStatusResponse, GetHealthResponse, GetLedPatternResponse,
+    GetMemoryProfileResponse, GetModeResponse, GetSystemInfoResponse,
+    LedPattern, LedPatternType, ListFeaturesResponse, SetFeatureRequest, SetFeatureResponse,
     SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest, SetLedPatternResponse,
     SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse, Status, SystemMode,
 };
@@ -50,6 +51,12 @@ impl TryFrom<u8> for ConfigMsgType {
             0x3B => Ok(Self::GetEspnowStatusRsp),
             0x3C => Ok(Self::EspnowBenchReq),
             0x3D => Ok(Self::EspnowBenchRsp),
+            0x3E => Ok(Self::GetCrashDumpReq),
+            0x3F => Ok(Self::GetCrashDumpRsp),
+            0x40 => Ok(Self::ClearCrashDumpReq),
+            0x41 => Ok(Self::ClearCrashDumpRsp),
+            0x42 => Ok(Self::GetMemoryProfileReq),
+            0x43 => Ok(Self::GetMemoryProfileRsp),
             _ => Err(ProtocolError::UnknownMessageType(value)),
         }
     }
@@ -611,6 +618,138 @@ pub struct CliBenchResult {
     pub p50_rtt_us: u32,
     pub p95_rtt_us: u32,
     pub p99_rtt_us: u32,
+}
+
+// ============================================================================
+// Crash dump types and parsers
+// ============================================================================
+
+/// Crash dump info for CLI use
+#[derive(Debug, Clone)]
+pub struct CliCrashDump {
+    pub has_dump: bool,
+    pub reason: String,
+    pub task_name: String,
+    pub uptime_s: u32,
+    pub free_heap: u32,
+    pub backtrace: Vec<u32>,
+    pub timestamp: u32,
+}
+
+/// Parse CrashDumpResponse payload
+/// Format: [status_byte][protobuf_CrashDumpResponse]
+pub fn parse_crash_dump_response(payload: &[u8]) -> Result<CliCrashDump, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = CrashDumpResponse::decode(&payload[1..])?;
+
+    Ok(CliCrashDump {
+        has_dump: resp.has_dump,
+        reason: resp.reason,
+        task_name: resp.task_name,
+        uptime_s: resp.uptime_s,
+        free_heap: resp.free_heap,
+        backtrace: resp.backtrace,
+        timestamp: resp.timestamp,
+    })
+}
+
+/// Parse ClearCrashDumpResponse payload
+/// Format: [status_byte][protobuf_ClearCrashDumpResponse]
+pub fn parse_clear_crash_dump_response(payload: &[u8]) -> Result<bool, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = ClearCrashDumpResponse::decode(&payload[1..])?;
+    Ok(resp.cleared)
+}
+
+// ============================================================================
+// Memory profile types and parsers
+// ============================================================================
+
+/// Heap sample for CLI use
+#[derive(Debug, Clone)]
+pub struct CliHeapSample {
+    pub timestamp_s: u32,
+    pub free_heap: u32,
+    pub largest_block: u32,
+    pub min_free_heap: u32,
+}
+
+/// Memory profile info for CLI use
+#[derive(Debug, Clone)]
+pub struct CliMemoryProfile {
+    pub current_free_heap: u32,
+    pub current_min_free_heap: u32,
+    pub current_largest_block: u32,
+    pub total_heap: u32,
+    pub samples: Vec<CliHeapSample>,
+}
+
+/// Parse GetMemoryProfileResponse payload
+/// Format: [status_byte][protobuf_GetMemoryProfileResponse]
+pub fn parse_memory_profile_response(payload: &[u8]) -> Result<CliMemoryProfile, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = GetMemoryProfileResponse::decode(&payload[1..])?;
+
+    let samples = resp
+        .samples
+        .iter()
+        .map(|s| CliHeapSample {
+            timestamp_s: s.timestamp_s,
+            free_heap: s.free_heap,
+            largest_block: s.largest_block,
+            min_free_heap: s.min_free_heap,
+        })
+        .collect();
+
+    Ok(CliMemoryProfile {
+        current_free_heap: resp.current_free_heap,
+        current_min_free_heap: resp.current_min_free_heap,
+        current_largest_block: resp.current_largest_block,
+        total_heap: resp.total_heap,
+        samples,
+    })
 }
 
 /// Serialize EspNowBenchRequest
