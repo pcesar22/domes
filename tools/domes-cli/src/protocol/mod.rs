@@ -9,8 +9,8 @@
 use crate::proto::config::{
     ClearCrashDumpResponse, Color, CrashDumpResponse, EspNowBenchRequest, EspNowBenchResponse,
     Feature, GetEspNowStatusResponse, GetHealthResponse, GetLedPatternResponse,
-    GetMemoryProfileResponse, GetModeResponse, GetSystemInfoResponse,
-    LedPattern, LedPatternType, ListFeaturesResponse, SetFeatureRequest, SetFeatureResponse,
+    GetMemoryProfileResponse, GetModeResponse, GetSystemInfoResponse, LedPattern, LedPatternType,
+    ListFeaturesResponse, SelfTestResponse, SetFeatureRequest, SetFeatureResponse,
     SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest, SetLedPatternResponse,
     SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse, Status, SystemMode,
 };
@@ -57,6 +57,8 @@ impl TryFrom<u8> for ConfigMsgType {
             0x41 => Ok(Self::ClearCrashDumpRsp),
             0x42 => Ok(Self::GetMemoryProfileReq),
             0x43 => Ok(Self::GetMemoryProfileRsp),
+            0x44 => Ok(Self::SelfTestReq),
+            0x45 => Ok(Self::SelfTestRsp),
             _ => Err(ProtocolError::UnknownMessageType(value)),
         }
     }
@@ -604,6 +606,59 @@ pub fn parse_get_espnow_status_response(
         last_rtt_us: resp.last_rtt_us,
         discovery_state: resp.discovery_state,
         peers,
+    })
+}
+
+/// Self-test result for CLI use
+#[derive(Debug, Clone)]
+pub struct CliSelfTestResult {
+    pub name: String,
+    pub passed: bool,
+    pub message: String,
+}
+
+/// Self-test info for CLI use
+#[derive(Debug, Clone)]
+pub struct CliSelfTestInfo {
+    pub tests_run: u32,
+    pub tests_passed: u32,
+    pub results: Vec<CliSelfTestResult>,
+}
+
+/// Parse SelfTestResponse payload
+/// Format: [status_byte][protobuf_SelfTestResponse]
+pub fn parse_self_test_response(payload: &[u8]) -> Result<CliSelfTestInfo, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = SelfTestResponse::decode(&payload[1..])?;
+
+    let results = resp
+        .results
+        .iter()
+        .map(|r| CliSelfTestResult {
+            name: r.name.clone(),
+            passed: r.passed,
+            message: r.message.clone(),
+        })
+        .collect();
+
+    Ok(CliSelfTestInfo {
+        tests_run: resp.tests_run,
+        tests_passed: resp.tests_passed,
+        results,
     })
 }
 

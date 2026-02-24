@@ -114,6 +114,15 @@ PB_BIND(domes_config_GetMemoryProfileRequest, domes_config_GetMemoryProfileReque
 PB_BIND(domes_config_GetMemoryProfileResponse, domes_config_GetMemoryProfileResponse, 2)
 
 
+PB_BIND(domes_config_SelfTestResult, domes_config_SelfTestResult, AUTO)
+
+
+PB_BIND(domes_config_SelfTestRequest, domes_config_SelfTestRequest, AUTO)
+
+
+PB_BIND(domes_config_SelfTestResponse, domes_config_SelfTestResponse, 2)
+
+
 PB_BIND(domes_config_ConfigRequest, domes_config_ConfigRequest, AUTO)
 
 

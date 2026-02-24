@@ -3,9 +3,9 @@
 use crate::proto::config::SystemMode;
 use crate::protocol::{
     parse_clear_crash_dump_response, parse_crash_dump_response, parse_get_mode_response,
-    parse_get_system_info_response, parse_memory_profile_response, parse_set_mode_response,
-    parse_set_pod_id_response, serialize_set_mode, serialize_set_pod_id, CliCrashDump,
-    CliMemoryProfile, CliModeInfo, CliSystemInfo, ConfigMsgType,
+    parse_get_system_info_response, parse_memory_profile_response, parse_self_test_response,
+    parse_set_mode_response, parse_set_pod_id_response, serialize_set_mode, serialize_set_pod_id,
+    CliCrashDump, CliMemoryProfile, CliModeInfo, CliSelfTestInfo, CliSystemInfo, ConfigMsgType,
 };
 use crate::transport::Transport;
 use anyhow::{Context, Result};
@@ -135,4 +135,21 @@ pub fn system_memory_profile(transport: &mut dyn Transport) -> Result<CliMemoryP
 
     parse_memory_profile_response(&frame.payload)
         .context("Failed to parse memory profile response")
+}
+
+/// Run on-device self-test suite
+pub fn system_self_test(transport: &mut dyn Transport) -> Result<CliSelfTestInfo> {
+    let frame = transport
+        .send_command(ConfigMsgType::SelfTestReq as u8, &[])
+        .context("Failed to send self-test command")?;
+
+    if frame.msg_type != ConfigMsgType::SelfTestRsp as u8 {
+        anyhow::bail!(
+            "Unexpected response type: 0x{:02X}, expected 0x{:02X}",
+            frame.msg_type,
+            ConfigMsgType::SelfTestRsp as u8
+        );
+    }
+
+    parse_self_test_response(&frame.payload).context("Failed to parse self-test response")
 }

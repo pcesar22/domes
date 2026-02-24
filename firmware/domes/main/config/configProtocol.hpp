@@ -59,6 +59,9 @@ enum class MsgType : uint8_t {
     // Memory profiler commands (0x42-0x43)
     kGetMemoryProfileReq  = domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_REQ,
     kGetMemoryProfileRsp  = domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_RSP,
+    // Self-test / smoke test commands (0x44-0x45)
+    kSelfTestReq          = domes_config_MsgType_MSG_TYPE_SELF_TEST_REQ,
+    kSelfTestRsp          = domes_config_MsgType_MSG_TYPE_SELF_TEST_RSP,
 };
 
 /**
@@ -93,7 +96,7 @@ enum class Status : uint8_t {
  */
 inline bool isConfigMessage(uint8_t type) {
     return type >= static_cast<uint8_t>(MsgType::kListFeaturesReq) &&
-           type <= static_cast<uint8_t>(MsgType::kGetMemoryProfileRsp);
+           type <= static_cast<uint8_t>(MsgType::kSelfTestRsp);
 }
 
 /**
@@ -130,7 +133,7 @@ inline const char* statusToString(Status status) {
 /// Maximum features supported
 constexpr size_t kMaxFeatures = static_cast<size_t>(Feature::kCount);
 
-/// Maximum frame size for config messages (increased for memory profile response)
+/// Maximum frame size for config messages (increased for memory profile + self-test responses)
 constexpr size_t kMaxFrameSize = 1200;
 
 }  // namespace domes::config

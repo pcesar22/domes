@@ -52,6 +52,10 @@ enum MsgType {
     // Memory profiler commands (0x42-0x43)
     MSG_TYPE_GET_MEMORY_PROFILE_REQ = 0x42;
     MSG_TYPE_GET_MEMORY_PROFILE_RSP = 0x43;
+
+    // Self-test / smoke test commands (0x44-0x45 range)
+    MSG_TYPE_SELF_TEST_REQ = 0x44;
+    MSG_TYPE_SELF_TEST_RSP = 0x45;
 }
 
 // Status codes for responses
@@ -317,6 +321,29 @@ message GetMemoryProfileResponse {
     uint32 current_largest_block = 3;
     uint32 total_heap = 4;
     repeated HeapSample samples = 5;  // Last N heap samples (circular buffer)
+}
+
+// ============================================================================
+// Self-test / smoke test messages
+// ============================================================================
+
+// Individual test result
+message SelfTestResult {
+    string name = 1;       // Test name (e.g., "LED", "NVS", "Heap")
+    bool passed = 2;       // true = PASS, false = FAIL
+    string message = 3;    // Detail message (e.g., "256KB free" or error reason)
+}
+
+// Self-test request (trigger on-device smoke tests)
+message SelfTestRequest {
+    // Empty - runs all tests
+}
+
+// Self-test response with per-test results
+message SelfTestResponse {
+    uint32 tests_run = 1;       // Total tests executed
+    uint32 tests_passed = 2;    // Number of passes
+    repeated SelfTestResult results = 3;  // Per-test results
 }
 
 // Top-level request envelope

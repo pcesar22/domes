@@ -165,6 +165,11 @@ private:
     void handleGetMemoryProfile();
 
     /**
+     * @brief Handle SELF_TEST request
+     */
+    void handleSelfTest();
+
+    /**
      * @brief Send list features response
      */
     void sendListFeaturesResponse();

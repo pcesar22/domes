@@ -299,6 +299,9 @@ enum SystemAction {
         #[arg(long)]
         json: bool,
     },
+
+    /// Run on-device self-test suite (NVS, Heap, Flash, WiFi, BLE)
+    SelfTest,
 }
 
 #[derive(Subcommand)]
@@ -993,6 +996,22 @@ fn main() -> anyhow::Result<()> {
                             }).collect();
                             println!("{}    Free heap: {} ({}-{} bytes)", prefix, sparkline, min_val, max_val);
                         }
+                    }
+                }
+                SystemAction::SelfTest => {
+                    println!("{}Running on-device self-test suite...", prefix);
+                    let info = commands::system_self_test(transport)?;
+                    println!("{}Self-Test Results: {}/{} passed", prefix, info.tests_passed, info.tests_run);
+                    println!("{}{:<8} {:<6} {}", prefix, "TEST", "STATUS", "MESSAGE");
+                    println!("{}{:-<8} {:-<6} {:-<40}", prefix, "", "", "");
+                    for result in &info.results {
+                        let status = if result.passed { "PASS" } else { "FAIL" };
+                        println!("{}{:<8} {:<6} {}", prefix, result.name, status, result.message);
+                    }
+                    if info.tests_passed == info.tests_run {
+                        println!("{}All tests passed!", prefix);
+                    } else {
+                        println!("{}{} test(s) FAILED", prefix, info.tests_run - info.tests_passed);
                     }
                 }
             },

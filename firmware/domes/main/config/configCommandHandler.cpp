@@ -16,6 +16,7 @@
 #include "infra/crashDumpHandler.hpp"
 #include "infra/memoryProfiler.hpp"
 #include "infra/nvsConfig.hpp"
+#include "infra/smokeTest.hpp"
 #include "transport/espNowTransport.hpp"
 #include "services/espNowService.hpp"
 
@@ -151,6 +152,11 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
         case MsgType::kGetMemoryProfileReq:
             ESP_LOGD(kTag, "Received GET_MEMORY_PROFILE");
             handleGetMemoryProfile();
+            return true;
+
+        case MsgType::kSelfTestReq:
+            ESP_LOGI(kTag, "Received SELF_TEST");
+            handleSelfTest();
             return true;
 
         default:
@@ -875,6 +881,29 @@ void ConfigCommandHandler::handleGetMemoryProfile() {
     }
 
     sendFrame(MsgType::kGetMemoryProfileRsp, payload.data(), 1 + stream.bytes_written);
+}
+
+// ============================================================================
+// Self-test handler
+// ============================================================================
+
+void ConfigCommandHandler::handleSelfTest() {
+    ESP_LOGI(kTag, "Running self-test suite...");
+
+    domes_config_SelfTestResponse resp;
+    domes::infra::runSmokeTests(resp);
+
+    // Encode: [status_byte][protobuf]
+    std::array<uint8_t, domes_config_SelfTestResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&stream, domes_config_SelfTestResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode SelfTestResponse: %s", PB_GET_ERROR(&stream));
+        return;
+    }
+
+    sendFrame(MsgType::kSelfTestRsp, payload.data(), 1 + stream.bytes_written);
 }
 
 }  // namespace domes::config
