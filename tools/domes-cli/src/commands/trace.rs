@@ -353,6 +353,11 @@ fn convert_to_perfetto_json(
             0x02 => "E", // TASK_SWITCH_OUT -> End
             0x05 => "B", // ISR_ENTER -> Begin
             0x06 => "E", // ISR_EXIT -> End
+            0x09 => "B", // MUTEX_LOCK -> Begin (lock held)
+            0x0A => "E", // MUTEX_UNLOCK -> End (lock released)
+            0x0B => "i", // MUTEX_CONTENTION -> Instant (with wait time)
+            0x0C => "i", // SEM_TAKE -> Instant
+            0x0D => "i", // SEM_GIVE -> Instant
             _ => "i",    // Default to instant
         };
 
@@ -360,6 +365,27 @@ fn convert_to_perfetto_json(
         let name = match event_type {
             0x01 | 0x02 => format!("task:{}", task_name),
             0x05 | 0x06 => format!("isr:{}", arg1),
+            0x09 | 0x0A => {
+                // Mutex lock/unlock: resolve name from hash
+                span_names
+                    .get(&arg1)
+                    .cloned()
+                    .unwrap_or_else(|| format!("mutex:{}", arg1))
+            }
+            0x0B => {
+                // Mutex contention: resolve name, arg2 = wait time us
+                span_names
+                    .get(&arg1)
+                    .cloned()
+                    .unwrap_or_else(|| format!("mutex:{}", arg1))
+            }
+            0x0C | 0x0D => {
+                // Semaphore take/give: resolve name from hash
+                span_names
+                    .get(&arg1)
+                    .cloned()
+                    .unwrap_or_else(|| format!("sem:{}", arg1))
+            }
             0x23 => {
                 // Counter: resolve name from hash
                 span_names
@@ -392,6 +418,11 @@ fn convert_to_perfetto_json(
             write!(&mut json, r#","args":{{"value":{}}}"#, arg2)?;
         }
 
+        // Add mutex contention wait time
+        if event_type == 0x0B {
+            write!(&mut json, r#","args":{{"wait_us":{}}}"#, arg2)?;
+        }
+
         json.push('}');
     }
 
@@ -414,6 +445,7 @@ fn category_name(cat: u8) -> &'static str {
         10 => "ble",
         11 => "nvs",
         12 => "espnow",
+        13 => "sync",
         _ => "unknown",
     }
 }

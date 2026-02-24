@@ -33,6 +33,7 @@ enum class Category : uint8_t {
     kBle       = domes_trace_Category_CATEGORY_BLE,
     kNvs       = domes_trace_Category_CATEGORY_NVS,
     kEspNow    = domes_trace_Category_CATEGORY_ESPNOW,
+    kSync      = domes_trace_Category_CATEGORY_SYNC,
 };
 
 /**
@@ -51,6 +52,9 @@ enum class EventType : uint8_t {
     kQueueReceive  = domes_trace_EventType_EVENT_TYPE_QUEUE_RECEIVE,
     kMutexLock     = domes_trace_EventType_EVENT_TYPE_MUTEX_LOCK,
     kMutexUnlock   = domes_trace_EventType_EVENT_TYPE_MUTEX_UNLOCK,
+    kMutexContention = domes_trace_EventType_EVENT_TYPE_MUTEX_CONTENTION,
+    kSemTake       = domes_trace_EventType_EVENT_TYPE_SEM_TAKE,
+    kSemGive       = domes_trace_EventType_EVENT_TYPE_SEM_GIVE,
 
     // Application events (0x20-0x2F)
     kSpanBegin = domes_trace_EventType_EVENT_TYPE_SPAN_BEGIN,
@@ -109,6 +113,7 @@ constexpr const char* kCategoryNames[] = {
     "ble",        // 10
     "nvs",        // 11
     "espnow",     // 12
+    "sync",       // 13
 };
 
 }  // namespace domes::trace

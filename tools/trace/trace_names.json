@@ -79,5 +79,7 @@
   "1964018010": "EspNow.RxTimeoutEvent",
   "886777210": "EspNow.DrillRound",
   "2094027489": "EspNow.DrillComplete",
-  "589367022": "EspNow.RxStopAll"
+  "589367022": "EspNow.RxStopAll",
+  "2852168596": "EspNow.TxMutex",
+  "1510365426": "UsbCdc.TxMutex"
 }

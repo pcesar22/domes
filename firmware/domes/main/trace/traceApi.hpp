@@ -196,3 +196,76 @@ private:
  */
 #define TRACE_SCOPE(spanId, category) \
     ::domes::trace::ScopeTrace _scopeTrace_##__LINE__((spanId), (category))
+
+/**
+ * @brief Record a mutex lock acquisition
+ *
+ * Use TRACE_ID("Name.Mutex") for mutexId.
+ *
+ * @param mutexId Mutex identifier (use TRACE_ID("name"))
+ */
+#define TRACE_MUTEX_LOCK(mutexId)                                                                \
+    do {                                                                                         \
+        if (::domes::trace::Recorder::isEnabled()) {                                             \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(                          \
+                ::domes::trace::EventType::kMutexLock, ::domes::trace::Category::kSync,          \
+                (mutexId)));                                                                     \
+        }                                                                                        \
+    } while (0)
+
+/**
+ * @brief Record a mutex unlock
+ *
+ * @param mutexId Mutex identifier (use TRACE_ID("name"))
+ */
+#define TRACE_MUTEX_UNLOCK(mutexId)                                                              \
+    do {                                                                                         \
+        if (::domes::trace::Recorder::isEnabled()) {                                             \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(                          \
+                ::domes::trace::EventType::kMutexUnlock, ::domes::trace::Category::kSync,        \
+                (mutexId)));                                                                     \
+        }                                                                                        \
+    } while (0)
+
+/**
+ * @brief Record mutex contention (waited to acquire)
+ *
+ * @param mutexId Mutex identifier (use TRACE_ID("name"))
+ * @param waitTimeUs Time spent waiting in microseconds
+ */
+#define TRACE_MUTEX_CONTENTION(mutexId, waitTimeUs)                                              \
+    do {                                                                                         \
+        if (::domes::trace::Recorder::isEnabled()) {                                             \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(                          \
+                ::domes::trace::EventType::kMutexContention, ::domes::trace::Category::kSync,    \
+                (mutexId), static_cast<uint32_t>(waitTimeUs)));                                  \
+        }                                                                                        \
+    } while (0)
+
+/**
+ * @brief Record a semaphore take
+ *
+ * @param semId Semaphore identifier (use TRACE_ID("name"))
+ */
+#define TRACE_SEM_TAKE(semId)                                                                    \
+    do {                                                                                         \
+        if (::domes::trace::Recorder::isEnabled()) {                                             \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(                          \
+                ::domes::trace::EventType::kSemTake, ::domes::trace::Category::kSync,            \
+                (semId)));                                                                       \
+        }                                                                                        \
+    } while (0)
+
+/**
+ * @brief Record a semaphore give
+ *
+ * @param semId Semaphore identifier (use TRACE_ID("name"))
+ */
+#define TRACE_SEM_GIVE(semId)                                                                    \
+    do {                                                                                         \
+        if (::domes::trace::Recorder::isEnabled()) {                                             \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(                          \
+                ::domes::trace::EventType::kSemGive, ::domes::trace::Category::kSync,            \
+                (semId)));                                                                       \
+        }                                                                                        \
+    } while (0)

@@ -155,6 +155,7 @@ pub mod trace {
                 Category::Ble => "ble",
                 Category::Nvs => "nvs",
                 Category::Espnow => "espnow",
+                Category::Sync => "sync",
             }
         }
     }
