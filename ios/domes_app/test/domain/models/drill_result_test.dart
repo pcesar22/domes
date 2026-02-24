@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:domes_app/domain/models/drill_config.dart';
 import 'package:domes_app/domain/models/drill_result.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -192,6 +194,89 @@ void main() {
           result.hitRounds
               .every((r) => r.hit && r.reactionTime != null),
           isTrue);
+    });
+  });
+
+  group('DrillResult export', () {
+    test('toTextSummary contains key info', () {
+      final result = makeResult([
+        RoundResult(
+            roundIndex: 0,
+            podAddress: 'pod-1',
+            hit: true,
+            reactionTime: const Duration(milliseconds: 250),
+            timestamp: now),
+        RoundResult(
+            roundIndex: 1,
+            podAddress: 'pod-2',
+            hit: false,
+            timestamp: now),
+      ]);
+
+      final text = result.toTextSummary();
+      expect(text, contains('DOMES Drill Results'));
+      expect(text, contains('Type: Reaction'));
+      expect(text, contains('Hit Rate: 50% (1/2)'));
+      expect(text, contains('Avg Reaction: 250ms'));
+      expect(text, contains('Best: 250ms'));
+      expect(text, contains('HIT'));
+      expect(text, contains('MISS'));
+    });
+
+    test('toJson produces valid JSON with correct fields', () {
+      final result = makeResult([
+        RoundResult(
+            roundIndex: 0,
+            podAddress: 'pod-1',
+            hit: true,
+            reactionTime: const Duration(milliseconds: 300),
+            timestamp: now),
+        RoundResult(
+            roundIndex: 1,
+            podAddress: 'pod-2',
+            hit: false,
+            timestamp: now),
+      ]);
+
+      final json = result.toJson();
+      expect(json['drillType'], 'reaction');
+      expect(json['roundCount'], 10);
+      expect(json['hits'], 1);
+      expect(json['misses'], 1);
+      expect(json['hitRate'], 0.5);
+      expect(json['avgReactionMs'], 300);
+      expect(json['bestReactionMs'], 300);
+      expect(json['worstReactionMs'], 300);
+      expect(json['rounds'], isList);
+      expect((json['rounds'] as List).length, 2);
+    });
+
+    test('toJsonString produces parseable JSON', () {
+      final result = makeResult([
+        RoundResult(
+            roundIndex: 0,
+            podAddress: 'pod-1',
+            hit: true,
+            reactionTime: const Duration(milliseconds: 200),
+            timestamp: now),
+      ]);
+
+      final jsonStr = result.toJsonString();
+      final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
+      expect(parsed['drillType'], 'reaction');
+      expect(parsed['hits'], 1);
+    });
+
+    test('toJson handles empty results', () {
+      final result = makeResult([]);
+      final json = result.toJson();
+      expect(json['hits'], 0);
+      expect(json['misses'], 0);
+      expect(json['hitRate'], 0);
+      expect(json['avgReactionMs'], isNull);
+      expect(json['bestReactionMs'], isNull);
+      expect(json['worstReactionMs'], isNull);
+      expect((json['rounds'] as List), isEmpty);
     });
   });
 }
