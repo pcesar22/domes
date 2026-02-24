@@ -1,2 +1,0 @@
-# ESP32 Trace Dump Tool Dependencies
-pyserial>=3.5

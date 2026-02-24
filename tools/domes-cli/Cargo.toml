@@ -43,6 +43,10 @@ uuid = { version = "1", features = ["v4"] }
 # Async stream processing for BLE notifications
 futures = "0.3"
 
+# JSON parsing for trace_names.json span name mappings
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
 # Logging for debug output
 log = "0.4"
 env_logger = "0.11"

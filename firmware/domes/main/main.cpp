@@ -649,7 +649,7 @@ static esp_err_t initEspNow() {
  * Sets up USB-CDC transport and starts the serial OTA receiver task.
  * This allows OTA updates via USB serial from the host tool.
  */
-static esp_err_t initSerialOta() {
+static esp_err_t initSerialOta(uint8_t podId = 0) {
     ESP_LOGI(kTag, "Initializing serial OTA receiver...");
 
     // Create USB-CDC transport
@@ -664,7 +664,7 @@ static esp_err_t initSerialOta() {
     ESP_LOGI(kTag, "USB-CDC transport initialized");
 
     // Create serial OTA receiver with config support
-    static domes::SerialOtaReceiver receiver(*usbCdcTransport, featureManager);
+    static domes::SerialOtaReceiver receiver(*usbCdcTransport, featureManager, podId);
     serialOtaReceiver = &receiver;
 
     // Wire up services for config commands
@@ -703,7 +703,7 @@ static esp_err_t initSerialOta() {
  * Sets up BLE GATT server and starts the BLE OTA receiver task.
  * This allows OTA updates via Bluetooth from a phone or host tool.
  */
-static esp_err_t initBleOta() {
+static esp_err_t initBleOta(uint8_t podId = 0) {
     ESP_LOGI(kTag, "Initializing BLE OTA service...");
 
     // Create BLE OTA service (GATT server)
@@ -719,7 +719,7 @@ static esp_err_t initBleOta() {
 
     // Create BLE OTA receiver (reuses SerialOtaReceiver with BLE transport)
     // Note: featureManager may be nullptr if serial OTA wasn't initialized first
-    static domes::SerialOtaReceiver receiver(*bleOtaService, featureManager);
+    static domes::SerialOtaReceiver receiver(*bleOtaService, featureManager, podId);
     bleOtaReceiver = &receiver;
 
     // Create receiver task (needs 8KB stack for config command processing and protobuf)
@@ -1179,7 +1179,7 @@ extern "C" void app_main() {
     ESP_LOGI(kTag, "Initializing BLE stack...");
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
     size_t heapBeforeBle = esp_get_free_heap_size();
-    if (initBleOta() != ESP_OK) {
+    if (initBleOta(podId) != ESP_OK) {
         ESP_LOGW(kTag, "BLE OTA init failed, continuing without BLE OTA");
     } else {
         size_t heapAfterBle = esp_get_free_heap_size();
@@ -1221,7 +1221,7 @@ extern "C" void app_main() {
 #endif
 
     // Initialize serial OTA receiver (USB-CDC based) - this takes over console
-    if (initSerialOta() != ESP_OK) {
+    if (initSerialOta(podId) != ESP_OK) {
         ESP_LOGW(kTag, "Serial OTA init failed, continuing without serial OTA");
     }
 

@@ -210,6 +210,10 @@ enum TraceAction {
         /// Output file path (default: trace.json)
         #[arg(short, long, default_value = "trace.json")]
         output: PathBuf,
+
+        /// Span name mapping file (e.g., trace_names.json)
+        #[arg(short, long)]
+        names: Option<PathBuf>,
     },
 }
 
@@ -703,11 +707,12 @@ fn main() -> anyhow::Result<()> {
                     println!("{}Trace status:", prefix);
                     println!("{}  Initialized: {}", prefix, status.initialized);
                     println!("{}  Enabled:     {}", prefix, status.enabled);
+                    println!("{}  Streaming:   {}", prefix, status.streaming);
                     println!("{}  Events:      {}", prefix, status.event_count);
                     println!("{}  Dropped:     {}", prefix, status.dropped_count);
                     println!("{}  Buffer size: {} bytes", prefix, status.buffer_size);
                 }
-                TraceAction::Dump { output } => {
+                TraceAction::Dump { output, names } => {
                     let dump_path = if multi {
                         // Per-device output file
                         let stem = output
@@ -723,8 +728,11 @@ fn main() -> anyhow::Result<()> {
                         output.clone()
                     };
                     println!("{}Dumping traces to {}...", prefix, dump_path.display());
-                    let result = commands::trace_dump(transport, &dump_path)?;
-                    println!("{}Dump complete: {} events", prefix, result.event_count);
+                    let result = commands::trace_dump(transport, &dump_path, names.as_deref())?;
+                    println!("{}Dump complete: {} events (pod_id={})", prefix, result.event_count, result.pod_id);
+                    if result.dropped_count > 0 {
+                        println!("{}  Dropped: {} events", prefix, result.dropped_count);
+                    }
                     println!("{}Output: {}", prefix, result.output_path.display());
                 }
             },

@@ -1,11 +1,15 @@
 /**
  * @file traceCommandHandler.cpp
  * @brief Trace command handler implementation
+ *
+ * All response payloads are protobuf-encoded using nanopb.
+ * TraceEvent data is carried as raw binary inside protobuf 'bytes' fields.
  */
 
 #include "traceCommandHandler.hpp"
 
 #include "esp_log.h"
+#include "pb_encode.h"
 #include "protocol/frameCodec.hpp"
 #include "traceRecorder.hpp"
 
@@ -18,10 +22,11 @@ constexpr const char* kTag = "trace_cmd";
 
 namespace domes::trace {
 
-CommandHandler::CommandHandler(ITransport& transport) : transport_(transport) {}
+CommandHandler::CommandHandler(ITransport& transport, uint8_t podId)
+    : transport_(transport), podId_(podId) {}
 
 bool CommandHandler::handleCommand(uint8_t type, const uint8_t* payload, size_t len) {
-    (void)payload;  // Most commands don't use payload
+    (void)payload;
     (void)len;
 
     auto msgType = static_cast<MsgType>(type);
@@ -43,7 +48,7 @@ bool CommandHandler::handleCommand(uint8_t type, const uint8_t* payload, size_t 
             handleClear();
             return true;
 
-        case MsgType::kStatus:
+        case MsgType::kStatusReq:
             handleStatus();
             return true;
 
@@ -100,16 +105,8 @@ void CommandHandler::handleDump() {
     Recorder::setEnabled(false);
     Recorder::buffer().pause();
 
-    // Count events and get timestamps by doing a first pass
-    // Read events directly from ring buffer in small chunks (no large allocation)
-    uint32_t eventCount = 0;
-    uint32_t startTs = 0;
-    uint32_t endTs = 0;
+    uint32_t eventCount = static_cast<uint32_t>(Recorder::buffer().count());
     uint32_t droppedCount = Recorder::buffer().droppedCount();
-
-    // First: count events and get first/last timestamps
-    // We read into a small stack buffer and count
-    eventCount = static_cast<uint32_t>(Recorder::buffer().count());
 
     if (eventCount == 0) {
         ESP_LOGI(kTag, "No events to dump");
@@ -124,6 +121,7 @@ void CommandHandler::handleDump() {
     ESP_LOGI(kTag, "Dumping ~%lu events", static_cast<unsigned long>(eventCount));
 
     // Peek first event for start timestamp
+    uint32_t startTs = 0;
     TraceEvent firstEvent;
     if (Recorder::buffer().read(&firstEvent, 0)) {
         startTs = firstEvent.timestamp;
@@ -133,16 +131,17 @@ void CommandHandler::handleDump() {
     // ESP_LOG text from corrupting the frame protocol on the shared serial port
     esp_log_level_set("*", ESP_LOG_NONE);
 
-    // Send metadata (eventCount is approximate — we send actual count in END)
-    sendMetadata(eventCount, droppedCount, startTs, 0);
+    // Send session info (protobuf-encoded metadata)
+    sendSessionInfo(eventCount, droppedCount, startTs, 0);
 
     // Stream events directly from ring buffer in chunks
     std::array<TraceEvent, kEventsPerChunk> chunk;
     uint32_t offset = 0;
     uint32_t checksum = 0;
     uint32_t totalSent = 0;
+    uint32_t endTs = startTs;
 
-    // First chunk already has one event read (firstEvent)
+    // First chunk starts with the already-read event
     chunk[0] = firstEvent;
     size_t chunkFill = 1;
 
@@ -169,7 +168,7 @@ void CommandHandler::handleDump() {
 
         if (chunkFill >= kEventsPerChunk) {
             sendDataChunk(offset, chunk.data(), chunkFill);
-            vTaskDelay(pdMS_TO_TICKS(20));
+            vTaskDelay(pdMS_TO_TICKS(10));
             offset += static_cast<uint32_t>(chunkFill);
             totalSent += static_cast<uint32_t>(chunkFill);
             chunkFill = 0;
@@ -182,13 +181,8 @@ void CommandHandler::handleDump() {
         totalSent += static_cast<uint32_t>(chunkFill);
     }
 
-    // Use last event timestamp if we didn't get any after the first
-    if (endTs == 0) {
-        endTs = startTs;
-    }
-
     // Send end marker with actual total
-    sendEnd(totalSent, checksum);
+    sendDumpComplete(totalSent, checksum);
 
     // Restore logging
     esp_log_level_set("*", ESP_LOG_INFO);
@@ -229,86 +223,111 @@ void CommandHandler::handleStatus() {
     sendStatusResponse();
 }
 
-void CommandHandler::sendAck(Status status) {
-    TraceAckResponse ack;
-    ack.status = static_cast<uint8_t>(status);
+// ============================================================================
+// Protobuf-encoded response senders
+// ============================================================================
 
-    sendFrame(MsgType::kAck, reinterpret_cast<const uint8_t*>(&ack), sizeof(ack));
+void CommandHandler::sendAck(Status status) {
+    domes_trace_AckResponse msg = domes_trace_AckResponse_init_zero;
+    msg.status = static_cast<domes_trace_Status>(status);
+
+    std::array<uint8_t, 16> buf;
+    pb_ostream_t stream = pb_ostream_from_buffer(buf.data(), buf.size());
+    if (!pb_encode(&stream, domes_trace_AckResponse_fields, &msg)) {
+        ESP_LOGE(kTag, "Failed to encode AckResponse");
+        return;
+    }
+
+    sendFrame(MsgType::kAck, buf.data(), stream.bytes_written);
 }
 
-void CommandHandler::sendMetadata(uint32_t eventCount, uint32_t droppedCount, uint32_t startTs,
-                                  uint32_t endTs) {
-    // Calculate total size: metadata + task entries
-    // Max payload: 17 + 16*18 = 305 bytes — fits in kMaxFrameSize
-    const auto& taskNames = Recorder::getTaskNames();
-    size_t validTaskCount = 0;
-    for (const auto& entry : taskNames) {
-        if (entry.valid) {
-            validTaskCount++;
-        }
-    }
-
-    // Stack-allocated payload buffer (max ~305 bytes)
-    constexpr size_t kMaxMetadataPayload = sizeof(TraceMetadata) + 16 * sizeof(TraceTaskEntry);
-    std::array<uint8_t, kMaxMetadataPayload> payload = {};
-    size_t payloadSize = sizeof(TraceMetadata) + validTaskCount * sizeof(TraceTaskEntry);
-
-    // Fill metadata
-    auto* meta = reinterpret_cast<TraceMetadata*>(payload.data());
-    meta->eventCount = eventCount;
-    meta->droppedCount = droppedCount;
-    meta->startTimestamp = startTs;
-    meta->endTimestamp = endTs;
-    meta->taskCount = static_cast<uint8_t>(validTaskCount);
+void CommandHandler::sendSessionInfo(uint32_t eventCount, uint32_t droppedCount,
+                                     uint32_t startTs, uint32_t endTs) {
+    domes_trace_TraceSessionInfo msg = domes_trace_TraceSessionInfo_init_zero;
+    msg.pod_id = podId_;
+    msg.event_count = eventCount;
+    msg.dropped_count = droppedCount;
+    msg.start_timestamp_us = startTs;
+    msg.end_timestamp_us = endTs;
+    msg.buffer_size_bytes = TraceBuffer::kDefaultBufferSize;
+    msg.clock_offset_us = 0;  // TODO: populate from ESP-NOW sync
 
     // Fill task entries
-    auto* taskEntry = reinterpret_cast<TraceTaskEntry*>(payload.data() + sizeof(TraceMetadata));
-
+    const auto& taskNames = Recorder::getTaskNames();
+    size_t taskIdx = 0;
     for (const auto& entry : taskNames) {
-        if (entry.valid && validTaskCount > 0) {
-            taskEntry->taskId = entry.taskId;
-            std::strncpy(taskEntry->name, entry.name, kMaxTaskNameLength);
-            taskEntry->name[kMaxTaskNameLength - 1] = '\0';
-            taskEntry++;
+        if (entry.valid && taskIdx < sizeof(msg.tasks) / sizeof(msg.tasks[0])) {
+            msg.tasks[taskIdx].task_id = entry.taskId;
+            std::strncpy(msg.tasks[taskIdx].name, entry.name, sizeof(msg.tasks[taskIdx].name) - 1);
+            msg.tasks[taskIdx].name[sizeof(msg.tasks[taskIdx].name) - 1] = '\0';
+            taskIdx++;
         }
     }
+    msg.tasks_count = taskIdx;
 
-    sendFrame(MsgType::kData, payload.data(), payloadSize);
+    std::array<uint8_t, kMaxProtobufPayload> buf;
+    pb_ostream_t stream = pb_ostream_from_buffer(buf.data(), buf.size());
+    if (!pb_encode(&stream, domes_trace_TraceSessionInfo_fields, &msg)) {
+        ESP_LOGE(kTag, "Failed to encode TraceSessionInfo: %s", PB_GET_ERROR(&stream));
+        return;
+    }
+
+    sendFrame(MsgType::kSessionInfo, buf.data(), stream.bytes_written);
 }
 
 void CommandHandler::sendDataChunk(uint32_t offset, const TraceEvent* events, size_t count) {
-    // Stack-allocated payload: header(6) + 8*16 = 134 bytes max
-    std::array<uint8_t, sizeof(TraceDataHeader) + kEventsPerChunk * sizeof(TraceEvent)> payload = {};
-    size_t payloadSize = sizeof(TraceDataHeader) + count * sizeof(TraceEvent);
+    domes_trace_TraceDataChunk msg = domes_trace_TraceDataChunk_init_zero;
+    msg.offset = offset;
+    msg.count = static_cast<uint32_t>(count);
 
-    // Fill header
-    auto* header = reinterpret_cast<TraceDataHeader*>(payload.data());
-    header->offset = offset;
-    header->count = static_cast<uint16_t>(count);
+    // Copy raw binary events into the bytes field
+    size_t eventBytes = count * sizeof(TraceEvent);
+    msg.events.size = eventBytes;
+    std::memcpy(msg.events.bytes, events, eventBytes);
 
-    // Copy events
-    std::memcpy(payload.data() + sizeof(TraceDataHeader), events, count * sizeof(TraceEvent));
+    std::array<uint8_t, kMaxTraceDataPayload> buf;
+    pb_ostream_t stream = pb_ostream_from_buffer(buf.data(), buf.size());
+    if (!pb_encode(&stream, domes_trace_TraceDataChunk_fields, &msg)) {
+        ESP_LOGE(kTag, "Failed to encode TraceDataChunk: %s", PB_GET_ERROR(&stream));
+        return;
+    }
 
-    sendFrame(MsgType::kData, payload.data(), payloadSize);
+    sendFrame(MsgType::kData, buf.data(), stream.bytes_written);
 }
 
-void CommandHandler::sendEnd(uint32_t totalEvents, uint32_t checksum) {
-    TraceDumpEnd endMsg;
-    endMsg.totalEvents = totalEvents;
-    endMsg.checksum = checksum;
+void CommandHandler::sendDumpComplete(uint32_t totalEvents, uint32_t checksum) {
+    domes_trace_TraceDumpComplete msg = domes_trace_TraceDumpComplete_init_zero;
+    msg.total_events = totalEvents;
+    msg.checksum = checksum;
 
-    sendFrame(MsgType::kEnd, reinterpret_cast<const uint8_t*>(&endMsg), sizeof(endMsg));
+    std::array<uint8_t, 16> buf;
+    pb_ostream_t stream = pb_ostream_from_buffer(buf.data(), buf.size());
+    if (!pb_encode(&stream, domes_trace_TraceDumpComplete_fields, &msg)) {
+        ESP_LOGE(kTag, "Failed to encode TraceDumpComplete");
+        return;
+    }
+
+    sendFrame(MsgType::kEnd, buf.data(), stream.bytes_written);
 }
 
 void CommandHandler::sendStatusResponse() {
-    TraceStatusResponse status;
-    status.initialized = Recorder::isInitialized() ? 1 : 0;
-    status.enabled = Recorder::isEnabled() ? 1 : 0;
-    status.eventCount = static_cast<uint32_t>(Recorder::buffer().count());
-    status.droppedCount = Recorder::buffer().droppedCount();
-    status.bufferSize = TraceBuffer::kDefaultBufferSize;
+    domes_trace_TraceStatusResponse msg = domes_trace_TraceStatusResponse_init_zero;
+    msg.initialized = Recorder::isInitialized();
+    msg.enabled = Recorder::isEnabled();
+    msg.streaming = false;  // TODO: populate when streaming is implemented
+    msg.event_count = static_cast<uint32_t>(Recorder::buffer().count());
+    msg.dropped_count = Recorder::buffer().droppedCount();
+    msg.buffer_size = TraceBuffer::kDefaultBufferSize;
+    msg.stream_category_mask = 0;
 
-    sendFrame(MsgType::kStatus, reinterpret_cast<const uint8_t*>(&status), sizeof(status));
+    std::array<uint8_t, 32> buf;
+    pb_ostream_t stream = pb_ostream_from_buffer(buf.data(), buf.size());
+    if (!pb_encode(&stream, domes_trace_TraceStatusResponse_fields, &msg)) {
+        ESP_LOGE(kTag, "Failed to encode TraceStatusResponse");
+        return;
+    }
+
+    sendFrame(MsgType::kStatusResp, buf.data(), stream.bytes_written);
 }
 
 bool CommandHandler::sendFrame(MsgType type, const uint8_t* payload, size_t len) {
