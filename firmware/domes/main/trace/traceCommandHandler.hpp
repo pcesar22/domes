@@ -5,7 +5,7 @@
  * @brief Handler for trace protocol commands over serial
  *
  * Processes trace commands received via the frame protocol and
- * sends responses. Works with SerialOtaReceiver for command dispatch.
+ * sends responses using protobuf encoding (nanopb).
  */
 
 #include "interfaces/iTransport.hpp"
@@ -19,8 +19,8 @@ namespace domes::trace {
 /**
  * @brief Handles trace protocol commands
  *
- * Processes incoming trace commands and generates responses.
- * Uses the same frame format as OTA protocol.
+ * Processes incoming trace commands and generates protobuf-encoded responses.
+ * Uses the same frame format as OTA and config protocols.
  */
 class CommandHandler {
 public:
@@ -28,8 +28,9 @@ public:
      * @brief Construct command handler
      *
      * @param transport Transport to send responses on
+     * @param podId Pod identity (from NVS, 0 if unset)
      */
-    explicit CommandHandler(ITransport& transport);
+    explicit CommandHandler(ITransport& transport, uint8_t podId = 0);
 
     /**
      * @brief Handle an incoming trace command
@@ -42,81 +43,45 @@ public:
     bool handleCommand(uint8_t type, const uint8_t* payload, size_t len);
 
 private:
-    /**
-     * @brief Handle TRACE_START command
-     */
     void handleStart();
-
-    /**
-     * @brief Handle TRACE_STOP command
-     */
     void handleStop();
-
-    /**
-     * @brief Handle TRACE_DUMP command
-     */
     void handleDump();
-
-    /**
-     * @brief Handle TRACE_CLEAR command
-     */
     void handleClear();
-
-    /**
-     * @brief Handle TRACE_STATUS command
-     */
     void handleStatus();
 
     /**
-     * @brief Send ACK response
-     *
-     * @param status Status code
+     * @brief Send ACK response (protobuf AckResponse)
      */
     void sendAck(Status status);
 
     /**
-     * @brief Send trace metadata (first part of dump)
-     *
-     * @param eventCount Total events to send
-     * @param droppedCount Events dropped
-     * @param startTs First event timestamp
-     * @param endTs Last event timestamp
+     * @brief Send session info (protobuf TraceSessionInfo)
      */
-    void sendMetadata(uint32_t eventCount, uint32_t droppedCount, uint32_t startTs, uint32_t endTs);
+    void sendSessionInfo(uint32_t eventCount, uint32_t droppedCount,
+                         uint32_t startTs, uint32_t endTs);
 
     /**
-     * @brief Send a chunk of trace events
-     *
-     * @param offset Event offset in dump
-     * @param events Pointer to events array
-     * @param count Number of events
+     * @brief Send a chunk of trace events (protobuf TraceDataChunk)
      */
     void sendDataChunk(uint32_t offset, const TraceEvent* events, size_t count);
 
     /**
-     * @brief Send end of dump marker
-     *
-     * @param totalEvents Total events sent
-     * @param checksum Simple checksum
+     * @brief Send end of dump marker (protobuf TraceDumpComplete)
      */
-    void sendEnd(uint32_t totalEvents, uint32_t checksum);
+    void sendDumpComplete(uint32_t totalEvents, uint32_t checksum);
 
     /**
-     * @brief Send status response
+     * @brief Send status response (protobuf TraceStatusResponse)
      */
     void sendStatusResponse();
 
     /**
      * @brief Send a frame with given type and payload
-     *
-     * @param type Message type
-     * @param payload Payload data
-     * @param len Payload length
-     * @return true on success
      */
     bool sendFrame(MsgType type, const uint8_t* payload, size_t len);
 
     ITransport& transport_;
+    uint8_t podId_;
 };
 
 }  // namespace domes::trace

@@ -26,11 +26,12 @@ static const char* TAG = "serial_ota";
 namespace domes {
 
 SerialOtaReceiver::SerialOtaReceiver(ITransport& transport,
-                                       config::FeatureManager* features)
+                                       config::FeatureManager* features,
+                                       uint8_t podId)
     : transport_(transport)
     , stopRequested_(false)
     , otaInProgress_(false)
-    , traceHandler_(std::make_unique<trace::CommandHandler>(transport))
+    , traceHandler_(std::make_unique<trace::CommandHandler>(transport, podId))
     , configHandler_(features ? std::make_unique<config::ConfigCommandHandler>(transport, *features) : nullptr)
     , otaHandle_(0)
     , updatePartition_(nullptr)

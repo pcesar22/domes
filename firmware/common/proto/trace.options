@@ -4,5 +4,14 @@
 # TaskEntry: max 16 char task name
 domes.trace.TaskEntry.name  max_size:16
 
-# Metadata: max 32 tasks
+# TraceSessionInfo: max 32 tasks
+domes.trace.TraceSessionInfo.tasks  max_count:32
+
+# TraceDataChunk: max 256 bytes = 16 events * 16 bytes
+domes.trace.TraceDataChunk.events  max_size:256
+
+# StreamBatch: max 1024 bytes = 64 events * 16 bytes
+domes.trace.StreamBatch.events  max_size:1024
+
+# Deprecated messages (kept for backward compat)
 domes.trace.Metadata.tasks  max_count:32

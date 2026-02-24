@@ -14,14 +14,18 @@
  Used in the frame header [0xAA 0x55][Len][MsgType][Payload][CRC32] */
 typedef enum _domes_trace_MsgType {
     domes_trace_MsgType_MSG_TYPE_UNKNOWN = 0,
-    domes_trace_MsgType_MSG_TYPE_START = 16, /* Start trace recording (host -> device) */
-    domes_trace_MsgType_MSG_TYPE_STOP = 17, /* Stop trace recording (host -> device) */
-    domes_trace_MsgType_MSG_TYPE_DUMP = 18, /* Request trace dump (host -> device) */
-    domes_trace_MsgType_MSG_TYPE_DATA = 19, /* Trace data chunk (device -> host) */
-    domes_trace_MsgType_MSG_TYPE_END = 20, /* End of trace dump (device -> host) */
-    domes_trace_MsgType_MSG_TYPE_CLEAR = 21, /* Clear trace buffer (host -> device) */
-    domes_trace_MsgType_MSG_TYPE_STATUS = 22, /* Query trace status (host -> device) */
-    domes_trace_MsgType_MSG_TYPE_ACK = 23 /* Acknowledge command (device -> host) */
+    domes_trace_MsgType_MSG_TYPE_START = 16, /* Start trace recording (host -> device, empty payload) */
+    domes_trace_MsgType_MSG_TYPE_STOP = 17, /* Stop trace recording (host -> device, empty payload) */
+    domes_trace_MsgType_MSG_TYPE_DUMP = 18, /* Request trace dump (host -> device, empty payload) */
+    domes_trace_MsgType_MSG_TYPE_DATA = 19, /* Trace data chunk (device -> host, TraceDataChunk) */
+    domes_trace_MsgType_MSG_TYPE_END = 20, /* End of trace dump (device -> host, TraceDumpComplete) */
+    domes_trace_MsgType_MSG_TYPE_CLEAR = 21, /* Clear trace buffer (host -> device, empty payload) */
+    domes_trace_MsgType_MSG_TYPE_STATUS_REQ = 22, /* Query trace status (host -> device, empty payload) */
+    domes_trace_MsgType_MSG_TYPE_STATUS_RESP = 23, /* Trace status response (device -> host, TraceStatusResponse) */
+    domes_trace_MsgType_MSG_TYPE_STREAM_CFG = 24, /* Configure streaming (host -> device, StreamConfig) */
+    domes_trace_MsgType_MSG_TYPE_STREAM_DATA = 25, /* Streamed event batch (device -> host, StreamBatch) */
+    domes_trace_MsgType_MSG_TYPE_SESSION_INFO = 26, /* Session metadata (device -> host, TraceSessionInfo) */
+    domes_trace_MsgType_MSG_TYPE_ACK = 27 /* Acknowledge command (device -> host, AckResponse) */
 } domes_trace_MsgType;
 
 /* Status codes for trace ACK responses */
@@ -86,47 +90,103 @@ typedef struct _domes_trace_Event {
     uint32_t arg2; /* Secondary argument (counter value, duration) */
 } domes_trace_Event;
 
-/* Task entry mapping task ID to name */
+/* Task name mapping (task ID -> human-readable name) */
 typedef struct _domes_trace_TaskEntry {
     uint32_t task_id;
-    char name[16];
+    char name[16]; /* Max 16 chars */
 } domes_trace_TaskEntry;
 
-/* Trace metadata sent at start of dump */
+/* Session metadata sent at start of dump (MsgType: SESSION_INFO 0x1A)
+ Replaces the old binary TraceMetadata struct. */
+typedef struct _domes_trace_TraceSessionInfo {
+    uint32_t pod_id; /* Pod identity (from NVS, 0 if unset) */
+    uint32_t event_count; /* Events in this dump */
+    uint32_t dropped_count; /* Events dropped (buffer full) */
+    uint32_t start_timestamp_us; /* First event timestamp */
+    uint32_t end_timestamp_us; /* Last event timestamp */
+    pb_size_t tasks_count;
+    domes_trace_TaskEntry tasks[32]; /* Registered task names */
+    uint32_t buffer_size_bytes; /* Ring buffer size */
+    int64_t clock_offset_us; /* Offset from master clock (multi-pod sync) */
+} domes_trace_TraceSessionInfo;
+
+typedef PB_BYTES_ARRAY_T(256) domes_trace_TraceDataChunk_events_t;
+/* Chunk of binary trace events (MsgType: DATA 0x13)
+ The events field contains raw 16-byte TraceEvent structs. */
+typedef struct _domes_trace_TraceDataChunk {
+    uint32_t offset; /* Event offset in dump (0-based) */
+    uint32_t count; /* Number of 16-byte events in data */
+    domes_trace_TraceDataChunk_events_t events; /* Raw binary: count * 16 bytes of TraceEvent[] */
+} domes_trace_TraceDataChunk;
+
+/* End-of-dump marker (MsgType: END 0x14) */
+typedef struct _domes_trace_TraceDumpComplete {
+    uint32_t total_events;
+    uint32_t checksum; /* Simple byte-sum checksum of all event data */
+} domes_trace_TraceDumpComplete;
+
+/* Trace status response (MsgType: STATUS_RESP 0x17) */
+typedef struct _domes_trace_TraceStatusResponse {
+    bool initialized;
+    bool enabled; /* Recording to ring buffer */
+    bool streaming; /* Real-time streaming active */
+    uint32_t event_count; /* Events in buffer */
+    uint32_t dropped_count; /* Total drops since last clear */
+    uint32_t buffer_size; /* Buffer capacity in bytes */
+    uint32_t stream_category_mask; /* Active stream filter (0 = all) */
+} domes_trace_TraceStatusResponse;
+
+/* ACK response (MsgType: ACK 0x1B) */
+typedef struct _domes_trace_AckResponse {
+    domes_trace_Status status;
+} domes_trace_AckResponse;
+
+/* Configure real-time streaming (MsgType: STREAM_CFG 0x18, host -> device) */
+typedef struct _domes_trace_StreamConfig {
+    bool enable; /* true = start streaming, false = stop */
+    uint32_t category_mask; /* Bitmask of categories to stream (0 = all) */
+    uint32_t max_rate_hz; /* Max events/sec (0 = unlimited) */
+    bool include_kernel; /* Include task switch/ISR events */
+} domes_trace_StreamConfig;
+
+typedef PB_BYTES_ARRAY_T(1024) domes_trace_StreamBatch_events_t;
+/* Streamed event batch (MsgType: STREAM_DATA 0x19, device -> host) */
+typedef struct _domes_trace_StreamBatch {
+    uint32_t sequence; /* Monotonic sequence number (detect gaps) */
+    uint32_t dropped; /* Events dropped since last batch (overflow) */
+    domes_trace_StreamBatch_events_t events; /* Raw binary: N * 16 bytes of TraceEvent[] */
+} domes_trace_StreamBatch;
+
+/* DEPRECATED: Use TraceSessionInfo instead */
 typedef struct _domes_trace_Metadata {
-    uint32_t event_count; /* Total events in this dump */
-    uint32_t dropped_count; /* Events dropped due to buffer full */
-    uint32_t start_timestamp; /* First event timestamp (microseconds) */
-    uint32_t end_timestamp; /* Last event timestamp (microseconds) */
+    uint32_t event_count;
+    uint32_t dropped_count;
+    uint32_t start_timestamp;
+    uint32_t end_timestamp;
     pb_size_t tasks_count;
     domes_trace_TaskEntry tasks[32];
 } domes_trace_Metadata;
 
-/* Header for trace data chunks */
+/* DEPRECATED: Use TraceDataChunk instead */
 typedef struct _domes_trace_DataHeader {
-    uint32_t offset; /* Event offset in dump (0-based) */
-    uint32_t count; /* Number of events in this chunk */
+    uint32_t offset;
+    uint32_t count;
 } domes_trace_DataHeader;
 
-/* End of dump message */
+/* DEPRECATED: Use TraceDumpComplete instead */
 typedef struct _domes_trace_DumpEnd {
-    uint32_t total_events; /* Total events sent */
-    uint32_t checksum; /* Simple checksum of all event data */
+    uint32_t total_events;
+    uint32_t checksum;
 } domes_trace_DumpEnd;
 
-/* Status response message */
+/* DEPRECATED: Use TraceStatusResponse instead */
 typedef struct _domes_trace_StatusResponse {
-    bool initialized; /* True if trace system initialized */
-    bool enabled; /* True if tracing is currently enabled */
-    uint32_t event_count; /* Approximate events in buffer */
-    uint32_t dropped_count; /* Events dropped since last clear */
-    uint32_t buffer_size; /* Total buffer size in bytes */
+    bool initialized;
+    bool enabled;
+    uint32_t event_count;
+    uint32_t dropped_count;
+    uint32_t buffer_size;
 } domes_trace_StatusResponse;
-
-/* ACK response message */
-typedef struct _domes_trace_AckResponse {
-    domes_trace_Status status;
-} domes_trace_AckResponse;
 
 
 #ifdef __cplusplus
@@ -161,21 +221,39 @@ extern "C" {
 #define domes_trace_AckResponse_status_ENUMTYPE domes_trace_Status
 
 
+
+
+
+
+
+
 /* Initializer values for message structs */
 #define domes_trace_Event_init_default           {0, 0, _domes_trace_EventType_MIN, _domes_trace_Category_MIN, 0, 0}
 #define domes_trace_TaskEntry_init_default       {0, ""}
+#define domes_trace_TraceSessionInfo_init_default {0, 0, 0, 0, 0, 0, {domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default}, 0, 0}
+#define domes_trace_TraceDataChunk_init_default  {0, 0, {0, {0}}}
+#define domes_trace_TraceDumpComplete_init_default {0, 0}
+#define domes_trace_TraceStatusResponse_init_default {0, 0, 0, 0, 0, 0, 0}
+#define domes_trace_AckResponse_init_default     {_domes_trace_Status_MIN}
+#define domes_trace_StreamConfig_init_default    {0, 0, 0, 0}
+#define domes_trace_StreamBatch_init_default     {0, 0, {0, {0}}}
 #define domes_trace_Metadata_init_default        {0, 0, 0, 0, 0, {domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default}}
 #define domes_trace_DataHeader_init_default      {0, 0}
 #define domes_trace_DumpEnd_init_default         {0, 0}
 #define domes_trace_StatusResponse_init_default  {0, 0, 0, 0, 0}
-#define domes_trace_AckResponse_init_default     {_domes_trace_Status_MIN}
 #define domes_trace_Event_init_zero              {0, 0, _domes_trace_EventType_MIN, _domes_trace_Category_MIN, 0, 0}
 #define domes_trace_TaskEntry_init_zero          {0, ""}
+#define domes_trace_TraceSessionInfo_init_zero   {0, 0, 0, 0, 0, 0, {domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero}, 0, 0}
+#define domes_trace_TraceDataChunk_init_zero     {0, 0, {0, {0}}}
+#define domes_trace_TraceDumpComplete_init_zero  {0, 0}
+#define domes_trace_TraceStatusResponse_init_zero {0, 0, 0, 0, 0, 0, 0}
+#define domes_trace_AckResponse_init_zero        {_domes_trace_Status_MIN}
+#define domes_trace_StreamConfig_init_zero       {0, 0, 0, 0}
+#define domes_trace_StreamBatch_init_zero        {0, 0, {0, {0}}}
 #define domes_trace_Metadata_init_zero           {0, 0, 0, 0, 0, {domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero}}
 #define domes_trace_DataHeader_init_zero         {0, 0}
 #define domes_trace_DumpEnd_init_zero            {0, 0}
 #define domes_trace_StatusResponse_init_zero     {0, 0, 0, 0, 0}
-#define domes_trace_AckResponse_init_zero        {_domes_trace_Status_MIN}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define domes_trace_Event_timestamp_tag          1
@@ -186,6 +264,34 @@ extern "C" {
 #define domes_trace_Event_arg2_tag               6
 #define domes_trace_TaskEntry_task_id_tag        1
 #define domes_trace_TaskEntry_name_tag           2
+#define domes_trace_TraceSessionInfo_pod_id_tag  1
+#define domes_trace_TraceSessionInfo_event_count_tag 2
+#define domes_trace_TraceSessionInfo_dropped_count_tag 3
+#define domes_trace_TraceSessionInfo_start_timestamp_us_tag 4
+#define domes_trace_TraceSessionInfo_end_timestamp_us_tag 5
+#define domes_trace_TraceSessionInfo_tasks_tag   6
+#define domes_trace_TraceSessionInfo_buffer_size_bytes_tag 7
+#define domes_trace_TraceSessionInfo_clock_offset_us_tag 8
+#define domes_trace_TraceDataChunk_offset_tag    1
+#define domes_trace_TraceDataChunk_count_tag     2
+#define domes_trace_TraceDataChunk_events_tag    3
+#define domes_trace_TraceDumpComplete_total_events_tag 1
+#define domes_trace_TraceDumpComplete_checksum_tag 2
+#define domes_trace_TraceStatusResponse_initialized_tag 1
+#define domes_trace_TraceStatusResponse_enabled_tag 2
+#define domes_trace_TraceStatusResponse_streaming_tag 3
+#define domes_trace_TraceStatusResponse_event_count_tag 4
+#define domes_trace_TraceStatusResponse_dropped_count_tag 5
+#define domes_trace_TraceStatusResponse_buffer_size_tag 6
+#define domes_trace_TraceStatusResponse_stream_category_mask_tag 7
+#define domes_trace_AckResponse_status_tag       1
+#define domes_trace_StreamConfig_enable_tag      1
+#define domes_trace_StreamConfig_category_mask_tag 2
+#define domes_trace_StreamConfig_max_rate_hz_tag 3
+#define domes_trace_StreamConfig_include_kernel_tag 4
+#define domes_trace_StreamBatch_sequence_tag     1
+#define domes_trace_StreamBatch_dropped_tag      2
+#define domes_trace_StreamBatch_events_tag       3
 #define domes_trace_Metadata_event_count_tag     1
 #define domes_trace_Metadata_dropped_count_tag   2
 #define domes_trace_Metadata_start_timestamp_tag 3
@@ -200,7 +306,6 @@ extern "C" {
 #define domes_trace_StatusResponse_event_count_tag 3
 #define domes_trace_StatusResponse_dropped_count_tag 4
 #define domes_trace_StatusResponse_buffer_size_tag 5
-#define domes_trace_AckResponse_status_tag       1
 
 /* Struct field encoding specification for nanopb */
 #define domes_trace_Event_FIELDLIST(X, a) \
@@ -218,6 +323,63 @@ X(a, STATIC,   SINGULAR, UINT32,   task_id,           1) \
 X(a, STATIC,   SINGULAR, STRING,   name,              2)
 #define domes_trace_TaskEntry_CALLBACK NULL
 #define domes_trace_TaskEntry_DEFAULT NULL
+
+#define domes_trace_TraceSessionInfo_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   pod_id,            1) \
+X(a, STATIC,   SINGULAR, UINT32,   event_count,       2) \
+X(a, STATIC,   SINGULAR, UINT32,   dropped_count,     3) \
+X(a, STATIC,   SINGULAR, UINT32,   start_timestamp_us,   4) \
+X(a, STATIC,   SINGULAR, UINT32,   end_timestamp_us,   5) \
+X(a, STATIC,   REPEATED, MESSAGE,  tasks,             6) \
+X(a, STATIC,   SINGULAR, UINT32,   buffer_size_bytes,   7) \
+X(a, STATIC,   SINGULAR, INT64,    clock_offset_us,   8)
+#define domes_trace_TraceSessionInfo_CALLBACK NULL
+#define domes_trace_TraceSessionInfo_DEFAULT NULL
+#define domes_trace_TraceSessionInfo_tasks_MSGTYPE domes_trace_TaskEntry
+
+#define domes_trace_TraceDataChunk_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   offset,            1) \
+X(a, STATIC,   SINGULAR, UINT32,   count,             2) \
+X(a, STATIC,   SINGULAR, BYTES,    events,            3)
+#define domes_trace_TraceDataChunk_CALLBACK NULL
+#define domes_trace_TraceDataChunk_DEFAULT NULL
+
+#define domes_trace_TraceDumpComplete_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   total_events,      1) \
+X(a, STATIC,   SINGULAR, UINT32,   checksum,          2)
+#define domes_trace_TraceDumpComplete_CALLBACK NULL
+#define domes_trace_TraceDumpComplete_DEFAULT NULL
+
+#define domes_trace_TraceStatusResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     initialized,       1) \
+X(a, STATIC,   SINGULAR, BOOL,     enabled,           2) \
+X(a, STATIC,   SINGULAR, BOOL,     streaming,         3) \
+X(a, STATIC,   SINGULAR, UINT32,   event_count,       4) \
+X(a, STATIC,   SINGULAR, UINT32,   dropped_count,     5) \
+X(a, STATIC,   SINGULAR, UINT32,   buffer_size,       6) \
+X(a, STATIC,   SINGULAR, UINT32,   stream_category_mask,   7)
+#define domes_trace_TraceStatusResponse_CALLBACK NULL
+#define domes_trace_TraceStatusResponse_DEFAULT NULL
+
+#define domes_trace_AckResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UENUM,    status,            1)
+#define domes_trace_AckResponse_CALLBACK NULL
+#define domes_trace_AckResponse_DEFAULT NULL
+
+#define domes_trace_StreamConfig_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     enable,            1) \
+X(a, STATIC,   SINGULAR, UINT32,   category_mask,     2) \
+X(a, STATIC,   SINGULAR, UINT32,   max_rate_hz,       3) \
+X(a, STATIC,   SINGULAR, BOOL,     include_kernel,    4)
+#define domes_trace_StreamConfig_CALLBACK NULL
+#define domes_trace_StreamConfig_DEFAULT NULL
+
+#define domes_trace_StreamBatch_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   sequence,          1) \
+X(a, STATIC,   SINGULAR, UINT32,   dropped,           2) \
+X(a, STATIC,   SINGULAR, BYTES,    events,            3)
+#define domes_trace_StreamBatch_CALLBACK NULL
+#define domes_trace_StreamBatch_DEFAULT NULL
 
 #define domes_trace_Metadata_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   event_count,       1) \
@@ -250,37 +412,50 @@ X(a, STATIC,   SINGULAR, UINT32,   buffer_size,       5)
 #define domes_trace_StatusResponse_CALLBACK NULL
 #define domes_trace_StatusResponse_DEFAULT NULL
 
-#define domes_trace_AckResponse_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, UENUM,    status,            1)
-#define domes_trace_AckResponse_CALLBACK NULL
-#define domes_trace_AckResponse_DEFAULT NULL
-
 extern const pb_msgdesc_t domes_trace_Event_msg;
 extern const pb_msgdesc_t domes_trace_TaskEntry_msg;
+extern const pb_msgdesc_t domes_trace_TraceSessionInfo_msg;
+extern const pb_msgdesc_t domes_trace_TraceDataChunk_msg;
+extern const pb_msgdesc_t domes_trace_TraceDumpComplete_msg;
+extern const pb_msgdesc_t domes_trace_TraceStatusResponse_msg;
+extern const pb_msgdesc_t domes_trace_AckResponse_msg;
+extern const pb_msgdesc_t domes_trace_StreamConfig_msg;
+extern const pb_msgdesc_t domes_trace_StreamBatch_msg;
 extern const pb_msgdesc_t domes_trace_Metadata_msg;
 extern const pb_msgdesc_t domes_trace_DataHeader_msg;
 extern const pb_msgdesc_t domes_trace_DumpEnd_msg;
 extern const pb_msgdesc_t domes_trace_StatusResponse_msg;
-extern const pb_msgdesc_t domes_trace_AckResponse_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
 #define domes_trace_Event_fields &domes_trace_Event_msg
 #define domes_trace_TaskEntry_fields &domes_trace_TaskEntry_msg
+#define domes_trace_TraceSessionInfo_fields &domes_trace_TraceSessionInfo_msg
+#define domes_trace_TraceDataChunk_fields &domes_trace_TraceDataChunk_msg
+#define domes_trace_TraceDumpComplete_fields &domes_trace_TraceDumpComplete_msg
+#define domes_trace_TraceStatusResponse_fields &domes_trace_TraceStatusResponse_msg
+#define domes_trace_AckResponse_fields &domes_trace_AckResponse_msg
+#define domes_trace_StreamConfig_fields &domes_trace_StreamConfig_msg
+#define domes_trace_StreamBatch_fields &domes_trace_StreamBatch_msg
 #define domes_trace_Metadata_fields &domes_trace_Metadata_msg
 #define domes_trace_DataHeader_fields &domes_trace_DataHeader_msg
 #define domes_trace_DumpEnd_fields &domes_trace_DumpEnd_msg
 #define domes_trace_StatusResponse_fields &domes_trace_StatusResponse_msg
-#define domes_trace_AckResponse_fields &domes_trace_AckResponse_msg
 
 /* Maximum encoded size of messages (where known) */
-#define DOMES_TRACE_TRACE_PB_H_MAX_SIZE          domes_trace_Metadata_size
+#define DOMES_TRACE_TRACE_PB_H_MAX_SIZE          domes_trace_StreamBatch_size
 #define domes_trace_AckResponse_size             3
 #define domes_trace_DataHeader_size              12
 #define domes_trace_DumpEnd_size                 12
 #define domes_trace_Event_size                   28
 #define domes_trace_Metadata_size                824
 #define domes_trace_StatusResponse_size          22
+#define domes_trace_StreamBatch_size             1039
+#define domes_trace_StreamConfig_size            16
 #define domes_trace_TaskEntry_size               23
+#define domes_trace_TraceDataChunk_size          271
+#define domes_trace_TraceDumpComplete_size       12
+#define domes_trace_TraceSessionInfo_size        847
+#define domes_trace_TraceStatusResponse_size     30
 
 #ifdef __cplusplus
 } /* extern "C" */

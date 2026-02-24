@@ -12,6 +12,27 @@ PB_BIND(domes_trace_Event, domes_trace_Event, AUTO)
 PB_BIND(domes_trace_TaskEntry, domes_trace_TaskEntry, AUTO)
 
 
+PB_BIND(domes_trace_TraceSessionInfo, domes_trace_TraceSessionInfo, 2)
+
+
+PB_BIND(domes_trace_TraceDataChunk, domes_trace_TraceDataChunk, 2)
+
+
+PB_BIND(domes_trace_TraceDumpComplete, domes_trace_TraceDumpComplete, AUTO)
+
+
+PB_BIND(domes_trace_TraceStatusResponse, domes_trace_TraceStatusResponse, AUTO)
+
+
+PB_BIND(domes_trace_AckResponse, domes_trace_AckResponse, AUTO)
+
+
+PB_BIND(domes_trace_StreamConfig, domes_trace_StreamConfig, AUTO)
+
+
+PB_BIND(domes_trace_StreamBatch, domes_trace_StreamBatch, 2)
+
+
 PB_BIND(domes_trace_Metadata, domes_trace_Metadata, 2)
 
 
@@ -22,9 +43,6 @@ PB_BIND(domes_trace_DumpEnd, domes_trace_DumpEnd, AUTO)
 
 
 PB_BIND(domes_trace_StatusResponse, domes_trace_StatusResponse, AUTO)
-
-
-PB_BIND(domes_trace_AckResponse, domes_trace_AckResponse, AUTO)
 
 
 

@@ -3,6 +3,11 @@
 //
 // THIS IS THE SINGLE SOURCE OF TRUTH FOR ALL TRACE PROTOCOL DEFINITIONS.
 // DO NOT duplicate these definitions in firmware or CLI code.
+//
+// Wire format: All messages below are protobuf-encoded payloads inside
+// the frame protocol: [0xAA 0x55][Len][MsgType][Payload][CRC32]
+// Exception: TraceEvent is a 16-byte binary struct carried in 'bytes' fields
+// for efficiency (see TraceDataChunk.events, StreamBatch.events).
 syntax = "proto3";
 package domes.trace;
 
@@ -10,14 +15,18 @@ package domes.trace;
 // Used in the frame header [0xAA 0x55][Len][MsgType][Payload][CRC32]
 enum MsgType {
     MSG_TYPE_UNKNOWN = 0;
-    MSG_TYPE_START = 0x10;   // Start trace recording (host -> device)
-    MSG_TYPE_STOP = 0x11;    // Stop trace recording (host -> device)
-    MSG_TYPE_DUMP = 0x12;    // Request trace dump (host -> device)
-    MSG_TYPE_DATA = 0x13;    // Trace data chunk (device -> host)
-    MSG_TYPE_END = 0x14;     // End of trace dump (device -> host)
-    MSG_TYPE_CLEAR = 0x15;   // Clear trace buffer (host -> device)
-    MSG_TYPE_STATUS = 0x16;  // Query trace status (host -> device)
-    MSG_TYPE_ACK = 0x17;     // Acknowledge command (device -> host)
+    MSG_TYPE_START = 0x10;        // Start trace recording (host -> device, empty payload)
+    MSG_TYPE_STOP = 0x11;         // Stop trace recording (host -> device, empty payload)
+    MSG_TYPE_DUMP = 0x12;         // Request trace dump (host -> device, empty payload)
+    MSG_TYPE_DATA = 0x13;         // Trace data chunk (device -> host, TraceDataChunk)
+    MSG_TYPE_END = 0x14;          // End of trace dump (device -> host, TraceDumpComplete)
+    MSG_TYPE_CLEAR = 0x15;        // Clear trace buffer (host -> device, empty payload)
+    MSG_TYPE_STATUS_REQ = 0x16;   // Query trace status (host -> device, empty payload)
+    MSG_TYPE_STATUS_RESP = 0x17;  // Trace status response (device -> host, TraceStatusResponse)
+    MSG_TYPE_STREAM_CFG = 0x18;   // Configure streaming (host -> device, StreamConfig)
+    MSG_TYPE_STREAM_DATA = 0x19;  // Streamed event batch (device -> host, StreamBatch)
+    MSG_TYPE_SESSION_INFO = 0x1A; // Session metadata (device -> host, TraceSessionInfo)
+    MSG_TYPE_ACK = 0x1B;          // Acknowledge command (device -> host, AckResponse)
 }
 
 // Status codes for trace ACK responses
@@ -44,7 +53,7 @@ enum Category {
     CATEGORY_HAPTIC = 9;     // Haptic feedback
     CATEGORY_BLE = 10;       // BLE operations
     CATEGORY_NVS = 11;       // NVS storage operations
-    CATEGORY_ESPNOW = 12;   // ESP-NOW peer-to-peer operations
+    CATEGORY_ESPNOW = 12;    // ESP-NOW peer-to-peer operations
 }
 
 // Types of trace events
@@ -70,6 +79,10 @@ enum EventType {
     EVENT_TYPE_COMPLETE = 0x24;    // Complete event (has duration in arg2)
 }
 
+// ============================================================
+// Reference message (NOT used on wire — events stay binary)
+// ============================================================
+
 // Compact trace event (16 bytes when serialized as binary)
 // Note: For wire efficiency, trace events use fixed binary format, not protobuf.
 // This message is for reference/documentation and host-side processing.
@@ -82,44 +95,108 @@ message Event {
     uint32 arg2 = 6;        // Secondary argument (counter value, duration)
 }
 
-// Task entry mapping task ID to name
+// ============================================================
+// Protobuf wire messages (encoded with nanopb/prost)
+// ============================================================
+
+// Task name mapping (task ID -> human-readable name)
 message TaskEntry {
     uint32 task_id = 1;
-    string name = 2;
+    string name = 2;        // Max 16 chars
 }
 
-// Trace metadata sent at start of dump
+// Session metadata sent at start of dump (MsgType: SESSION_INFO 0x1A)
+// Replaces the old binary TraceMetadata struct.
+message TraceSessionInfo {
+    uint32 pod_id = 1;              // Pod identity (from NVS, 0 if unset)
+    uint32 event_count = 2;         // Events in this dump
+    uint32 dropped_count = 3;       // Events dropped (buffer full)
+    uint32 start_timestamp_us = 4;  // First event timestamp
+    uint32 end_timestamp_us = 5;    // Last event timestamp
+    repeated TaskEntry tasks = 6;   // Registered task names
+    uint32 buffer_size_bytes = 7;   // Ring buffer size
+    int64 clock_offset_us = 8;      // Offset from master clock (multi-pod sync)
+}
+
+// Chunk of binary trace events (MsgType: DATA 0x13)
+// The events field contains raw 16-byte TraceEvent structs.
+message TraceDataChunk {
+    uint32 offset = 1;     // Event offset in dump (0-based)
+    uint32 count = 2;      // Number of 16-byte events in data
+    bytes events = 3;      // Raw binary: count * 16 bytes of TraceEvent[]
+}
+
+// End-of-dump marker (MsgType: END 0x14)
+message TraceDumpComplete {
+    uint32 total_events = 1;
+    uint32 checksum = 2;     // Simple byte-sum checksum of all event data
+}
+
+// Trace status response (MsgType: STATUS_RESP 0x17)
+message TraceStatusResponse {
+    bool initialized = 1;
+    bool enabled = 2;              // Recording to ring buffer
+    bool streaming = 3;            // Real-time streaming active
+    uint32 event_count = 4;        // Events in buffer
+    uint32 dropped_count = 5;      // Total drops since last clear
+    uint32 buffer_size = 6;        // Buffer capacity in bytes
+    uint32 stream_category_mask = 7; // Active stream filter (0 = all)
+}
+
+// ACK response (MsgType: ACK 0x1B)
+message AckResponse {
+    Status status = 1;
+}
+
+// ============================================================
+// Streaming messages (real-time trace)
+// ============================================================
+
+// Configure real-time streaming (MsgType: STREAM_CFG 0x18, host -> device)
+message StreamConfig {
+    bool enable = 1;          // true = start streaming, false = stop
+    uint32 category_mask = 2; // Bitmask of categories to stream (0 = all)
+    uint32 max_rate_hz = 3;   // Max events/sec (0 = unlimited)
+    bool include_kernel = 4;  // Include task switch/ISR events
+}
+
+// Streamed event batch (MsgType: STREAM_DATA 0x19, device -> host)
+message StreamBatch {
+    uint32 sequence = 1;     // Monotonic sequence number (detect gaps)
+    uint32 dropped = 2;      // Events dropped since last batch (overflow)
+    bytes events = 3;        // Raw binary: N * 16 bytes of TraceEvent[]
+}
+
+// ============================================================
+// Deprecated messages (kept for reference, not used on wire)
+// ============================================================
+
+// DEPRECATED: Use TraceSessionInfo instead
 message Metadata {
-    uint32 event_count = 1;      // Total events in this dump
-    uint32 dropped_count = 2;    // Events dropped due to buffer full
-    uint32 start_timestamp = 3;  // First event timestamp (microseconds)
-    uint32 end_timestamp = 4;    // Last event timestamp (microseconds)
+    uint32 event_count = 1;
+    uint32 dropped_count = 2;
+    uint32 start_timestamp = 3;
+    uint32 end_timestamp = 4;
     repeated TaskEntry tasks = 5;
 }
 
-// Header for trace data chunks
+// DEPRECATED: Use TraceDataChunk instead
 message DataHeader {
-    uint32 offset = 1;  // Event offset in dump (0-based)
-    uint32 count = 2;   // Number of events in this chunk
-    // Followed by: Event[count] in binary format
+    uint32 offset = 1;
+    uint32 count = 2;
 }
 
-// End of dump message
+// DEPRECATED: Use TraceDumpComplete instead
 message DumpEnd {
-    uint32 total_events = 1;  // Total events sent
-    uint32 checksum = 2;      // Simple checksum of all event data
+    uint32 total_events = 1;
+    uint32 checksum = 2;
 }
 
-// Status response message
+// DEPRECATED: Use TraceStatusResponse instead
 message StatusResponse {
-    bool initialized = 1;      // True if trace system initialized
-    bool enabled = 2;          // True if tracing is currently enabled
-    uint32 event_count = 3;    // Approximate events in buffer
-    uint32 dropped_count = 4;  // Events dropped since last clear
-    uint32 buffer_size = 5;    // Total buffer size in bytes
-}
-
-// ACK response message
-message AckResponse {
-    Status status = 1;
+    bool initialized = 1;
+    bool enabled = 2;
+    uint32 event_count = 3;
+    uint32 dropped_count = 4;
+    uint32 buffer_size = 5;
 }

@@ -50,9 +50,11 @@ public:
      *
      * @param transport Transport to receive OTA data on
      * @param features Feature manager for runtime config (optional)
+     * @param podId Pod identity for trace session metadata (0 if unset)
      */
     explicit SerialOtaReceiver(ITransport& transport,
-                                config::FeatureManager* features = nullptr);
+                                config::FeatureManager* features = nullptr,
+                                uint8_t podId = 0);
 
     ~SerialOtaReceiver() override = default;
 
