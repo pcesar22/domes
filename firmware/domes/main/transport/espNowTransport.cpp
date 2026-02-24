@@ -171,6 +171,7 @@ TransportError EspNowTransport::send(const uint8_t* data, size_t len) {
     xSemaphoreGive(txMutex_);
 
     // Broadcast always reports success (no peer ACK), so don't check status.
+    txCount_.fetch_add(1, std::memory_order_relaxed);
     TRACE_COUNTER(TRACE_ID("EspNow.BytesSent"), static_cast<uint32_t>(len), trace::Category::kEspNow);
     return TransportError::kOk;
 }
@@ -216,10 +217,12 @@ TransportError EspNowTransport::sendTo(const uint8_t macAddr[ESP_NOW_ETH_ALEN],
 
     if (lastSendStatus_.load() != ESP_NOW_SEND_SUCCESS) {
         ESP_LOGW(kTag, "Unicast send failed (no ACK)");
+        txFailCount_.fetch_add(1, std::memory_order_relaxed);
         TRACE_INSTANT(TRACE_ID("EspNow.SendFail"), trace::Category::kEspNow);
         return TransportError::kIoError;
     }
 
+    txCount_.fetch_add(1, std::memory_order_relaxed);
     TRACE_COUNTER(TRACE_ID("EspNow.BytesSent"), static_cast<uint32_t>(len), trace::Category::kEspNow);
     return TransportError::kOk;
 }
@@ -295,6 +298,9 @@ void EspNowTransport::disconnect() {
     }
 
     peerCount_ = 0;
+    txCount_ = 0;
+    rxCount_ = 0;
+    txFailCount_ = 0;
     ESP_LOGI(kTag, "ESP-NOW transport disconnected");
 }
 
@@ -361,6 +367,7 @@ void EspNowTransport::onReceive(const esp_now_recv_info_t* info, const uint8_t* 
 
     // Signal data available
     xSemaphoreGive(rxSemaphore_);
+    rxCount_.fetch_add(1, std::memory_order_relaxed);
 
     ESP_LOGD(kTag, "Received %d bytes from %02X:%02X:%02X:%02X:%02X:%02X",
              len,

@@ -115,6 +115,24 @@ public:
         }
     }
 
+    /**
+     * @brief Set ESP-NOW transport for observability queries
+     */
+    void setEspNowTransport(EspNowTransport* transport) {
+        if (configHandler_) {
+            configHandler_->setEspNowTransport(transport);
+        }
+    }
+
+    /**
+     * @brief Set ESP-NOW service for observability queries
+     */
+    void setEspNowService(EspNowService* service) {
+        if (configHandler_) {
+            configHandler_->setEspNowService(service);
+        }
+    }
+
 private:
     /**
      * @brief Handle OTA_BEGIN message

@@ -101,6 +101,21 @@ public:
      */
     uint8_t getPeerCount() const { return peerCount_.load(std::memory_order_relaxed); }
 
+    /**
+     * @brief Get TX packet count
+     */
+    uint32_t getTxCount() const { return txCount_.load(std::memory_order_relaxed); }
+
+    /**
+     * @brief Get RX packet count
+     */
+    uint32_t getRxCount() const { return rxCount_.load(std::memory_order_relaxed); }
+
+    /**
+     * @brief Get TX failure count
+     */
+    uint32_t getTxFailCount() const { return txFailCount_.load(std::memory_order_relaxed); }
+
     // =========================================================================
     // Internal callbacks (called from ESP-NOW stack)
     // =========================================================================
@@ -130,6 +145,11 @@ private:
     /// State
     std::atomic<bool> initialized_{false};
     std::atomic<uint8_t> peerCount_{0};
+
+    /// Packet counters for observability
+    std::atomic<uint32_t> txCount_{0};
+    std::atomic<uint32_t> rxCount_{0};
+    std::atomic<uint32_t> txFailCount_{0};
 };
 
 }  // namespace domes

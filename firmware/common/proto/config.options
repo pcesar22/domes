@@ -12,3 +12,17 @@ domes.config.GetSystemInfoResponse.firmware_version  max_size:32
 
 # GetModeResponse: no variable-length fields, no options needed
 # SetPodIdRequest/Response: no variable-length fields, no options needed
+
+# Observability messages
+# TaskHealth: task name max 16 chars
+domes.config.TaskHealth.name  max_size:16
+
+# GetHealthResponse: max 16 tasks
+domes.config.GetHealthResponse.tasks  max_count:16
+
+# EspNowPeer: MAC address is 6 bytes
+domes.config.EspNowPeer.mac  max_size:6
+
+# GetEspNowStatusResponse: discovery state string max 16 chars, max 8 peers
+domes.config.GetEspNowStatusResponse.discovery_state  max_size:16
+domes.config.GetEspNowStatusResponse.peers  max_count:8

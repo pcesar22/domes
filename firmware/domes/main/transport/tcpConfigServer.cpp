@@ -181,6 +181,8 @@ void TcpConfigServer::handleClient(int clientSock) {
     handler.setLedService(ledService_);
     handler.setImuService(imuService_);
     handler.setModeManager(modeManager_);
+    handler.setEspNowTransport(espNowTransport_);
+    handler.setEspNowService(espNowService_);
 
     // Frame decoder
     FrameDecoder decoder;

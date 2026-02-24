@@ -22,8 +22,10 @@
 
 namespace domes {
 
-class LedService;  // Forward declaration
-class ImuService;  // Forward declaration
+class LedService;       // Forward declaration
+class ImuService;       // Forward declaration
+class EspNowTransport;  // Forward declaration
+class EspNowService;    // Forward declaration
 
 /**
  * @brief Default TCP port for config server
@@ -113,6 +115,16 @@ public:
      */
     void setModeManager(config::ModeManager* modeManager) { modeManager_ = modeManager; }
 
+    /**
+     * @brief Set ESP-NOW transport for observability queries
+     */
+    void setEspNowTransport(EspNowTransport* transport) { espNowTransport_ = transport; }
+
+    /**
+     * @brief Set ESP-NOW service for observability queries
+     */
+    void setEspNowService(EspNowService* service) { espNowService_ = service; }
+
 private:
     /**
      * @brief Handle a single client connection
@@ -129,6 +141,8 @@ private:
     LedService* ledService_ = nullptr;
     ImuService* imuService_ = nullptr;
     config::ModeManager* modeManager_ = nullptr;
+    EspNowTransport* espNowTransport_ = nullptr;
+    EspNowService* espNowService_ = nullptr;
 
     std::atomic<bool> stopRequested_;
     std::atomic<int> listenSocket_;

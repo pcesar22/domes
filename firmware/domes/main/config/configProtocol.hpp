@@ -44,6 +44,13 @@ enum class MsgType : uint8_t {
     kGetSystemInfoRsp = domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP,
     kSetPodIdReq      = domes_config_MsgType_MSG_TYPE_SET_POD_ID_REQ,
     kSetPodIdRsp      = domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP,
+    // Observability commands (0x38-0x3D)
+    kGetHealthReq         = domes_config_MsgType_MSG_TYPE_GET_HEALTH_REQ,
+    kGetHealthRsp         = domes_config_MsgType_MSG_TYPE_GET_HEALTH_RSP,
+    kGetEspNowStatusReq   = domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_REQ,
+    kGetEspNowStatusRsp   = domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_RSP,
+    kEspNowBenchReq       = domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_REQ,
+    kEspNowBenchRsp       = domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_RSP,
 };
 
 /**
@@ -77,7 +84,7 @@ enum class Status : uint8_t {
  */
 inline bool isConfigMessage(uint8_t type) {
     return type >= static_cast<uint8_t>(MsgType::kListFeaturesReq) &&
-           type <= static_cast<uint8_t>(MsgType::kSetPodIdRsp);
+           type <= static_cast<uint8_t>(MsgType::kEspNowBenchRsp);
 }
 
 /**

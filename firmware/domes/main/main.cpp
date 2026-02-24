@@ -79,6 +79,7 @@ static domes::SerialOtaReceiver* serialOtaReceiver = nullptr;
 static domes::BleOtaService* bleOtaService = nullptr;
 static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
 static domes::EspNowTransport* espNowTransport = nullptr;
+static domes::EspNowService* espNowService = nullptr;
 static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
 static domes::config::ModeManager* modeManager = nullptr;  // System mode manager
 static domes::LedService* ledService = nullptr;  // LED pattern service
@@ -613,6 +614,7 @@ static esp_err_t initEspNow() {
 
     // Start ESP-NOW service (discovery + role negotiation + game loop)
     static domes::EspNowService service(*espNowTransport);
+    espNowService = &service;
 
     // Wire dependencies for game protocol
     if (gameEngine) {
@@ -676,6 +678,12 @@ static esp_err_t initSerialOta(uint8_t podId = 0) {
     }
     if (modeManager) {
         serialOtaReceiver->setModeManager(modeManager);
+    }
+    if (espNowTransport) {
+        serialOtaReceiver->setEspNowTransport(espNowTransport);
+    }
+    if (espNowService) {
+        serialOtaReceiver->setEspNowService(espNowService);
     }
 
     // Create receiver task
@@ -770,6 +778,12 @@ static esp_err_t initTcpConfigServer() {
     }
     if (modeManager) {
         tcpConfigServer->setModeManager(modeManager);
+    }
+    if (espNowTransport) {
+        tcpConfigServer->setEspNowTransport(espNowTransport);
+    }
+    if (espNowService) {
+        tcpConfigServer->setEspNowService(espNowService);
     }
 
     // Create server task
@@ -1195,6 +1209,12 @@ extern "C" void app_main() {
         }
         if (bleOtaReceiver && modeManager) {
             bleOtaReceiver->setModeManager(modeManager);
+        }
+        if (bleOtaReceiver && espNowTransport) {
+            bleOtaReceiver->setEspNowTransport(espNowTransport);
+        }
+        if (bleOtaReceiver && espNowService) {
+            bleOtaReceiver->setEspNowService(espNowService);
         }
     }
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs
