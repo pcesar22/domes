@@ -62,6 +62,11 @@ enum class MsgType : uint8_t {
     // Self-test / smoke test commands (0x44-0x45)
     kSelfTestReq          = domes_config_MsgType_MSG_TYPE_SELF_TEST_REQ,
     kSelfTestRsp          = domes_config_MsgType_MSG_TYPE_SELF_TEST_RSP,
+    // GitHub OTA commands (0x46-0x49)
+    kCheckUpdateReq       = domes_config_MsgType_MSG_TYPE_CHECK_UPDATE_REQ,
+    kCheckUpdateRsp       = domes_config_MsgType_MSG_TYPE_CHECK_UPDATE_RSP,
+    kSetAutoUpdateReq     = domes_config_MsgType_MSG_TYPE_SET_AUTO_UPDATE_REQ,
+    kSetAutoUpdateRsp     = domes_config_MsgType_MSG_TYPE_SET_AUTO_UPDATE_RSP,
 };
 
 /**
@@ -96,7 +101,7 @@ enum class Status : uint8_t {
  */
 inline bool isConfigMessage(uint8_t type) {
     return type >= static_cast<uint8_t>(MsgType::kListFeaturesReq) &&
-           type <= static_cast<uint8_t>(MsgType::kSelfTestRsp);
+           type <= static_cast<uint8_t>(MsgType::kSetAutoUpdateRsp);
 }
 
 /**

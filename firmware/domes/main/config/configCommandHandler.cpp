@@ -17,6 +17,7 @@
 #include "infra/memoryProfiler.hpp"
 #include "infra/nvsConfig.hpp"
 #include "infra/smokeTest.hpp"
+#include "interfaces/iOtaManager.hpp"
 #include "transport/espNowTransport.hpp"
 #include "services/espNowService.hpp"
 
@@ -157,6 +158,16 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
         case MsgType::kSelfTestReq:
             ESP_LOGI(kTag, "Received SELF_TEST");
             handleSelfTest();
+            return true;
+
+        case MsgType::kCheckUpdateReq:
+            ESP_LOGI(kTag, "Received CHECK_UPDATE");
+            handleCheckUpdate();
+            return true;
+
+        case MsgType::kSetAutoUpdateReq:
+            ESP_LOGD(kTag, "Received SET_AUTO_UPDATE");
+            handleSetAutoUpdate(payload, len);
             return true;
 
         default:
@@ -904,6 +915,121 @@ void ConfigCommandHandler::handleSelfTest() {
     }
 
     sendFrame(MsgType::kSelfTestRsp, payload.data(), 1 + stream.bytes_written);
+}
+
+void ConfigCommandHandler::handleCheckUpdate() {
+    domes_config_CheckUpdateResponse resp = domes_config_CheckUpdateResponse_init_zero;
+
+    // Read auto-update NVS setting
+    infra::NvsConfig config;
+    if (config.open(infra::nvs_ns::kConfig) == ESP_OK) {
+        resp.auto_update_enabled =
+            config.getOrDefault<uint8_t>(infra::config_key::kAutoUpdate, 0) != 0;
+        config.close();
+    }
+
+    if (!otaManager_) {
+        ESP_LOGW(kTag, "OTA manager not available");
+        // Still return current version info
+        strncpy(resp.current_version, DOMES_VERSION_STRING, sizeof(resp.current_version) - 1);
+
+        std::array<uint8_t, domes_config_CheckUpdateResponse_size + 10> payload;
+        payload[0] = static_cast<uint8_t>(Status::kError);
+
+        pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+        if (pb_encode(&stream, domes_config_CheckUpdateResponse_fields, &resp)) {
+            sendFrame(MsgType::kCheckUpdateRsp, payload.data(), 1 + stream.bytes_written);
+        }
+        return;
+    }
+
+    // Check for update (this queries GitHub API - may take a few seconds)
+    OtaCheckResult result;
+    esp_err_t err = otaManager_->checkForUpdate(result);
+
+    if (err != ESP_OK) {
+        ESP_LOGW(kTag, "Update check failed: %s", esp_err_to_name(err));
+        strncpy(resp.current_version, DOMES_VERSION_STRING, sizeof(resp.current_version) - 1);
+
+        std::array<uint8_t, domes_config_CheckUpdateResponse_size + 10> payload;
+        payload[0] = static_cast<uint8_t>(Status::kError);
+
+        pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+        if (pb_encode(&stream, domes_config_CheckUpdateResponse_fields, &resp)) {
+            sendFrame(MsgType::kCheckUpdateRsp, payload.data(), 1 + stream.bytes_written);
+        }
+        return;
+    }
+
+    resp.update_available = result.updateAvailable;
+
+    // Format version strings
+    snprintf(resp.current_version, sizeof(resp.current_version), "%d.%d.%d",
+             result.currentVersion.major, result.currentVersion.minor,
+             result.currentVersion.patch);
+
+    if (result.updateAvailable) {
+        snprintf(resp.available_version, sizeof(resp.available_version), "%d.%d.%d",
+                 result.availableVersion.major, result.availableVersion.minor,
+                 result.availableVersion.patch);
+        resp.firmware_size = static_cast<uint32_t>(result.firmwareSize);
+    }
+
+    // Encode: [status_byte][protobuf]
+    std::array<uint8_t, domes_config_CheckUpdateResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&stream, domes_config_CheckUpdateResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode CheckUpdateResponse: %s", PB_GET_ERROR(&stream));
+        return;
+    }
+
+    sendFrame(MsgType::kCheckUpdateRsp, payload.data(), 1 + stream.bytes_written);
+}
+
+void ConfigCommandHandler::handleSetAutoUpdate(const uint8_t* payload, size_t len) {
+    domes_config_SetAutoUpdateRequest req = domes_config_SetAutoUpdateRequest_init_zero;
+    pb_istream_t stream = pb_istream_from_buffer(payload, len);
+
+    if (!pb_decode(&stream, domes_config_SetAutoUpdateRequest_fields, &req)) {
+        ESP_LOGW(kTag, "Failed to decode SET_AUTO_UPDATE: %s", PB_GET_ERROR(&stream));
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetAutoUpdateRsp, errPayload.data(), 1);
+        return;
+    }
+
+    // Write to NVS
+    infra::NvsConfig config;
+    if (config.open(infra::nvs_ns::kConfig) != ESP_OK) {
+        ESP_LOGE(kTag, "Failed to open NVS for auto_update write");
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetAutoUpdateRsp, errPayload.data(), 1);
+        return;
+    }
+
+    config.setU8(infra::config_key::kAutoUpdate, req.enabled ? 1 : 0);
+    config.commit();
+    config.close();
+
+    ESP_LOGI(kTag, "Auto-update %s", req.enabled ? "enabled" : "disabled");
+
+    // Send response
+    domes_config_SetAutoUpdateResponse resp = domes_config_SetAutoUpdateResponse_init_zero;
+    resp.enabled = req.enabled;
+
+    std::array<uint8_t, domes_config_SetAutoUpdateResponse_size + 10> respPayload;
+    respPayload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(respPayload.data() + 1, respPayload.size() - 1);
+    if (!pb_encode(&ostream, domes_config_SetAutoUpdateResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode SetAutoUpdateResponse: %s", PB_GET_ERROR(&ostream));
+        return;
+    }
+
+    sendFrame(MsgType::kSetAutoUpdateRsp, respPayload.data(), 1 + ostream.bytes_written);
 }
 
 }  // namespace domes::config

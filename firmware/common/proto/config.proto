@@ -53,9 +53,15 @@ enum MsgType {
     MSG_TYPE_GET_MEMORY_PROFILE_REQ = 0x42;
     MSG_TYPE_GET_MEMORY_PROFILE_RSP = 0x43;
 
-    // Self-test / smoke test commands (0x44-0x45 range)
+    // Self-test / smoke test commands (0x44-0x45)
     MSG_TYPE_SELF_TEST_REQ = 0x44;
     MSG_TYPE_SELF_TEST_RSP = 0x45;
+
+    // GitHub OTA commands (0x46-0x49)
+    MSG_TYPE_CHECK_UPDATE_REQ = 0x46;
+    MSG_TYPE_CHECK_UPDATE_RSP = 0x47;
+    MSG_TYPE_SET_AUTO_UPDATE_REQ = 0x48;
+    MSG_TYPE_SET_AUTO_UPDATE_RSP = 0x49;
 }
 
 // Status codes for responses
@@ -344,6 +350,32 @@ message SelfTestResponse {
     uint32 tests_run = 1;       // Total tests executed
     uint32 tests_passed = 2;    // Number of passes
     repeated SelfTestResult results = 3;  // Per-test results
+}
+
+// ============================================================================
+// GitHub OTA update messages
+// ============================================================================
+
+// Check for firmware updates (triggers GitHub API query)
+message CheckUpdateRequest {
+    // Empty - checks GitHub releases for newer version
+}
+
+message CheckUpdateResponse {
+    bool update_available = 1;        // True if newer version found
+    string current_version = 2;       // Running firmware version (e.g., "1.2.3")
+    string available_version = 3;     // Latest release version (e.g., "1.3.0")
+    uint32 firmware_size = 4;         // Size of new firmware in bytes
+    bool auto_update_enabled = 5;     // Current auto-update setting
+}
+
+// Enable/disable automatic OTA updates on WiFi connect
+message SetAutoUpdateRequest {
+    bool enabled = 1;
+}
+
+message SetAutoUpdateResponse {
+    bool enabled = 1;     // New auto-update setting after write
 }
 
 // Top-level request envelope

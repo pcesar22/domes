@@ -7,10 +7,11 @@
 //! firmware/common/proto/*.proto. DO NOT hand-roll protocol types here.
 
 use crate::proto::config::{
-    ClearCrashDumpResponse, Color, CrashDumpResponse, EspNowBenchRequest, EspNowBenchResponse,
-    Feature, GetEspNowStatusResponse, GetHealthResponse, GetLedPatternResponse,
-    GetMemoryProfileResponse, GetModeResponse, GetSystemInfoResponse, LedPattern, LedPatternType,
-    ListFeaturesResponse, SelfTestResponse, SetFeatureRequest, SetFeatureResponse,
+    CheckUpdateResponse, ClearCrashDumpResponse, Color, CrashDumpResponse, EspNowBenchRequest,
+    EspNowBenchResponse, Feature, GetEspNowStatusResponse, GetHealthResponse,
+    GetLedPatternResponse, GetMemoryProfileResponse, GetModeResponse, GetSystemInfoResponse,
+    LedPattern, LedPatternType, ListFeaturesResponse, SelfTestResponse, SetAutoUpdateRequest,
+    SetAutoUpdateResponse, SetFeatureRequest, SetFeatureResponse,
     SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest, SetLedPatternResponse,
     SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse, Status, SystemMode,
 };
@@ -59,6 +60,10 @@ impl TryFrom<u8> for ConfigMsgType {
             0x43 => Ok(Self::GetMemoryProfileRsp),
             0x44 => Ok(Self::SelfTestReq),
             0x45 => Ok(Self::SelfTestRsp),
+            0x46 => Ok(Self::CheckUpdateReq),
+            0x47 => Ok(Self::CheckUpdateRsp),
+            0x48 => Ok(Self::SetAutoUpdateReq),
+            0x49 => Ok(Self::SetAutoUpdateRsp),
             _ => Err(ProtocolError::UnknownMessageType(value)),
         }
     }
@@ -660,6 +665,77 @@ pub fn parse_self_test_response(payload: &[u8]) -> Result<CliSelfTestInfo, Proto
         tests_passed: resp.tests_passed,
         results,
     })
+}
+
+// ============================================================================
+// GitHub OTA types and parsers
+// ============================================================================
+
+/// Update check info for CLI use
+#[derive(Debug, Clone)]
+pub struct CliUpdateInfo {
+    pub update_available: bool,
+    pub current_version: String,
+    pub available_version: String,
+    pub firmware_size: u32,
+    pub auto_update_enabled: bool,
+}
+
+/// Serialize SetAutoUpdateRequest
+pub fn serialize_set_auto_update(enabled: bool) -> Vec<u8> {
+    let req = SetAutoUpdateRequest { enabled };
+    req.encode_to_vec()
+}
+
+/// Parse CheckUpdateResponse payload
+/// Format: [status_byte][protobuf_CheckUpdateResponse]
+pub fn parse_check_update_response(payload: &[u8]) -> Result<CliUpdateInfo, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = CheckUpdateResponse::decode(&payload[1..])?;
+
+    Ok(CliUpdateInfo {
+        update_available: resp.update_available,
+        current_version: resp.current_version,
+        available_version: resp.available_version,
+        firmware_size: resp.firmware_size,
+        auto_update_enabled: resp.auto_update_enabled,
+    })
+}
+
+/// Parse SetAutoUpdateResponse payload
+/// Format: [status_byte][protobuf_SetAutoUpdateResponse]
+pub fn parse_set_auto_update_response(payload: &[u8]) -> Result<bool, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = SetAutoUpdateResponse::decode(&payload[1..])?;
+    Ok(resp.enabled)
 }
 
 /// ESP-NOW benchmark results for CLI use

@@ -183,6 +183,7 @@ void TcpConfigServer::handleClient(int clientSock) {
     handler.setModeManager(modeManager_);
     handler.setEspNowTransport(espNowTransport_);
     handler.setEspNowService(espNowService_);
+    handler.setOtaManager(otaManager_);
 
     // Frame decoder
     FrameDecoder decoder;

@@ -55,7 +55,7 @@ TEST(ConfigMsgType, IsConfigMessageOutOfRange) {
     EXPECT_FALSE(isConfigMessage(0x00));  // Unknown
     EXPECT_FALSE(isConfigMessage(0xFF));  // Unknown
     EXPECT_FALSE(isConfigMessage(0x1F));  // Just before config range
-    EXPECT_FALSE(isConfigMessage(0x46));  // Just past self-test range
+    EXPECT_FALSE(isConfigMessage(0x4A));  // Just past GitHub OTA range
 }
 
 TEST(ConfigMsgType, IsConfigMessageObservabilityRange) {
@@ -374,6 +374,95 @@ TEST(Protobuf, SelfTestResponseEncodeDecode) {
     EXPECT_STREQ(decoded.results[2].name, "WiFi");
     EXPECT_FALSE(decoded.results[2].passed);
     EXPECT_STREQ(decoded.results[2].message, "scan failed (not init?)");
+}
+
+// =============================================================================
+// GitHub OTA Protobuf Tests
+// =============================================================================
+
+TEST(ConfigMsgType, IsConfigMessageGitHubOtaRange) {
+    // GitHub OTA commands (0x46-0x49) should be config messages
+    EXPECT_TRUE(isConfigMessage(0x46));  // CheckUpdateReq
+    EXPECT_TRUE(isConfigMessage(0x47));  // CheckUpdateRsp
+    EXPECT_TRUE(isConfigMessage(0x48));  // SetAutoUpdateReq
+    EXPECT_TRUE(isConfigMessage(0x49));  // SetAutoUpdateRsp
+}
+
+TEST(Protobuf, CheckUpdateResponseEncodeDecode) {
+    domes_config_CheckUpdateResponse resp = domes_config_CheckUpdateResponse_init_zero;
+    resp.update_available = true;
+    strncpy(resp.current_version, "v1.0.0", sizeof(resp.current_version) - 1);
+    strncpy(resp.available_version, "v1.1.0", sizeof(resp.available_version) - 1);
+    resp.firmware_size = 1048576;
+    resp.auto_update_enabled = true;
+
+    // Encode
+    std::array<uint8_t, 128> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_CheckUpdateResponse_fields, &resp));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    // Decode
+    domes_config_CheckUpdateResponse decoded = domes_config_CheckUpdateResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_CheckUpdateResponse_fields, &decoded));
+
+    EXPECT_TRUE(decoded.update_available);
+    EXPECT_STREQ(decoded.current_version, "v1.0.0");
+    EXPECT_STREQ(decoded.available_version, "v1.1.0");
+    EXPECT_EQ(decoded.firmware_size, 1048576u);
+    EXPECT_TRUE(decoded.auto_update_enabled);
+}
+
+TEST(Protobuf, CheckUpdateResponseNoUpdate) {
+    domes_config_CheckUpdateResponse resp = domes_config_CheckUpdateResponse_init_zero;
+    resp.update_available = false;
+    strncpy(resp.current_version, "v1.1.0", sizeof(resp.current_version) - 1);
+    resp.auto_update_enabled = false;
+
+    std::array<uint8_t, 64> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_CheckUpdateResponse_fields, &resp));
+
+    domes_config_CheckUpdateResponse decoded = domes_config_CheckUpdateResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_CheckUpdateResponse_fields, &decoded));
+
+    EXPECT_FALSE(decoded.update_available);
+    EXPECT_STREQ(decoded.current_version, "v1.1.0");
+    EXPECT_STREQ(decoded.available_version, "");
+    EXPECT_EQ(decoded.firmware_size, 0u);
+    EXPECT_FALSE(decoded.auto_update_enabled);
+}
+
+TEST(Protobuf, SetAutoUpdateRequestEncodeDecode) {
+    domes_config_SetAutoUpdateRequest req = domes_config_SetAutoUpdateRequest_init_zero;
+    req.enabled = true;
+
+    std::array<uint8_t, 16> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SetAutoUpdateRequest_fields, &req));
+
+    domes_config_SetAutoUpdateRequest decoded = domes_config_SetAutoUpdateRequest_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SetAutoUpdateRequest_fields, &decoded));
+
+    EXPECT_TRUE(decoded.enabled);
+}
+
+TEST(Protobuf, SetAutoUpdateResponseEncodeDecode) {
+    domes_config_SetAutoUpdateResponse resp = domes_config_SetAutoUpdateResponse_init_zero;
+    resp.enabled = true;
+
+    std::array<uint8_t, 16> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SetAutoUpdateResponse_fields, &resp));
+
+    domes_config_SetAutoUpdateResponse decoded = domes_config_SetAutoUpdateResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SetAutoUpdateResponse_fields, &decoded));
+
+    EXPECT_TRUE(decoded.enabled);
 }
 
 TEST(Protobuf, SelfTestResponseEmpty) {

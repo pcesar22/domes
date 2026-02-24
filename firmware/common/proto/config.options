@@ -41,3 +41,7 @@ domes.config.SelfTestResult.message  max_size:48
 
 # SelfTestResponse: max 10 test results
 domes.config.SelfTestResponse.results  max_count:10
+
+# CheckUpdateResponse: version strings max 16 chars
+domes.config.CheckUpdateResponse.current_version  max_size:16
+domes.config.CheckUpdateResponse.available_version  max_size:16

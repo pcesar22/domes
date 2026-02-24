@@ -123,6 +123,18 @@ PB_BIND(domes_config_SelfTestRequest, domes_config_SelfTestRequest, AUTO)
 PB_BIND(domes_config_SelfTestResponse, domes_config_SelfTestResponse, 2)
 
 
+PB_BIND(domes_config_CheckUpdateRequest, domes_config_CheckUpdateRequest, AUTO)
+
+
+PB_BIND(domes_config_CheckUpdateResponse, domes_config_CheckUpdateResponse, AUTO)
+
+
+PB_BIND(domes_config_SetAutoUpdateRequest, domes_config_SetAutoUpdateRequest, AUTO)
+
+
+PB_BIND(domes_config_SetAutoUpdateResponse, domes_config_SetAutoUpdateResponse, AUTO)
+
+
 PB_BIND(domes_config_ConfigRequest, domes_config_ConfigRequest, AUTO)
 
 

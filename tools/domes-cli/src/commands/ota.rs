@@ -1,7 +1,12 @@
 //! OTA update commands
 //!
 //! Sends firmware updates to DOMES devices over serial or WiFi.
+//! Also includes GitHub OTA check and auto-update configuration commands.
 
+use crate::protocol::{
+    parse_check_update_response, parse_set_auto_update_response, serialize_set_auto_update,
+    CliUpdateInfo, ConfigMsgType,
+};
 use crate::transport::Transport;
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
@@ -284,6 +289,42 @@ fn send_and_wait_ack(
             anyhow::bail!("Unexpected response type: 0x{:02X}", frame.msg_type)
         }
     }
+}
+
+/// Check for firmware updates via GitHub releases
+pub fn ota_check(transport: &mut dyn Transport) -> Result<CliUpdateInfo> {
+    let frame = transport
+        .send_command(ConfigMsgType::CheckUpdateReq as u8, &[])
+        .context("Failed to send check update command")?;
+
+    if frame.msg_type != ConfigMsgType::CheckUpdateRsp as u8 {
+        anyhow::bail!(
+            "Unexpected response type: 0x{:02X}, expected 0x{:02X}",
+            frame.msg_type,
+            ConfigMsgType::CheckUpdateRsp as u8
+        );
+    }
+
+    parse_check_update_response(&frame.payload).context("Failed to parse check update response")
+}
+
+/// Set auto-update enabled/disabled
+pub fn ota_auto_update(transport: &mut dyn Transport, enabled: bool) -> Result<bool> {
+    let payload = serialize_set_auto_update(enabled);
+    let frame = transport
+        .send_command(ConfigMsgType::SetAutoUpdateReq as u8, &payload)
+        .context("Failed to send set auto-update command")?;
+
+    if frame.msg_type != ConfigMsgType::SetAutoUpdateRsp as u8 {
+        anyhow::bail!(
+            "Unexpected response type: 0x{:02X}, expected 0x{:02X}",
+            frame.msg_type,
+            ConfigMsgType::SetAutoUpdateRsp as u8
+        );
+    }
+
+    parse_set_auto_update_response(&frame.payload)
+        .context("Failed to parse set auto-update response")
 }
 
 /// Print progress bar

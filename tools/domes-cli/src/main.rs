@@ -214,6 +214,20 @@ enum OtaAction {
         #[arg(short, long)]
         version: Option<String>,
     },
+
+    /// Check for available firmware updates (via GitHub releases)
+    Check,
+
+    /// Configure auto-update setting
+    AutoUpdate {
+        /// Enable auto-update
+        #[arg(long)]
+        enable: bool,
+
+        /// Disable auto-update
+        #[arg(long)]
+        disable: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -792,6 +806,34 @@ fn main() -> anyhow::Result<()> {
                         println!("{}Flashing OTA...", prefix);
                     }
                     commands::ota_flash(transport, firmware, version.as_deref())?;
+                }
+                OtaAction::Check => {
+                    println!("{}Checking for firmware updates...", prefix);
+                    let info = commands::ota_check(transport)?;
+                    println!("{}Current version:  {}", prefix,
+                        if info.current_version.is_empty() { "unknown" } else { &info.current_version });
+                    println!("{}Auto-update:      {}", prefix,
+                        if info.auto_update_enabled { "enabled" } else { "disabled" });
+                    if info.update_available {
+                        println!("{}Update available: {} ({} bytes)", prefix,
+                            info.available_version, info.firmware_size);
+                    } else {
+                        println!("{}No update available", prefix);
+                    }
+                }
+                OtaAction::AutoUpdate { enable, disable } => {
+                    let enabled = if *enable && *disable {
+                        anyhow::bail!("Cannot specify both --enable and --disable");
+                    } else if *enable {
+                        true
+                    } else if *disable {
+                        false
+                    } else {
+                        anyhow::bail!("Must specify either --enable or --disable");
+                    };
+                    let result = commands::ota_auto_update(transport, enabled)?;
+                    println!("{}Auto-update {}", prefix,
+                        if result { "enabled" } else { "disabled" });
                 }
             },
 

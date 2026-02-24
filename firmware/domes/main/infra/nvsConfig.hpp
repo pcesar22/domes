@@ -29,6 +29,7 @@ constexpr const char* kBrightness = "brightness";        ///< uint8_t 0-255
 constexpr const char* kVolume = "volume";                ///< uint8_t 0-100
 constexpr const char* kTouchThreshold = "touch_thresh";  ///< uint16_t
 constexpr const char* kPodId = "pod_id";                 ///< uint8_t
+constexpr const char* kAutoUpdate = "auto_update";       ///< uint8_t (0=disabled, 1=enabled)
 }  // namespace config_key
 
 /**
