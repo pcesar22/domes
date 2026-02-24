@@ -87,6 +87,12 @@ PB_BIND(domes_config_GetEspNowStatusRequest, domes_config_GetEspNowStatusRequest
 PB_BIND(domes_config_GetEspNowStatusResponse, domes_config_GetEspNowStatusResponse, AUTO)
 
 
+PB_BIND(domes_config_EspNowBenchRequest, domes_config_EspNowBenchRequest, AUTO)
+
+
+PB_BIND(domes_config_EspNowBenchResponse, domes_config_EspNowBenchResponse, AUTO)
+
+
 PB_BIND(domes_config_ConfigRequest, domes_config_ConfigRequest, AUTO)
 
 

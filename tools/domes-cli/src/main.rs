@@ -307,6 +307,13 @@ enum LedAction {
 enum EspnowAction {
     /// Show ESP-NOW subsystem status (peers, channel, packet stats)
     Status,
+
+    /// Run latency benchmark (ping-pong RTT measurement)
+    Bench {
+        /// Number of ping-pong rounds (1-1000, default: 100)
+        #[arg(short, long, default_value = "100")]
+        rounds: u32,
+    },
 }
 
 #[derive(Subcommand)]
@@ -849,6 +856,29 @@ fn main() -> anyhow::Result<()> {
                                 peer.mac[3], peer.mac[4], peer.mac[5],
                                 peer.rssi, peer.last_seen_ms);
                         }
+                    }
+                }
+                EspnowAction::Bench { rounds } => {
+                    println!("{}Running ESP-NOW latency benchmark ({} rounds)...", prefix, rounds);
+                    let result = commands::espnow_bench(transport, *rounds)?;
+                    println!("{}ESP-NOW Benchmark Results:", prefix);
+                    println!("{}  Rounds:     {}/{} completed ({} failed)",
+                        prefix, result.rounds_completed,
+                        result.rounds_completed + result.rounds_failed,
+                        result.rounds_failed);
+                    if result.rounds_completed > 0 {
+                        println!("{}  Min RTT:    {} us ({:.2} ms)",
+                            prefix, result.min_rtt_us, result.min_rtt_us as f64 / 1000.0);
+                        println!("{}  Max RTT:    {} us ({:.2} ms)",
+                            prefix, result.max_rtt_us, result.max_rtt_us as f64 / 1000.0);
+                        println!("{}  Mean RTT:   {} us ({:.2} ms)",
+                            prefix, result.mean_rtt_us, result.mean_rtt_us as f64 / 1000.0);
+                        println!("{}  P50 RTT:    {} us ({:.2} ms)",
+                            prefix, result.p50_rtt_us, result.p50_rtt_us as f64 / 1000.0);
+                        println!("{}  P95 RTT:    {} us ({:.2} ms)",
+                            prefix, result.p95_rtt_us, result.p95_rtt_us as f64 / 1000.0);
+                        println!("{}  P99 RTT:    {} us ({:.2} ms)",
+                            prefix, result.p99_rtt_us, result.p99_rtt_us as f64 / 1000.0);
                     }
                 }
             },

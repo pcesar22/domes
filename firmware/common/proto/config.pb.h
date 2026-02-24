@@ -36,11 +36,13 @@ typedef enum _domes_config_MsgType {
     domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP = 53,
     domes_config_MsgType_MSG_TYPE_SET_POD_ID_REQ = 54,
     domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP = 55,
-    /* Observability commands (0x38-0x3B range) */
+    /* Observability commands (0x38-0x3F range) */
     domes_config_MsgType_MSG_TYPE_GET_HEALTH_REQ = 56,
     domes_config_MsgType_MSG_TYPE_GET_HEALTH_RSP = 57,
     domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_REQ = 58,
-    domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_RSP = 59
+    domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_RSP = 59,
+    domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_REQ = 60,
+    domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_RSP = 61
 } domes_config_MsgType;
 
 /* Status codes for responses */
@@ -247,6 +249,22 @@ typedef struct _domes_config_GetEspNowStatusResponse {
     domes_config_EspNowPeer peers[8];
 } domes_config_GetEspNowStatusResponse;
 
+/* ESP-NOW latency benchmark */
+typedef struct _domes_config_EspNowBenchRequest {
+    uint32_t rounds; /* Number of ping-pong rounds (1-1000, default: 100) */
+} domes_config_EspNowBenchRequest;
+
+typedef struct _domes_config_EspNowBenchResponse {
+    uint32_t rounds_completed;
+    uint32_t rounds_failed;
+    uint32_t min_rtt_us;
+    uint32_t max_rtt_us;
+    uint32_t mean_rtt_us;
+    uint32_t p50_rtt_us;
+    uint32_t p95_rtt_us;
+    uint32_t p99_rtt_us;
+} domes_config_EspNowBenchResponse;
+
 /* Top-level request envelope */
 typedef struct _domes_config_ConfigRequest {
     pb_size_t which_request;
@@ -273,8 +291,8 @@ extern "C" {
 
 /* Helper constants for enums */
 #define _domes_config_MsgType_MIN domes_config_MsgType_MSG_TYPE_UNKNOWN
-#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_RSP
-#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_RSP+1))
+#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_RSP
+#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_RSP+1))
 
 #define _domes_config_Status_MIN domes_config_Status_STATUS_OK
 #define _domes_config_Status_MAX domes_config_Status_STATUS_INVALID_PATTERN
@@ -327,6 +345,8 @@ extern "C" {
 
 
 
+
+
 #define domes_config_ConfigResponse_status_ENUMTYPE domes_config_Status
 
 
@@ -358,6 +378,8 @@ extern "C" {
 #define domes_config_EspNowPeer_init_default     {{0, {0}}, 0, 0}
 #define domes_config_GetEspNowStatusRequest_init_default {0}
 #define domes_config_GetEspNowStatusResponse_init_default {0, 0, 0, 0, 0, 0, "", 0, {domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default}}
+#define domes_config_EspNowBenchRequest_init_default {0}
+#define domes_config_EspNowBenchResponse_init_default {0, 0, 0, 0, 0, 0, 0, 0}
 #define domes_config_ConfigRequest_init_default  {0, {domes_config_ListFeaturesRequest_init_default}}
 #define domes_config_ConfigResponse_init_default {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_default}}
 #define domes_config_Color_init_zero             {0, 0, 0, 0}
@@ -387,6 +409,8 @@ extern "C" {
 #define domes_config_EspNowPeer_init_zero        {{0, {0}}, 0, 0}
 #define domes_config_GetEspNowStatusRequest_init_zero {0}
 #define domes_config_GetEspNowStatusResponse_init_zero {0, 0, 0, 0, 0, 0, "", 0, {domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero}}
+#define domes_config_EspNowBenchRequest_init_zero {0}
+#define domes_config_EspNowBenchResponse_init_zero {0, 0, 0, 0, 0, 0, 0, 0}
 #define domes_config_ConfigRequest_init_zero     {0, {domes_config_ListFeaturesRequest_init_zero}}
 #define domes_config_ConfigResponse_init_zero    {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_zero}}
 
@@ -446,6 +470,15 @@ extern "C" {
 #define domes_config_GetEspNowStatusResponse_last_rtt_us_tag 6
 #define domes_config_GetEspNowStatusResponse_discovery_state_tag 7
 #define domes_config_GetEspNowStatusResponse_peers_tag 8
+#define domes_config_EspNowBenchRequest_rounds_tag 1
+#define domes_config_EspNowBenchResponse_rounds_completed_tag 1
+#define domes_config_EspNowBenchResponse_rounds_failed_tag 2
+#define domes_config_EspNowBenchResponse_min_rtt_us_tag 3
+#define domes_config_EspNowBenchResponse_max_rtt_us_tag 4
+#define domes_config_EspNowBenchResponse_mean_rtt_us_tag 5
+#define domes_config_EspNowBenchResponse_p50_rtt_us_tag 6
+#define domes_config_EspNowBenchResponse_p95_rtt_us_tag 7
+#define domes_config_EspNowBenchResponse_p99_rtt_us_tag 8
 #define domes_config_ConfigRequest_list_features_tag 1
 #define domes_config_ConfigRequest_set_feature_tag 2
 #define domes_config_ConfigResponse_status_tag   1
@@ -631,6 +664,23 @@ X(a, STATIC,   REPEATED, MESSAGE,  peers,             8)
 #define domes_config_GetEspNowStatusResponse_DEFAULT NULL
 #define domes_config_GetEspNowStatusResponse_peers_MSGTYPE domes_config_EspNowPeer
 
+#define domes_config_EspNowBenchRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   rounds,            1)
+#define domes_config_EspNowBenchRequest_CALLBACK NULL
+#define domes_config_EspNowBenchRequest_DEFAULT NULL
+
+#define domes_config_EspNowBenchResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   rounds_completed,   1) \
+X(a, STATIC,   SINGULAR, UINT32,   rounds_failed,     2) \
+X(a, STATIC,   SINGULAR, UINT32,   min_rtt_us,        3) \
+X(a, STATIC,   SINGULAR, UINT32,   max_rtt_us,        4) \
+X(a, STATIC,   SINGULAR, UINT32,   mean_rtt_us,       5) \
+X(a, STATIC,   SINGULAR, UINT32,   p50_rtt_us,        6) \
+X(a, STATIC,   SINGULAR, UINT32,   p95_rtt_us,        7) \
+X(a, STATIC,   SINGULAR, UINT32,   p99_rtt_us,        8)
+#define domes_config_EspNowBenchResponse_CALLBACK NULL
+#define domes_config_EspNowBenchResponse_DEFAULT NULL
+
 #define domes_config_ConfigRequest_FIELDLIST(X, a) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (request,list_features,request.list_features),   1) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (request,set_feature,request.set_feature),   2)
@@ -675,6 +725,8 @@ extern const pb_msgdesc_t domes_config_GetHealthResponse_msg;
 extern const pb_msgdesc_t domes_config_EspNowPeer_msg;
 extern const pb_msgdesc_t domes_config_GetEspNowStatusRequest_msg;
 extern const pb_msgdesc_t domes_config_GetEspNowStatusResponse_msg;
+extern const pb_msgdesc_t domes_config_EspNowBenchRequest_msg;
+extern const pb_msgdesc_t domes_config_EspNowBenchResponse_msg;
 extern const pb_msgdesc_t domes_config_ConfigRequest_msg;
 extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 
@@ -706,6 +758,8 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_EspNowPeer_fields &domes_config_EspNowPeer_msg
 #define domes_config_GetEspNowStatusRequest_fields &domes_config_GetEspNowStatusRequest_msg
 #define domes_config_GetEspNowStatusResponse_fields &domes_config_GetEspNowStatusResponse_msg
+#define domes_config_EspNowBenchRequest_fields &domes_config_EspNowBenchRequest_msg
+#define domes_config_EspNowBenchResponse_fields &domes_config_EspNowBenchResponse_msg
 #define domes_config_ConfigRequest_fields &domes_config_ConfigRequest_msg
 #define domes_config_ConfigResponse_fields &domes_config_ConfigResponse_msg
 
@@ -714,6 +768,8 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_Color_size                  24
 #define domes_config_ConfigRequest_size          6
 #define domes_config_ConfigResponse_size         106
+#define domes_config_EspNowBenchRequest_size     6
+#define domes_config_EspNowBenchResponse_size    48
 #define domes_config_EspNowPeer_size             25
 #define domes_config_FeatureState_size           4
 #define domes_config_GetEspNowStatusRequest_size 0

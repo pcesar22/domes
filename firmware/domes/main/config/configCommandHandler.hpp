@@ -156,6 +156,11 @@ private:
     void handleGetEspNowStatus();
 
     /**
+     * @brief Handle ESPNOW_BENCH request
+     */
+    void handleEspNowBench(const uint8_t* payload, size_t len);
+
+    /**
      * @brief Send list features response
      */
     void sendListFeaturesResponse();

@@ -18,6 +18,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstring>
@@ -50,6 +51,21 @@ struct DiscoveredPeer {
 
 /// Maximum number of discovered peers
 static constexpr size_t kMaxDiscoveredPeers = 8;
+
+/// Maximum rounds for latency benchmark
+static constexpr uint32_t kBenchMaxRounds = 1000;
+
+/// Benchmark results
+struct BenchmarkResult {
+    uint32_t roundsCompleted = 0;
+    uint32_t roundsFailed = 0;
+    uint32_t minRttUs = 0;
+    uint32_t maxRttUs = 0;
+    uint32_t meanRttUs = 0;
+    uint32_t p50RttUs = 0;
+    uint32_t p95RttUs = 0;
+    uint32_t p99RttUs = 0;
+};
 
 /**
  * @brief ESP-NOW game service
@@ -88,6 +104,16 @@ public:
         if (peerCount_.load(std::memory_order_relaxed) > 0) return "found-peer";
         return "searching";
     }
+
+    /// Start latency benchmark (non-blocking, results polled via isBenchmarkDone)
+    /// Returns false if no peer or benchmark already running
+    bool startBenchmark(uint32_t rounds);
+
+    /// Check if benchmark is complete
+    bool isBenchmarkDone() const { return benchmarkDone_.load(std::memory_order_acquire); }
+
+    /// Get benchmark results (only valid after isBenchmarkDone() returns true)
+    BenchmarkResult getBenchmarkResult() const { return benchmarkResult_; }
 
     /// Get peer info for observability (returns count of peers copied)
     uint8_t getPeers(DiscoveredPeer* out, uint8_t maxPeers) const {
@@ -136,6 +162,11 @@ private:
     // Game event handlers (master side)
     void handleTouchEvent(const uint8_t* data, size_t len);
     void handleTimeoutEvent(const uint8_t* data, size_t len);
+
+    // =========================================================================
+    // Benchmark
+    // =========================================================================
+    void runBenchmark();
 
     // =========================================================================
     // Shared helpers
@@ -189,6 +220,13 @@ private:
 
     // Flag to break slave out of runSlave() loop on STOP_ALL
     std::atomic<bool> stopAllReceived_{false};
+
+    // Benchmark state
+    std::atomic<bool> benchmarkRequested_{false};
+    std::atomic<bool> benchmarkDone_{false};
+    uint32_t benchmarkRounds_ = 0;
+    BenchmarkResult benchmarkResult_;
+    std::array<uint32_t, kBenchMaxRounds> benchmarkRtts_ = {};
 };
 
 }  // namespace domes

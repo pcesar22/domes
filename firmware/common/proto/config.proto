@@ -35,11 +35,13 @@ enum MsgType {
     MSG_TYPE_SET_POD_ID_REQ = 0x36;
     MSG_TYPE_SET_POD_ID_RSP = 0x37;
 
-    // Observability commands (0x38-0x3B range)
+    // Observability commands (0x38-0x3F range)
     MSG_TYPE_GET_HEALTH_REQ = 0x38;
     MSG_TYPE_GET_HEALTH_RSP = 0x39;
     MSG_TYPE_GET_ESPNOW_STATUS_REQ = 0x3A;
     MSG_TYPE_GET_ESPNOW_STATUS_RSP = 0x3B;
+    MSG_TYPE_ESPNOW_BENCH_REQ = 0x3C;
+    MSG_TYPE_ESPNOW_BENCH_RSP = 0x3D;
 }
 
 // Status codes for responses
@@ -237,6 +239,22 @@ message GetEspNowStatusResponse {
     uint32 last_rtt_us = 6;
     string discovery_state = 7;
     repeated EspNowPeer peers = 8;
+}
+
+// ESP-NOW latency benchmark
+message EspNowBenchRequest {
+    uint32 rounds = 1;  // Number of ping-pong rounds (1-1000, default: 100)
+}
+
+message EspNowBenchResponse {
+    uint32 rounds_completed = 1;
+    uint32 rounds_failed = 2;
+    uint32 min_rtt_us = 3;
+    uint32 max_rtt_us = 4;
+    uint32 mean_rtt_us = 5;
+    uint32 p50_rtt_us = 6;
+    uint32 p95_rtt_us = 7;
+    uint32 p99_rtt_us = 8;
 }
 
 // Top-level request envelope

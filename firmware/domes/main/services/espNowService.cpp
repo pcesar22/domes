@@ -54,8 +54,33 @@ EspNowService::EspNowService(EspNowTransport& transport)
 // ITaskRunner::run  —  three-phase lifecycle
 // ============================================================================
 
+bool EspNowService::startBenchmark(uint32_t rounds) {
+    if (!peerFound_) {
+        ESP_LOGW(kTag, "Cannot start benchmark: no peer discovered");
+        return false;
+    }
+    if (benchmarkRequested_.load(std::memory_order_relaxed)) {
+        ESP_LOGW(kTag, "Benchmark already in progress");
+        return false;
+    }
+    if (rounds == 0 || rounds > kBenchMaxRounds) {
+        rounds = 100;
+    }
+    benchmarkRounds_ = rounds;
+    benchmarkDone_.store(false, std::memory_order_relaxed);
+    benchmarkRequested_.store(true, std::memory_order_release);
+    return true;
+}
+
 void EspNowService::run() {
     while (running_) {
+        // Check for benchmark request at top of each lifecycle iteration
+        if (benchmarkRequested_.load(std::memory_order_acquire)) {
+            runBenchmark();
+            benchmarkRequested_.store(false, std::memory_order_relaxed);
+            continue;
+        }
+
         ESP_LOGI(kTag, "ESP-NOW service task started");
         TRACE_INSTANT(TRACE_ID("EspNow.DiscoveryStart"), trace::Category::kEspNow);
 
@@ -764,6 +789,106 @@ void EspNowService::handleTimeoutEvent(const uint8_t* data, size_t len) {
     lastReactionTimeUs_ = 0;
     lastPadIndex_ = 0;
     eventReceived_ = true;
+}
+
+// ============================================================================
+// Benchmark
+// ============================================================================
+
+void EspNowService::runBenchmark() {
+    ESP_LOGI(kTag, "=== Starting latency benchmark (%lu rounds) ===",
+             static_cast<unsigned long>(benchmarkRounds_));
+    TRACE_SCOPE(TRACE_ID("EspNow.Benchmark"), trace::Category::kEspNow);
+
+    BenchmarkResult result = {};
+    uint32_t completed = 0;
+    uint32_t failed = 0;
+
+    static constexpr uint32_t kBenchPongTimeoutMs = 2000;
+    static constexpr uint32_t kBenchInterPingMs = 10;
+
+    for (uint32_t i = 0; i < benchmarkRounds_ && running_; ++i) {
+        // Send ping
+        espnow::MsgHeader ping = {};
+        fillHeader(ping, espnow::MsgType::kPing);
+
+        auto& peer = peers_[0];
+        peer.pingSent = true;
+        peer.pingSentAtUs = esp_timer_get_time();
+
+        sendMsgTo(peerMac_, reinterpret_cast<const uint8_t*>(&ping), sizeof(ping));
+
+        // Wait for pong
+        int64_t startUs = peer.pingSentAtUs;
+        bool gotPong = false;
+
+        while (!gotPong && running_) {
+            uint8_t rxBuf[kEspNowMaxPayload];
+            size_t rxLen = sizeof(rxBuf);
+            TransportError err = transport_.receive(rxBuf, &rxLen, 100);
+            if (isOk(err) && rxLen >= sizeof(espnow::MsgHeader)) {
+                const auto* hdr = reinterpret_cast<const espnow::MsgHeader*>(rxBuf);
+                if (std::memcmp(hdr->senderMac, ourMac_, ESP_NOW_ETH_ALEN) != 0) {
+                    auto type = static_cast<espnow::MsgType>(hdr->type);
+                    if (type == espnow::MsgType::kPong && peer.pingSent) {
+                        int64_t nowUs = esp_timer_get_time();
+                        uint32_t rttUs = static_cast<uint32_t>(nowUs - peer.pingSentAtUs);
+                        peer.lastRttUs = rttUs;
+                        peer.pingSent = false;
+                        benchmarkRtts_[completed] = rttUs;
+                        completed++;
+                        gotPong = true;
+                    } else {
+                        // Handle other messages normally (beacons, etc.)
+                        handleReceived(rxBuf, rxLen);
+                    }
+                }
+            }
+
+            // Check timeout
+            int64_t elapsed = esp_timer_get_time() - startUs;
+            if (!gotPong && elapsed > static_cast<int64_t>(kBenchPongTimeoutMs) * 1000) {
+                peer.pingSent = false;
+                failed++;
+                break;
+            }
+        }
+
+        // Brief delay between pings
+        vTaskDelay(pdMS_TO_TICKS(kBenchInterPingMs));
+    }
+
+    // Compute stats
+    result.roundsCompleted = completed;
+    result.roundsFailed = failed;
+
+    if (completed > 0) {
+        // Sort for percentile computation
+        std::sort(benchmarkRtts_.begin(), benchmarkRtts_.begin() + completed);
+
+        result.minRttUs = benchmarkRtts_[0];
+        result.maxRttUs = benchmarkRtts_[completed - 1];
+
+        uint64_t sum = 0;
+        for (uint32_t i = 0; i < completed; ++i) {
+            sum += benchmarkRtts_[i];
+        }
+        result.meanRttUs = static_cast<uint32_t>(sum / completed);
+
+        result.p50RttUs = benchmarkRtts_[completed * 50 / 100];
+        result.p95RttUs = benchmarkRtts_[completed * 95 / 100];
+        result.p99RttUs = benchmarkRtts_[completed * 99 / 100];
+    }
+
+    benchmarkResult_ = result;
+    benchmarkDone_.store(true, std::memory_order_release);
+
+    ESP_LOGI(kTag, "=== Benchmark complete: %lu/%lu rounds, P50=%luus P95=%luus P99=%luus ===",
+             static_cast<unsigned long>(completed),
+             static_cast<unsigned long>(benchmarkRounds_),
+             static_cast<unsigned long>(result.p50RttUs),
+             static_cast<unsigned long>(result.p95RttUs),
+             static_cast<unsigned long>(result.p99RttUs));
 }
 
 // ============================================================================

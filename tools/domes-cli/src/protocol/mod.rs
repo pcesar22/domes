@@ -7,11 +7,11 @@
 //! firmware/common/proto/*.proto. DO NOT hand-roll protocol types here.
 
 use crate::proto::config::{
-    Color, Feature, GetEspNowStatusResponse, GetHealthResponse, GetLedPatternResponse,
-    GetModeResponse, GetSystemInfoResponse, LedPattern, LedPatternType, ListFeaturesResponse,
-    SetFeatureRequest, SetFeatureResponse, SetImuTriageRequest, SetImuTriageResponse,
-    SetLedPatternRequest, SetLedPatternResponse, SetModeRequest, SetModeResponse, SetPodIdRequest,
-    SetPodIdResponse, Status, SystemMode,
+    Color, EspNowBenchRequest, EspNowBenchResponse, Feature, GetEspNowStatusResponse,
+    GetHealthResponse, GetLedPatternResponse, GetModeResponse, GetSystemInfoResponse, LedPattern,
+    LedPatternType, ListFeaturesResponse, SetFeatureRequest, SetFeatureResponse,
+    SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest, SetLedPatternResponse,
+    SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse, Status, SystemMode,
 };
 use prost::Message;
 use thiserror::Error;
@@ -48,6 +48,8 @@ impl TryFrom<u8> for ConfigMsgType {
             0x39 => Ok(Self::GetHealthRsp),
             0x3A => Ok(Self::GetEspnowStatusReq),
             0x3B => Ok(Self::GetEspnowStatusRsp),
+            0x3C => Ok(Self::EspnowBenchReq),
+            0x3D => Ok(Self::EspnowBenchRsp),
             _ => Err(ProtocolError::UnknownMessageType(value)),
         }
     }
@@ -595,5 +597,56 @@ pub fn parse_get_espnow_status_response(
         last_rtt_us: resp.last_rtt_us,
         discovery_state: resp.discovery_state,
         peers,
+    })
+}
+
+/// ESP-NOW benchmark results for CLI use
+#[derive(Debug, Clone)]
+pub struct CliBenchResult {
+    pub rounds_completed: u32,
+    pub rounds_failed: u32,
+    pub min_rtt_us: u32,
+    pub max_rtt_us: u32,
+    pub mean_rtt_us: u32,
+    pub p50_rtt_us: u32,
+    pub p95_rtt_us: u32,
+    pub p99_rtt_us: u32,
+}
+
+/// Serialize EspNowBenchRequest
+pub fn serialize_espnow_bench(rounds: u32) -> Vec<u8> {
+    let req = EspNowBenchRequest { rounds };
+    req.encode_to_vec()
+}
+
+/// Parse EspNowBenchResponse payload
+/// Format: [status_byte][protobuf_EspNowBenchResponse]
+pub fn parse_espnow_bench_response(payload: &[u8]) -> Result<CliBenchResult, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = EspNowBenchResponse::decode(&payload[1..])?;
+
+    Ok(CliBenchResult {
+        rounds_completed: resp.rounds_completed,
+        rounds_failed: resp.rounds_failed,
+        min_rtt_us: resp.min_rtt_us,
+        max_rtt_us: resp.max_rtt_us,
+        mean_rtt_us: resp.mean_rtt_us,
+        p50_rtt_us: resp.p50_rtt_us,
+        p95_rtt_us: resp.p95_rtt_us,
+        p99_rtt_us: resp.p99_rtt_us,
     })
 }

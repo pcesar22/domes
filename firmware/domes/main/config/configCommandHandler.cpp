@@ -130,6 +130,11 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
             handleGetEspNowStatus();
             return true;
 
+        case MsgType::kEspNowBenchReq:
+            ESP_LOGD(kTag, "Received ESPNOW_BENCH");
+            handleEspNowBench(payload, len);
+            return true;
+
         default:
             ESP_LOGW(kTag, "Unknown config command: 0x%02X", type);
             return false;
@@ -684,6 +689,79 @@ void ConfigCommandHandler::handleGetEspNowStatus() {
     }
 
     sendFrame(MsgType::kGetEspNowStatusRsp, payload.data(), 1 + stream.bytes_written);
+}
+
+void ConfigCommandHandler::handleEspNowBench(const uint8_t* payload, size_t len) {
+    if (!espNowService_) {
+        ESP_LOGW(kTag, "ESP-NOW service not available for benchmark");
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kEspNowBenchRsp, errPayload.data(), 1);
+        return;
+    }
+
+    // Decode request
+    domes_config_EspNowBenchRequest req = domes_config_EspNowBenchRequest_init_zero;
+    if (len > 0) {
+        pb_istream_t stream = pb_istream_from_buffer(payload, len);
+        if (!pb_decode(&stream, domes_config_EspNowBenchRequest_fields, &req)) {
+            ESP_LOGW(kTag, "Failed to decode ESPNOW_BENCH: %s", PB_GET_ERROR(&stream));
+        }
+    }
+    uint32_t rounds = (req.rounds > 0) ? req.rounds : 100;
+
+    ESP_LOGI(kTag, "Starting ESP-NOW benchmark: %lu rounds", static_cast<unsigned long>(rounds));
+
+    // Start benchmark
+    if (!espNowService_->startBenchmark(rounds)) {
+        ESP_LOGW(kTag, "Failed to start benchmark (no peer or already running)");
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kBusy);
+        sendFrame(MsgType::kEspNowBenchRsp, errPayload.data(), 1);
+        return;
+    }
+
+    // Poll for completion (max ~30s for 1000 rounds)
+    static constexpr uint32_t kBenchPollMs = 50;
+    static constexpr uint32_t kBenchTimeoutMs = 60000;
+    uint32_t waited = 0;
+    while (!espNowService_->isBenchmarkDone() && waited < kBenchTimeoutMs) {
+        vTaskDelay(pdMS_TO_TICKS(kBenchPollMs));
+        waited += kBenchPollMs;
+    }
+
+    if (!espNowService_->isBenchmarkDone()) {
+        ESP_LOGW(kTag, "Benchmark timed out after %lums", static_cast<unsigned long>(waited));
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kEspNowBenchRsp, errPayload.data(), 1);
+        return;
+    }
+
+    // Get results
+    auto benchResult = espNowService_->getBenchmarkResult();
+
+    domes_config_EspNowBenchResponse resp = domes_config_EspNowBenchResponse_init_zero;
+    resp.rounds_completed = benchResult.roundsCompleted;
+    resp.rounds_failed = benchResult.roundsFailed;
+    resp.min_rtt_us = benchResult.minRttUs;
+    resp.max_rtt_us = benchResult.maxRttUs;
+    resp.mean_rtt_us = benchResult.meanRttUs;
+    resp.p50_rtt_us = benchResult.p50RttUs;
+    resp.p95_rtt_us = benchResult.p95RttUs;
+    resp.p99_rtt_us = benchResult.p99RttUs;
+
+    // Encode: [status_byte][protobuf]
+    std::array<uint8_t, domes_config_EspNowBenchResponse_size + 10> respPayload;
+    respPayload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(respPayload.data() + 1, respPayload.size() - 1);
+    if (!pb_encode(&ostream, domes_config_EspNowBenchResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode EspNowBenchResponse: %s", PB_GET_ERROR(&ostream));
+        return;
+    }
+
+    sendFrame(MsgType::kEspNowBenchRsp, respPayload.data(), 1 + ostream.bytes_written);
 }
 
 }  // namespace domes::config
