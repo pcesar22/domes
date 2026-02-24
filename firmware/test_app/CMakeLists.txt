@@ -84,6 +84,7 @@ target_compile_options(test_app PRIVATE
 )
 
 # Enable CTest integration
+enable_testing()
 include(GoogleTest)
 gtest_discover_tests(test_app)
 
