@@ -137,10 +137,13 @@ pub fn system_memory_profile(transport: &mut dyn Transport) -> Result<CliMemoryP
         .context("Failed to parse memory profile response")
 }
 
+/// Timeout for self-test command (tests WiFi scan, BLE, NVS, etc.)
+const SELF_TEST_TIMEOUT_MS: u64 = 15000;
+
 /// Run on-device self-test suite
 pub fn system_self_test(transport: &mut dyn Transport) -> Result<CliSelfTestInfo> {
     let frame = transport
-        .send_command(ConfigMsgType::SelfTestReq as u8, &[])
+        .send_command_with_timeout(ConfigMsgType::SelfTestReq as u8, &[], SELF_TEST_TIMEOUT_MS)
         .context("Failed to send self-test command")?;
 
     if frame.msg_type != ConfigMsgType::SelfTestRsp as u8 {

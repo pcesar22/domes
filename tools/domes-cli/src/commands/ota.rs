@@ -291,10 +291,13 @@ fn send_and_wait_ack(
     }
 }
 
+/// Timeout for update check (device queries GitHub API over HTTPS)
+const OTA_CHECK_TIMEOUT_MS: u64 = 15000;
+
 /// Check for firmware updates via GitHub releases
 pub fn ota_check(transport: &mut dyn Transport) -> Result<CliUpdateInfo> {
     let frame = transport
-        .send_command(ConfigMsgType::CheckUpdateReq as u8, &[])
+        .send_command_with_timeout(ConfigMsgType::CheckUpdateReq as u8, &[], OTA_CHECK_TIMEOUT_MS)
         .context("Failed to send check update command")?;
 
     if frame.msg_type != ConfigMsgType::CheckUpdateRsp as u8 {
