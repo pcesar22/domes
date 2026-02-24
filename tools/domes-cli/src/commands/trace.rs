@@ -4,7 +4,7 @@
 //! TraceEvent data is 16-byte binary carried in protobuf 'bytes' fields.
 
 use crate::proto::trace::{
-    AckResponse, MsgType as TraceMsgType, Status as TraceStatus, TraceDataChunk,
+    AckResponse, MsgType as TraceMsgType, Status as TraceStatus, StreamBatch, TraceDataChunk,
     TraceDumpComplete, TraceSessionInfo, TraceStatusResponse,
 };
 use crate::transport::Transport;
@@ -397,6 +397,135 @@ fn convert_to_perfetto_json(
 
     json.push(']');
     Ok(json)
+}
+
+/// Stream trace events in real-time from a TCP connection
+///
+/// Connects to the trace stream port (5001) on the device and prints
+/// events as they arrive. Runs until interrupted (Ctrl+C) or error.
+pub fn trace_stream(addr: &str) -> Result<()> {
+    use std::net::TcpStream;
+
+    // Connect to trace stream port (5001)
+    let stream_addr = if addr.contains(':') {
+        // Replace port with 5001
+        let parts: Vec<&str> = addr.splitn(2, ':').collect();
+        format!("{}:5001", parts[0])
+    } else {
+        format!("{}:5001", addr)
+    };
+
+    eprintln!("Connecting to trace stream at {}...", stream_addr);
+    let mut stream = TcpStream::connect(&stream_addr)
+        .with_context(|| format!("Failed to connect to trace stream at {}", stream_addr))?;
+
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .ok();
+
+    eprintln!("Connected. Streaming trace events (Ctrl+C to stop)...");
+    eprintln!(
+        "{:<12} {:<6} {:<12} {:<12} {:>10} {:>10}",
+        "TIMESTAMP", "TASK", "TYPE", "CATEGORY", "ARG1", "ARG2"
+    );
+    eprintln!(
+        "{:-<12} {:-<6} {:-<12} {:-<12} {:->10} {:->10}",
+        "", "", "", "", "", ""
+    );
+
+    // Load span names for resolving
+    let span_names = load_span_names(None).unwrap_or_default();
+
+    let mut frame_decoder = crate::transport::frame::FrameDecoder::new();
+    let mut buf = [0u8; 1024];
+
+    loop {
+        use std::io::Read;
+        let n = match stream.read(&mut buf) {
+            Ok(0) => {
+                eprintln!("\nConnection closed by device");
+                break;
+            }
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::TimedOut
+                || e.kind() == std::io::ErrorKind::WouldBlock => {
+                continue;
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("Read error: {}", e));
+            }
+        };
+
+        // Feed bytes to frame decoder
+        for &byte in &buf[..n] {
+            if let Some(Ok(frame)) = frame_decoder.feed_byte(byte) {
+                frame_decoder.reset();
+                if frame.msg_type == TraceMsgType::StreamData.as_u8() {
+                    // Decode StreamBatch
+                    if let Ok(batch) = StreamBatch::decode(frame.payload.as_slice()) {
+                        if batch.dropped > 0 {
+                            eprintln!("  [dropped {} events]", batch.dropped);
+                        }
+
+                        // Parse binary events
+                        let event_size = std::mem::size_of::<TraceEvent>();
+                        let event_count = batch.events.len() / event_size;
+
+                        for i in 0..event_count {
+                            let offset = i * event_size;
+                            if offset + event_size <= batch.events.len() {
+                                let event = unsafe {
+                                    std::ptr::read_unaligned(
+                                        batch.events[offset..].as_ptr() as *const TraceEvent,
+                                    )
+                                };
+
+                                let timestamp = { event.timestamp };
+                                let task_id = { event.task_id };
+                                let event_type = { event.event_type };
+                                let flags = { event.flags };
+                                let arg1 = { event.arg1 };
+                                let arg2 = { event.arg2 };
+
+                                let type_name = match event_type {
+                                    0x20 => "BEGIN",
+                                    0x21 => "END",
+                                    0x22 => "INSTANT",
+                                    0x23 => "COUNTER",
+                                    0x24 => "COMPLETE",
+                                    0x01 => "TASK_IN",
+                                    0x02 => "TASK_OUT",
+                                    _ => "UNKNOWN",
+                                };
+
+                                let cat = category_name((flags >> 4) & 0x0F);
+
+                                let name = span_names
+                                    .get(&arg1)
+                                    .map(|s| s.as_str())
+                                    .unwrap_or("");
+
+                                if event_type == 0x23 {
+                                    // Counter
+                                    println!(
+                                        "{:<12} {:<6} {:<12} {:<12} {} = {}",
+                                        timestamp, task_id, type_name, cat, name, arg2
+                                    );
+                                } else {
+                                    println!(
+                                        "{:<12} {:<6} {:<12} {:<12} {:>10} {:>10}  {}",
+                                        timestamp, task_id, type_name, cat, arg1, arg2, name
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn category_name(cat: u8) -> &'static str {

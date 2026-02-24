@@ -167,6 +167,27 @@ public:
      */
     static size_t getRegisteredTaskCount();
 
+    /**
+     * @brief Callback type for live trace streaming
+     *
+     * Called from record() context — must be fast and non-blocking.
+     * @param event The trace event being recorded
+     */
+    using StreamCallback = void (*)(const TraceEvent& event);
+
+    /**
+     * @brief Set the stream callback (called on every recorded event)
+     *
+     * Only one callback is supported at a time. Pass nullptr to disable.
+     * @param cb Callback function (must be fast and non-blocking)
+     */
+    static void setStreamCallback(StreamCallback cb);
+
+    /**
+     * @brief Check if streaming is active
+     */
+    static bool isStreaming();
+
 private:
     Recorder() = default;
     ~Recorder() = default;
@@ -176,6 +197,7 @@ private:
     static std::atomic<bool> initialized_;
     static std::array<TaskNameEntry, kMaxRegisteredTasks> taskNames_;
     static size_t taskNameCount_;
+    static std::atomic<StreamCallback> streamCallback_;
 };
 
 }  // namespace domes::trace
