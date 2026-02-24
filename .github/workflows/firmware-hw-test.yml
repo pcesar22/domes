@@ -225,6 +225,42 @@ jobs:
             $CLI --port "$port" wifi status || true
           done
 
+      - name: Collect traces
+        if: always()
+        continue-on-error: true
+        run: |
+          IFS=',' read -ra PORTS <<< "${{ steps.detect.outputs.ports }}"
+          CLI=tools/domes-cli/target/release/domes-cli
+          TRACE_DIR=trace-artifacts
+          mkdir -p "$TRACE_DIR"
+
+          for i in "${!PORTS[@]}"; do
+            port="${PORTS[$i]}"
+            echo "=== Collecting traces from $port (device $i) ==="
+
+            # Try to dump traces; if buffer is empty or trace not init, that's OK
+            if $CLI --port "$port" trace dump \
+                --output "$TRACE_DIR/trace-dev${i}.json" \
+                --names tools/trace/trace_names.json 2>&1; then
+              echo "Traces collected from $port"
+            else
+              echo "No traces available on $port (buffer empty or trace not initialized)"
+            fi
+          done
+
+          # List collected artifacts
+          echo "=== Collected trace files ==="
+          ls -la "$TRACE_DIR"/ 2>/dev/null || echo "No trace files collected"
+
+      - name: Upload trace artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trace-dumps-${{ github.sha }}
+          path: trace-artifacts/
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Summary
         run: |
           echo "## Hardware Test Results" >> $GITHUB_STEP_SUMMARY
@@ -244,4 +280,16 @@ jobs:
           if [ "${{ steps.detect.outputs.multi }}" = "true" ]; then
             echo "- [x] Multi-device feature list" >> $GITHUB_STEP_SUMMARY
             echo "- [ ] ESP-NOW communication (placeholder)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Trace Artifacts" >> $GITHUB_STEP_SUMMARY
+          if ls trace-artifacts/*.json 1>/dev/null 2>&1; then
+            for f in trace-artifacts/*.json; do
+              SIZE=$(stat -c%s "$f" 2>/dev/null || echo "0")
+              echo "- \`$(basename $f)\` (${SIZE} bytes)" >> $GITHUB_STEP_SUMMARY
+            done
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Download trace files from the **Artifacts** section and open at [ui.perfetto.dev](https://ui.perfetto.dev)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No traces collected (buffer empty or tracing not initialized)" >> $GITHUB_STEP_SUMMARY
           fi
