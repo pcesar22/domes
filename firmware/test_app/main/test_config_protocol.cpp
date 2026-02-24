@@ -55,7 +55,15 @@ TEST(ConfigMsgType, IsConfigMessageOutOfRange) {
     EXPECT_FALSE(isConfigMessage(0x00));  // Unknown
     EXPECT_FALSE(isConfigMessage(0xFF));  // Unknown
     EXPECT_FALSE(isConfigMessage(0x1F));  // Just before config range
-    EXPECT_FALSE(isConfigMessage(0x38));  // Just past pod ID range
+    EXPECT_FALSE(isConfigMessage(0x3C));  // Just past observability range
+}
+
+TEST(ConfigMsgType, IsConfigMessageObservabilityRange) {
+    // Observability commands (0x38-0x3B) should be config messages
+    EXPECT_TRUE(isConfigMessage(0x38));  // GetHealthReq
+    EXPECT_TRUE(isConfigMessage(0x39));  // GetHealthRsp
+    EXPECT_TRUE(isConfigMessage(0x3A));  // GetEspNowStatusReq
+    EXPECT_TRUE(isConfigMessage(0x3B));  // GetEspNowStatusRsp
 }
 
 TEST(ConfigMsgType, GapValuesAreInRange) {

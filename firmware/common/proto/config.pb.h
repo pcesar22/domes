@@ -35,7 +35,12 @@ typedef enum _domes_config_MsgType {
     domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_REQ = 52,
     domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP = 53,
     domes_config_MsgType_MSG_TYPE_SET_POD_ID_REQ = 54,
-    domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP = 55
+    domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP = 55,
+    /* Observability commands (0x38-0x3B range) */
+    domes_config_MsgType_MSG_TYPE_GET_HEALTH_REQ = 56,
+    domes_config_MsgType_MSG_TYPE_GET_HEALTH_RSP = 57,
+    domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_REQ = 58,
+    domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_RSP = 59
 } domes_config_MsgType;
 
 /* Status codes for responses */
@@ -195,6 +200,53 @@ typedef struct _domes_config_SetPodIdResponse {
     uint32_t pod_id; /* New pod ID after write */
 } domes_config_SetPodIdResponse;
 
+/* FreeRTOS task health snapshot */
+typedef struct _domes_config_TaskHealth {
+    char name[16];
+    uint32_t stack_high_water;
+    uint32_t priority;
+    uint32_t core;
+} domes_config_TaskHealth;
+
+/* System health diagnostics */
+typedef struct _domes_config_GetHealthRequest { /* Empty - returns health diagnostics */
+    char dummy_field;
+} domes_config_GetHealthRequest;
+
+typedef struct _domes_config_GetHealthResponse {
+    uint32_t free_heap;
+    uint32_t min_free_heap;
+    uint32_t uptime_seconds;
+    int32_t wifi_rssi;
+    pb_size_t tasks_count;
+    domes_config_TaskHealth tasks[16];
+} domes_config_GetHealthResponse;
+
+typedef PB_BYTES_ARRAY_T(6) domes_config_EspNowPeer_mac_t;
+/* ESP-NOW peer info */
+typedef struct _domes_config_EspNowPeer {
+    domes_config_EspNowPeer_mac_t mac;
+    int32_t rssi;
+    uint32_t last_seen_ms;
+} domes_config_EspNowPeer;
+
+/* ESP-NOW subsystem status */
+typedef struct _domes_config_GetEspNowStatusRequest { /* Empty - returns ESP-NOW status */
+    char dummy_field;
+} domes_config_GetEspNowStatusRequest;
+
+typedef struct _domes_config_GetEspNowStatusResponse {
+    uint32_t peer_count;
+    uint32_t channel;
+    uint32_t tx_count;
+    uint32_t rx_count;
+    uint32_t tx_fail_count;
+    uint32_t last_rtt_us;
+    char discovery_state[16];
+    pb_size_t peers_count;
+    domes_config_EspNowPeer peers[8];
+} domes_config_GetEspNowStatusResponse;
+
 /* Top-level request envelope */
 typedef struct _domes_config_ConfigRequest {
     pb_size_t which_request;
@@ -221,8 +273,8 @@ extern "C" {
 
 /* Helper constants for enums */
 #define _domes_config_MsgType_MIN domes_config_MsgType_MSG_TYPE_UNKNOWN
-#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP
-#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP+1))
+#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_RSP
+#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_RSP+1))
 
 #define _domes_config_Status_MIN domes_config_Status_STATUS_OK
 #define _domes_config_Status_MAX domes_config_Status_STATUS_INVALID_PATTERN
@@ -269,6 +321,12 @@ extern "C" {
 
 
 
+
+
+
+
+
+
 #define domes_config_ConfigResponse_status_ENUMTYPE domes_config_Status
 
 
@@ -294,6 +352,12 @@ extern "C" {
 #define domes_config_GetSystemInfoResponse_init_default {"", 0, 0, 0, _domes_config_SystemMode_MIN, 0, 0}
 #define domes_config_SetPodIdRequest_init_default {0}
 #define domes_config_SetPodIdResponse_init_default {0}
+#define domes_config_TaskHealth_init_default     {"", 0, 0, 0}
+#define domes_config_GetHealthRequest_init_default {0}
+#define domes_config_GetHealthResponse_init_default {0, 0, 0, 0, 0, {domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default, domes_config_TaskHealth_init_default}}
+#define domes_config_EspNowPeer_init_default     {{0, {0}}, 0, 0}
+#define domes_config_GetEspNowStatusRequest_init_default {0}
+#define domes_config_GetEspNowStatusResponse_init_default {0, 0, 0, 0, 0, 0, "", 0, {domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default}}
 #define domes_config_ConfigRequest_init_default  {0, {domes_config_ListFeaturesRequest_init_default}}
 #define domes_config_ConfigResponse_init_default {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_default}}
 #define domes_config_Color_init_zero             {0, 0, 0, 0}
@@ -317,6 +381,12 @@ extern "C" {
 #define domes_config_GetSystemInfoResponse_init_zero {"", 0, 0, 0, _domes_config_SystemMode_MIN, 0, 0}
 #define domes_config_SetPodIdRequest_init_zero   {0}
 #define domes_config_SetPodIdResponse_init_zero  {0}
+#define domes_config_TaskHealth_init_zero        {"", 0, 0, 0}
+#define domes_config_GetHealthRequest_init_zero  {0}
+#define domes_config_GetHealthResponse_init_zero {0, 0, 0, 0, 0, {domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero, domes_config_TaskHealth_init_zero}}
+#define domes_config_EspNowPeer_init_zero        {{0, {0}}, 0, 0}
+#define domes_config_GetEspNowStatusRequest_init_zero {0}
+#define domes_config_GetEspNowStatusResponse_init_zero {0, 0, 0, 0, 0, 0, "", 0, {domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero}}
 #define domes_config_ConfigRequest_init_zero     {0, {domes_config_ListFeaturesRequest_init_zero}}
 #define domes_config_ConfigResponse_init_zero    {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_zero}}
 
@@ -356,6 +426,26 @@ extern "C" {
 #define domes_config_GetSystemInfoResponse_pod_id_tag 7
 #define domes_config_SetPodIdRequest_pod_id_tag  1
 #define domes_config_SetPodIdResponse_pod_id_tag 1
+#define domes_config_TaskHealth_name_tag         1
+#define domes_config_TaskHealth_stack_high_water_tag 2
+#define domes_config_TaskHealth_priority_tag     3
+#define domes_config_TaskHealth_core_tag         4
+#define domes_config_GetHealthResponse_free_heap_tag 1
+#define domes_config_GetHealthResponse_min_free_heap_tag 2
+#define domes_config_GetHealthResponse_uptime_seconds_tag 3
+#define domes_config_GetHealthResponse_wifi_rssi_tag 4
+#define domes_config_GetHealthResponse_tasks_tag 5
+#define domes_config_EspNowPeer_mac_tag          1
+#define domes_config_EspNowPeer_rssi_tag         2
+#define domes_config_EspNowPeer_last_seen_ms_tag 3
+#define domes_config_GetEspNowStatusResponse_peer_count_tag 1
+#define domes_config_GetEspNowStatusResponse_channel_tag 2
+#define domes_config_GetEspNowStatusResponse_tx_count_tag 3
+#define domes_config_GetEspNowStatusResponse_rx_count_tag 4
+#define domes_config_GetEspNowStatusResponse_tx_fail_count_tag 5
+#define domes_config_GetEspNowStatusResponse_last_rtt_us_tag 6
+#define domes_config_GetEspNowStatusResponse_discovery_state_tag 7
+#define domes_config_GetEspNowStatusResponse_peers_tag 8
 #define domes_config_ConfigRequest_list_features_tag 1
 #define domes_config_ConfigRequest_set_feature_tag 2
 #define domes_config_ConfigResponse_status_tag   1
@@ -493,6 +583,54 @@ X(a, STATIC,   SINGULAR, UINT32,   pod_id,            1)
 #define domes_config_SetPodIdResponse_CALLBACK NULL
 #define domes_config_SetPodIdResponse_DEFAULT NULL
 
+#define domes_config_TaskHealth_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, STRING,   name,              1) \
+X(a, STATIC,   SINGULAR, UINT32,   stack_high_water,   2) \
+X(a, STATIC,   SINGULAR, UINT32,   priority,          3) \
+X(a, STATIC,   SINGULAR, UINT32,   core,              4)
+#define domes_config_TaskHealth_CALLBACK NULL
+#define domes_config_TaskHealth_DEFAULT NULL
+
+#define domes_config_GetHealthRequest_FIELDLIST(X, a) \
+
+#define domes_config_GetHealthRequest_CALLBACK NULL
+#define domes_config_GetHealthRequest_DEFAULT NULL
+
+#define domes_config_GetHealthResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   free_heap,         1) \
+X(a, STATIC,   SINGULAR, UINT32,   min_free_heap,     2) \
+X(a, STATIC,   SINGULAR, UINT32,   uptime_seconds,    3) \
+X(a, STATIC,   SINGULAR, INT32,    wifi_rssi,         4) \
+X(a, STATIC,   REPEATED, MESSAGE,  tasks,             5)
+#define domes_config_GetHealthResponse_CALLBACK NULL
+#define domes_config_GetHealthResponse_DEFAULT NULL
+#define domes_config_GetHealthResponse_tasks_MSGTYPE domes_config_TaskHealth
+
+#define domes_config_EspNowPeer_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BYTES,    mac,               1) \
+X(a, STATIC,   SINGULAR, INT32,    rssi,              2) \
+X(a, STATIC,   SINGULAR, UINT32,   last_seen_ms,      3)
+#define domes_config_EspNowPeer_CALLBACK NULL
+#define domes_config_EspNowPeer_DEFAULT NULL
+
+#define domes_config_GetEspNowStatusRequest_FIELDLIST(X, a) \
+
+#define domes_config_GetEspNowStatusRequest_CALLBACK NULL
+#define domes_config_GetEspNowStatusRequest_DEFAULT NULL
+
+#define domes_config_GetEspNowStatusResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   peer_count,        1) \
+X(a, STATIC,   SINGULAR, UINT32,   channel,           2) \
+X(a, STATIC,   SINGULAR, UINT32,   tx_count,          3) \
+X(a, STATIC,   SINGULAR, UINT32,   rx_count,          4) \
+X(a, STATIC,   SINGULAR, UINT32,   tx_fail_count,     5) \
+X(a, STATIC,   SINGULAR, UINT32,   last_rtt_us,       6) \
+X(a, STATIC,   SINGULAR, STRING,   discovery_state,   7) \
+X(a, STATIC,   REPEATED, MESSAGE,  peers,             8)
+#define domes_config_GetEspNowStatusResponse_CALLBACK NULL
+#define domes_config_GetEspNowStatusResponse_DEFAULT NULL
+#define domes_config_GetEspNowStatusResponse_peers_MSGTYPE domes_config_EspNowPeer
+
 #define domes_config_ConfigRequest_FIELDLIST(X, a) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (request,list_features,request.list_features),   1) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (request,set_feature,request.set_feature),   2)
@@ -531,6 +669,12 @@ extern const pb_msgdesc_t domes_config_GetSystemInfoRequest_msg;
 extern const pb_msgdesc_t domes_config_GetSystemInfoResponse_msg;
 extern const pb_msgdesc_t domes_config_SetPodIdRequest_msg;
 extern const pb_msgdesc_t domes_config_SetPodIdResponse_msg;
+extern const pb_msgdesc_t domes_config_TaskHealth_msg;
+extern const pb_msgdesc_t domes_config_GetHealthRequest_msg;
+extern const pb_msgdesc_t domes_config_GetHealthResponse_msg;
+extern const pb_msgdesc_t domes_config_EspNowPeer_msg;
+extern const pb_msgdesc_t domes_config_GetEspNowStatusRequest_msg;
+extern const pb_msgdesc_t domes_config_GetEspNowStatusResponse_msg;
 extern const pb_msgdesc_t domes_config_ConfigRequest_msg;
 extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 
@@ -556,15 +700,26 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_GetSystemInfoResponse_fields &domes_config_GetSystemInfoResponse_msg
 #define domes_config_SetPodIdRequest_fields &domes_config_SetPodIdRequest_msg
 #define domes_config_SetPodIdResponse_fields &domes_config_SetPodIdResponse_msg
+#define domes_config_TaskHealth_fields &domes_config_TaskHealth_msg
+#define domes_config_GetHealthRequest_fields &domes_config_GetHealthRequest_msg
+#define domes_config_GetHealthResponse_fields &domes_config_GetHealthResponse_msg
+#define domes_config_EspNowPeer_fields &domes_config_EspNowPeer_msg
+#define domes_config_GetEspNowStatusRequest_fields &domes_config_GetEspNowStatusRequest_msg
+#define domes_config_GetEspNowStatusResponse_fields &domes_config_GetEspNowStatusResponse_msg
 #define domes_config_ConfigRequest_fields &domes_config_ConfigRequest_msg
 #define domes_config_ConfigResponse_fields &domes_config_ConfigResponse_msg
 
 /* Maximum encoded size of messages (where known) */
-#define DOMES_CONFIG_CONFIG_PB_H_MAX_SIZE        domes_config_SetLedPatternRequest_size
+#define DOMES_CONFIG_CONFIG_PB_H_MAX_SIZE        domes_config_GetHealthResponse_size
 #define domes_config_Color_size                  24
 #define domes_config_ConfigRequest_size          6
 #define domes_config_ConfigResponse_size         106
+#define domes_config_EspNowPeer_size             25
 #define domes_config_FeatureState_size           4
+#define domes_config_GetEspNowStatusRequest_size 0
+#define domes_config_GetEspNowStatusResponse_size 269
+#define domes_config_GetHealthRequest_size       0
+#define domes_config_GetHealthResponse_size      621
 #define domes_config_GetLedPatternRequest_size   0
 #define domes_config_GetLedPatternResponse_size  251
 #define domes_config_GetModeRequest_size         0
@@ -584,6 +739,7 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_SetModeResponse_size        4
 #define domes_config_SetPodIdRequest_size        6
 #define domes_config_SetPodIdResponse_size       6
+#define domes_config_TaskHealth_size             35
 
 #ifdef __cplusplus
 } /* extern "C" */

@@ -7,10 +7,11 @@
 //! firmware/common/proto/*.proto. DO NOT hand-roll protocol types here.
 
 use crate::proto::config::{
-    Color, Feature, GetLedPatternResponse, GetModeResponse, GetSystemInfoResponse, LedPattern,
-    LedPatternType, ListFeaturesResponse, SetFeatureRequest, SetFeatureResponse,
-    SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest, SetLedPatternResponse,
-    SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse, Status, SystemMode,
+    Color, Feature, GetEspNowStatusResponse, GetHealthResponse, GetLedPatternResponse,
+    GetModeResponse, GetSystemInfoResponse, LedPattern, LedPatternType, ListFeaturesResponse,
+    SetFeatureRequest, SetFeatureResponse, SetImuTriageRequest, SetImuTriageResponse,
+    SetLedPatternRequest, SetLedPatternResponse, SetModeRequest, SetModeResponse, SetPodIdRequest,
+    SetPodIdResponse, Status, SystemMode,
 };
 use prost::Message;
 use thiserror::Error;
@@ -43,6 +44,10 @@ impl TryFrom<u8> for ConfigMsgType {
             0x35 => Ok(Self::GetSystemInfoRsp),
             0x36 => Ok(Self::SetPodIdReq),
             0x37 => Ok(Self::SetPodIdRsp),
+            0x38 => Ok(Self::GetHealthReq),
+            0x39 => Ok(Self::GetHealthRsp),
+            0x3A => Ok(Self::GetEspnowStatusReq),
+            0x3B => Ok(Self::GetEspnowStatusRsp),
             _ => Err(ProtocolError::UnknownMessageType(value)),
         }
     }
@@ -458,4 +463,137 @@ pub fn parse_set_pod_id_response(payload: &[u8]) -> Result<u32, ProtocolError> {
 
     let resp = SetPodIdResponse::decode(&payload[1..])?;
     Ok(resp.pod_id)
+}
+
+// ============================================================================
+// Observability types and parsers
+// ============================================================================
+
+/// Task health info for CLI use
+#[derive(Debug, Clone)]
+pub struct CliTaskHealth {
+    pub name: String,
+    pub stack_high_water: u32,
+    pub priority: u32,
+    pub core: u32,
+}
+
+/// System health info for CLI use
+#[derive(Debug, Clone)]
+pub struct CliHealthInfo {
+    pub free_heap: u32,
+    pub min_free_heap: u32,
+    pub uptime_seconds: u32,
+    pub wifi_rssi: i32,
+    pub tasks: Vec<CliTaskHealth>,
+}
+
+/// ESP-NOW peer info for CLI use
+#[derive(Debug, Clone)]
+pub struct CliEspNowPeer {
+    pub mac: [u8; 6],
+    pub rssi: i32,
+    pub last_seen_ms: u32,
+}
+
+/// ESP-NOW status for CLI use
+#[derive(Debug, Clone)]
+pub struct CliEspNowStatus {
+    pub peer_count: u32,
+    pub channel: u32,
+    pub tx_count: u32,
+    pub rx_count: u32,
+    pub tx_fail_count: u32,
+    pub last_rtt_us: u32,
+    pub discovery_state: String,
+    pub peers: Vec<CliEspNowPeer>,
+}
+
+/// Parse GetHealthResponse payload
+/// Format: [status_byte][protobuf_GetHealthResponse]
+pub fn parse_get_health_response(payload: &[u8]) -> Result<CliHealthInfo, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = GetHealthResponse::decode(&payload[1..])?;
+
+    let tasks = resp
+        .tasks
+        .iter()
+        .map(|t| CliTaskHealth {
+            name: t.name.clone(),
+            stack_high_water: t.stack_high_water,
+            priority: t.priority,
+            core: t.core,
+        })
+        .collect();
+
+    Ok(CliHealthInfo {
+        free_heap: resp.free_heap,
+        min_free_heap: resp.min_free_heap,
+        uptime_seconds: resp.uptime_seconds,
+        wifi_rssi: resp.wifi_rssi,
+        tasks,
+    })
+}
+
+/// Parse GetEspNowStatusResponse payload
+/// Format: [status_byte][protobuf_GetEspNowStatusResponse]
+pub fn parse_get_espnow_status_response(
+    payload: &[u8],
+) -> Result<CliEspNowStatus, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = GetEspNowStatusResponse::decode(&payload[1..])?;
+
+    let peers = resp
+        .peers
+        .iter()
+        .map(|p| {
+            let mut mac = [0u8; 6];
+            let len = p.mac.len().min(6);
+            mac[..len].copy_from_slice(&p.mac[..len]);
+            CliEspNowPeer {
+                mac,
+                rssi: p.rssi,
+                last_seen_ms: p.last_seen_ms,
+            }
+        })
+        .collect();
+
+    Ok(CliEspNowStatus {
+        peer_count: resp.peer_count,
+        channel: resp.channel,
+        tx_count: resp.tx_count,
+        rx_count: resp.rx_count,
+        tx_fail_count: resp.tx_fail_count,
+        last_rtt_us: resp.last_rtt_us,
+        discovery_state: resp.discovery_state,
+        peers,
+    })
 }

@@ -141,6 +141,12 @@ enum Commands {
         action: SystemAction,
     },
 
+    /// ESP-NOW peer-to-peer subsystem
+    Espnow {
+        #[command(subcommand)]
+        action: EspnowAction,
+    },
+
     /// Manage device registry
     Devices {
         #[command(subcommand)]
@@ -246,6 +252,9 @@ enum SystemAction {
         /// Pod ID (1-255)
         id: u32,
     },
+
+    /// Get system health diagnostics (heap, tasks, RSSI)
+    Health,
 }
 
 #[derive(Subcommand)]
@@ -292,6 +301,12 @@ enum LedAction {
         #[arg(short, long, default_value = "128")]
         brightness: u8,
     },
+}
+
+#[derive(Subcommand)]
+enum EspnowAction {
+    /// Show ESP-NOW subsystem status (peers, channel, packet stats)
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -786,6 +801,55 @@ fn main() -> anyhow::Result<()> {
                 SystemAction::SetPodId { id } => {
                     let new_id = commands::system_set_pod_id(transport, *id)?;
                     println!("{}Pod ID set to {} (reboot device for BLE name change)", prefix, new_id);
+                }
+                SystemAction::Health => {
+                    let health = commands::system_health(transport)?;
+                    println!("{}System Health:", prefix);
+                    println!("{}  Free heap:     {} bytes", prefix, health.free_heap);
+                    println!("{}  Min free heap: {} bytes", prefix, health.min_free_heap);
+                    println!("{}  Uptime:        {} s", prefix, health.uptime_seconds);
+                    if health.wifi_rssi != 0 {
+                        println!("{}  WiFi RSSI:     {} dBm", prefix, health.wifi_rssi);
+                    } else {
+                        println!("{}  WiFi RSSI:     n/a (not connected)", prefix);
+                    }
+                    if !health.tasks.is_empty() {
+                        println!("{}  Tasks ({}):", prefix, health.tasks.len());
+                        println!("{}    {:<16} {:>6} {:>4} {:>4}", prefix, "NAME", "STACK", "PRI", "CORE");
+                        println!("{}    {:-<16} {:->6} {:->4} {:->4}", prefix, "", "", "", "");
+                        for task in &health.tasks {
+                            println!("{}    {:<16} {:>6} {:>4} {:>4}",
+                                prefix, task.name, task.stack_high_water, task.priority, task.core);
+                        }
+                    }
+                }
+            },
+
+            Commands::Espnow { action } => match action {
+                EspnowAction::Status => {
+                    let status = commands::espnow_status(transport)?;
+                    println!("{}ESP-NOW Status:", prefix);
+                    println!("{}  State:      {}", prefix, status.discovery_state);
+                    println!("{}  Channel:    {}", prefix, status.channel);
+                    println!("{}  Peers:      {}", prefix, status.peer_count);
+                    println!("{}  TX packets: {}", prefix, status.tx_count);
+                    println!("{}  RX packets: {}", prefix, status.rx_count);
+                    println!("{}  TX fails:   {}", prefix, status.tx_fail_count);
+                    if status.last_rtt_us > 0 {
+                        println!("{}  Last RTT:   {} us", prefix, status.last_rtt_us);
+                    }
+                    if !status.peers.is_empty() {
+                        println!("{}  Discovered peers:", prefix);
+                        println!("{}    {:<20} {:>6} {:>10}", prefix, "MAC", "RSSI", "LAST SEEN");
+                        println!("{}    {:-<20} {:->6} {:->10}", prefix, "", "", "");
+                        for peer in &status.peers {
+                            println!("{}    {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}   {:>4} {:>8} ms",
+                                prefix,
+                                peer.mac[0], peer.mac[1], peer.mac[2],
+                                peer.mac[3], peer.mac[4], peer.mac[5],
+                                peer.rssi, peer.last_seen_ms);
+                        }
+                    }
                 }
             },
 

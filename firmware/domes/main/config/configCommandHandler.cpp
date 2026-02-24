@@ -14,6 +14,8 @@
 #include "services/ledService.hpp"
 
 #include "infra/nvsConfig.hpp"
+#include "transport/espNowTransport.hpp"
+#include "services/espNowService.hpp"
 
 #include "config.pb.h"
 #include "pb_encode.h"
@@ -22,6 +24,10 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_wifi.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include <array>
 #include <cstring>
@@ -112,6 +118,16 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
         case MsgType::kSetPodIdReq:
             ESP_LOGD(kTag, "Received SET_POD_ID");
             handleSetPodId(payload, len);
+            return true;
+
+        case MsgType::kGetHealthReq:
+            ESP_LOGD(kTag, "Received GET_HEALTH");
+            handleGetHealth();
+            return true;
+
+        case MsgType::kGetEspNowStatusReq:
+            ESP_LOGD(kTag, "Received GET_ESPNOW_STATUS");
+            handleGetEspNowStatus();
             return true;
 
         default:
@@ -556,6 +572,118 @@ void ConfigCommandHandler::handleSetPodId(const uint8_t* payload, size_t len) {
     }
 
     sendFrame(MsgType::kSetPodIdRsp, respPayload.data(), 1 + ostream.bytes_written);
+}
+
+void ConfigCommandHandler::handleGetHealth() {
+    domes_config_GetHealthResponse resp = domes_config_GetHealthResponse_init_zero;
+
+    // Heap info
+    resp.free_heap = static_cast<uint32_t>(esp_get_free_heap_size());
+    resp.min_free_heap = static_cast<uint32_t>(esp_get_minimum_free_heap_size());
+
+    // Uptime
+    resp.uptime_seconds = static_cast<uint32_t>(esp_timer_get_time() / 1'000'000);
+
+    // WiFi RSSI (0 if not connected)
+    wifi_ap_record_t apInfo;
+    if (esp_wifi_sta_get_ap_info(&apInfo) == ESP_OK) {
+        resp.wifi_rssi = apInfo.rssi;
+    } else {
+        resp.wifi_rssi = 0;
+    }
+
+    // FreeRTOS task info
+    UBaseType_t taskCount = uxTaskGetNumberOfTasks();
+    // Cap to what we can fit
+    if (taskCount > 16) taskCount = 16;
+
+    TaskStatus_t taskStatuses[16];
+    UBaseType_t got = uxTaskGetSystemState(taskStatuses, taskCount, nullptr);
+
+    resp.tasks_count = 0;
+    for (UBaseType_t i = 0; i < got && resp.tasks_count < 16; ++i) {
+        auto& t = resp.tasks[resp.tasks_count];
+        strncpy(t.name, taskStatuses[i].pcTaskName, sizeof(t.name) - 1);
+        t.stack_high_water = taskStatuses[i].usStackHighWaterMark;
+        t.priority = taskStatuses[i].uxCurrentPriority;
+#if ( configUSE_CORE_AFFINITY == 1 ) && ( configNUMBER_OF_CORES > 1 )
+        // Convert affinity mask to core number (0=core0, 1=core1, 0xFF=any)
+        auto mask = taskStatuses[i].uxCoreAffinityMask;
+        if (mask == 0x01) t.core = 0;
+        else if (mask == 0x02) t.core = 1;
+        else t.core = 0xFF;  // tskNO_AFFINITY or both cores
+#else
+        t.core = 0;
+#endif
+        resp.tasks_count++;
+    }
+
+    // Encode: [status_byte][protobuf]
+    std::array<uint8_t, domes_config_GetHealthResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&stream, domes_config_GetHealthResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode GetHealthResponse: %s", PB_GET_ERROR(&stream));
+        return;
+    }
+
+    sendFrame(MsgType::kGetHealthRsp, payload.data(), 1 + stream.bytes_written);
+}
+
+void ConfigCommandHandler::handleGetEspNowStatus() {
+    domes_config_GetEspNowStatusResponse resp = domes_config_GetEspNowStatusResponse_init_zero;
+
+    if (espNowTransport_) {
+        resp.peer_count = espNowTransport_->getPeerCount();
+        resp.tx_count = espNowTransport_->getTxCount();
+        resp.rx_count = espNowTransport_->getRxCount();
+        resp.tx_fail_count = espNowTransport_->getTxFailCount();
+    }
+
+    // WiFi channel
+    uint8_t primary = 0;
+    wifi_second_chan_t secondary;
+    if (esp_wifi_get_channel(&primary, &secondary) == ESP_OK) {
+        resp.channel = primary;
+    }
+
+    if (espNowService_) {
+        resp.last_rtt_us = espNowService_->lastRttUs();
+        strncpy(resp.discovery_state, espNowService_->discoveryState(),
+                sizeof(resp.discovery_state) - 1);
+
+        // Copy peer info
+        DiscoveredPeer peers[8];
+        uint8_t count = espNowService_->getPeers(peers, 8);
+        resp.peers_count = count;
+
+        int64_t nowUs = esp_timer_get_time();
+        for (uint8_t i = 0; i < count; ++i) {
+            auto& p = resp.peers[i];
+            p.mac.size = 6;
+            std::memcpy(p.mac.bytes, peers[i].mac, 6);
+            p.rssi = 0;  // RSSI not tracked per-peer in current impl
+            // Convert last seen from absolute us to relative ms
+            if (peers[i].lastSeenUs > 0) {
+                p.last_seen_ms = static_cast<uint32_t>((nowUs - peers[i].lastSeenUs) / 1000);
+            }
+        }
+    } else {
+        strncpy(resp.discovery_state, "disabled", sizeof(resp.discovery_state) - 1);
+    }
+
+    // Encode: [status_byte][protobuf]
+    std::array<uint8_t, domes_config_GetEspNowStatusResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&stream, domes_config_GetEspNowStatusResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode GetEspNowStatusResponse: %s", PB_GET_ERROR(&stream));
+        return;
+    }
+
+    sendFrame(MsgType::kGetEspNowStatusRsp, payload.data(), 1 + stream.bytes_written);
 }
 
 }  // namespace domes::config

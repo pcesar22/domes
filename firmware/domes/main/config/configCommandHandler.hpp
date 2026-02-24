@@ -19,6 +19,8 @@
 namespace domes {
 class LedService;  // Forward declaration
 class ImuService;  // Forward declaration
+class EspNowTransport;  // Forward declaration
+class EspNowService;    // Forward declaration
 }
 
 namespace domes::config {
@@ -59,6 +61,16 @@ public:
      * @param modeManager Mode manager instance (may be nullptr to disable mode commands)
      */
     void setModeManager(ModeManager* modeManager) { modeManager_ = modeManager; }
+
+    /**
+     * @brief Set ESP-NOW transport for status queries
+     */
+    void setEspNowTransport(EspNowTransport* transport) { espNowTransport_ = transport; }
+
+    /**
+     * @brief Set ESP-NOW service for status queries
+     */
+    void setEspNowService(EspNowService* service) { espNowService_ = service; }
 
     /**
      * @brief Handle an incoming config command
@@ -134,6 +146,16 @@ private:
     void handleSetPodId(const uint8_t* payload, size_t len);
 
     /**
+     * @brief Handle GET_HEALTH request
+     */
+    void handleGetHealth();
+
+    /**
+     * @brief Handle GET_ESPNOW_STATUS request
+     */
+    void handleGetEspNowStatus();
+
+    /**
      * @brief Send list features response
      */
     void sendListFeaturesResponse();
@@ -186,6 +208,8 @@ private:
     LedService* ledService_ = nullptr;
     ImuService* imuService_ = nullptr;
     ModeManager* modeManager_ = nullptr;
+    EspNowTransport* espNowTransport_ = nullptr;
+    EspNowService* espNowService_ = nullptr;
 };
 
 }  // namespace domes::config

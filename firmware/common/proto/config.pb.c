@@ -69,6 +69,24 @@ PB_BIND(domes_config_SetPodIdRequest, domes_config_SetPodIdRequest, AUTO)
 PB_BIND(domes_config_SetPodIdResponse, domes_config_SetPodIdResponse, AUTO)
 
 
+PB_BIND(domes_config_TaskHealth, domes_config_TaskHealth, AUTO)
+
+
+PB_BIND(domes_config_GetHealthRequest, domes_config_GetHealthRequest, AUTO)
+
+
+PB_BIND(domes_config_GetHealthResponse, domes_config_GetHealthResponse, 2)
+
+
+PB_BIND(domes_config_EspNowPeer, domes_config_EspNowPeer, AUTO)
+
+
+PB_BIND(domes_config_GetEspNowStatusRequest, domes_config_GetEspNowStatusRequest, AUTO)
+
+
+PB_BIND(domes_config_GetEspNowStatusResponse, domes_config_GetEspNowStatusResponse, AUTO)
+
+
 PB_BIND(domes_config_ConfigRequest, domes_config_ConfigRequest, AUTO)
 
 

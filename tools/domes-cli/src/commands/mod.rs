@@ -1,6 +1,8 @@
 //! CLI commands for DOMES CLI
 
+pub mod espnow;
 pub mod feature;
+pub mod health;
 pub mod imu;
 pub mod led;
 pub mod ota;
@@ -8,7 +10,9 @@ pub mod system;
 pub mod trace;
 pub mod wifi;
 
+pub use espnow::espnow_status;
 pub use feature::{feature_disable, feature_enable, feature_list};
+pub use health::system_health;
 pub use imu::imu_triage_set;
 pub use led::{led_get, led_off, led_set};
 pub use ota::ota_flash;

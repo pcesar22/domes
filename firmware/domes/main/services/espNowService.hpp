@@ -75,6 +75,30 @@ public:
     /// Get number of discovered peers
     uint8_t peerCount() const { return peerCount_.load(std::memory_order_relaxed); }
 
+    /// Get last measured RTT in microseconds (from ping-pong)
+    uint32_t lastRttUs() const {
+        if (peerCount_.load(std::memory_order_relaxed) == 0) return 0;
+        return peers_[0].lastRttUs;
+    }
+
+    /// Get discovery state as string
+    const char* discoveryState() const {
+        if (!running_.load(std::memory_order_relaxed)) return "stopped";
+        if (peerFound_) return isMaster_ ? "master" : "slave";
+        if (peerCount_.load(std::memory_order_relaxed) > 0) return "found-peer";
+        return "searching";
+    }
+
+    /// Get peer info for observability (returns count of peers copied)
+    uint8_t getPeers(DiscoveredPeer* out, uint8_t maxPeers) const {
+        uint8_t count = peerCount_.load(std::memory_order_relaxed);
+        if (count > maxPeers) count = maxPeers;
+        for (uint8_t i = 0; i < count; ++i) {
+            out[i] = peers_[i];
+        }
+        return count;
+    }
+
 private:
     // =========================================================================
     // Phase 1: Discovery
