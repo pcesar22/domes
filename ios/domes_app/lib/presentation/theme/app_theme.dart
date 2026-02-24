@@ -15,6 +15,13 @@ class AppTheme {
         appBarTheme: const AppBarTheme(centerTitle: true),
       );
 
+  static ThemeData get lightTheme => ThemeData(
+        brightness: Brightness.light,
+        colorSchemeSeed: _domesBlue,
+        useMaterial3: true,
+        appBarTheme: const AppBarTheme(centerTitle: true),
+      );
+
   static const Color connectedColor = _domesGreen;
   static const Color disconnectedColor = Colors.grey;
   static const Color connectingColor = _domesOrange;
