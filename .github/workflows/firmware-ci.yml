@@ -12,6 +12,11 @@ on:
       - 'firmware/**'
       - '.github/workflows/firmware-ci.yml'
 
+# Cancel stale runs when new commits are pushed to the same PR/branch
+concurrency:
+  group: firmware-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build ESP32-S3 Firmware

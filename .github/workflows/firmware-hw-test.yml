@@ -28,11 +28,11 @@ on:
           - '1'
           - '2'
 
-# CRITICAL: Only one hardware test can run at a time
-# Jobs are queued (not cancelled) when another is running
+# Only one hardware test can run at a time on the self-hosted runner.
+# New runs cancel queued/stale runs to prevent infinite queue buildup.
 concurrency:
   group: hardware-test-queue
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   # Comma-separated list of serial ports

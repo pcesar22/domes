@@ -11,6 +11,11 @@ on:
     paths:
       - 'firmware/**'
 
+# Cancel stale runs when new commits are pushed to the same PR/branch
+concurrency:
+  group: unit-tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
