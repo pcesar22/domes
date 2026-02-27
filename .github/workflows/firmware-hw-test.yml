@@ -328,6 +328,7 @@ jobs:
           fi
 
       - name: Upload trace artifacts
+        continue-on-error: true
         if: steps.traces.outputs.has_traces == 'true'
         uses: actions/upload-artifact@v4
         with:
