@@ -36,13 +36,21 @@ typedef enum _domes_config_MsgType {
     domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP = 53,
     domes_config_MsgType_MSG_TYPE_SET_POD_ID_REQ = 54,
     domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP = 55,
-    /* Observability commands (0x38-0x3F range) */
+    /* Observability commands (0x38-0x4F range) */
     domes_config_MsgType_MSG_TYPE_GET_HEALTH_REQ = 56,
     domes_config_MsgType_MSG_TYPE_GET_HEALTH_RSP = 57,
     domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_REQ = 58,
     domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_RSP = 59,
     domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_REQ = 60,
-    domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_RSP = 61
+    domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_RSP = 61,
+    /* Crash dump commands (0x3E-0x41) */
+    domes_config_MsgType_MSG_TYPE_GET_CRASH_DUMP_REQ = 62,
+    domes_config_MsgType_MSG_TYPE_GET_CRASH_DUMP_RSP = 63,
+    domes_config_MsgType_MSG_TYPE_CLEAR_CRASH_DUMP_REQ = 64,
+    domes_config_MsgType_MSG_TYPE_CLEAR_CRASH_DUMP_RSP = 65,
+    /* Memory profiler commands (0x42-0x43) */
+    domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_REQ = 66,
+    domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_RSP = 67
 } domes_config_MsgType;
 
 /* Status codes for responses */
@@ -51,7 +59,8 @@ typedef enum _domes_config_Status {
     domes_config_Status_STATUS_ERROR = 1,
     domes_config_Status_STATUS_INVALID_FEATURE = 2,
     domes_config_Status_STATUS_BUSY = 3,
-    domes_config_Status_STATUS_INVALID_PATTERN = 4
+    domes_config_Status_STATUS_INVALID_PATTERN = 4,
+    domes_config_Status_STATUS_NO_DATA = 5
 } domes_config_Status;
 
 /* LED pattern types */
@@ -265,6 +274,51 @@ typedef struct _domes_config_EspNowBenchResponse {
     uint32_t p99_rtt_us;
 } domes_config_EspNowBenchResponse;
 
+/* Crash dump stored in NVS after a panic */
+typedef struct _domes_config_GetCrashDumpRequest { /* Empty - returns last crash dump if present */
+    char dummy_field;
+} domes_config_GetCrashDumpRequest;
+
+typedef struct _domes_config_CrashDumpResponse {
+    bool has_dump; /* true if a crash dump exists */
+    char reason[64]; /* Panic reason string */
+    char task_name[16]; /* Task that crashed */
+    uint32_t uptime_s; /* Uptime at crash (seconds) */
+    uint32_t free_heap; /* Free heap at crash */
+    pb_size_t backtrace_count;
+    uint32_t backtrace[16]; /* Program counter values (up to 16) */
+    uint32_t timestamp; /* Boot count when crash occurred */
+} domes_config_CrashDumpResponse;
+
+typedef struct _domes_config_ClearCrashDumpRequest { /* Empty - clears stored crash dump */
+    char dummy_field;
+} domes_config_ClearCrashDumpRequest;
+
+typedef struct _domes_config_ClearCrashDumpResponse {
+    bool cleared; /* true if dump was cleared */
+} domes_config_ClearCrashDumpResponse;
+
+/* Single heap sample */
+typedef struct _domes_config_HeapSample {
+    uint32_t timestamp_s; /* Uptime when sample was taken (seconds) */
+    uint32_t free_heap; /* Free heap bytes */
+    uint32_t largest_block; /* Largest free block bytes */
+    uint32_t min_free_heap; /* Historical minimum free heap */
+} domes_config_HeapSample;
+
+typedef struct _domes_config_GetMemoryProfileRequest { /* Empty - returns heap samples + current stats */
+    char dummy_field;
+} domes_config_GetMemoryProfileRequest;
+
+typedef struct _domes_config_GetMemoryProfileResponse {
+    uint32_t current_free_heap;
+    uint32_t current_min_free_heap;
+    uint32_t current_largest_block;
+    uint32_t total_heap;
+    pb_size_t samples_count;
+    domes_config_HeapSample samples[60]; /* Last N heap samples (circular buffer) */
+} domes_config_GetMemoryProfileResponse;
+
 /* Top-level request envelope */
 typedef struct _domes_config_ConfigRequest {
     pb_size_t which_request;
@@ -291,12 +345,12 @@ extern "C" {
 
 /* Helper constants for enums */
 #define _domes_config_MsgType_MIN domes_config_MsgType_MSG_TYPE_UNKNOWN
-#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_RSP
-#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_RSP+1))
+#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_RSP
+#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_RSP+1))
 
 #define _domes_config_Status_MIN domes_config_Status_STATUS_OK
-#define _domes_config_Status_MAX domes_config_Status_STATUS_INVALID_PATTERN
-#define _domes_config_Status_ARRAYSIZE ((domes_config_Status)(domes_config_Status_STATUS_INVALID_PATTERN+1))
+#define _domes_config_Status_MAX domes_config_Status_STATUS_NO_DATA
+#define _domes_config_Status_ARRAYSIZE ((domes_config_Status)(domes_config_Status_STATUS_NO_DATA+1))
 
 #define _domes_config_LedPatternType_MIN domes_config_LedPatternType_LED_PATTERN_OFF
 #define _domes_config_LedPatternType_MAX domes_config_LedPatternType_LED_PATTERN_COLOR_CYCLE
@@ -347,6 +401,13 @@ extern "C" {
 
 
 
+
+
+
+
+
+
+
 #define domes_config_ConfigResponse_status_ENUMTYPE domes_config_Status
 
 
@@ -380,6 +441,13 @@ extern "C" {
 #define domes_config_GetEspNowStatusResponse_init_default {0, 0, 0, 0, 0, 0, "", 0, {domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default, domes_config_EspNowPeer_init_default}}
 #define domes_config_EspNowBenchRequest_init_default {0}
 #define domes_config_EspNowBenchResponse_init_default {0, 0, 0, 0, 0, 0, 0, 0}
+#define domes_config_GetCrashDumpRequest_init_default {0}
+#define domes_config_CrashDumpResponse_init_default {0, "", "", 0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0}
+#define domes_config_ClearCrashDumpRequest_init_default {0}
+#define domes_config_ClearCrashDumpResponse_init_default {0}
+#define domes_config_HeapSample_init_default     {0, 0, 0, 0}
+#define domes_config_GetMemoryProfileRequest_init_default {0}
+#define domes_config_GetMemoryProfileResponse_init_default {0, 0, 0, 0, 0, {domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default}}
 #define domes_config_ConfigRequest_init_default  {0, {domes_config_ListFeaturesRequest_init_default}}
 #define domes_config_ConfigResponse_init_default {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_default}}
 #define domes_config_Color_init_zero             {0, 0, 0, 0}
@@ -411,6 +479,13 @@ extern "C" {
 #define domes_config_GetEspNowStatusResponse_init_zero {0, 0, 0, 0, 0, 0, "", 0, {domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero, domes_config_EspNowPeer_init_zero}}
 #define domes_config_EspNowBenchRequest_init_zero {0}
 #define domes_config_EspNowBenchResponse_init_zero {0, 0, 0, 0, 0, 0, 0, 0}
+#define domes_config_GetCrashDumpRequest_init_zero {0}
+#define domes_config_CrashDumpResponse_init_zero {0, "", "", 0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0}
+#define domes_config_ClearCrashDumpRequest_init_zero {0}
+#define domes_config_ClearCrashDumpResponse_init_zero {0}
+#define domes_config_HeapSample_init_zero        {0, 0, 0, 0}
+#define domes_config_GetMemoryProfileRequest_init_zero {0}
+#define domes_config_GetMemoryProfileResponse_init_zero {0, 0, 0, 0, 0, {domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero}}
 #define domes_config_ConfigRequest_init_zero     {0, {domes_config_ListFeaturesRequest_init_zero}}
 #define domes_config_ConfigResponse_init_zero    {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_zero}}
 
@@ -479,6 +554,23 @@ extern "C" {
 #define domes_config_EspNowBenchResponse_p50_rtt_us_tag 6
 #define domes_config_EspNowBenchResponse_p95_rtt_us_tag 7
 #define domes_config_EspNowBenchResponse_p99_rtt_us_tag 8
+#define domes_config_CrashDumpResponse_has_dump_tag 1
+#define domes_config_CrashDumpResponse_reason_tag 2
+#define domes_config_CrashDumpResponse_task_name_tag 3
+#define domes_config_CrashDumpResponse_uptime_s_tag 4
+#define domes_config_CrashDumpResponse_free_heap_tag 5
+#define domes_config_CrashDumpResponse_backtrace_tag 6
+#define domes_config_CrashDumpResponse_timestamp_tag 7
+#define domes_config_ClearCrashDumpResponse_cleared_tag 1
+#define domes_config_HeapSample_timestamp_s_tag  1
+#define domes_config_HeapSample_free_heap_tag    2
+#define domes_config_HeapSample_largest_block_tag 3
+#define domes_config_HeapSample_min_free_heap_tag 4
+#define domes_config_GetMemoryProfileResponse_current_free_heap_tag 1
+#define domes_config_GetMemoryProfileResponse_current_min_free_heap_tag 2
+#define domes_config_GetMemoryProfileResponse_current_largest_block_tag 3
+#define domes_config_GetMemoryProfileResponse_total_heap_tag 4
+#define domes_config_GetMemoryProfileResponse_samples_tag 5
 #define domes_config_ConfigRequest_list_features_tag 1
 #define domes_config_ConfigRequest_set_feature_tag 2
 #define domes_config_ConfigResponse_status_tag   1
@@ -681,6 +773,55 @@ X(a, STATIC,   SINGULAR, UINT32,   p99_rtt_us,        8)
 #define domes_config_EspNowBenchResponse_CALLBACK NULL
 #define domes_config_EspNowBenchResponse_DEFAULT NULL
 
+#define domes_config_GetCrashDumpRequest_FIELDLIST(X, a) \
+
+#define domes_config_GetCrashDumpRequest_CALLBACK NULL
+#define domes_config_GetCrashDumpRequest_DEFAULT NULL
+
+#define domes_config_CrashDumpResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     has_dump,          1) \
+X(a, STATIC,   SINGULAR, STRING,   reason,            2) \
+X(a, STATIC,   SINGULAR, STRING,   task_name,         3) \
+X(a, STATIC,   SINGULAR, UINT32,   uptime_s,          4) \
+X(a, STATIC,   SINGULAR, UINT32,   free_heap,         5) \
+X(a, STATIC,   REPEATED, UINT32,   backtrace,         6) \
+X(a, STATIC,   SINGULAR, UINT32,   timestamp,         7)
+#define domes_config_CrashDumpResponse_CALLBACK NULL
+#define domes_config_CrashDumpResponse_DEFAULT NULL
+
+#define domes_config_ClearCrashDumpRequest_FIELDLIST(X, a) \
+
+#define domes_config_ClearCrashDumpRequest_CALLBACK NULL
+#define domes_config_ClearCrashDumpRequest_DEFAULT NULL
+
+#define domes_config_ClearCrashDumpResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     cleared,           1)
+#define domes_config_ClearCrashDumpResponse_CALLBACK NULL
+#define domes_config_ClearCrashDumpResponse_DEFAULT NULL
+
+#define domes_config_HeapSample_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   timestamp_s,       1) \
+X(a, STATIC,   SINGULAR, UINT32,   free_heap,         2) \
+X(a, STATIC,   SINGULAR, UINT32,   largest_block,     3) \
+X(a, STATIC,   SINGULAR, UINT32,   min_free_heap,     4)
+#define domes_config_HeapSample_CALLBACK NULL
+#define domes_config_HeapSample_DEFAULT NULL
+
+#define domes_config_GetMemoryProfileRequest_FIELDLIST(X, a) \
+
+#define domes_config_GetMemoryProfileRequest_CALLBACK NULL
+#define domes_config_GetMemoryProfileRequest_DEFAULT NULL
+
+#define domes_config_GetMemoryProfileResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   current_free_heap,   1) \
+X(a, STATIC,   SINGULAR, UINT32,   current_min_free_heap,   2) \
+X(a, STATIC,   SINGULAR, UINT32,   current_largest_block,   3) \
+X(a, STATIC,   SINGULAR, UINT32,   total_heap,        4) \
+X(a, STATIC,   REPEATED, MESSAGE,  samples,           5)
+#define domes_config_GetMemoryProfileResponse_CALLBACK NULL
+#define domes_config_GetMemoryProfileResponse_DEFAULT NULL
+#define domes_config_GetMemoryProfileResponse_samples_MSGTYPE domes_config_HeapSample
+
 #define domes_config_ConfigRequest_FIELDLIST(X, a) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (request,list_features,request.list_features),   1) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (request,set_feature,request.set_feature),   2)
@@ -727,6 +868,13 @@ extern const pb_msgdesc_t domes_config_GetEspNowStatusRequest_msg;
 extern const pb_msgdesc_t domes_config_GetEspNowStatusResponse_msg;
 extern const pb_msgdesc_t domes_config_EspNowBenchRequest_msg;
 extern const pb_msgdesc_t domes_config_EspNowBenchResponse_msg;
+extern const pb_msgdesc_t domes_config_GetCrashDumpRequest_msg;
+extern const pb_msgdesc_t domes_config_CrashDumpResponse_msg;
+extern const pb_msgdesc_t domes_config_ClearCrashDumpRequest_msg;
+extern const pb_msgdesc_t domes_config_ClearCrashDumpResponse_msg;
+extern const pb_msgdesc_t domes_config_HeapSample_msg;
+extern const pb_msgdesc_t domes_config_GetMemoryProfileRequest_msg;
+extern const pb_msgdesc_t domes_config_GetMemoryProfileResponse_msg;
 extern const pb_msgdesc_t domes_config_ConfigRequest_msg;
 extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 
@@ -760,28 +908,42 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_GetEspNowStatusResponse_fields &domes_config_GetEspNowStatusResponse_msg
 #define domes_config_EspNowBenchRequest_fields &domes_config_EspNowBenchRequest_msg
 #define domes_config_EspNowBenchResponse_fields &domes_config_EspNowBenchResponse_msg
+#define domes_config_GetCrashDumpRequest_fields &domes_config_GetCrashDumpRequest_msg
+#define domes_config_CrashDumpResponse_fields &domes_config_CrashDumpResponse_msg
+#define domes_config_ClearCrashDumpRequest_fields &domes_config_ClearCrashDumpRequest_msg
+#define domes_config_ClearCrashDumpResponse_fields &domes_config_ClearCrashDumpResponse_msg
+#define domes_config_HeapSample_fields &domes_config_HeapSample_msg
+#define domes_config_GetMemoryProfileRequest_fields &domes_config_GetMemoryProfileRequest_msg
+#define domes_config_GetMemoryProfileResponse_fields &domes_config_GetMemoryProfileResponse_msg
 #define domes_config_ConfigRequest_fields &domes_config_ConfigRequest_msg
 #define domes_config_ConfigResponse_fields &domes_config_ConfigResponse_msg
 
 /* Maximum encoded size of messages (where known) */
-#define DOMES_CONFIG_CONFIG_PB_H_MAX_SIZE        domes_config_GetHealthResponse_size
+#define DOMES_CONFIG_CONFIG_PB_H_MAX_SIZE        domes_config_GetMemoryProfileResponse_size
+#define domes_config_ClearCrashDumpRequest_size  0
+#define domes_config_ClearCrashDumpResponse_size 2
 #define domes_config_Color_size                  24
 #define domes_config_ConfigRequest_size          6
 #define domes_config_ConfigResponse_size         106
+#define domes_config_CrashDumpResponse_size      198
 #define domes_config_EspNowBenchRequest_size     6
 #define domes_config_EspNowBenchResponse_size    48
 #define domes_config_EspNowPeer_size             25
 #define domes_config_FeatureState_size           4
+#define domes_config_GetCrashDumpRequest_size    0
 #define domes_config_GetEspNowStatusRequest_size 0
 #define domes_config_GetEspNowStatusResponse_size 269
 #define domes_config_GetHealthRequest_size       0
 #define domes_config_GetHealthResponse_size      621
 #define domes_config_GetLedPatternRequest_size   0
 #define domes_config_GetLedPatternResponse_size  251
+#define domes_config_GetMemoryProfileRequest_size 0
+#define domes_config_GetMemoryProfileResponse_size 1584
 #define domes_config_GetModeRequest_size         0
 #define domes_config_GetModeResponse_size        8
 #define domes_config_GetSystemInfoRequest_size   0
 #define domes_config_GetSystemInfoResponse_size  65
+#define domes_config_HeapSample_size             24
 #define domes_config_LedPattern_size             248
 #define domes_config_ListFeaturesRequest_size    0
 #define domes_config_ListFeaturesResponse_size   102

@@ -240,6 +240,13 @@ enum TraceAction {
         #[arg(short, long)]
         names: Option<PathBuf>,
     },
+
+    /// Stream trace events in real-time over WiFi/TCP
+    Stream {
+        /// WiFi address of device (e.g., 192.168.1.100)
+        #[arg(long)]
+        wifi: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -278,6 +285,20 @@ enum SystemAction {
 
     /// Get system health diagnostics (heap, tasks, RSSI)
     Health,
+
+    /// Get crash dump (last panic backtrace from NVS)
+    CrashDump {
+        /// Clear the crash dump after displaying
+        #[arg(long)]
+        clear: bool,
+    },
+
+    /// Get memory profile (heap stats + historical samples)
+    Memory {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -794,6 +815,9 @@ fn main() -> anyhow::Result<()> {
                     println!("{}  Dropped:     {}", prefix, status.dropped_count);
                     println!("{}  Buffer size: {} bytes", prefix, status.buffer_size);
                 }
+                TraceAction::Stream { wifi } => {
+                    commands::trace_stream(wifi)?;
+                }
                 TraceAction::Dump { output, names } => {
                     let dump_path = if multi {
                         // Per-device output file
@@ -895,6 +919,79 @@ fn main() -> anyhow::Result<()> {
                         for task in &health.tasks {
                             println!("{}    {:<16} {:>6} {:>4} {:>4}",
                                 prefix, task.name, task.stack_high_water, task.priority, task.core);
+                        }
+                    }
+                }
+                SystemAction::CrashDump { clear } => {
+                    let dump = commands::system_crash_dump(transport)?;
+                    if dump.has_dump {
+                        println!("{}Crash Dump:", prefix);
+                        println!("{}  Reason:    {}", prefix, dump.reason);
+                        println!("{}  Task:      {}", prefix, dump.task_name);
+                        println!("{}  Uptime:    {} s", prefix, dump.uptime_s);
+                        println!("{}  Free heap: {} bytes", prefix, dump.free_heap);
+                        if !dump.backtrace.is_empty() {
+                            println!("{}  Backtrace:", prefix);
+                            for (i, addr) in dump.backtrace.iter().enumerate() {
+                                println!("{}    #{}: 0x{:08X}", prefix, i, addr);
+                            }
+                            println!("{}  (use addr2line -e build/domes.elf to resolve)", prefix);
+                        }
+                        if *clear {
+                            let cleared = commands::system_clear_crash_dump(transport)?;
+                            if cleared {
+                                println!("{}Crash dump cleared.", prefix);
+                            } else {
+                                println!("{}Failed to clear crash dump.", prefix);
+                            }
+                        }
+                    } else {
+                        println!("{}No crash dump stored.", prefix);
+                    }
+                }
+                SystemAction::Memory { json } => {
+                    let profile = commands::system_memory_profile(transport)?;
+                    if *json {
+                        // JSON output
+                        println!("{{");
+                        println!("  \"current_free_heap\": {},", profile.current_free_heap);
+                        println!("  \"current_min_free_heap\": {},", profile.current_min_free_heap);
+                        println!("  \"current_largest_block\": {},", profile.current_largest_block);
+                        println!("  \"total_heap\": {},", profile.total_heap);
+                        println!("  \"usage_pct\": {:.1},",
+                            if profile.total_heap > 0 {
+                                (1.0 - profile.current_free_heap as f64 / profile.total_heap as f64) * 100.0
+                            } else { 0.0 });
+                        println!("  \"samples\": [");
+                        for (i, s) in profile.samples.iter().enumerate() {
+                            let comma = if i + 1 < profile.samples.len() { "," } else { "" };
+                            println!("    {{\"t\": {}, \"free\": {}, \"largest\": {}, \"min_free\": {}}}{}",
+                                s.timestamp_s, s.free_heap, s.largest_block, s.min_free_heap, comma);
+                        }
+                        println!("  ]");
+                        println!("}}");
+                    } else {
+                        let usage_pct = if profile.total_heap > 0 {
+                            (1.0 - profile.current_free_heap as f64 / profile.total_heap as f64) * 100.0
+                        } else { 0.0 };
+                        println!("{}Memory Profile:", prefix);
+                        println!("{}  Total heap:      {} bytes", prefix, profile.total_heap);
+                        println!("{}  Free heap:       {} bytes ({:.1}% used)", prefix, profile.current_free_heap, usage_pct);
+                        println!("{}  Min free heap:   {} bytes", prefix, profile.current_min_free_heap);
+                        println!("{}  Largest block:   {} bytes", prefix, profile.current_largest_block);
+                        if !profile.samples.is_empty() {
+                            println!("{}  History ({} samples):", prefix, profile.samples.len());
+                            // Sparkline using free heap values
+                            let values: Vec<u32> = profile.samples.iter().map(|s| s.free_heap).collect();
+                            let min_val = *values.iter().min().unwrap_or(&0);
+                            let max_val = *values.iter().max().unwrap_or(&1);
+                            let range = if max_val > min_val { max_val - min_val } else { 1 };
+                            let spark_chars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+                            let sparkline: String = values.iter().map(|v| {
+                                let idx = (((*v - min_val) as f64 / range as f64) * 7.0) as usize;
+                                spark_chars[idx.min(7)]
+                            }).collect();
+                            println!("{}    Free heap: {} ({}-{} bytes)", prefix, sparkline, min_val, max_val);
                         }
                     }
                 }

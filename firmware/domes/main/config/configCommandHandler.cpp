@@ -13,6 +13,8 @@
 #include "services/imuService.hpp"
 #include "services/ledService.hpp"
 
+#include "infra/crashDumpHandler.hpp"
+#include "infra/memoryProfiler.hpp"
 #include "infra/nvsConfig.hpp"
 #include "transport/espNowTransport.hpp"
 #include "services/espNowService.hpp"
@@ -21,6 +23,7 @@
 #include "pb_encode.h"
 #include "pb_decode.h"
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -133,6 +136,21 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
         case MsgType::kEspNowBenchReq:
             ESP_LOGD(kTag, "Received ESPNOW_BENCH");
             handleEspNowBench(payload, len);
+            return true;
+
+        case MsgType::kGetCrashDumpReq:
+            ESP_LOGD(kTag, "Received GET_CRASH_DUMP");
+            handleGetCrashDump();
+            return true;
+
+        case MsgType::kClearCrashDumpReq:
+            ESP_LOGD(kTag, "Received CLEAR_CRASH_DUMP");
+            handleClearCrashDump();
+            return true;
+
+        case MsgType::kGetMemoryProfileReq:
+            ESP_LOGD(kTag, "Received GET_MEMORY_PROFILE");
+            handleGetMemoryProfile();
             return true;
 
         default:
@@ -762,6 +780,101 @@ void ConfigCommandHandler::handleEspNowBench(const uint8_t* payload, size_t len)
     }
 
     sendFrame(MsgType::kEspNowBenchRsp, respPayload.data(), 1 + ostream.bytes_written);
+}
+
+// ============================================================================
+// Crash dump handlers
+// ============================================================================
+
+void ConfigCommandHandler::handleGetCrashDump() {
+    domes_config_CrashDumpResponse resp = domes_config_CrashDumpResponse_init_zero;
+
+    infra::CrashDumpData dump;
+    if (infra::ShutdownDumpHandler::loadDump(dump) == ESP_OK) {
+        resp.has_dump = true;
+        std::strncpy(resp.reason, dump.reason, sizeof(resp.reason) - 1);
+        std::strncpy(resp.task_name, dump.taskName, sizeof(resp.task_name) - 1);
+        resp.uptime_s = dump.uptimeS;
+        resp.free_heap = dump.freeHeap;
+        resp.timestamp = dump.bootCount;
+
+        resp.backtrace_count = dump.backtraceDepth;
+        for (uint8_t i = 0; i < dump.backtraceDepth && i < 16; ++i) {
+            resp.backtrace[i] = dump.backtrace[i];
+        }
+    } else {
+        resp.has_dump = false;
+    }
+
+    // Encode: [status_byte][protobuf]
+    std::array<uint8_t, domes_config_CrashDumpResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&stream, domes_config_CrashDumpResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode CrashDumpResponse: %s", PB_GET_ERROR(&stream));
+        return;
+    }
+
+    sendFrame(MsgType::kGetCrashDumpRsp, payload.data(), 1 + stream.bytes_written);
+}
+
+void ConfigCommandHandler::handleClearCrashDump() {
+    esp_err_t err = infra::ShutdownDumpHandler::clearDump();
+
+    domes_config_ClearCrashDumpResponse resp = domes_config_ClearCrashDumpResponse_init_zero;
+    resp.cleared = (err == ESP_OK);
+
+    std::array<uint8_t, domes_config_ClearCrashDumpResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(err == ESP_OK ? Status::kOk : Status::kError);
+
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&stream, domes_config_ClearCrashDumpResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode ClearCrashDumpResponse: %s", PB_GET_ERROR(&stream));
+        return;
+    }
+
+    sendFrame(MsgType::kClearCrashDumpRsp, payload.data(), 1 + stream.bytes_written);
+}
+
+// ============================================================================
+// Memory profile handler
+// ============================================================================
+
+void ConfigCommandHandler::handleGetMemoryProfile() {
+    domes_config_GetMemoryProfileResponse resp =
+        domes_config_GetMemoryProfileResponse_init_zero;
+
+    // Current stats
+    auto current = infra::MemoryProfiler::currentStats();
+    resp.current_free_heap = current.freeHeap;
+    resp.current_min_free_heap = current.minFreeHeap;
+    resp.current_largest_block = current.largestBlock;
+    resp.total_heap = infra::MemoryProfiler::totalHeapSize();
+
+    // Historical samples
+    infra::HeapSample samples[infra::kMaxHeapSamples];
+    size_t count = infra::MemoryProfiler::getSamples(samples, infra::kMaxHeapSamples);
+
+    resp.samples_count = static_cast<pb_size_t>(count);
+    for (size_t i = 0; i < count; ++i) {
+        resp.samples[i].timestamp_s = samples[i].timestampS;
+        resp.samples[i].free_heap = samples[i].freeHeap;
+        resp.samples[i].largest_block = samples[i].largestBlock;
+        resp.samples[i].min_free_heap = samples[i].minFreeHeap;
+    }
+
+    // Encode: [status_byte][protobuf]
+    std::array<uint8_t, domes_config_GetMemoryProfileResponse_size + 10> payload;
+    payload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+    if (!pb_encode(&stream, domes_config_GetMemoryProfileResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode GetMemoryProfileResponse: %s", PB_GET_ERROR(&stream));
+        return;
+    }
+
+    sendFrame(MsgType::kGetMemoryProfileRsp, payload.data(), 1 + stream.bytes_written);
 }
 
 }  // namespace domes::config

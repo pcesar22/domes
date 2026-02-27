@@ -160,6 +160,10 @@ private:
      */
     void handleEspNowBench(const uint8_t* payload, size_t len);
 
+    void handleGetCrashDump();
+    void handleClearCrashDump();
+    void handleGetMemoryProfile();
+
     /**
      * @brief Send list features response
      */

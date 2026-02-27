@@ -21,6 +21,7 @@ std::atomic<bool> Recorder::enabled_{false};
 std::atomic<bool> Recorder::initialized_{false};
 std::array<TaskNameEntry, kMaxRegisteredTasks> Recorder::taskNames_{};
 size_t Recorder::taskNameCount_{0};
+std::atomic<Recorder::StreamCallback> Recorder::streamCallback_{nullptr};
 
 esp_err_t Recorder::init(size_t bufferSize) {
     if (initialized_.load()) {
@@ -86,6 +87,12 @@ void Recorder::record(const TraceEvent& event) {
         return;
     }
     buffer_->record(event);
+
+    // Forward to streaming callback if active
+    auto cb = streamCallback_.load(std::memory_order_relaxed);
+    if (cb) {
+        cb(event);
+    }
 }
 
 void Recorder::recordFromIsr(const TraceEvent& event) {
@@ -165,6 +172,14 @@ const std::array<TaskNameEntry, kMaxRegisteredTasks>& Recorder::getTaskNames() {
 
 size_t Recorder::getRegisteredTaskCount() {
     return taskNameCount_;
+}
+
+void Recorder::setStreamCallback(StreamCallback cb) {
+    streamCallback_.store(cb, std::memory_order_release);
+}
+
+bool Recorder::isStreaming() {
+    return streamCallback_.load(std::memory_order_relaxed) != nullptr;
 }
 
 }  // namespace domes::trace

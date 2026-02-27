@@ -55,7 +55,7 @@ TEST(ConfigMsgType, IsConfigMessageOutOfRange) {
     EXPECT_FALSE(isConfigMessage(0x00));  // Unknown
     EXPECT_FALSE(isConfigMessage(0xFF));  // Unknown
     EXPECT_FALSE(isConfigMessage(0x1F));  // Just before config range
-    EXPECT_FALSE(isConfigMessage(0x3E));  // Just past observability range
+    EXPECT_FALSE(isConfigMessage(0x44));  // Just past crash dump/memory profile range
 }
 
 TEST(ConfigMsgType, IsConfigMessageObservabilityRange) {
@@ -66,6 +66,16 @@ TEST(ConfigMsgType, IsConfigMessageObservabilityRange) {
     EXPECT_TRUE(isConfigMessage(0x3B));  // GetEspNowStatusRsp
     EXPECT_TRUE(isConfigMessage(0x3C));  // EspNowBenchReq
     EXPECT_TRUE(isConfigMessage(0x3D));  // EspNowBenchRsp
+}
+
+TEST(ConfigMsgType, IsConfigMessageCrashDumpMemoryRange) {
+    // Crash dump and memory profiler commands (0x3E-0x43) should be config messages
+    EXPECT_TRUE(isConfigMessage(0x3E));  // GetCrashDumpReq
+    EXPECT_TRUE(isConfigMessage(0x3F));  // GetCrashDumpRsp
+    EXPECT_TRUE(isConfigMessage(0x40));  // ClearCrashDumpReq
+    EXPECT_TRUE(isConfigMessage(0x41));  // ClearCrashDumpRsp
+    EXPECT_TRUE(isConfigMessage(0x42));  // GetMemoryProfileReq
+    EXPECT_TRUE(isConfigMessage(0x43));  // GetMemoryProfileRsp
 }
 
 TEST(ConfigMsgType, GapValuesAreInRange) {
@@ -226,7 +236,7 @@ TEST(Constants, MaxFeatures) {
 }
 
 TEST(Constants, MaxFrameSize) {
-    EXPECT_EQ(kMaxFrameSize, 256u);
+    EXPECT_EQ(kMaxFrameSize, 1200u);
 }
 
 // =============================================================================

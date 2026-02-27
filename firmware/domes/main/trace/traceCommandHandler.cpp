@@ -314,7 +314,7 @@ void CommandHandler::sendStatusResponse() {
     domes_trace_TraceStatusResponse msg = domes_trace_TraceStatusResponse_init_zero;
     msg.initialized = Recorder::isInitialized();
     msg.enabled = Recorder::isEnabled();
-    msg.streaming = false;  // TODO: populate when streaming is implemented
+    msg.streaming = Recorder::isStreaming();
     msg.event_count = static_cast<uint32_t>(Recorder::buffer().count());
     msg.dropped_count = Recorder::buffer().droppedCount();
     msg.buffer_size = TraceBuffer::kDefaultBufferSize;
