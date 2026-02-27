@@ -161,6 +161,7 @@ TransportError EspNowTransport::send(const uint8_t* data, size_t len) {
     xSemaphoreTake(txDoneSemaphore_, 0);
 
     // Send to broadcast address
+    uint32_t sendStartTick = xTaskGetTickCount();
     esp_err_t err = esp_now_send(kEspNowBroadcastAddr, data, len);
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "esp_now_send failed: %s", esp_err_to_name(err));
@@ -170,14 +171,17 @@ TransportError EspNowTransport::send(const uint8_t* data, size_t len) {
     }
 
     // Wait for send callback. Broadcast has no MAC-level ACK so the callback
-    // fires when the frame leaves the radio. 200ms is generous but avoids
-    // desync from BLE coexistence delays.
-    if (xSemaphoreTake(txDoneSemaphore_, pdMS_TO_TICKS(200)) != pdTRUE) {
+    // fires when the frame leaves the radio. With coexistence tuning (CE_LENGTH_TYPE_SD,
+    // wider BLE intervals, slave latency), 50ms is sufficient.
+    if (xSemaphoreTake(txDoneSemaphore_, pdMS_TO_TICKS(50)) != pdTRUE) {
         ESP_LOGW(kTag, "Broadcast send callback timeout");
         TRACE_MUTEX_UNLOCK(TRACE_ID("EspNow.TxMutex"));
         xSemaphoreGive(txMutex_);
         return TransportError::kTimeout;
     }
+
+    uint32_t sendLatencyMs = (xTaskGetTickCount() - sendStartTick) * portTICK_PERIOD_MS;
+    TRACE_COUNTER(TRACE_ID("EspNow.SendLatencyMs"), sendLatencyMs, trace::Category::kEspNow);
 
     TRACE_MUTEX_UNLOCK(TRACE_ID("EspNow.TxMutex"));
     xSemaphoreGive(txMutex_);
@@ -220,6 +224,7 @@ TransportError EspNowTransport::sendTo(const uint8_t macAddr[ESP_NOW_ETH_ALEN],
     // Drain stale send-complete signal (see comment in send())
     xSemaphoreTake(txDoneSemaphore_, 0);
 
+    uint32_t sendStartTick = xTaskGetTickCount();
     esp_err_t err = esp_now_send(macAddr, data, len);
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "esp_now_send (unicast) failed: %s", esp_err_to_name(err));
@@ -234,6 +239,9 @@ TransportError EspNowTransport::sendTo(const uint8_t macAddr[ESP_NOW_ETH_ALEN],
         xSemaphoreGive(txMutex_);
         return TransportError::kTimeout;
     }
+
+    uint32_t sendLatencyMs = (xTaskGetTickCount() - sendStartTick) * portTICK_PERIOD_MS;
+    TRACE_COUNTER(TRACE_ID("EspNow.SendLatencyMs"), sendLatencyMs, trace::Category::kEspNow);
 
     TRACE_MUTEX_UNLOCK(TRACE_ID("EspNow.TxMutex"));
     xSemaphoreGive(txMutex_);

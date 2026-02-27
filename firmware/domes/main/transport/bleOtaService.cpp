@@ -182,6 +182,23 @@ static int bleGapEventCb(struct ble_gap_event* event, void* arg) {
 
                 // Request MTU exchange for larger packets
                 ble_gattc_exchange_mtu(event->connect.conn_handle, nullptr, nullptr);
+
+                // Request connection parameters tuned for ESP-NOW coexistence.
+                // Wider intervals + slave latency reduce radio contention.
+                struct ble_gap_upd_params connParams = {};
+                connParams.itvl_min = 24;    // 30ms  (units of 1.25ms)
+                connParams.itvl_max = 40;    // 50ms
+                connParams.latency = 4;      // Skip up to 4 events during ESP-NOW bursts
+                connParams.supervision_timeout = 600;  // 6000ms (units of 10ms)
+                connParams.min_ce_len = 0;
+                connParams.max_ce_len = 0;
+
+                int rc = ble_gap_update_params(event->connect.conn_handle, &connParams);
+                if (rc != 0) {
+                    ESP_LOGW(kTag, "Failed to request conn param update: %d", rc);
+                } else {
+                    ESP_LOGI(kTag, "Requested conn params: itvl=[30-50ms] lat=4 timeout=6s");
+                }
             } else {
                 ESP_LOGW(kTag, "BLE connection failed, status=%d", event->connect.status);
                 g_bleOtaService->startAdvertising();
@@ -197,6 +214,10 @@ static int bleGapEventCb(struct ble_gap_event* event, void* arg) {
         case BLE_GAP_EVENT_MTU:
             ESP_LOGI(kTag, "MTU updated: %d", event->mtu.value);
             g_bleOtaService->onMtuChanged(event->mtu.value);
+            break;
+
+        case BLE_GAP_EVENT_CONN_UPDATE:
+            ESP_LOGI(kTag, "Conn params updated: status=%d", event->conn_update.status);
             break;
 
         case BLE_GAP_EVENT_ADV_COMPLETE:
