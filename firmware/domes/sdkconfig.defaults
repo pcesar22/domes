@@ -79,3 +79,16 @@ CONFIG_BT_NIMBLE_GATT_MAX_PROCS=4
 
 # Pin BLE controller to Core 0 (protocol core) for better coexistence
 CONFIG_BT_NIMBLE_PINNED_TO_CORE_0=y
+
+# BLE connection parameters tuned for ESP-NOW coexistence.
+# Wider intervals + slave latency reduce radio contention during game traffic.
+# Units: 1.25ms per interval unit, 10ms per supervision timeout unit.
+CONFIG_BT_NIMBLE_SVC_GAP_PPCP_MIN_CONN_INTERVAL=24
+CONFIG_BT_NIMBLE_SVC_GAP_PPCP_MAX_CONN_INTERVAL=40
+CONFIG_BT_NIMBLE_SVC_GAP_PPCP_SLAVE_LATENCY=4
+CONFIG_BT_NIMBLE_SVC_GAP_PPCP_SUPERVISION_TMO=600
+
+# Use scheduled CE length for better coexistence arbitration.
+# "SD" lets the coex scheduler control BLE connection event duration,
+# preventing BLE from monopolizing the radio during ESP-NOW bursts.
+CONFIG_BT_CTRL_CE_LENGTH_TYPE_SD=y
