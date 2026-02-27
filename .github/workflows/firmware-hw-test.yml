@@ -158,7 +158,19 @@ jobs:
 
           for port in "${PORTS[@]}"; do
             echo "=== Feature list: $port ==="
-            $CLI --port "$port" feature list
+            # Retry up to 3 times with 5s delay — USB-CDC can take extra time
+            for attempt in 1 2 3; do
+              if $CLI --port "$port" feature list; then
+                break
+              fi
+              if [ $attempt -lt 3 ]; then
+                echo "Attempt $attempt failed, retrying in 5s..."
+                sleep 5
+              else
+                echo "::error::Feature list failed on $port after 3 attempts"
+                exit 1
+              fi
+            done
             echo ""
           done
           echo "Feature list test passed on all devices"
