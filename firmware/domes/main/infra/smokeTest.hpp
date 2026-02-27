@@ -86,14 +86,14 @@ inline void runSmokeTests(domes_config_SelfTestResponse& resp) {
         }
     }
 
-    // Test 2: Heap check (>100KB free)
+    // Test 2: Heap check (>30KB free — WiFi+BLE+ESP-NOW uses ~260KB)
     {
         size_t freeHeap = esp_get_free_heap_size();
         size_t minFreeHeap = esp_get_minimum_free_heap_size();
         char buf[48];
         snprintf(buf, sizeof(buf), "%zuKB free, %zuKB min",
                  freeHeap / 1024, minFreeHeap / 1024);
-        addResult("Heap", freeHeap >= 100 * 1024, buf);
+        addResult("Heap", freeHeap >= 30 * 1024, buf);
     }
 
     // Test 3: OTA partition integrity
