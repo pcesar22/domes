@@ -54,6 +54,7 @@ enum Category {
     CATEGORY_BLE = 10;       // BLE operations
     CATEGORY_NVS = 11;       // NVS storage operations
     CATEGORY_ESPNOW = 12;    // ESP-NOW peer-to-peer operations
+    CATEGORY_SYNC = 13;      // Mutex/semaphore synchronization
 }
 
 // Types of trace events
@@ -70,6 +71,11 @@ enum EventType {
     EVENT_TYPE_QUEUE_RECEIVE = 0x08;    // Queue receive operation
     EVENT_TYPE_MUTEX_LOCK = 0x09;       // Mutex acquired
     EVENT_TYPE_MUTEX_UNLOCK = 0x0A;     // Mutex released
+
+    // Synchronization events (0x0B-0x0F)
+    EVENT_TYPE_MUTEX_CONTENTION = 0x0B; // Mutex contention: arg1=mutexId, arg2=waitTimeUs
+    EVENT_TYPE_SEM_TAKE = 0x0C;         // Semaphore take: arg1=semId
+    EVENT_TYPE_SEM_GIVE = 0x0D;         // Semaphore give: arg1=semId
 
     // Application events (0x20-0x2F)
     EVENT_TYPE_SPAN_BEGIN = 0x20;  // Begin of a duration span

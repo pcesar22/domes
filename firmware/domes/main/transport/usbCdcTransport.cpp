@@ -9,6 +9,7 @@
 
 #include "driver/usb_serial_jtag.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 static const char* TAG = "usb_cdc";
 
@@ -73,8 +74,16 @@ TransportError UsbCdcTransport::send(const uint8_t* data, size_t len) {
     }
 
     // Take mutex for thread-safe TX
-    if (xSemaphoreTake(txMutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        return TransportError::kTimeout;
+    {
+        uint32_t t0 = static_cast<uint32_t>(esp_timer_get_time());
+        if (xSemaphoreTake(txMutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            return TransportError::kTimeout;
+        }
+        uint32_t waited = static_cast<uint32_t>(esp_timer_get_time()) - t0;
+        TRACE_MUTEX_LOCK(TRACE_ID("UsbCdc.TxMutex"));
+        if (waited > 100) {  // Log contention > 100us
+            TRACE_MUTEX_CONTENTION(TRACE_ID("UsbCdc.TxMutex"), waited);
+        }
     }
 
     size_t totalWritten = 0;
@@ -83,11 +92,13 @@ TransportError UsbCdcTransport::send(const uint8_t* data, size_t len) {
                                                   pdMS_TO_TICKS(1000));
 
         if (written < 0) {
+            TRACE_MUTEX_UNLOCK(TRACE_ID("UsbCdc.TxMutex"));
             xSemaphoreGive(txMutex_);
             return TransportError::kIoError;
         }
         if (written == 0) {
             // Timeout waiting for USB host to read
+            TRACE_MUTEX_UNLOCK(TRACE_ID("UsbCdc.TxMutex"));
             xSemaphoreGive(txMutex_);
             return TransportError::kTimeout;
         }
@@ -96,6 +107,7 @@ TransportError UsbCdcTransport::send(const uint8_t* data, size_t len) {
     }
 
     TRACE_COUNTER(TRACE_ID("UsbCdc.BytesSent"), totalWritten, domes::trace::Category::kTransport);
+    TRACE_MUTEX_UNLOCK(TRACE_ID("UsbCdc.TxMutex"));
     xSemaphoreGive(txMutex_);
     return TransportError::kOk;
 }

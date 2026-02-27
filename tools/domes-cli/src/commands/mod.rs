@@ -6,6 +6,7 @@ pub mod health;
 pub mod imu;
 pub mod led;
 pub mod ota;
+pub mod sniff;
 pub mod system;
 pub mod trace;
 pub mod wifi;

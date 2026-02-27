@@ -152,6 +152,25 @@ enum Commands {
         #[command(subcommand)]
         action: DevicesAction,
     },
+
+    /// Protocol sniffer - capture and decode DOMES frames
+    Sniff {
+        /// Filter by protocol (config, trace, ota). Comma-separated.
+        #[arg(short, long)]
+        filter: Option<String>,
+
+        /// Output raw hex bytes instead of decoded output
+        #[arg(long)]
+        raw: bool,
+
+        /// Output JSON lines (one JSON object per frame)
+        #[arg(long)]
+        json: bool,
+
+        /// Stop after N frames
+        #[arg(short = 'n', long)]
+        count: Option<u32>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -402,6 +421,47 @@ fn main() -> anyhow::Result<()> {
             }
         }
         return Ok(());
+    }
+
+    // Handle sniff subcommand (manages its own transport)
+    if let Some(Commands::Sniff {
+        filter,
+        raw,
+        json,
+        count,
+    }) = &cli.command
+    {
+        use commands::sniff::{OutputFormat, ProtocolFilter, SniffOptions};
+
+        let filters: Vec<ProtocolFilter> = filter
+            .as_deref()
+            .unwrap_or("")
+            .split(',')
+            .filter(|s| !s.is_empty())
+            .filter_map(ProtocolFilter::from_str)
+            .collect();
+
+        let format = if *json {
+            OutputFormat::Json
+        } else if *raw {
+            OutputFormat::Raw
+        } else {
+            OutputFormat::Pretty
+        };
+
+        let opts = SniffOptions {
+            filters,
+            format,
+            count: *count,
+        };
+
+        // Sniff requires exactly one serial port
+        if cli.port.len() != 1 {
+            eprintln!("Sniff requires exactly one serial port (--port /dev/ttyACM0)");
+            std::process::exit(1);
+        }
+
+        return commands::sniff::sniff_serial(&cli.port[0], &opts);
     }
 
     // Handle devices subcommand (no transport needed)
@@ -891,7 +951,7 @@ fn main() -> anyhow::Result<()> {
                 }
             },
 
-            Commands::Devices { .. } => unreachable!(), // Handled above
+            Commands::Devices { .. } | Commands::Sniff { .. } => unreachable!(), // Handled above
         }
         Ok(())
         })();

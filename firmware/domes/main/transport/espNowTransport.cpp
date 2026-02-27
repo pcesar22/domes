@@ -9,6 +9,7 @@
 
 #include "esp_log.h"
 #include "esp_now.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 
 #include <cstring>
@@ -142,8 +143,16 @@ TransportError EspNowTransport::send(const uint8_t* data, size_t len) {
     }
 
     // Take TX mutex for thread-safe sending
-    if (xSemaphoreTake(txMutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        return TransportError::kTimeout;
+    {
+        uint32_t t0 = static_cast<uint32_t>(esp_timer_get_time());
+        if (xSemaphoreTake(txMutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            return TransportError::kTimeout;
+        }
+        uint32_t waited = static_cast<uint32_t>(esp_timer_get_time()) - t0;
+        TRACE_MUTEX_LOCK(TRACE_ID("EspNow.TxMutex"));
+        if (waited > 100) {  // Log contention > 100us
+            TRACE_MUTEX_CONTENTION(TRACE_ID("EspNow.TxMutex"), waited);
+        }
     }
 
     // Drain any stale send-complete signal from a previous timed-out send.
@@ -155,6 +164,7 @@ TransportError EspNowTransport::send(const uint8_t* data, size_t len) {
     esp_err_t err = esp_now_send(kEspNowBroadcastAddr, data, len);
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "esp_now_send failed: %s", esp_err_to_name(err));
+        TRACE_MUTEX_UNLOCK(TRACE_ID("EspNow.TxMutex"));
         xSemaphoreGive(txMutex_);
         return TransportError::kIoError;
     }
@@ -164,10 +174,12 @@ TransportError EspNowTransport::send(const uint8_t* data, size_t len) {
     // desync from BLE coexistence delays.
     if (xSemaphoreTake(txDoneSemaphore_, pdMS_TO_TICKS(200)) != pdTRUE) {
         ESP_LOGW(kTag, "Broadcast send callback timeout");
+        TRACE_MUTEX_UNLOCK(TRACE_ID("EspNow.TxMutex"));
         xSemaphoreGive(txMutex_);
         return TransportError::kTimeout;
     }
 
+    TRACE_MUTEX_UNLOCK(TRACE_ID("EspNow.TxMutex"));
     xSemaphoreGive(txMutex_);
 
     // Broadcast always reports success (no peer ACK), so don't check status.
@@ -193,8 +205,16 @@ TransportError EspNowTransport::sendTo(const uint8_t macAddr[ESP_NOW_ETH_ALEN],
         return TransportError::kInvalidArg;
     }
 
-    if (xSemaphoreTake(txMutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        return TransportError::kTimeout;
+    {
+        uint32_t t0 = static_cast<uint32_t>(esp_timer_get_time());
+        if (xSemaphoreTake(txMutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            return TransportError::kTimeout;
+        }
+        uint32_t waited = static_cast<uint32_t>(esp_timer_get_time()) - t0;
+        TRACE_MUTEX_LOCK(TRACE_ID("EspNow.TxMutex"));
+        if (waited > 100) {
+            TRACE_MUTEX_CONTENTION(TRACE_ID("EspNow.TxMutex"), waited);
+        }
     }
 
     // Drain stale send-complete signal (see comment in send())
@@ -203,16 +223,19 @@ TransportError EspNowTransport::sendTo(const uint8_t macAddr[ESP_NOW_ETH_ALEN],
     esp_err_t err = esp_now_send(macAddr, data, len);
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "esp_now_send (unicast) failed: %s", esp_err_to_name(err));
+        TRACE_MUTEX_UNLOCK(TRACE_ID("EspNow.TxMutex"));
         xSemaphoreGive(txMutex_);
         return TransportError::kIoError;
     }
 
     if (xSemaphoreTake(txDoneSemaphore_, pdMS_TO_TICKS(1000)) != pdTRUE) {
         ESP_LOGW(kTag, "Send callback timeout (unicast)");
+        TRACE_MUTEX_UNLOCK(TRACE_ID("EspNow.TxMutex"));
         xSemaphoreGive(txMutex_);
         return TransportError::kTimeout;
     }
 
+    TRACE_MUTEX_UNLOCK(TRACE_ID("EspNow.TxMutex"));
     xSemaphoreGive(txMutex_);
 
     if (lastSendStatus_.load() != ESP_NOW_SEND_SUCCESS) {
