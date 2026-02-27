@@ -11,6 +11,9 @@
 #include "interfaces/iTaskRunner.hpp"
 #include "traceEvent.hpp"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
+
 #include <atomic>
 #include <cstdint>
 
@@ -70,11 +73,13 @@ private:
      */
     static void streamCallback(const TraceEvent& event);
 
-    // Lock-free MPSC ring buffer (multiple producers via record callback, single consumer = send task)
+    // MPSC ring buffer (multiple producers via record callback, single consumer = send task)
+    // Protected by streamLock_ spinlock for write serialization.
     static TraceEvent ringBuffer_[kStreamBufferSize];
     static std::atomic<size_t> writeIdx_;
     static std::atomic<size_t> readIdx_;
     static std::atomic<uint32_t> dropped_;
+    static portMUX_TYPE streamLock_;
 
     std::atomic<bool> stopRequested_{false};
     std::atomic<bool> streaming_{false};

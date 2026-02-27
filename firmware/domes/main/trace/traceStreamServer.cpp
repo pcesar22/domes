@@ -34,6 +34,7 @@ TraceEvent TraceStreamServer::ringBuffer_[kStreamBufferSize] = {};
 std::atomic<size_t> TraceStreamServer::writeIdx_{0};
 std::atomic<size_t> TraceStreamServer::readIdx_{0};
 std::atomic<uint32_t> TraceStreamServer::dropped_{0};
+portMUX_TYPE TraceStreamServer::streamLock_ = portMUX_INITIALIZER_UNLOCKED;
 
 void TraceStreamServer::run() {
     // Create listen socket
@@ -187,28 +188,23 @@ void TraceStreamServer::handleClient(int clientSock) {
 }
 
 void TraceStreamServer::streamCallback(const TraceEvent& event) {
-    // MPSC: callback may be invoked from any task context, so use CAS loop
-    // to safely claim a write slot.
+    // MPSC: callback may be invoked from any task context.
+    // Spinlock ensures write + index advance are atomic to the consumer.
+    taskENTER_CRITICAL(&streamLock_);
+
     size_t wr = writeIdx_.load(std::memory_order_relaxed);
-    while (true) {
-        size_t rd = readIdx_.load(std::memory_order_acquire);
+    size_t rd = readIdx_.load(std::memory_order_relaxed);
 
-        // Check if buffer is full
-        if (wr - rd >= kStreamBufferSize) {
-            dropped_.fetch_add(1, std::memory_order_relaxed);
-            return;
-        }
-
-        // Try to claim this slot
-        if (writeIdx_.compare_exchange_weak(wr, wr + 1,
-                                            std::memory_order_acq_rel,
-                                            std::memory_order_relaxed)) {
-            break;
-        }
-        // CAS failed — wr was reloaded by compare_exchange_weak, retry
+    if (wr - rd >= kStreamBufferSize) {
+        dropped_.fetch_add(1, std::memory_order_relaxed);
+        taskEXIT_CRITICAL(&streamLock_);
+        return;
     }
 
     ringBuffer_[wr % kStreamBufferSize] = event;
+    writeIdx_.store(wr + 1, std::memory_order_release);
+
+    taskEXIT_CRITICAL(&streamLock_);
 }
 
 }  // namespace domes::trace
