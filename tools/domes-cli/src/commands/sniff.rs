@@ -222,14 +222,9 @@ fn decode_payload(msg_type: u8, payload: &[u8]) -> Vec<(String, String)> {
             if payload.is_empty() {
                 return fields;
             }
-            let status_name = match payload[0] {
-                0 => "OK",
-                1 => "ERROR",
-                2 => "INVALID_FEATURE",
-                3 => "BUSY",
-                4 => "INVALID_PATTERN",
-                _ => "UNKNOWN",
-            };
+            let status_name = crate::proto::config::Status::try_from(payload[0] as i32)
+                .map(|s| s.as_str_name())
+                .unwrap_or("UNKNOWN");
             fields.push(("status".into(), status_name.into()));
             (Some(payload[0]), &payload[1..])
         }
@@ -543,30 +538,16 @@ fn display_json(frame: &DecodedFrame) {
 
 /// Get human-readable feature name from proto enum value
 fn feature_name(feature: i32) -> String {
-    match feature {
-        0 => "unknown".into(),
-        1 => "led-effects".into(),
-        2 => "ble".into(),
-        3 => "wifi".into(),
-        4 => "esp-now".into(),
-        5 => "touch".into(),
-        6 => "haptic".into(),
-        7 => "audio".into(),
-        _ => format!("feature({})", feature),
-    }
+    crate::proto::config::Feature::try_from(feature)
+        .map(|f| f.cli_name().to_string())
+        .unwrap_or_else(|_| format!("feature({})", feature))
 }
 
 /// Get human-readable mode name from proto enum value
 fn mode_name(mode: i32) -> String {
-    match mode {
-        0 => "booting".into(),
-        1 => "idle".into(),
-        2 => "triage".into(),
-        3 => "connected".into(),
-        4 => "game".into(),
-        5 => "error".into(),
-        _ => format!("mode({})", mode),
-    }
+    crate::proto::config::SystemMode::try_from(mode)
+        .map(|m| m.cli_name().to_string())
+        .unwrap_or_else(|_| format!("mode({})", mode))
 }
 
 #[cfg(test)]
