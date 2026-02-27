@@ -18,6 +18,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "host/ble_hs.h"
 #include "nvs.h"
 
 #include <array>
@@ -109,48 +110,34 @@ inline void runSmokeTests(domes_config_SelfTestResponse& resp) {
         }
     }
 
-    // Test 4: WiFi scan
+    // Test 4: WiFi — check init state without blocking scan
     {
-        // Check if WiFi is initialized by attempting a scan
-        wifi_scan_config_t scanConfig = {};
-        scanConfig.show_hidden = false;
-        scanConfig.scan_type = WIFI_SCAN_TYPE_PASSIVE;
-        scanConfig.scan_time.passive = 500;  // 500ms passive scan
-
-        esp_err_t err = esp_wifi_scan_start(&scanConfig, true);
-        if (err == ESP_OK) {
-            uint16_t apCount = 0;
-            esp_wifi_scan_get_ap_num(&apCount);
-
-            int8_t bestRssi = -127;
-            if (apCount > 0) {
-                // Get just the first few to find strongest RSSI
-                uint16_t fetchCount = (apCount > 5) ? 5 : apCount;
-                wifi_ap_record_t records[5];
-                esp_wifi_scan_get_ap_records(&fetchCount, records);
-                for (uint16_t i = 0; i < fetchCount; i++) {
-                    if (records[i].rssi > bestRssi) {
-                        bestRssi = records[i].rssi;
-                    }
-                }
-            }
-
+        wifi_mode_t mode = WIFI_MODE_NULL;
+        esp_err_t err = esp_wifi_get_mode(&mode);
+        if (err == ESP_OK && mode != WIFI_MODE_NULL) {
+            wifi_ap_record_t apInfo;
+            esp_err_t connErr = esp_wifi_sta_get_ap_info(&apInfo);
             char buf[48];
-            snprintf(buf, sizeof(buf), "%u APs found, best RSSI=%d dBm",
-                     apCount, bestRssi);
-            addResult("WiFi", apCount > 0, buf);
+            if (connErr == ESP_OK) {
+                snprintf(buf, sizeof(buf), "connected, RSSI=%d dBm", apInfo.rssi);
+                addResult("WiFi", true, buf);
+            } else {
+                snprintf(buf, sizeof(buf), "mode=%d, not connected", static_cast<int>(mode));
+                addResult("WiFi", true, buf);
+            }
         } else {
-            addResult("WiFi", false, "scan failed (not init?)");
+            addResult("WiFi", false, "not initialized");
         }
     }
 
-    // Test 5: BLE stack check
+    // Test 5: BLE stack check — probe actual NimBLE state
     {
-        // Check if NimBLE is initialized by checking if ble_hs_is_enabled exists
-        // Simple: just report that we got this far (BLE init happens before self-test)
-        // We can't easily probe NimBLE state without including its headers,
-        // so just report heap delta as proxy
-        addResult("BLE", true, "stack assumed OK");
+        int enabled = ble_hs_is_enabled();
+        if (enabled) {
+            addResult("BLE", true, "NimBLE host enabled");
+        } else {
+            addResult("BLE", false, "NimBLE host not enabled");
+        }
     }
 
     resp.tests_run = total;
