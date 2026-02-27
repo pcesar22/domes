@@ -65,7 +65,11 @@ class PodConnectionNotifier extends StateNotifier<ConnectedPodState> {
 
   /// Disconnect from the current pod.
   Future<void> disconnect() async {
-    await state.transport?.disconnect();
+    try {
+      await state.transport?.disconnect();
+    } catch (_) {
+      // Best effort — always update state to disconnected
+    }
     state = ConnectedPodState(
       device: state.device?.copyWith(
           connectionState: PodConnectionState.disconnected),

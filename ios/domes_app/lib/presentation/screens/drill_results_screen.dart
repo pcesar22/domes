@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers/drill_provider.dart';
@@ -19,6 +20,46 @@ class DrillResultsScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Drill Results'),
         actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.share),
+            tooltip: 'Export Results',
+            onSelected: (value) {
+              switch (value) {
+                case 'text':
+                  Clipboard.setData(
+                      ClipboardData(text: result.toTextSummary()));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Results copied to clipboard')),
+                  );
+                case 'json':
+                  Clipboard.setData(
+                      ClipboardData(text: result.toJsonString()));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('JSON copied to clipboard')),
+                  );
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'text',
+                child: ListTile(
+                  leading: Icon(Icons.text_snippet),
+                  title: Text('Copy as Text'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'json',
+                child: ListTile(
+                  leading: Icon(Icons.data_object),
+                  title: Text('Copy as JSON'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.replay),
             tooltip: 'New Drill',

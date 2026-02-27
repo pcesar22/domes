@@ -44,6 +44,6 @@ class LedNotifier extends StateNotifier<AsyncValue<AppLedPattern>> {
 }
 
 final ledProvider =
-    StateNotifierProvider<LedNotifier, AsyncValue<AppLedPattern>>((ref) {
+    StateNotifierProvider.autoDispose<LedNotifier, AsyncValue<AppLedPattern>>((ref) {
   return LedNotifier(ref);
 });

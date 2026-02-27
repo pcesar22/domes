@@ -11,6 +11,7 @@ import '../../presentation/theme/app_theme.dart';
 import 'drill_setup_screen.dart';
 import 'ota_screen.dart';
 import 'pod_detail_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -45,6 +46,11 @@ class HomeScreen extends ConsumerWidget {
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const OtaScreen()),
                   );
+                case 'settings':
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const SettingsScreen()),
+                  );
               }
             },
             itemBuilder: (_) => [
@@ -61,6 +67,14 @@ class HomeScreen extends ConsumerWidget {
                 child: ListTile(
                   leading: Icon(Icons.system_update),
                   title: Text('OTA Update'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings),
+                  title: Text('Settings'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -112,36 +126,48 @@ class HomeScreen extends ConsumerWidget {
               ],
             ),
 
-          // Device list
+          // Device list with pull-to-refresh
           Expanded(
-            child: pods.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+            child: RefreshIndicator(
+              onRefresh: () async {
+                ref.read(bleScannerProvider.notifier).startScan();
+              },
+              child: pods.isEmpty
+                  ? ListView(
                       children: [
-                        Icon(Icons.bluetooth_searching,
-                            size: 64,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withAlpha(100)),
-                        const SizedBox(height: 16),
-                        Text(
-                          isScanning.value == true
-                              ? 'Scanning for DOMES pods...'
-                              : 'Tap scan to find DOMES pods',
-                          style: Theme.of(context).textTheme.bodyLarge,
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.5,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.bluetooth_searching,
+                                    size: 64,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withAlpha(100)),
+                                const SizedBox(height: 16),
+                                Text(
+                                  isScanning.value == true
+                                      ? 'Scanning for DOMES pods...'
+                                      : 'Pull down or tap Scan to find pods',
+                                  style: Theme.of(context).textTheme.bodyLarge,
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
+                    )
+                  : ListView.builder(
+                      itemCount: pods.length,
+                      itemBuilder: (context, index) {
+                        final pod = pods[index];
+                        return _PodListTile(pod: pod);
+                      },
                     ),
-                  )
-                : ListView.builder(
-                    itemCount: pods.length,
-                    itemBuilder: (context, index) {
-                      final pod = pods[index];
-                      return _PodListTile(pod: pod);
-                    },
-                  ),
+            ),
           ),
         ],
       ),
