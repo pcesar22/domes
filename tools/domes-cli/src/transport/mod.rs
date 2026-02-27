@@ -31,8 +31,22 @@ pub trait Transport {
     /// Receive a frame from the device with timeout
     fn receive_frame(&mut self, timeout_ms: u64) -> Result<Frame>;
 
-    /// Send a command and wait for response
+    /// Send a command and wait for response (uses transport-specific default timeout)
     fn send_command(&mut self, msg_type: u8, payload: &[u8]) -> Result<Frame>;
+
+    /// Send a command and wait for response with explicit timeout
+    ///
+    /// Use this for slow commands (e.g., self-test, OTA check) that need
+    /// more time than the transport's default timeout.
+    fn send_command_with_timeout(
+        &mut self,
+        msg_type: u8,
+        payload: &[u8],
+        timeout_ms: u64,
+    ) -> Result<Frame> {
+        self.send_frame(msg_type, payload)?;
+        self.receive_frame(timeout_ms)
+    }
 
     /// Get the maximum OTA chunk size for this transport
     /// BLE has lower limits due to MTU constraints

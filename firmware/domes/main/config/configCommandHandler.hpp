@@ -21,6 +21,7 @@ class LedService;  // Forward declaration
 class ImuService;  // Forward declaration
 class EspNowTransport;  // Forward declaration
 class EspNowService;    // Forward declaration
+class IOtaManager;      // Forward declaration
 }
 
 namespace domes::config {
@@ -71,6 +72,11 @@ public:
      * @brief Set ESP-NOW service for status queries
      */
     void setEspNowService(EspNowService* service) { espNowService_ = service; }
+
+    /**
+     * @brief Set OTA manager for update check commands
+     */
+    void setOtaManager(IOtaManager* otaManager) { otaManager_ = otaManager; }
 
     /**
      * @brief Handle an incoming config command
@@ -165,6 +171,21 @@ private:
     void handleGetMemoryProfile();
 
     /**
+     * @brief Handle SELF_TEST request
+     */
+    void handleSelfTest();
+
+    /**
+     * @brief Handle CHECK_UPDATE request
+     */
+    void handleCheckUpdate();
+
+    /**
+     * @brief Handle SET_AUTO_UPDATE request
+     */
+    void handleSetAutoUpdate(const uint8_t* payload, size_t len);
+
+    /**
      * @brief Send list features response
      */
     void sendListFeaturesResponse();
@@ -219,6 +240,7 @@ private:
     ModeManager* modeManager_ = nullptr;
     EspNowTransport* espNowTransport_ = nullptr;
     EspNowService* espNowService_ = nullptr;
+    IOtaManager* otaManager_ = nullptr;
 };
 
 }  // namespace domes::config

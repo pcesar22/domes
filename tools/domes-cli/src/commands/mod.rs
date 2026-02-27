@@ -16,10 +16,10 @@ pub use feature::{feature_disable, feature_enable, feature_list};
 pub use health::system_health;
 pub use imu::imu_triage_set;
 pub use led::{led_get, led_off, led_set};
-pub use ota::ota_flash;
+pub use ota::{ota_auto_update, ota_check, ota_flash};
 pub use system::{
     system_clear_crash_dump, system_crash_dump, system_get_mode, system_info,
-    system_memory_profile, system_set_mode, system_set_pod_id,
+    system_memory_profile, system_self_test, system_set_mode, system_set_pod_id,
 };
 pub use trace::{trace_clear, trace_dump, trace_start, trace_status, trace_stop, trace_stream};
 pub use wifi::{wifi_disable, wifi_enable, wifi_status};

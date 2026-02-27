@@ -50,7 +50,15 @@ typedef enum _domes_config_MsgType {
     domes_config_MsgType_MSG_TYPE_CLEAR_CRASH_DUMP_RSP = 65,
     /* Memory profiler commands (0x42-0x43) */
     domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_REQ = 66,
-    domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_RSP = 67
+    domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_RSP = 67,
+    /* Self-test / smoke test commands (0x44-0x45) */
+    domes_config_MsgType_MSG_TYPE_SELF_TEST_REQ = 68,
+    domes_config_MsgType_MSG_TYPE_SELF_TEST_RSP = 69,
+    /* GitHub OTA commands (0x46-0x49) */
+    domes_config_MsgType_MSG_TYPE_CHECK_UPDATE_REQ = 70,
+    domes_config_MsgType_MSG_TYPE_CHECK_UPDATE_RSP = 71,
+    domes_config_MsgType_MSG_TYPE_SET_AUTO_UPDATE_REQ = 72,
+    domes_config_MsgType_MSG_TYPE_SET_AUTO_UPDATE_RSP = 73
 } domes_config_MsgType;
 
 /* Status codes for responses */
@@ -319,6 +327,48 @@ typedef struct _domes_config_GetMemoryProfileResponse {
     domes_config_HeapSample samples[60]; /* Last N heap samples (circular buffer) */
 } domes_config_GetMemoryProfileResponse;
 
+/* Individual test result */
+typedef struct _domes_config_SelfTestResult {
+    char name[16]; /* Test name (e.g., "LED", "NVS", "Heap") */
+    bool passed; /* true = PASS, false = FAIL */
+    char message[48]; /* Detail message (e.g., "256KB free" or error reason) */
+} domes_config_SelfTestResult;
+
+/* Self-test request (trigger on-device smoke tests) */
+typedef struct _domes_config_SelfTestRequest { /* Empty - runs all tests */
+    char dummy_field;
+} domes_config_SelfTestRequest;
+
+/* Self-test response with per-test results */
+typedef struct _domes_config_SelfTestResponse {
+    uint32_t tests_run; /* Total tests executed */
+    uint32_t tests_passed; /* Number of passes */
+    pb_size_t results_count;
+    domes_config_SelfTestResult results[10]; /* Per-test results */
+} domes_config_SelfTestResponse;
+
+/* Check for firmware updates (triggers GitHub API query) */
+typedef struct _domes_config_CheckUpdateRequest { /* Empty - checks GitHub releases for newer version */
+    char dummy_field;
+} domes_config_CheckUpdateRequest;
+
+typedef struct _domes_config_CheckUpdateResponse {
+    bool update_available; /* True if newer version found */
+    char current_version[16]; /* Running firmware version (e.g., "1.2.3") */
+    char available_version[16]; /* Latest release version (e.g., "1.3.0") */
+    uint32_t firmware_size; /* Size of new firmware in bytes */
+    bool auto_update_enabled; /* Current auto-update setting */
+} domes_config_CheckUpdateResponse;
+
+/* Enable/disable automatic OTA updates on WiFi connect */
+typedef struct _domes_config_SetAutoUpdateRequest {
+    bool enabled;
+} domes_config_SetAutoUpdateRequest;
+
+typedef struct _domes_config_SetAutoUpdateResponse {
+    bool enabled; /* New auto-update setting after write */
+} domes_config_SetAutoUpdateResponse;
+
 /* Top-level request envelope */
 typedef struct _domes_config_ConfigRequest {
     pb_size_t which_request;
@@ -345,8 +395,8 @@ extern "C" {
 
 /* Helper constants for enums */
 #define _domes_config_MsgType_MIN domes_config_MsgType_MSG_TYPE_UNKNOWN
-#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_RSP
-#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_GET_MEMORY_PROFILE_RSP+1))
+#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_SET_AUTO_UPDATE_RSP
+#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_SET_AUTO_UPDATE_RSP+1))
 
 #define _domes_config_Status_MIN domes_config_Status_STATUS_OK
 #define _domes_config_Status_MAX domes_config_Status_STATUS_NO_DATA
@@ -448,6 +498,13 @@ extern "C" {
 #define domes_config_HeapSample_init_default     {0, 0, 0, 0}
 #define domes_config_GetMemoryProfileRequest_init_default {0}
 #define domes_config_GetMemoryProfileResponse_init_default {0, 0, 0, 0, 0, {domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default, domes_config_HeapSample_init_default}}
+#define domes_config_SelfTestResult_init_default {"", 0, ""}
+#define domes_config_SelfTestRequest_init_default {0}
+#define domes_config_SelfTestResponse_init_default {0, 0, 0, {domes_config_SelfTestResult_init_default, domes_config_SelfTestResult_init_default, domes_config_SelfTestResult_init_default, domes_config_SelfTestResult_init_default, domes_config_SelfTestResult_init_default, domes_config_SelfTestResult_init_default, domes_config_SelfTestResult_init_default, domes_config_SelfTestResult_init_default, domes_config_SelfTestResult_init_default, domes_config_SelfTestResult_init_default}}
+#define domes_config_CheckUpdateRequest_init_default {0}
+#define domes_config_CheckUpdateResponse_init_default {0, "", "", 0, 0}
+#define domes_config_SetAutoUpdateRequest_init_default {0}
+#define domes_config_SetAutoUpdateResponse_init_default {0}
 #define domes_config_ConfigRequest_init_default  {0, {domes_config_ListFeaturesRequest_init_default}}
 #define domes_config_ConfigResponse_init_default {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_default}}
 #define domes_config_Color_init_zero             {0, 0, 0, 0}
@@ -486,6 +543,13 @@ extern "C" {
 #define domes_config_HeapSample_init_zero        {0, 0, 0, 0}
 #define domes_config_GetMemoryProfileRequest_init_zero {0}
 #define domes_config_GetMemoryProfileResponse_init_zero {0, 0, 0, 0, 0, {domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero, domes_config_HeapSample_init_zero}}
+#define domes_config_SelfTestResult_init_zero    {"", 0, ""}
+#define domes_config_SelfTestRequest_init_zero   {0}
+#define domes_config_SelfTestResponse_init_zero  {0, 0, 0, {domes_config_SelfTestResult_init_zero, domes_config_SelfTestResult_init_zero, domes_config_SelfTestResult_init_zero, domes_config_SelfTestResult_init_zero, domes_config_SelfTestResult_init_zero, domes_config_SelfTestResult_init_zero, domes_config_SelfTestResult_init_zero, domes_config_SelfTestResult_init_zero, domes_config_SelfTestResult_init_zero, domes_config_SelfTestResult_init_zero}}
+#define domes_config_CheckUpdateRequest_init_zero {0}
+#define domes_config_CheckUpdateResponse_init_zero {0, "", "", 0, 0}
+#define domes_config_SetAutoUpdateRequest_init_zero {0}
+#define domes_config_SetAutoUpdateResponse_init_zero {0}
 #define domes_config_ConfigRequest_init_zero     {0, {domes_config_ListFeaturesRequest_init_zero}}
 #define domes_config_ConfigResponse_init_zero    {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_zero}}
 
@@ -571,6 +635,19 @@ extern "C" {
 #define domes_config_GetMemoryProfileResponse_current_largest_block_tag 3
 #define domes_config_GetMemoryProfileResponse_total_heap_tag 4
 #define domes_config_GetMemoryProfileResponse_samples_tag 5
+#define domes_config_SelfTestResult_name_tag     1
+#define domes_config_SelfTestResult_passed_tag   2
+#define domes_config_SelfTestResult_message_tag  3
+#define domes_config_SelfTestResponse_tests_run_tag 1
+#define domes_config_SelfTestResponse_tests_passed_tag 2
+#define domes_config_SelfTestResponse_results_tag 3
+#define domes_config_CheckUpdateResponse_update_available_tag 1
+#define domes_config_CheckUpdateResponse_current_version_tag 2
+#define domes_config_CheckUpdateResponse_available_version_tag 3
+#define domes_config_CheckUpdateResponse_firmware_size_tag 4
+#define domes_config_CheckUpdateResponse_auto_update_enabled_tag 5
+#define domes_config_SetAutoUpdateRequest_enabled_tag 1
+#define domes_config_SetAutoUpdateResponse_enabled_tag 1
 #define domes_config_ConfigRequest_list_features_tag 1
 #define domes_config_ConfigRequest_set_feature_tag 2
 #define domes_config_ConfigResponse_status_tag   1
@@ -822,6 +899,50 @@ X(a, STATIC,   REPEATED, MESSAGE,  samples,           5)
 #define domes_config_GetMemoryProfileResponse_DEFAULT NULL
 #define domes_config_GetMemoryProfileResponse_samples_MSGTYPE domes_config_HeapSample
 
+#define domes_config_SelfTestResult_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, STRING,   name,              1) \
+X(a, STATIC,   SINGULAR, BOOL,     passed,            2) \
+X(a, STATIC,   SINGULAR, STRING,   message,           3)
+#define domes_config_SelfTestResult_CALLBACK NULL
+#define domes_config_SelfTestResult_DEFAULT NULL
+
+#define domes_config_SelfTestRequest_FIELDLIST(X, a) \
+
+#define domes_config_SelfTestRequest_CALLBACK NULL
+#define domes_config_SelfTestRequest_DEFAULT NULL
+
+#define domes_config_SelfTestResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   tests_run,         1) \
+X(a, STATIC,   SINGULAR, UINT32,   tests_passed,      2) \
+X(a, STATIC,   REPEATED, MESSAGE,  results,           3)
+#define domes_config_SelfTestResponse_CALLBACK NULL
+#define domes_config_SelfTestResponse_DEFAULT NULL
+#define domes_config_SelfTestResponse_results_MSGTYPE domes_config_SelfTestResult
+
+#define domes_config_CheckUpdateRequest_FIELDLIST(X, a) \
+
+#define domes_config_CheckUpdateRequest_CALLBACK NULL
+#define domes_config_CheckUpdateRequest_DEFAULT NULL
+
+#define domes_config_CheckUpdateResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     update_available,   1) \
+X(a, STATIC,   SINGULAR, STRING,   current_version,   2) \
+X(a, STATIC,   SINGULAR, STRING,   available_version,   3) \
+X(a, STATIC,   SINGULAR, UINT32,   firmware_size,     4) \
+X(a, STATIC,   SINGULAR, BOOL,     auto_update_enabled,   5)
+#define domes_config_CheckUpdateResponse_CALLBACK NULL
+#define domes_config_CheckUpdateResponse_DEFAULT NULL
+
+#define domes_config_SetAutoUpdateRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     enabled,           1)
+#define domes_config_SetAutoUpdateRequest_CALLBACK NULL
+#define domes_config_SetAutoUpdateRequest_DEFAULT NULL
+
+#define domes_config_SetAutoUpdateResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     enabled,           1)
+#define domes_config_SetAutoUpdateResponse_CALLBACK NULL
+#define domes_config_SetAutoUpdateResponse_DEFAULT NULL
+
 #define domes_config_ConfigRequest_FIELDLIST(X, a) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (request,list_features,request.list_features),   1) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (request,set_feature,request.set_feature),   2)
@@ -875,6 +996,13 @@ extern const pb_msgdesc_t domes_config_ClearCrashDumpResponse_msg;
 extern const pb_msgdesc_t domes_config_HeapSample_msg;
 extern const pb_msgdesc_t domes_config_GetMemoryProfileRequest_msg;
 extern const pb_msgdesc_t domes_config_GetMemoryProfileResponse_msg;
+extern const pb_msgdesc_t domes_config_SelfTestResult_msg;
+extern const pb_msgdesc_t domes_config_SelfTestRequest_msg;
+extern const pb_msgdesc_t domes_config_SelfTestResponse_msg;
+extern const pb_msgdesc_t domes_config_CheckUpdateRequest_msg;
+extern const pb_msgdesc_t domes_config_CheckUpdateResponse_msg;
+extern const pb_msgdesc_t domes_config_SetAutoUpdateRequest_msg;
+extern const pb_msgdesc_t domes_config_SetAutoUpdateResponse_msg;
 extern const pb_msgdesc_t domes_config_ConfigRequest_msg;
 extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 
@@ -915,11 +1043,20 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_HeapSample_fields &domes_config_HeapSample_msg
 #define domes_config_GetMemoryProfileRequest_fields &domes_config_GetMemoryProfileRequest_msg
 #define domes_config_GetMemoryProfileResponse_fields &domes_config_GetMemoryProfileResponse_msg
+#define domes_config_SelfTestResult_fields &domes_config_SelfTestResult_msg
+#define domes_config_SelfTestRequest_fields &domes_config_SelfTestRequest_msg
+#define domes_config_SelfTestResponse_fields &domes_config_SelfTestResponse_msg
+#define domes_config_CheckUpdateRequest_fields &domes_config_CheckUpdateRequest_msg
+#define domes_config_CheckUpdateResponse_fields &domes_config_CheckUpdateResponse_msg
+#define domes_config_SetAutoUpdateRequest_fields &domes_config_SetAutoUpdateRequest_msg
+#define domes_config_SetAutoUpdateResponse_fields &domes_config_SetAutoUpdateResponse_msg
 #define domes_config_ConfigRequest_fields &domes_config_ConfigRequest_msg
 #define domes_config_ConfigResponse_fields &domes_config_ConfigResponse_msg
 
 /* Maximum encoded size of messages (where known) */
 #define DOMES_CONFIG_CONFIG_PB_H_MAX_SIZE        domes_config_GetMemoryProfileResponse_size
+#define domes_config_CheckUpdateRequest_size     0
+#define domes_config_CheckUpdateResponse_size    44
 #define domes_config_ClearCrashDumpRequest_size  0
 #define domes_config_ClearCrashDumpResponse_size 2
 #define domes_config_Color_size                  24
@@ -947,6 +1084,11 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_LedPattern_size             248
 #define domes_config_ListFeaturesRequest_size    0
 #define domes_config_ListFeaturesResponse_size   102
+#define domes_config_SelfTestRequest_size        0
+#define domes_config_SelfTestResponse_size       712
+#define domes_config_SelfTestResult_size         68
+#define domes_config_SetAutoUpdateRequest_size   2
+#define domes_config_SetAutoUpdateResponse_size  2
 #define domes_config_SetFeatureRequest_size      4
 #define domes_config_SetFeatureResponse_size     6
 #define domes_config_SetImuTriageRequest_size    2
@@ -957,6 +1099,9 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_SetModeResponse_size        4
 #define domes_config_SetPodIdRequest_size        6
 #define domes_config_SetPodIdResponse_size       6
+#define domes_config_SelfTestRequest_size        0
+#define domes_config_SelfTestResult_size         68
+#define domes_config_SelfTestResponse_size       694
 #define domes_config_TaskHealth_size             35
 
 #ifdef __cplusplus

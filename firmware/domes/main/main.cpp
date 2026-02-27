@@ -688,6 +688,9 @@ static esp_err_t initSerialOta(uint8_t podId = 0) {
     if (espNowService) {
         serialOtaReceiver->setEspNowService(espNowService);
     }
+    if (otaManager) {
+        serialOtaReceiver->setOtaManager(otaManager);
+    }
 
     // Create receiver task
     domes::infra::TaskConfig config = {
@@ -787,6 +790,9 @@ static esp_err_t initTcpConfigServer() {
     }
     if (espNowService) {
         tcpConfigServer->setEspNowService(espNowService);
+    }
+    if (otaManager) {
+        tcpConfigServer->setOtaManager(otaManager);
     }
 
     // Create server task
@@ -1231,6 +1237,9 @@ extern "C" void app_main() {
         }
         if (bleOtaReceiver && espNowService) {
             bleOtaReceiver->setEspNowService(espNowService);
+        }
+        if (bleOtaReceiver && otaManager) {
+            bleOtaReceiver->setOtaManager(otaManager);
         }
     }
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs

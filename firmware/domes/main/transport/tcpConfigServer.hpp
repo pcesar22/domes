@@ -26,6 +26,7 @@ class LedService;       // Forward declaration
 class ImuService;       // Forward declaration
 class EspNowTransport;  // Forward declaration
 class EspNowService;    // Forward declaration
+class IOtaManager;      // Forward declaration
 
 /**
  * @brief Default TCP port for config server
@@ -125,6 +126,11 @@ public:
      */
     void setEspNowService(EspNowService* service) { espNowService_ = service; }
 
+    /**
+     * @brief Set OTA manager for update check commands
+     */
+    void setOtaManager(IOtaManager* otaManager) { otaManager_ = otaManager; }
+
 private:
     /**
      * @brief Handle a single client connection
@@ -143,6 +149,7 @@ private:
     config::ModeManager* modeManager_ = nullptr;
     EspNowTransport* espNowTransport_ = nullptr;
     EspNowService* espNowService_ = nullptr;
+    IOtaManager* otaManager_ = nullptr;
 
     std::atomic<bool> stopRequested_;
     std::atomic<int> listenSocket_;

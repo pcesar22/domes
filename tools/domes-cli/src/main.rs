@@ -214,6 +214,20 @@ enum OtaAction {
         #[arg(short, long)]
         version: Option<String>,
     },
+
+    /// Check for available firmware updates (via GitHub releases)
+    Check,
+
+    /// Configure auto-update setting
+    AutoUpdate {
+        /// Enable auto-update
+        #[arg(long)]
+        enable: bool,
+
+        /// Disable auto-update
+        #[arg(long)]
+        disable: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -299,6 +313,9 @@ enum SystemAction {
         #[arg(long)]
         json: bool,
     },
+
+    /// Run on-device self-test suite (NVS, Heap, Flash, WiFi, BLE)
+    SelfTest,
 }
 
 #[derive(Subcommand)]
@@ -790,6 +807,34 @@ fn main() -> anyhow::Result<()> {
                     }
                     commands::ota_flash(transport, firmware, version.as_deref())?;
                 }
+                OtaAction::Check => {
+                    println!("{}Checking for firmware updates...", prefix);
+                    let info = commands::ota_check(transport)?;
+                    println!("{}Current version:  {}", prefix,
+                        if info.current_version.is_empty() { "unknown" } else { &info.current_version });
+                    println!("{}Auto-update:      {}", prefix,
+                        if info.auto_update_enabled { "enabled" } else { "disabled" });
+                    if info.update_available {
+                        println!("{}Update available: {} ({} bytes)", prefix,
+                            info.available_version, info.firmware_size);
+                    } else {
+                        println!("{}No update available", prefix);
+                    }
+                }
+                OtaAction::AutoUpdate { enable, disable } => {
+                    let enabled = if *enable && *disable {
+                        anyhow::bail!("Cannot specify both --enable and --disable");
+                    } else if *enable {
+                        true
+                    } else if *disable {
+                        false
+                    } else {
+                        anyhow::bail!("Must specify either --enable or --disable");
+                    };
+                    let result = commands::ota_auto_update(transport, enabled)?;
+                    println!("{}Auto-update {}", prefix,
+                        if result { "enabled" } else { "disabled" });
+                }
             },
 
             Commands::Trace { action } => match action {
@@ -993,6 +1038,22 @@ fn main() -> anyhow::Result<()> {
                             }).collect();
                             println!("{}    Free heap: {} ({}-{} bytes)", prefix, sparkline, min_val, max_val);
                         }
+                    }
+                }
+                SystemAction::SelfTest => {
+                    println!("{}Running on-device self-test suite...", prefix);
+                    let info = commands::system_self_test(transport)?;
+                    println!("{}Self-Test Results: {}/{} passed", prefix, info.tests_passed, info.tests_run);
+                    println!("{}{:<8} {:<6} {}", prefix, "TEST", "STATUS", "MESSAGE");
+                    println!("{}{:-<8} {:-<6} {:-<40}", prefix, "", "", "");
+                    for result in &info.results {
+                        let status = if result.passed { "PASS" } else { "FAIL" };
+                        println!("{}{:<8} {:<6} {}", prefix, result.name, status, result.message);
+                    }
+                    if info.tests_passed == info.tests_run {
+                        println!("{}All tests passed!", prefix);
+                    } else {
+                        println!("{}{} test(s) FAILED", prefix, info.tests_run - info.tests_passed);
                     }
                 }
             },

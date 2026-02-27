@@ -55,7 +55,7 @@ TEST(ConfigMsgType, IsConfigMessageOutOfRange) {
     EXPECT_FALSE(isConfigMessage(0x00));  // Unknown
     EXPECT_FALSE(isConfigMessage(0xFF));  // Unknown
     EXPECT_FALSE(isConfigMessage(0x1F));  // Just before config range
-    EXPECT_FALSE(isConfigMessage(0x44));  // Just past crash dump/memory profile range
+    EXPECT_FALSE(isConfigMessage(0x4A));  // Just past GitHub OTA range
 }
 
 TEST(ConfigMsgType, IsConfigMessageObservabilityRange) {
@@ -76,6 +76,12 @@ TEST(ConfigMsgType, IsConfigMessageCrashDumpMemoryRange) {
     EXPECT_TRUE(isConfigMessage(0x41));  // ClearCrashDumpRsp
     EXPECT_TRUE(isConfigMessage(0x42));  // GetMemoryProfileReq
     EXPECT_TRUE(isConfigMessage(0x43));  // GetMemoryProfileRsp
+}
+
+TEST(ConfigMsgType, IsConfigMessageSelfTestRange) {
+    // Self-test commands (0x44-0x45) should be config messages
+    EXPECT_TRUE(isConfigMessage(0x44));  // SelfTestReq
+    EXPECT_TRUE(isConfigMessage(0x45));  // SelfTestRsp
 }
 
 TEST(ConfigMsgType, GapValuesAreInRange) {
@@ -319,4 +325,161 @@ TEST(Protobuf, GetSystemInfoResponseEncodeDecode) {
     EXPECT_EQ(decoded.boot_count, 42u);
     EXPECT_EQ(decoded.mode, domes_config_SystemMode_SYSTEM_MODE_IDLE);
     EXPECT_EQ(decoded.feature_mask, 0x000000EEu);
+}
+
+// =============================================================================
+// Self-Test Protobuf Tests
+// =============================================================================
+
+TEST(Protobuf, SelfTestResponseEncodeDecode) {
+    domes_config_SelfTestResponse resp = domes_config_SelfTestResponse_init_zero;
+    resp.tests_run = 5;
+    resp.tests_passed = 4;
+    resp.results_count = 3;
+
+    strncpy(resp.results[0].name, "NVS", sizeof(resp.results[0].name) - 1);
+    resp.results[0].passed = true;
+    strncpy(resp.results[0].message, "write/read/verify OK", sizeof(resp.results[0].message) - 1);
+
+    strncpy(resp.results[1].name, "Heap", sizeof(resp.results[1].name) - 1);
+    resp.results[1].passed = true;
+    strncpy(resp.results[1].message, "200KB free, 180KB min", sizeof(resp.results[1].message) - 1);
+
+    strncpy(resp.results[2].name, "WiFi", sizeof(resp.results[2].name) - 1);
+    resp.results[2].passed = false;
+    strncpy(resp.results[2].message, "scan failed (not init?)", sizeof(resp.results[2].message) - 1);
+
+    // Encode
+    std::array<uint8_t, domes_config_SelfTestResponse_size + 10> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SelfTestResponse_fields, &resp));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    // Decode
+    domes_config_SelfTestResponse decoded = domes_config_SelfTestResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SelfTestResponse_fields, &decoded));
+
+    EXPECT_EQ(decoded.tests_run, 5u);
+    EXPECT_EQ(decoded.tests_passed, 4u);
+    EXPECT_EQ(decoded.results_count, 3u);
+
+    EXPECT_STREQ(decoded.results[0].name, "NVS");
+    EXPECT_TRUE(decoded.results[0].passed);
+    EXPECT_STREQ(decoded.results[0].message, "write/read/verify OK");
+
+    EXPECT_STREQ(decoded.results[1].name, "Heap");
+    EXPECT_TRUE(decoded.results[1].passed);
+
+    EXPECT_STREQ(decoded.results[2].name, "WiFi");
+    EXPECT_FALSE(decoded.results[2].passed);
+    EXPECT_STREQ(decoded.results[2].message, "scan failed (not init?)");
+}
+
+// =============================================================================
+// GitHub OTA Protobuf Tests
+// =============================================================================
+
+TEST(ConfigMsgType, IsConfigMessageGitHubOtaRange) {
+    // GitHub OTA commands (0x46-0x49) should be config messages
+    EXPECT_TRUE(isConfigMessage(0x46));  // CheckUpdateReq
+    EXPECT_TRUE(isConfigMessage(0x47));  // CheckUpdateRsp
+    EXPECT_TRUE(isConfigMessage(0x48));  // SetAutoUpdateReq
+    EXPECT_TRUE(isConfigMessage(0x49));  // SetAutoUpdateRsp
+}
+
+TEST(Protobuf, CheckUpdateResponseEncodeDecode) {
+    domes_config_CheckUpdateResponse resp = domes_config_CheckUpdateResponse_init_zero;
+    resp.update_available = true;
+    strncpy(resp.current_version, "v1.0.0", sizeof(resp.current_version) - 1);
+    strncpy(resp.available_version, "v1.1.0", sizeof(resp.available_version) - 1);
+    resp.firmware_size = 1048576;
+    resp.auto_update_enabled = true;
+
+    // Encode
+    std::array<uint8_t, 128> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_CheckUpdateResponse_fields, &resp));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    // Decode
+    domes_config_CheckUpdateResponse decoded = domes_config_CheckUpdateResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_CheckUpdateResponse_fields, &decoded));
+
+    EXPECT_TRUE(decoded.update_available);
+    EXPECT_STREQ(decoded.current_version, "v1.0.0");
+    EXPECT_STREQ(decoded.available_version, "v1.1.0");
+    EXPECT_EQ(decoded.firmware_size, 1048576u);
+    EXPECT_TRUE(decoded.auto_update_enabled);
+}
+
+TEST(Protobuf, CheckUpdateResponseNoUpdate) {
+    domes_config_CheckUpdateResponse resp = domes_config_CheckUpdateResponse_init_zero;
+    resp.update_available = false;
+    strncpy(resp.current_version, "v1.1.0", sizeof(resp.current_version) - 1);
+    resp.auto_update_enabled = false;
+
+    std::array<uint8_t, 64> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_CheckUpdateResponse_fields, &resp));
+
+    domes_config_CheckUpdateResponse decoded = domes_config_CheckUpdateResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_CheckUpdateResponse_fields, &decoded));
+
+    EXPECT_FALSE(decoded.update_available);
+    EXPECT_STREQ(decoded.current_version, "v1.1.0");
+    EXPECT_STREQ(decoded.available_version, "");
+    EXPECT_EQ(decoded.firmware_size, 0u);
+    EXPECT_FALSE(decoded.auto_update_enabled);
+}
+
+TEST(Protobuf, SetAutoUpdateRequestEncodeDecode) {
+    domes_config_SetAutoUpdateRequest req = domes_config_SetAutoUpdateRequest_init_zero;
+    req.enabled = true;
+
+    std::array<uint8_t, 16> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SetAutoUpdateRequest_fields, &req));
+
+    domes_config_SetAutoUpdateRequest decoded = domes_config_SetAutoUpdateRequest_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SetAutoUpdateRequest_fields, &decoded));
+
+    EXPECT_TRUE(decoded.enabled);
+}
+
+TEST(Protobuf, SetAutoUpdateResponseEncodeDecode) {
+    domes_config_SetAutoUpdateResponse resp = domes_config_SetAutoUpdateResponse_init_zero;
+    resp.enabled = true;
+
+    std::array<uint8_t, 16> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SetAutoUpdateResponse_fields, &resp));
+
+    domes_config_SetAutoUpdateResponse decoded = domes_config_SetAutoUpdateResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SetAutoUpdateResponse_fields, &decoded));
+
+    EXPECT_TRUE(decoded.enabled);
+}
+
+TEST(Protobuf, SelfTestResponseEmpty) {
+    domes_config_SelfTestResponse resp = domes_config_SelfTestResponse_init_zero;
+    resp.tests_run = 0;
+    resp.tests_passed = 0;
+    resp.results_count = 0;
+
+    std::array<uint8_t, 64> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SelfTestResponse_fields, &resp));
+
+    domes_config_SelfTestResponse decoded = domes_config_SelfTestResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SelfTestResponse_fields, &decoded));
+
+    EXPECT_EQ(decoded.tests_run, 0u);
+    EXPECT_EQ(decoded.tests_passed, 0u);
+    EXPECT_EQ(decoded.results_count, 0u);
 }

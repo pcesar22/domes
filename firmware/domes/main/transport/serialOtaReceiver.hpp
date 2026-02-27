@@ -133,6 +133,15 @@ public:
         }
     }
 
+    /**
+     * @brief Set OTA manager for update check commands
+     */
+    void setOtaManager(IOtaManager* otaManager) {
+        if (configHandler_) {
+            configHandler_->setOtaManager(otaManager);
+        }
+    }
+
 private:
     /**
      * @brief Handle OTA_BEGIN message
