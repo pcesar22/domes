@@ -2,11 +2,18 @@
 
 /**
  * @file crashDumpHandler.hpp
- * @brief Panic handler that saves crash info to NVS for later retrieval
+ * @brief Shutdown handler that saves diagnostic info to NVS on clean restart
  *
- * On panic: captures backtrace PCs, reason, task name, uptime, and free heap
- * to NVS namespace "crashdump". On next boot, the dump can be retrieved via
+ * Uses esp_register_shutdown_handler() to capture backtrace PCs, task name,
+ * uptime, and free heap to NVS namespace "crashdump" on clean shutdown
+ * (e.g., esp_restart()). On next boot, the dump can be retrieved via
  * the config protocol (MSG_TYPE_GET_CRASH_DUMP_REQ).
+ *
+ * NOTE: This handler only fires on clean restarts, NOT on hard faults,
+ * stack overflows, watchdog resets, or abort(). For capturing real panic
+ * data, enable ESP-IDF's built-in coredump facility:
+ *   menuconfig → Component config → Core dump → Data destination → Flash
+ * Coredumps can then be retrieved with `espcoredump.py`.
  */
 
 #include "esp_err.h"
@@ -48,17 +55,18 @@ struct CrashDumpData {
 };
 
 /**
- * @brief Crash dump handler
+ * @brief Shutdown dump handler
  *
- * Registers a shutdown handler that captures panic info to NVS.
- * On boot, check for existing crash dump and report it.
+ * Registers a shutdown handler that captures diagnostic info to NVS
+ * on clean restart (esp_restart()). Does NOT capture hard faults or
+ * watchdog resets — use ESP-IDF coredump for those.
  */
-class CrashDumpHandler {
+class ShutdownDumpHandler {
 public:
     /**
-     * @brief Initialize crash dump handler
+     * @brief Initialize shutdown dump handler
      *
-     * Registers the panic handler via esp_register_shutdown_handler().
+     * Registers via esp_register_shutdown_handler() (clean restarts only).
      * Call once during startup.
      *
      * @return ESP_OK on success
@@ -87,12 +95,12 @@ public:
 
 private:
     /**
-     * @brief Shutdown handler called on panic
+     * @brief Shutdown handler called on clean restart
      *
-     * Captures backtrace, reason, task name, uptime, free heap.
-     * Writes to NVS. Must be safe to call in panic context.
+     * Captures backtrace, task name, uptime, free heap.
+     * Writes to NVS. Must be safe to call in shutdown context.
      */
-    static void panicHandler();
+    static void shutdownHandler();
 
     static bool initialized_;
 };

@@ -27,6 +27,7 @@ size_t MemoryProfiler::writeIndex_ = 0;
 size_t MemoryProfiler::count_ = 0;
 uint32_t MemoryProfiler::intervalS_ = kDefaultSampleIntervalS;
 bool MemoryProfiler::initialized_ = false;
+portMUX_TYPE MemoryProfiler::spinlock_ = portMUX_INITIALIZER_UNLOCKED;
 
 esp_err_t MemoryProfiler::init(uint32_t intervalS) {
     if (initialized_) {
@@ -64,8 +65,11 @@ size_t MemoryProfiler::sampleCount() {
 }
 
 size_t MemoryProfiler::getSamples(HeapSample* out, size_t maxCount) {
+    taskENTER_CRITICAL(&spinlock_);
+
     size_t toRead = std::min(count_, maxCount);
     if (toRead == 0) {
+        taskEXIT_CRITICAL(&spinlock_);
         return 0;
     }
 
@@ -84,6 +88,7 @@ size_t MemoryProfiler::getSamples(HeapSample* out, size_t maxCount) {
         out[i] = samples_[idx];
     }
 
+    taskEXIT_CRITICAL(&spinlock_);
     return toRead;
 }
 
@@ -112,12 +117,14 @@ void MemoryProfiler::taskFunc(void* param) {
         // Take a sample
         HeapSample sample = currentStats();
 
-        // Store in circular buffer
+        // Store in circular buffer (synchronized with getSamples reader)
+        taskENTER_CRITICAL(&spinlock_);
         samples_[writeIndex_] = sample;
         writeIndex_ = (writeIndex_ + 1) % kMaxHeapSamples;
         if (count_ < kMaxHeapSamples) {
             count_++;
         }
+        taskEXIT_CRITICAL(&spinlock_);
 
         // Emit trace counters for Perfetto
         TRACE_COUNTER(TRACE_ID("Heap.Free"), sample.freeHeap,

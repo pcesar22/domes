@@ -1,6 +1,6 @@
 /**
  * @file crashDumpHandler.cpp
- * @brief Crash dump handler implementation
+ * @brief Shutdown dump handler implementation
  */
 
 #include "crashDumpHandler.hpp"
@@ -22,14 +22,14 @@ constexpr const char* kTag = "crash_dump";
 
 namespace domes::infra {
 
-bool CrashDumpHandler::initialized_ = false;
+bool ShutdownDumpHandler::initialized_ = false;
 
-esp_err_t CrashDumpHandler::init() {
+esp_err_t ShutdownDumpHandler::init() {
     if (initialized_) {
         return ESP_OK;
     }
 
-    esp_err_t err = esp_register_shutdown_handler(panicHandler);
+    esp_err_t err = esp_register_shutdown_handler(shutdownHandler);
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "Failed to register shutdown handler: %s", esp_err_to_name(err));
         return err;
@@ -57,7 +57,7 @@ esp_err_t CrashDumpHandler::init() {
     return ESP_OK;
 }
 
-bool CrashDumpHandler::hasDump() {
+bool ShutdownDumpHandler::hasDump() {
     nvs_handle_t handle;
     esp_err_t err = nvs_open(kCrashDumpNs, NVS_READONLY, &handle);
     if (err != ESP_OK) {
@@ -70,7 +70,7 @@ bool CrashDumpHandler::hasDump() {
     return (err == ESP_OK && valid == 1);
 }
 
-esp_err_t CrashDumpHandler::loadDump(CrashDumpData& dump) {
+esp_err_t ShutdownDumpHandler::loadDump(CrashDumpData& dump) {
     nvs_handle_t handle;
     esp_err_t err = nvs_open(kCrashDumpNs, NVS_READONLY, &handle);
     if (err != ESP_OK) {
@@ -116,7 +116,7 @@ esp_err_t CrashDumpHandler::loadDump(CrashDumpData& dump) {
     return ESP_OK;
 }
 
-esp_err_t CrashDumpHandler::clearDump() {
+esp_err_t ShutdownDumpHandler::clearDump() {
     nvs_handle_t handle;
     esp_err_t err = nvs_open(kCrashDumpNs, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
@@ -131,9 +131,9 @@ esp_err_t CrashDumpHandler::clearDump() {
     return err;
 }
 
-void CrashDumpHandler::panicHandler() {
-    // This runs in panic context — minimal operations, no logging, no allocs.
-    // NVS write is the only flash operation we do.
+void ShutdownDumpHandler::shutdownHandler() {
+    // This runs in shutdown context (clean esp_restart() only).
+    // Minimal operations, no logging, no allocs.
 
     nvs_handle_t handle;
     esp_err_t err = nvs_open(kCrashDumpNs, NVS_READWRITE, &handle);
@@ -144,9 +144,8 @@ void CrashDumpHandler::panicHandler() {
     // Mark dump as valid
     nvs_set_u8(handle, crash_key::kValid, 1);
 
-    // Save reason — use a generic message since we can't easily get the panic reason
-    // in the shutdown handler context
-    nvs_set_str(handle, crash_key::kReason, "panic/abort");
+    // Save reason — generic since this only fires on clean restart
+    nvs_set_str(handle, crash_key::kReason, "shutdown/restart");
 
     // Save task name
     TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();

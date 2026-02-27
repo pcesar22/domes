@@ -790,7 +790,7 @@ void ConfigCommandHandler::handleGetCrashDump() {
     domes_config_CrashDumpResponse resp = domes_config_CrashDumpResponse_init_zero;
 
     infra::CrashDumpData dump;
-    if (infra::CrashDumpHandler::loadDump(dump) == ESP_OK) {
+    if (infra::ShutdownDumpHandler::loadDump(dump) == ESP_OK) {
         resp.has_dump = true;
         std::strncpy(resp.reason, dump.reason, sizeof(resp.reason) - 1);
         std::strncpy(resp.task_name, dump.taskName, sizeof(resp.task_name) - 1);
@@ -820,7 +820,7 @@ void ConfigCommandHandler::handleGetCrashDump() {
 }
 
 void ConfigCommandHandler::handleClearCrashDump() {
-    esp_err_t err = infra::CrashDumpHandler::clearDump();
+    esp_err_t err = infra::ShutdownDumpHandler::clearDump();
 
     domes_config_ClearCrashDumpResponse resp = domes_config_ClearCrashDumpResponse_init_zero;
     resp.cleared = (err == ESP_OK);

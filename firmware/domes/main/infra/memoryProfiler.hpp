@@ -88,6 +88,7 @@ private:
     static size_t count_;
     static uint32_t intervalS_;
     static bool initialized_;
+    static portMUX_TYPE spinlock_;
 };
 
 }  // namespace domes::infra

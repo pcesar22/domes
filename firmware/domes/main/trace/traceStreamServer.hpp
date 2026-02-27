@@ -70,7 +70,7 @@ private:
      */
     static void streamCallback(const TraceEvent& event);
 
-    // Lock-free SPSC ring buffer (single producer = record callback, single consumer = send task)
+    // Lock-free MPSC ring buffer (multiple producers via record callback, single consumer = send task)
     static TraceEvent ringBuffer_[kStreamBufferSize];
     static std::atomic<size_t> writeIdx_;
     static std::atomic<size_t> readIdx_;

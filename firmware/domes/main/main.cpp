@@ -1097,9 +1097,9 @@ extern "C" void app_main() {
     }
     ESP_LOGI(kTag, "Infrastructure initialized");
 
-    // Initialize crash dump handler early (registers shutdown handler for panic capture)
-    if (domes::infra::CrashDumpHandler::init() != ESP_OK) {
-        ESP_LOGW(kTag, "Crash dump handler init failed");
+    // Initialize shutdown dump handler (captures diagnostics on clean esp_restart() only)
+    if (domes::infra::ShutdownDumpHandler::init() != ESP_OK) {
+        ESP_LOGW(kTag, "Shutdown dump handler init failed");
     }
 
     // Read pod ID from NVS (used for BLE naming and multi-pod identification)

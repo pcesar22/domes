@@ -145,6 +145,8 @@ void TraceStreamServer::handleClient(int clientSock) {
         msg.dropped = dropped_.exchange(0, std::memory_order_relaxed);
 
         size_t eventBytes = batchCount * sizeof(TraceEvent);
+        static_assert(kStreamBatchSize * sizeof(TraceEvent) <= sizeof(domes_trace_StreamBatch::events.bytes),
+                      "StreamBatch events field too small for max batch");
         msg.events.size = eventBytes;
         std::memcpy(msg.events.bytes, batch.data(), eventBytes);
 
@@ -185,17 +187,28 @@ void TraceStreamServer::handleClient(int clientSock) {
 }
 
 void TraceStreamServer::streamCallback(const TraceEvent& event) {
+    // MPSC: callback may be invoked from any task context, so use CAS loop
+    // to safely claim a write slot.
     size_t wr = writeIdx_.load(std::memory_order_relaxed);
-    size_t rd = readIdx_.load(std::memory_order_relaxed);
+    while (true) {
+        size_t rd = readIdx_.load(std::memory_order_acquire);
 
-    // Check if buffer is full
-    if (wr - rd >= kStreamBufferSize) {
-        dropped_.fetch_add(1, std::memory_order_relaxed);
-        return;
+        // Check if buffer is full
+        if (wr - rd >= kStreamBufferSize) {
+            dropped_.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+
+        // Try to claim this slot
+        if (writeIdx_.compare_exchange_weak(wr, wr + 1,
+                                            std::memory_order_acq_rel,
+                                            std::memory_order_relaxed)) {
+            break;
+        }
+        // CAS failed — wr was reloaded by compare_exchange_weak, retry
     }
 
     ringBuffer_[wr % kStreamBufferSize] = event;
-    writeIdx_.store(wr + 1, std::memory_order_release);
 }
 
 }  // namespace domes::trace
