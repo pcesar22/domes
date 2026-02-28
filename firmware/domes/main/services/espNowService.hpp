@@ -33,6 +33,7 @@ namespace domes::game {
 namespace domes {
 
 class LedService;
+class InjectableTouchDriver;
 
 namespace config {
     class ModeManager;
@@ -82,6 +83,19 @@ public:
     void setGameEngine(game::GameEngine* engine) { gameEngine_ = engine; }
     void setLedService(LedService* led) { ledService_ = led; }
     void setModeManager(config::ModeManager* modes) { modeManager_ = modes; }
+    void setInjectableTouchDriver(InjectableTouchDriver* driver) { injectableTouch_ = driver; }
+
+    /// Configure sim drill mode (auto-inject touches during drills)
+    void setSimMode(bool enabled, uint32_t delayMs = 500, uint8_t padIndex = 0) {
+        simMode_.store(enabled, std::memory_order_relaxed);
+        simDelayMs_ = delayMs;
+        simPadIndex_ = padIndex;
+    }
+
+    /// Check if sim mode is active
+    bool isSimMode() const { return simMode_.load(std::memory_order_relaxed); }
+    uint32_t simDelayMs() const { return simDelayMs_; }
+    uint8_t simPadIndex() const { return simPadIndex_; }
 
     /// ITaskRunner interface
     void run() override;
@@ -158,6 +172,7 @@ private:
     void handleArmTouch(const uint8_t* data, size_t len);
     void handleSetColor(const uint8_t* data, size_t len);
     void handleStopAll(const espnow::MsgHeader* hdr);
+    void handleSimulateTouch(const uint8_t* data, size_t len);
 
     // Game event handlers (master side)
     void handleTouchEvent(const uint8_t* data, size_t len);
@@ -184,7 +199,13 @@ private:
     game::GameEngine* gameEngine_ = nullptr;
     LedService* ledService_ = nullptr;
     config::ModeManager* modeManager_ = nullptr;
+    InjectableTouchDriver* injectableTouch_ = nullptr;
     std::atomic<bool> running_{true};
+
+    // Sim drill mode state
+    std::atomic<bool> simMode_{false};
+    uint32_t simDelayMs_ = 500;   // 0 = miss (no injection)
+    uint8_t simPadIndex_ = 0;
 
     // Identity
     uint8_t ourMac_[ESP_NOW_ETH_ALEN] = {};

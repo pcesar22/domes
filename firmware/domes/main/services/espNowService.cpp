@@ -10,6 +10,7 @@
 
 #include "espNowService.hpp"
 #include "espNowProtocol.hpp"
+#include "drivers/injectableTouchDriver.hpp"
 #include "game/gameEngine.hpp"
 #include "services/ledService.hpp"
 #include "config/modeManager.hpp"
@@ -441,6 +442,14 @@ void EspNowService::runMaster() {
                 cfg.feedbackMode = 0x03;
                 gameEngine_->arm(cfg);
 
+                // Sim mode: auto-inject touch on self after delay
+                if (simMode_.load(std::memory_order_relaxed) && simDelayMs_ > 0 && injectableTouch_) {
+                    vTaskDelay(pdMS_TO_TICKS(simDelayMs_));
+                    injectableTouch_->injectTouch(simPadIndex_);
+                    ESP_LOGI(kTag, "SIM: injected local touch pad=%u after %lums",
+                             simPadIndex_, static_cast<unsigned long>(simDelayMs_));
+                }
+
                 // Wait for local event
                 int64_t armStartUs = esp_timer_get_time();
                 while (!eventReceived_.load(std::memory_order_acquire) && running_) {
@@ -484,6 +493,17 @@ void EspNowService::runMaster() {
             sendMsgTo(peerMac_, reinterpret_cast<const uint8_t*>(&armMsg), sizeof(armMsg));
 
             TRACE_INSTANT(TRACE_ID("EspNow.SendArm"), trace::Category::kEspNow);
+
+            // Sim mode: send SimulateTouch to peer after delay
+            if (simMode_.load(std::memory_order_relaxed) && simDelayMs_ > 0) {
+                vTaskDelay(pdMS_TO_TICKS(simDelayMs_));
+                espnow::SimulateTouchMsg simMsg = {};
+                fillHeader(simMsg.header, espnow::MsgType::kSimulateTouch);
+                simMsg.padIndex = simPadIndex_;
+                sendMsgTo(peerMac_, reinterpret_cast<const uint8_t*>(&simMsg), sizeof(simMsg));
+                ESP_LOGI(kTag, "SIM: sent SIMULATE_TOUCH pad=%u to peer after %lums",
+                         simPadIndex_, static_cast<unsigned long>(simDelayMs_));
+            }
 
             // Wait for TouchEvent or TimeoutEvent from peer
             eventReceived_.store(false, std::memory_order_relaxed);
@@ -762,6 +782,22 @@ void EspNowService::handleStopAll(const espnow::MsgHeader* hdr) {
 }
 
 // ============================================================================
+// Sim Touch Injection (Slave Side)
+// ============================================================================
+
+void EspNowService::handleSimulateTouch(const uint8_t* data, size_t len) {
+    if (len < sizeof(espnow::SimulateTouchMsg)) return;
+
+    const auto* msg = reinterpret_cast<const espnow::SimulateTouchMsg*>(data);
+    ESP_LOGI(kTag, "SIMULATE_TOUCH received: pad=%u", msg->padIndex);
+    TRACE_INSTANT(TRACE_ID("EspNow.RxSimTouch"), trace::Category::kEspNow);
+
+    if (injectableTouch_) {
+        injectableTouch_->injectTouch(msg->padIndex);
+    }
+}
+
+// ============================================================================
 // Game Event Handlers (Master Side)
 // ============================================================================
 
@@ -918,6 +954,7 @@ void EspNowService::handleReceived(const uint8_t* data, size_t len) {
         case espnow::MsgType::kArmTouch:     handleArmTouch(data, len); break;
         case espnow::MsgType::kSetColor:     handleSetColor(data, len); break;
         case espnow::MsgType::kStopAll:      handleStopAll(hdr); break;
+        case espnow::MsgType::kSimulateTouch: handleSimulateTouch(data, len); break;
 
         // Game events (master receives)
         case espnow::MsgType::kTouchEvent:   handleTouchEvent(data, len); break;

@@ -1,8 +1,9 @@
 //! ESP-NOW status and benchmark commands
 
 use crate::protocol::{
-    parse_espnow_bench_response, parse_get_espnow_status_response, serialize_espnow_bench,
-    CliBenchResult, CliEspNowStatus, ConfigMsgType,
+    parse_espnow_bench_response, parse_get_espnow_status_response, parse_set_sim_mode_response,
+    serialize_espnow_bench, serialize_set_sim_mode, CliBenchResult, CliEspNowStatus,
+    CliSimModeState, ConfigMsgType,
 };
 use crate::transport::Transport;
 use anyhow::{Context, Result};
@@ -50,4 +51,29 @@ pub fn espnow_bench(transport: &mut dyn Transport, rounds: u32) -> Result<CliBen
 
     parse_espnow_bench_response(&frame.payload)
         .context("Failed to parse espnow bench response")
+}
+
+/// Set sim drill mode on the ESP-NOW service
+pub fn espnow_sim_mode(
+    transport: &mut dyn Transport,
+    enabled: bool,
+    delay_ms: u32,
+    pad_index: u32,
+) -> Result<CliSimModeState> {
+    let payload = serialize_set_sim_mode(enabled, delay_ms, pad_index);
+
+    let frame = transport
+        .send_command(ConfigMsgType::SetSimModeReq as u8, &payload)
+        .context("Failed to send set sim mode command")?;
+
+    if frame.msg_type != ConfigMsgType::SetSimModeRsp as u8 {
+        anyhow::bail!(
+            "Unexpected response type: 0x{:02X}, expected 0x{:02X}",
+            frame.msg_type,
+            ConfigMsgType::SetSimModeRsp as u8
+        );
+    }
+
+    parse_set_sim_mode_response(&frame.payload)
+        .context("Failed to parse set sim mode response")
 }

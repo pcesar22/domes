@@ -67,6 +67,11 @@ enum class MsgType : uint8_t {
     kCheckUpdateRsp       = domes_config_MsgType_MSG_TYPE_CHECK_UPDATE_RSP,
     kSetAutoUpdateReq     = domes_config_MsgType_MSG_TYPE_SET_AUTO_UPDATE_REQ,
     kSetAutoUpdateRsp     = domes_config_MsgType_MSG_TYPE_SET_AUTO_UPDATE_RSP,
+    // Touch injection commands (0x4C-0x4F)
+    kSimulateTouchReq     = domes_config_MsgType_MSG_TYPE_SIMULATE_TOUCH_REQ,
+    kSimulateTouchRsp     = domes_config_MsgType_MSG_TYPE_SIMULATE_TOUCH_RSP,
+    kSetSimModeReq        = domes_config_MsgType_MSG_TYPE_SET_SIM_MODE_REQ,
+    kSetSimModeRsp        = domes_config_MsgType_MSG_TYPE_SET_SIM_MODE_RSP,
 };
 
 /**
@@ -97,11 +102,11 @@ enum class Status : uint8_t {
 };
 
 /**
- * @brief Check if a message type is a config/system command (0x20-0x35 range)
+ * @brief Check if a message type is a config/system command (0x20-0x4F range)
  */
 inline bool isConfigMessage(uint8_t type) {
     return type >= static_cast<uint8_t>(MsgType::kListFeaturesReq) &&
-           type <= static_cast<uint8_t>(MsgType::kSetAutoUpdateRsp);
+           type <= static_cast<uint8_t>(MsgType::kSetSimModeRsp);
 }
 
 /**

@@ -142,6 +142,15 @@ public:
         }
     }
 
+    /**
+     * @brief Set injectable touch driver for simulated touch commands
+     */
+    void setInjectableTouchDriver(InjectableTouchDriver* driver) {
+        if (configHandler_) {
+            configHandler_->setInjectableTouchDriver(driver);
+        }
+    }
+
 private:
     /**
      * @brief Handle OTA_BEGIN message

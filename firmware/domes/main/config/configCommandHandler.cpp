@@ -9,6 +9,7 @@
 
 #include "trace/traceApi.hpp"
 
+#include "drivers/injectableTouchDriver.hpp"
 #include "protocol/frameCodec.hpp"
 #include "services/imuService.hpp"
 #include "services/ledService.hpp"
@@ -168,6 +169,16 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
         case MsgType::kSetAutoUpdateReq:
             ESP_LOGD(kTag, "Received SET_AUTO_UPDATE");
             handleSetAutoUpdate(payload, len);
+            return true;
+
+        case MsgType::kSimulateTouchReq:
+            ESP_LOGI(kTag, "Received SIMULATE_TOUCH");
+            handleSimulateTouch(payload, len);
+            return true;
+
+        case MsgType::kSetSimModeReq:
+            ESP_LOGI(kTag, "Received SET_SIM_MODE");
+            handleSetSimMode(payload, len);
             return true;
 
         default:
@@ -1030,6 +1041,97 @@ void ConfigCommandHandler::handleSetAutoUpdate(const uint8_t* payload, size_t le
     }
 
     sendFrame(MsgType::kSetAutoUpdateRsp, respPayload.data(), 1 + ostream.bytes_written);
+}
+
+// ============================================================================
+// Touch injection handlers
+// ============================================================================
+
+void ConfigCommandHandler::handleSimulateTouch(const uint8_t* payload, size_t len) {
+    domes_config_SimulateTouchRequest req = domes_config_SimulateTouchRequest_init_zero;
+    if (len > 0) {
+        pb_istream_t stream = pb_istream_from_buffer(payload, len);
+        if (!pb_decode(&stream, domes_config_SimulateTouchRequest_fields, &req)) {
+            ESP_LOGW(kTag, "Failed to decode SIMULATE_TOUCH: %s", PB_GET_ERROR(&stream));
+            std::array<uint8_t, 1> errPayload;
+            errPayload[0] = static_cast<uint8_t>(Status::kError);
+            sendFrame(MsgType::kSimulateTouchRsp, errPayload.data(), 1);
+            return;
+        }
+    }
+
+    ESP_LOGI(kTag, "Injecting touch on pad %lu", static_cast<unsigned long>(req.pad_index));
+
+    if (!injectableTouch_) {
+        ESP_LOGW(kTag, "InjectableTouchDriver not available");
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSimulateTouchRsp, errPayload.data(), 1);
+        return;
+    }
+
+    injectableTouch_->injectTouch(static_cast<uint8_t>(req.pad_index));
+
+    // Send OK response
+    domes_config_SimulateTouchResponse resp = domes_config_SimulateTouchResponse_init_zero;
+    resp.status = domes_config_Status_STATUS_OK;
+
+    std::array<uint8_t, domes_config_SimulateTouchResponse_size + 10> respPayload;
+    respPayload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(respPayload.data() + 1, respPayload.size() - 1);
+    if (!pb_encode(&ostream, domes_config_SimulateTouchResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode SimulateTouchResponse: %s", PB_GET_ERROR(&ostream));
+        return;
+    }
+
+    sendFrame(MsgType::kSimulateTouchRsp, respPayload.data(), 1 + ostream.bytes_written);
+}
+
+void ConfigCommandHandler::handleSetSimMode(const uint8_t* payload, size_t len) {
+    domes_config_SetSimModeRequest req = domes_config_SetSimModeRequest_init_zero;
+    if (len > 0) {
+        pb_istream_t stream = pb_istream_from_buffer(payload, len);
+        if (!pb_decode(&stream, domes_config_SetSimModeRequest_fields, &req)) {
+            ESP_LOGW(kTag, "Failed to decode SET_SIM_MODE: %s", PB_GET_ERROR(&stream));
+            std::array<uint8_t, 1> errPayload;
+            errPayload[0] = static_cast<uint8_t>(Status::kError);
+            sendFrame(MsgType::kSetSimModeRsp, errPayload.data(), 1);
+            return;
+        }
+    }
+
+    ESP_LOGI(kTag, "Set sim mode: enabled=%d delay_ms=%lu pad=%lu",
+             req.enabled, static_cast<unsigned long>(req.delay_ms),
+             static_cast<unsigned long>(req.pad_index));
+
+    if (!espNowService_) {
+        ESP_LOGW(kTag, "ESP-NOW service not available for sim mode");
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetSimModeRsp, errPayload.data(), 1);
+        return;
+    }
+
+    espNowService_->setSimMode(req.enabled, req.delay_ms, static_cast<uint8_t>(req.pad_index));
+
+    // Send response echoing current state
+    domes_config_SetSimModeResponse resp = domes_config_SetSimModeResponse_init_zero;
+    resp.status = domes_config_Status_STATUS_OK;
+    resp.enabled = espNowService_->isSimMode();
+    resp.delay_ms = espNowService_->simDelayMs();
+    resp.pad_index = espNowService_->simPadIndex();
+
+    std::array<uint8_t, domes_config_SetSimModeResponse_size + 10> respPayload;
+    respPayload[0] = static_cast<uint8_t>(Status::kOk);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(respPayload.data() + 1, respPayload.size() - 1);
+    if (!pb_encode(&ostream, domes_config_SetSimModeResponse_fields, &resp)) {
+        ESP_LOGE(kTag, "Failed to encode SetSimModeResponse: %s", PB_GET_ERROR(&ostream));
+        return;
+    }
+
+    sendFrame(MsgType::kSetSimModeRsp, respPayload.data(), 1 + ostream.bytes_written);
 }
 
 }  // namespace domes::config

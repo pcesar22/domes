@@ -17,11 +17,12 @@
 #include <cstddef>
 
 namespace domes {
-class LedService;  // Forward declaration
-class ImuService;  // Forward declaration
-class EspNowTransport;  // Forward declaration
-class EspNowService;    // Forward declaration
-class IOtaManager;      // Forward declaration
+class LedService;            // Forward declaration
+class ImuService;            // Forward declaration
+class EspNowTransport;       // Forward declaration
+class EspNowService;         // Forward declaration
+class IOtaManager;           // Forward declaration
+class InjectableTouchDriver; // Forward declaration
 }
 
 namespace domes::config {
@@ -77,6 +78,11 @@ public:
      * @brief Set OTA manager for update check commands
      */
     void setOtaManager(IOtaManager* otaManager) { otaManager_ = otaManager; }
+
+    /**
+     * @brief Set injectable touch driver for simulated touch commands
+     */
+    void setInjectableTouchDriver(InjectableTouchDriver* driver) { injectableTouch_ = driver; }
 
     /**
      * @brief Handle an incoming config command
@@ -186,6 +192,16 @@ private:
     void handleSetAutoUpdate(const uint8_t* payload, size_t len);
 
     /**
+     * @brief Handle SIMULATE_TOUCH request
+     */
+    void handleSimulateTouch(const uint8_t* payload, size_t len);
+
+    /**
+     * @brief Handle SET_SIM_MODE request
+     */
+    void handleSetSimMode(const uint8_t* payload, size_t len);
+
+    /**
      * @brief Send list features response
      */
     void sendListFeaturesResponse();
@@ -241,6 +257,7 @@ private:
     EspNowTransport* espNowTransport_ = nullptr;
     EspNowService* espNowService_ = nullptr;
     IOtaManager* otaManager_ = nullptr;
+    InjectableTouchDriver* injectableTouch_ = nullptr;
 };
 
 }  // namespace domes::config
