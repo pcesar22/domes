@@ -25,8 +25,8 @@ static constexpr const char* kTag = domes::infra::tag::kEspNow;
 // Discovery timing
 static constexpr uint32_t kBeaconIntervalMs = 2000;
 static constexpr uint32_t kReceiveTimeoutMs = 500;
-static constexpr uint32_t kPingDelayMs = 3000;
-static constexpr uint32_t kPingCount = 10;
+static constexpr uint32_t kPingDelayMs = 1000;
+static constexpr uint32_t kPingCount = 3;
 static constexpr uint32_t kPingIntervalMs = 500;
 static constexpr uint32_t kPongTimeoutMs = 2000;  // Give up waiting for PONG after 2s
 
