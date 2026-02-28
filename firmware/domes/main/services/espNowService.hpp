@@ -15,6 +15,7 @@
 #include "transport/espNowTransport.hpp"
 #include "trace/traceApi.hpp"
 
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 
@@ -84,6 +85,15 @@ public:
     void setLedService(LedService* led) { ledService_ = led; }
     void setModeManager(config::ModeManager* modes) { modeManager_ = modes; }
     void setInjectableTouchDriver(InjectableTouchDriver* driver) { injectableTouch_ = driver; }
+    /// Enable/disable the service (called by CLI feature toggle, NOT mode manager)
+    void setFeatureEnabled(bool enabled) {
+        featurePaused_.store(!enabled, std::memory_order_relaxed);
+        if (enabled) {
+            ESP_LOGI("espnow", "ESP-NOW feature re-enabled");
+        } else {
+            ESP_LOGI("espnow", "ESP-NOW feature disabled by user");
+        }
+    }
 
     /// Configure sim drill mode (auto-inject touches during drills)
     void setSimMode(bool enabled, uint32_t delayMs = 500, uint8_t padIndex = 0) {
@@ -114,6 +124,7 @@ public:
     /// Get discovery state as string
     const char* discoveryState() const {
         if (!running_.load(std::memory_order_relaxed)) return "stopped";
+        if (featurePaused_.load(std::memory_order_relaxed)) return "disabled";
         if (peerFound_) return isMaster_ ? "master" : "slave";
         if (peerCount_.load(std::memory_order_relaxed) > 0) return "found-peer";
         return "searching";
@@ -201,6 +212,7 @@ private:
     config::ModeManager* modeManager_ = nullptr;
     InjectableTouchDriver* injectableTouch_ = nullptr;
     std::atomic<bool> running_{true};
+    std::atomic<bool> featurePaused_{true};   // start paused; setFeatureEnabled(true) unpauses
 
     // Sim drill mode state
     std::atomic<bool> simMode_{false};

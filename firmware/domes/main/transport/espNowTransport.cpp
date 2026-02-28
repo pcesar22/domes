@@ -171,9 +171,9 @@ TransportError EspNowTransport::send(const uint8_t* data, size_t len) {
     }
 
     // Wait for send callback. Broadcast has no MAC-level ACK so the callback
-    // fires when the frame leaves the radio. With coexistence tuning (CE_LENGTH_TYPE_SD,
-    // wider BLE intervals, slave latency), 50ms is sufficient.
-    if (xSemaphoreTake(txDoneSemaphore_, pdMS_TO_TICKS(50)) != pdTRUE) {
+    // fires when the frame leaves the radio. 500ms accommodates BLE advertising
+    // contention — fast-interval advertising can delay ESP-NOW by >50ms.
+    if (xSemaphoreTake(txDoneSemaphore_, pdMS_TO_TICKS(500)) != pdTRUE) {
         ESP_LOGW(kTag, "Broadcast send callback timeout");
         TRACE_MUTEX_UNLOCK(TRACE_ID("EspNow.TxMutex"));
         xSemaphoreGive(txMutex_);

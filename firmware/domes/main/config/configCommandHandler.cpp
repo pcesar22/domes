@@ -216,6 +216,13 @@ void ConfigCommandHandler::handleSetFeature(const uint8_t* payload, size_t len) 
         return;
     }
 
+    // Notify ESP-NOW service directly so it can pause/resume.
+    // The mode manager's feature mask transitions (GAME→IDLE) would otherwise
+    // overwrite user-set feature bits, so we bypass FeatureManager for this.
+    if (feature == Feature::kEspNow && espNowService_) {
+        espNowService_->setFeatureEnabled(enabled);
+    }
+
     sendSetFeatureResponse(Status::kOk, feature, enabled);
 }
 

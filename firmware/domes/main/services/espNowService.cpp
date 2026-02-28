@@ -75,6 +75,12 @@ bool EspNowService::startBenchmark(uint32_t rounds) {
 
 void EspNowService::run() {
     while (running_) {
+        // Pause when ESP-NOW feature is disabled — poll until re-enabled
+        if (featurePaused_.load(std::memory_order_relaxed)) {
+            vTaskDelay(pdMS_TO_TICKS(500));
+            continue;  // Keep polling until re-enabled
+        }
+
         // Check for benchmark request at top of each lifecycle iteration
         if (benchmarkRequested_.load(std::memory_order_acquire)) {
             runBenchmark();
@@ -132,13 +138,29 @@ void EspNowService::run() {
 void EspNowService::runDiscovery() {
     ESP_LOGI(kTag, "=== Phase 1: Discovery ===");
 
+    // Drain stale RX frames from previous session to avoid processing
+    // old game messages (TOUCH_EVENT, TIMEOUT_EVENT, etc.) during discovery
+    {
+        uint8_t drainBuf[kEspNowMaxPayload];
+        size_t drainLen = sizeof(drainBuf);
+        uint32_t drained = 0;
+        while (isOk(transport_.receive(drainBuf, &drainLen, 0))) {
+            drainLen = sizeof(drainBuf);
+            drained++;
+        }
+        if (drained > 0) {
+            ESP_LOGI(kTag, "Drained %lu stale RX frames", static_cast<unsigned long>(drained));
+        }
+    }
+
     int64_t lastBeaconUs = 0;
     int64_t pingStartUs = 0;
     uint32_t pingsSent = 0;
     bool pingPhase = false;
     bool pingsDone = false;
 
-    while (running_ && !pingsDone && !joinGameReceived_) {
+    while (running_ && !pingsDone && !joinGameReceived_
+           && !featurePaused_.load(std::memory_order_relaxed)) {
         int64_t nowUs = esp_timer_get_time();
 
         // Send beacon periodically
@@ -417,7 +439,8 @@ void EspNowService::runMaster() {
 
     ESP_LOGI(kTag, "=== DRILL START (%lu rounds) ===", static_cast<unsigned long>(kDrillRounds));
 
-    for (uint32_t round = 0; round < kDrillRounds && running_; round++) {
+    for (uint32_t round = 0; round < kDrillRounds && running_
+         && !featurePaused_.load(std::memory_order_relaxed); round++) {
         TRACE_SCOPE(TRACE_ID("EspNow.DrillRound"), trace::Category::kEspNow);
 
         bool targetSelf = (round % 2 == 0);
@@ -452,7 +475,8 @@ void EspNowService::runMaster() {
 
                 // Wait for local event
                 int64_t armStartUs = esp_timer_get_time();
-                while (!eventReceived_.load(std::memory_order_acquire) && running_) {
+                while (!eventReceived_.load(std::memory_order_acquire) && running_
+                       && !featurePaused_.load(std::memory_order_relaxed)) {
                     int64_t elapsed = esp_timer_get_time() - armStartUs;
                     if (elapsed > static_cast<int64_t>(kEventWaitTimeoutMs) * 1000) {
                         break;
@@ -600,7 +624,8 @@ void EspNowService::runSlave() {
     static constexpr uint32_t kSlaveHeartbeatTimeoutMs = 15000;
     int64_t lastMasterMsgUs = esp_timer_get_time();
 
-    while (running_ && !stopAllReceived_) {
+    while (running_ && !stopAllReceived_
+           && !featurePaused_.load(std::memory_order_relaxed)) {
         // Check if game engine fired an event (flag set by game_tick callback).
         // We send the ESP-NOW response HERE on the service task (Core 0, large stack)
         // instead of from the callback on game_tick (Core 1, small stack).

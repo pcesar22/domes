@@ -638,7 +638,6 @@ static esp_err_t initEspNow() {
     if (injectableTouchDriver) {
         service.setInjectableTouchDriver(injectableTouchDriver);
     }
-
     domes::infra::TaskConfig serviceConfig = {
         .name = "espnow_svc",
         .stackSize = 6144,  // Larger stack for game protocol
