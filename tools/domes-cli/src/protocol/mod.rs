@@ -955,6 +955,9 @@ pub fn parse_simulate_touch_response(payload: &[u8]) -> Result<(), ProtocolError
         return Err(ProtocolError::DeviceError(status));
     }
 
+    // Decode protobuf body for consistency (catches encoding errors)
+    let _resp = SimulateTouchResponse::decode(&payload[1..])?;
+
     Ok(())
 }
 

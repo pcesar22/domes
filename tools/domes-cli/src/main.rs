@@ -393,7 +393,7 @@ enum EspnowAction {
         delay_ms: u32,
 
         /// Pad index to inject touches on (0-3, default: 0)
-        #[arg(long, default_value = "0")]
+        #[arg(long, default_value = "0", value_parser = clap::value_parser!(u32).range(0..=3))]
         pad: u32,
     },
 }
@@ -403,7 +403,7 @@ enum TouchAction {
     /// Inject a simulated touch on a specific pad
     Simulate {
         /// Pad index to inject (0-3)
-        #[arg(long, default_value = "0")]
+        #[arg(long, default_value = "0", value_parser = clap::value_parser!(u32).range(0..=3))]
         pad: u32,
     },
 }

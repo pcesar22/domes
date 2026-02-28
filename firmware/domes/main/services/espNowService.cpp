@@ -466,11 +466,15 @@ void EspNowService::runMaster() {
                 gameEngine_->arm(cfg);
 
                 // Sim mode: auto-inject touch on self after delay
-                if (simMode_.load(std::memory_order_relaxed) && simDelayMs_ > 0 && injectableTouch_) {
-                    vTaskDelay(pdMS_TO_TICKS(simDelayMs_));
-                    injectableTouch_->injectTouch(simPadIndex_);
-                    ESP_LOGI(kTag, "SIM: injected local touch pad=%u after %lums",
-                             simPadIndex_, static_cast<unsigned long>(simDelayMs_));
+                if (simMode_.load(std::memory_order_acquire) && injectableTouch_) {
+                    uint32_t delayMs = simDelayMs_.load(std::memory_order_relaxed);
+                    uint8_t pad = simPadIndex_.load(std::memory_order_relaxed);
+                    if (delayMs > 0) {
+                        vTaskDelay(pdMS_TO_TICKS(delayMs));
+                        injectableTouch_->injectTouch(pad);
+                        ESP_LOGI(kTag, "SIM: injected local touch pad=%u after %lums",
+                                 pad, static_cast<unsigned long>(delayMs));
+                    }
                 }
 
                 // Wait for local event
@@ -519,21 +523,26 @@ void EspNowService::runMaster() {
             TRACE_INSTANT(TRACE_ID("EspNow.SendArm"), trace::Category::kEspNow);
 
             // Sim mode: send SimulateTouch to peer after delay
-            if (simMode_.load(std::memory_order_relaxed) && simDelayMs_ > 0) {
-                vTaskDelay(pdMS_TO_TICKS(simDelayMs_));
-                espnow::SimulateTouchMsg simMsg = {};
-                fillHeader(simMsg.header, espnow::MsgType::kSimulateTouch);
-                simMsg.padIndex = simPadIndex_;
-                sendMsgTo(peerMac_, reinterpret_cast<const uint8_t*>(&simMsg), sizeof(simMsg));
-                ESP_LOGI(kTag, "SIM: sent SIMULATE_TOUCH pad=%u to peer after %lums",
-                         simPadIndex_, static_cast<unsigned long>(simDelayMs_));
+            if (simMode_.load(std::memory_order_acquire)) {
+                uint32_t delayMs = simDelayMs_.load(std::memory_order_relaxed);
+                uint8_t pad = simPadIndex_.load(std::memory_order_relaxed);
+                if (delayMs > 0) {
+                    vTaskDelay(pdMS_TO_TICKS(delayMs));
+                    espnow::SimulateTouchMsg simMsg = {};
+                    fillHeader(simMsg.header, espnow::MsgType::kSimulateTouch);
+                    simMsg.padIndex = pad;
+                    sendMsgTo(peerMac_, reinterpret_cast<const uint8_t*>(&simMsg), sizeof(simMsg));
+                    ESP_LOGI(kTag, "SIM: sent SIMULATE_TOUCH pad=%u to peer after %lums",
+                             pad, static_cast<unsigned long>(delayMs));
+                }
             }
 
             // Wait for TouchEvent or TimeoutEvent from peer
             eventReceived_.store(false, std::memory_order_relaxed);
             int64_t armStartUs = esp_timer_get_time();
 
-            while (!eventReceived_.load(std::memory_order_acquire) && running_) {
+            while (!eventReceived_.load(std::memory_order_acquire) && running_
+                   && !featurePaused_.load(std::memory_order_relaxed)) {
                 uint8_t rxBuf[kEspNowMaxPayload];
                 size_t rxLen = sizeof(rxBuf);
                 TransportError err = transport_.receive(rxBuf, &rxLen, 100);

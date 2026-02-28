@@ -27,11 +27,15 @@ public:
 
     esp_err_t init() override { return real_.init(); }
     esp_err_t update() override {
-        // Tick down injection timers
+        // Tick down injection timers (CAS to avoid TOCTOU with cross-core injectTouch)
         for (uint8_t i = 0; i < kMaxPads; ++i) {
-            uint8_t remaining = injectedTicks_[i].load(std::memory_order_relaxed);
-            if (remaining > 0) {
-                injectedTicks_[i].store(remaining - 1, std::memory_order_relaxed);
+            uint8_t cur = injectedTicks_[i].load(std::memory_order_relaxed);
+            while (cur > 0) {
+                if (injectedTicks_[i].compare_exchange_weak(
+                        cur, cur - 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
+                    break;
+                }
+                // cur is updated by compare_exchange_weak on failure
             }
         }
         return real_.update();

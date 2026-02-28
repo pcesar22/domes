@@ -97,15 +97,15 @@ public:
 
     /// Configure sim drill mode (auto-inject touches during drills)
     void setSimMode(bool enabled, uint32_t delayMs = 500, uint8_t padIndex = 0) {
-        simMode_.store(enabled, std::memory_order_relaxed);
-        simDelayMs_ = delayMs;
-        simPadIndex_ = padIndex;
+        simDelayMs_.store(delayMs, std::memory_order_relaxed);
+        simPadIndex_.store(padIndex, std::memory_order_relaxed);
+        simMode_.store(enabled, std::memory_order_release);  // release fence after data
     }
 
     /// Check if sim mode is active
-    bool isSimMode() const { return simMode_.load(std::memory_order_relaxed); }
-    uint32_t simDelayMs() const { return simDelayMs_; }
-    uint8_t simPadIndex() const { return simPadIndex_; }
+    bool isSimMode() const { return simMode_.load(std::memory_order_acquire); }
+    uint32_t simDelayMs() const { return simDelayMs_.load(std::memory_order_relaxed); }
+    uint8_t simPadIndex() const { return simPadIndex_.load(std::memory_order_relaxed); }
 
     /// ITaskRunner interface
     void run() override;
@@ -216,8 +216,8 @@ private:
 
     // Sim drill mode state
     std::atomic<bool> simMode_{false};
-    uint32_t simDelayMs_ = 500;   // 0 = miss (no injection)
-    uint8_t simPadIndex_ = 0;
+    std::atomic<uint32_t> simDelayMs_{500};   // 0 = miss (no injection)
+    std::atomic<uint8_t> simPadIndex_{0};
 
     // Identity
     uint8_t ourMac_[ESP_NOW_ETH_ALEN] = {};
