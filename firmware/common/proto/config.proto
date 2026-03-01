@@ -62,6 +62,14 @@ enum MsgType {
     MSG_TYPE_CHECK_UPDATE_RSP = 0x47;
     MSG_TYPE_SET_AUTO_UPDATE_REQ = 0x48;
     MSG_TYPE_SET_AUTO_UPDATE_RSP = 0x49;
+
+    // Touch injection commands (0x4C-0x4D)
+    MSG_TYPE_SIMULATE_TOUCH_REQ = 0x4C;
+    MSG_TYPE_SIMULATE_TOUCH_RSP = 0x4D;
+
+    // Sim drill mode commands (0x4E-0x4F)
+    MSG_TYPE_SET_SIM_MODE_REQ = 0x4E;
+    MSG_TYPE_SET_SIM_MODE_RSP = 0x4F;
 }
 
 // Status codes for responses
@@ -376,6 +384,33 @@ message SetAutoUpdateRequest {
 
 message SetAutoUpdateResponse {
     bool enabled = 1;     // New auto-update setting after write
+}
+
+// ============================================================================
+// Touch injection messages
+// ============================================================================
+
+// Inject a simulated touch on a specific pad (host -> device)
+message SimulateTouchRequest {
+    uint32 pad_index = 1;   // Pad to inject (0-3)
+}
+
+message SimulateTouchResponse {
+    Status status = 1;
+}
+
+// Enable/disable sim drill mode (auto-inject during ESP-NOW drills)
+message SetSimModeRequest {
+    bool enabled = 1;
+    uint32 delay_ms = 2;    // Delay before injection (0 = miss/no injection)
+    uint32 pad_index = 3;   // Pad to inject (0-3)
+}
+
+message SetSimModeResponse {
+    Status status = 1;
+    bool enabled = 2;
+    uint32 delay_ms = 3;
+    uint32 pad_index = 4;
 }
 
 // Top-level request envelope

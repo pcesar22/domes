@@ -55,7 +55,7 @@ TEST(ConfigMsgType, IsConfigMessageOutOfRange) {
     EXPECT_FALSE(isConfigMessage(0x00));  // Unknown
     EXPECT_FALSE(isConfigMessage(0xFF));  // Unknown
     EXPECT_FALSE(isConfigMessage(0x1F));  // Just before config range
-    EXPECT_FALSE(isConfigMessage(0x4A));  // Just past GitHub OTA range
+    EXPECT_FALSE(isConfigMessage(0x50));  // Just past sim mode range
 }
 
 TEST(ConfigMsgType, IsConfigMessageObservabilityRange) {
@@ -463,6 +463,83 @@ TEST(Protobuf, SetAutoUpdateResponseEncodeDecode) {
     ASSERT_TRUE(pb_decode(&istream, domes_config_SetAutoUpdateResponse_fields, &decoded));
 
     EXPECT_TRUE(decoded.enabled);
+}
+
+// =============================================================================
+// Touch Injection Protobuf Tests
+// =============================================================================
+
+TEST(ConfigMsgType, IsConfigMessageTouchInjectionRange) {
+    // Touch injection commands (0x4C-0x4F) should be config messages
+    EXPECT_TRUE(isConfigMessage(0x4C));  // SimulateTouchReq
+    EXPECT_TRUE(isConfigMessage(0x4D));  // SimulateTouchRsp
+    EXPECT_TRUE(isConfigMessage(0x4E));  // SetSimModeReq
+    EXPECT_TRUE(isConfigMessage(0x4F));  // SetSimModeRsp
+}
+
+TEST(ConfigMsgType, GapValues0x4A0x4BAreInRange) {
+    // Gap values 0x4A-0x4B fall within the simple range check (0x20-0x4F).
+    // They're routed to the config handler but safely ignored by the switch.
+    EXPECT_TRUE(isConfigMessage(0x4A));
+    EXPECT_TRUE(isConfigMessage(0x4B));
+}
+
+TEST(Protobuf, SimulateTouchRequestEncodeDecode) {
+    domes_config_SimulateTouchRequest req = domes_config_SimulateTouchRequest_init_zero;
+    req.pad_index = 2;
+
+    std::array<uint8_t, 16> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SimulateTouchRequest_fields, &req));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    domes_config_SimulateTouchRequest decoded = domes_config_SimulateTouchRequest_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SimulateTouchRequest_fields, &decoded));
+
+    EXPECT_EQ(decoded.pad_index, 2u);
+}
+
+TEST(Protobuf, SetSimModeRequestEncodeDecode) {
+    domes_config_SetSimModeRequest req = domes_config_SetSimModeRequest_init_zero;
+    req.enabled = true;
+    req.delay_ms = 500;
+    req.pad_index = 1;
+
+    std::array<uint8_t, 32> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SetSimModeRequest_fields, &req));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    domes_config_SetSimModeRequest decoded = domes_config_SetSimModeRequest_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SetSimModeRequest_fields, &decoded));
+
+    EXPECT_TRUE(decoded.enabled);
+    EXPECT_EQ(decoded.delay_ms, 500u);
+    EXPECT_EQ(decoded.pad_index, 1u);
+}
+
+TEST(Protobuf, SetSimModeResponseEncodeDecode) {
+    domes_config_SetSimModeResponse resp = domes_config_SetSimModeResponse_init_zero;
+    resp.status = domes_config_Status_STATUS_OK;
+    resp.enabled = true;
+    resp.delay_ms = 250;
+    resp.pad_index = 3;
+
+    std::array<uint8_t, 32> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_SetSimModeResponse_fields, &resp));
+    EXPECT_GT(ostream.bytes_written, 0u);
+
+    domes_config_SetSimModeResponse decoded = domes_config_SetSimModeResponse_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_SetSimModeResponse_fields, &decoded));
+
+    EXPECT_EQ(decoded.status, domes_config_Status_STATUS_OK);
+    EXPECT_TRUE(decoded.enabled);
+    EXPECT_EQ(decoded.delay_ms, 250u);
+    EXPECT_EQ(decoded.pad_index, 3u);
 }
 
 TEST(Protobuf, SelfTestResponseEmpty) {

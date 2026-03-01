@@ -22,11 +22,12 @@
 
 namespace domes {
 
-class LedService;       // Forward declaration
-class ImuService;       // Forward declaration
-class EspNowTransport;  // Forward declaration
-class EspNowService;    // Forward declaration
-class IOtaManager;      // Forward declaration
+class LedService;            // Forward declaration
+class ImuService;            // Forward declaration
+class EspNowTransport;       // Forward declaration
+class EspNowService;         // Forward declaration
+class IOtaManager;           // Forward declaration
+class InjectableTouchDriver; // Forward declaration
 
 /**
  * @brief Default TCP port for config server
@@ -131,6 +132,11 @@ public:
      */
     void setOtaManager(IOtaManager* otaManager) { otaManager_ = otaManager; }
 
+    /**
+     * @brief Set injectable touch driver for simulated touch commands
+     */
+    void setInjectableTouchDriver(InjectableTouchDriver* driver) { injectableTouch_ = driver; }
+
 private:
     /**
      * @brief Handle a single client connection
@@ -150,6 +156,7 @@ private:
     EspNowTransport* espNowTransport_ = nullptr;
     EspNowService* espNowService_ = nullptr;
     IOtaManager* otaManager_ = nullptr;
+    InjectableTouchDriver* injectableTouch_ = nullptr;
 
     std::atomic<bool> stopRequested_;
     std::atomic<int> listenSocket_;

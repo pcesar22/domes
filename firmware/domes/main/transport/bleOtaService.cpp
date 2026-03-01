@@ -472,8 +472,11 @@ void BleOtaService::startAdvertising() {
     struct ble_gap_adv_params advParams = {};
     advParams.conn_mode = BLE_GAP_CONN_MODE_UND;
     advParams.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    advParams.itvl_min = BLE_GAP_ADV_FAST_INTERVAL1_MIN;
-    advParams.itvl_max = BLE_GAP_ADV_FAST_INTERVAL1_MAX;
+    // Wider advertising interval to reduce radio contention with ESP-NOW.
+    // Fast intervals (30-60ms) hog the radio and cause ESP-NOW send failures.
+    // 160-320ms (BLE spec "low duty cycle") still allows quick connections.
+    advParams.itvl_min = 0x00A0;  // 100ms  (160 * 0.625ms)
+    advParams.itvl_max = 0x0140;  // 200ms  (320 * 0.625ms)
 
     // Build advertising data (must fit in 31 bytes)
     // Flags (3) + Name (11) = 14 bytes - fits easily

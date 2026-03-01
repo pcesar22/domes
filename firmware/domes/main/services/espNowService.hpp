@@ -15,6 +15,7 @@
 #include "transport/espNowTransport.hpp"
 #include "trace/traceApi.hpp"
 
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 
@@ -33,6 +34,7 @@ namespace domes::game {
 namespace domes {
 
 class LedService;
+class InjectableTouchDriver;
 
 namespace config {
     class ModeManager;
@@ -82,6 +84,28 @@ public:
     void setGameEngine(game::GameEngine* engine) { gameEngine_ = engine; }
     void setLedService(LedService* led) { ledService_ = led; }
     void setModeManager(config::ModeManager* modes) { modeManager_ = modes; }
+    void setInjectableTouchDriver(InjectableTouchDriver* driver) { injectableTouch_ = driver; }
+    /// Enable/disable the service (called by CLI feature toggle, NOT mode manager)
+    void setFeatureEnabled(bool enabled) {
+        featurePaused_.store(!enabled, std::memory_order_relaxed);
+        if (enabled) {
+            ESP_LOGI("espnow", "ESP-NOW feature re-enabled");
+        } else {
+            ESP_LOGI("espnow", "ESP-NOW feature disabled by user");
+        }
+    }
+
+    /// Configure sim drill mode (auto-inject touches during drills)
+    void setSimMode(bool enabled, uint32_t delayMs = 500, uint8_t padIndex = 0) {
+        simDelayMs_.store(delayMs, std::memory_order_relaxed);
+        simPadIndex_.store(padIndex, std::memory_order_relaxed);
+        simMode_.store(enabled, std::memory_order_release);  // release fence after data
+    }
+
+    /// Check if sim mode is active
+    bool isSimMode() const { return simMode_.load(std::memory_order_acquire); }
+    uint32_t simDelayMs() const { return simDelayMs_.load(std::memory_order_relaxed); }
+    uint8_t simPadIndex() const { return simPadIndex_.load(std::memory_order_relaxed); }
 
     /// ITaskRunner interface
     void run() override;
@@ -100,6 +124,7 @@ public:
     /// Get discovery state as string
     const char* discoveryState() const {
         if (!running_.load(std::memory_order_relaxed)) return "stopped";
+        if (featurePaused_.load(std::memory_order_relaxed)) return "disabled";
         if (peerFound_) return isMaster_ ? "master" : "slave";
         if (peerCount_.load(std::memory_order_relaxed) > 0) return "found-peer";
         return "searching";
@@ -158,6 +183,7 @@ private:
     void handleArmTouch(const uint8_t* data, size_t len);
     void handleSetColor(const uint8_t* data, size_t len);
     void handleStopAll(const espnow::MsgHeader* hdr);
+    void handleSimulateTouch(const uint8_t* data, size_t len);
 
     // Game event handlers (master side)
     void handleTouchEvent(const uint8_t* data, size_t len);
@@ -184,7 +210,14 @@ private:
     game::GameEngine* gameEngine_ = nullptr;
     LedService* ledService_ = nullptr;
     config::ModeManager* modeManager_ = nullptr;
+    InjectableTouchDriver* injectableTouch_ = nullptr;
     std::atomic<bool> running_{true};
+    std::atomic<bool> featurePaused_{true};   // start paused; setFeatureEnabled(true) unpauses
+
+    // Sim drill mode state
+    std::atomic<bool> simMode_{false};
+    std::atomic<uint32_t> simDelayMs_{500};   // 0 = miss (no injection)
+    std::atomic<uint8_t> simPadIndex_{0};
 
     // Identity
     uint8_t ourMac_[ESP_NOW_ETH_ALEN] = {};

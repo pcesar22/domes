@@ -147,6 +147,12 @@ enum Commands {
         action: EspnowAction,
     },
 
+    /// Inject simulated touches
+    Touch {
+        #[command(subcommand)]
+        action: TouchAction,
+    },
+
     /// Manage device registry
     Devices {
         #[command(subcommand)]
@@ -374,6 +380,31 @@ enum EspnowAction {
         /// Number of ping-pong rounds (1-1000, default: 100)
         #[arg(short, long, default_value = "100")]
         rounds: u32,
+    },
+
+    /// Enable/disable sim drill mode (auto-inject touches during drills)
+    SimMode {
+        /// Enable or disable sim mode
+        #[arg(value_parser = ["on", "off"])]
+        state: String,
+
+        /// Delay in ms before touch injection (0 = miss/timeout, default: 500)
+        #[arg(long, default_value = "500")]
+        delay_ms: u32,
+
+        /// Pad index to inject touches on (0-3, default: 0)
+        #[arg(long, default_value = "0", value_parser = clap::value_parser!(u32).range(0..=3))]
+        pad: u32,
+    },
+}
+
+#[derive(Subcommand)]
+enum TouchAction {
+    /// Inject a simulated touch on a specific pad
+    Simulate {
+        /// Pad index to inject (0-3)
+        #[arg(long, default_value = "0", value_parser = clap::value_parser!(u32).range(0..=3))]
+        pad: u32,
     },
 }
 
@@ -1106,6 +1137,22 @@ fn main() -> anyhow::Result<()> {
                         println!("{}  P99 RTT:    {} us ({:.2} ms)",
                             prefix, result.p99_rtt_us, result.p99_rtt_us as f64 / 1000.0);
                     }
+                }
+                EspnowAction::SimMode { state, delay_ms, pad } => {
+                    let enabled = state == "on";
+                    let result = commands::espnow_sim_mode(transport, enabled, *delay_ms, *pad)?;
+                    println!("{}Sim mode: {}", prefix, if result.enabled { "ON" } else { "OFF" });
+                    if result.enabled {
+                        println!("{}  Delay:  {} ms", prefix, result.delay_ms);
+                        println!("{}  Pad:    {}", prefix, result.pad_index);
+                    }
+                }
+            },
+
+            Commands::Touch { action } => match action {
+                TouchAction::Simulate { pad } => {
+                    commands::touch_simulate(transport, *pad)?;
+                    println!("{}Injected touch on pad {}", prefix, pad);
                 }
             },
 

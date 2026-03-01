@@ -10,6 +10,7 @@
 #include "drivers/ledStrip.hpp"
 #include "drivers/lis2dw12.hpp"
 #include "drivers/max98357a.hpp"
+#include "drivers/injectableTouchDriver.hpp"
 #include "drivers/touchDriver.hpp"
 #include "infra/crashDumpHandler.hpp"
 #include "infra/diagnostics.hpp"
@@ -93,6 +94,7 @@ static domes::Drv2605lDriver* hapticDriver = nullptr;  // DRV2605L haptic driver
 static domes::Max98357aDriver* audioDriver = nullptr;  // MAX98357A audio driver
 static domes::AudioService* audioService = nullptr;  // Audio playback service
 static domes::TouchDriver<pins::kTouchPadCount>* touchDriver = nullptr;  // Touch pad driver
+static domes::InjectableTouchDriver* injectableTouchDriver = nullptr;  // Touch injection decorator
 static domes::TouchService* touchService = nullptr;  // Touch monitoring service
 static domes::game::GameEngine* gameEngine = nullptr;  // Game logic FSM
 
@@ -549,7 +551,11 @@ static esp_err_t initGameEngine() {
         return ESP_FAIL;
     }
 
-    static domes::game::GameEngine engine(*touchDriver);
+    // Wrap touch driver with injectable decorator for sim touch injection
+    static domes::InjectableTouchDriver injectableTouch(*touchDriver);
+    injectableTouchDriver = &injectableTouch;
+
+    static domes::game::GameEngine engine(injectableTouch);
     gameEngine = &engine;
 
     // Wire feedback callbacks to real services
@@ -629,7 +635,9 @@ static esp_err_t initEspNow() {
     if (modeManager) {
         service.setModeManager(modeManager);
     }
-
+    if (injectableTouchDriver) {
+        service.setInjectableTouchDriver(injectableTouchDriver);
+    }
     domes::infra::TaskConfig serviceConfig = {
         .name = "espnow_svc",
         .stackSize = 6144,  // Larger stack for game protocol
@@ -690,6 +698,9 @@ static esp_err_t initSerialOta(uint8_t podId = 0) {
     }
     if (otaManager) {
         serialOtaReceiver->setOtaManager(otaManager);
+    }
+    if (injectableTouchDriver) {
+        serialOtaReceiver->setInjectableTouchDriver(injectableTouchDriver);
     }
 
     // Create receiver task
@@ -793,6 +804,9 @@ static esp_err_t initTcpConfigServer() {
     }
     if (otaManager) {
         tcpConfigServer->setOtaManager(otaManager);
+    }
+    if (injectableTouchDriver) {
+        tcpConfigServer->setInjectableTouchDriver(injectableTouchDriver);
     }
 
     // Create server task
@@ -1240,6 +1254,9 @@ extern "C" void app_main() {
         }
         if (bleOtaReceiver && otaManager) {
             bleOtaReceiver->setOtaManager(otaManager);
+        }
+        if (bleOtaReceiver && injectableTouchDriver) {
+            bleOtaReceiver->setInjectableTouchDriver(injectableTouchDriver);
         }
     }
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs

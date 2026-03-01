@@ -28,6 +28,9 @@ enum class MsgType : uint8_t {
     kSetColor     = 0x12,
     kStopAll      = 0x13,
 
+    // Sim touch injection (master -> slave)
+    kSimulateTouch = 0x14,
+
     // Game events (slave -> master)
     kTouchEvent   = 0x20,
     kTimeoutEvent = 0x21,
@@ -43,6 +46,7 @@ inline const char* msgTypeName(MsgType type) {
         case MsgType::kArmTouch:     return "ARM_TOUCH";
         case MsgType::kSetColor:     return "SET_COLOR";
         case MsgType::kStopAll:      return "STOP_ALL";
+        case MsgType::kSimulateTouch: return "SIMULATE_TOUCH";
         case MsgType::kTouchEvent:   return "TOUCH_EVENT";
         case MsgType::kTimeoutEvent: return "TIMEOUT_EVENT";
         default:                     return "UNKNOWN";
@@ -102,6 +106,14 @@ struct JoinGameMsg {
 struct StopAllMsg {
     MsgHeader header;
 };
+
+/// SIMULATE_TOUCH: master -> slave (12 bytes)
+struct SimulateTouchMsg {
+    MsgHeader header;
+    uint8_t padIndex;          ///< Which pad to inject
+};
+
+static_assert(sizeof(SimulateTouchMsg) == 12, "SimulateTouchMsg must be 12 bytes");
 
 #pragma pack(pop)
 

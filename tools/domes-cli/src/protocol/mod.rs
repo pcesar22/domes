@@ -13,7 +13,9 @@ use crate::proto::config::{
     LedPattern, LedPatternType, ListFeaturesResponse, SelfTestResponse, SetAutoUpdateRequest,
     SetAutoUpdateResponse, SetFeatureRequest, SetFeatureResponse,
     SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest, SetLedPatternResponse,
-    SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse, Status, SystemMode,
+    SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse,
+    SetSimModeRequest, SetSimModeResponse, SimulateTouchRequest, SimulateTouchResponse,
+    Status, SystemMode,
 };
 use prost::Message;
 use thiserror::Error;
@@ -64,6 +66,10 @@ impl TryFrom<u8> for ConfigMsgType {
             0x47 => Ok(Self::CheckUpdateRsp),
             0x48 => Ok(Self::SetAutoUpdateReq),
             0x49 => Ok(Self::SetAutoUpdateRsp),
+            0x4C => Ok(Self::SimulateTouchReq),
+            0x4D => Ok(Self::SimulateTouchRsp),
+            0x4E => Ok(Self::SetSimModeReq),
+            0x4F => Ok(Self::SetSimModeRsp),
             _ => Err(ProtocolError::UnknownMessageType(value)),
         }
     }
@@ -918,5 +924,84 @@ pub fn parse_espnow_bench_response(payload: &[u8]) -> Result<CliBenchResult, Pro
         p50_rtt_us: resp.p50_rtt_us,
         p95_rtt_us: resp.p95_rtt_us,
         p99_rtt_us: resp.p99_rtt_us,
+    })
+}
+
+// ============================================================================
+// Touch injection
+// ============================================================================
+
+/// Serialize SimulateTouchRequest
+pub fn serialize_simulate_touch(pad_index: u32) -> Vec<u8> {
+    let req = SimulateTouchRequest { pad_index };
+    req.encode_to_vec()
+}
+
+/// Parse SimulateTouchResponse payload
+/// Format: [status_byte][protobuf_SimulateTouchResponse]
+pub fn parse_simulate_touch_response(payload: &[u8]) -> Result<(), ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    // Decode protobuf body for consistency (catches encoding errors)
+    let _resp = SimulateTouchResponse::decode(&payload[1..])?;
+
+    Ok(())
+}
+
+/// Sim mode state for CLI use
+#[derive(Debug, Clone)]
+pub struct CliSimModeState {
+    pub enabled: bool,
+    pub delay_ms: u32,
+    pub pad_index: u32,
+}
+
+/// Serialize SetSimModeRequest
+pub fn serialize_set_sim_mode(enabled: bool, delay_ms: u32, pad_index: u32) -> Vec<u8> {
+    let req = SetSimModeRequest {
+        enabled,
+        delay_ms,
+        pad_index,
+    };
+    req.encode_to_vec()
+}
+
+/// Parse SetSimModeResponse payload
+/// Format: [status_byte][protobuf_SetSimModeResponse]
+pub fn parse_set_sim_mode_response(payload: &[u8]) -> Result<CliSimModeState, ProtocolError> {
+    if payload.is_empty() {
+        return Err(ProtocolError::PayloadTooShort {
+            expected: 1,
+            actual: 0,
+        });
+    }
+
+    let status_val = payload[0] as i32;
+    let status =
+        Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
+
+    if status != Status::Ok {
+        return Err(ProtocolError::DeviceError(status));
+    }
+
+    let resp = SetSimModeResponse::decode(&payload[1..])?;
+
+    Ok(CliSimModeState {
+        enabled: resp.enabled,
+        delay_ms: resp.delay_ms,
+        pad_index: resp.pad_index,
     })
 }
