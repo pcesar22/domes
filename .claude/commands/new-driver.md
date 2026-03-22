@@ -22,7 +22,7 @@ Generate a complete driver scaffold following DOMES firmware architecture:
    - Convert to appropriate naming: `haptic` → `IHapticDriver`, `HapticDriver`, `MockHapticDriver`
 
 2. **Read project guidelines:**
-   - Read `firmware/GUIDELINES.md` for coding standards
+   - Read `firmware/CLAUDE.md` for coding standards
    - Read existing interfaces in `firmware/domes/main/interfaces/` for patterns
    - Read existing drivers in `firmware/domes/main/drivers/` for implementation patterns
 

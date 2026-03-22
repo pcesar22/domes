@@ -102,9 +102,8 @@ ctest --output-on-failure
 
 ## Documentation
 
-- `GUIDELINES.md` - Coding standards and memory rules
+- `CLAUDE.md` - Coding standards, architecture rules, and verification requirements
 - `MILESTONES.md` - Development phases and status
-- `CLAUDE.md` - AI assistant context and verification requirements
 - `../docs/PIN_REFERENCE.md` - GPIO pin mappings for all platforms
 
 ## Hardware Platforms

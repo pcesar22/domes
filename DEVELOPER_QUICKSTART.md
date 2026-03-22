@@ -28,9 +28,9 @@ Read these in order to understand the project:
 | Order | File | Time | What You'll Learn |
 |-------|------|------|-------------------|
 | 1 | **This file** | 5 min | Project overview, setup |
-| 2 | `firmware/GUIDELINES.md` | 15 min | Coding standards, memory rules |
+| 2 | `firmware/CLAUDE.md` | 15 min | Coding standards, memory rules, architecture |
 | 3 | `firmware/MILESTONES.md` | 10 min | Current status, what's implemented |
-| 4 | `CLAUDE.md` §2 (Protocol Buffers) | 10 min | **CRITICAL** - Protocol rules |
+| 4 | `CLAUDE.md` §Protocol Buffers | 10 min | **CRITICAL** - Protocol rules |
 | 5 | `research/SYSTEM_ARCHITECTURE.md` | 20 min | Hardware design decisions |
 
 **Skip for now** (reference later):
@@ -246,7 +246,7 @@ For full multi-device documentation, see `CLAUDE.md` section "Multi-Device Testi
 ## Before Your First PR
 
 Checklist:
-- [ ] Code follows `firmware/GUIDELINES.md`
+- [ ] Code follows `firmware/CLAUDE.md` coding standards
 - [ ] Unit tests pass (`ctest --output-on-failure`)
 - [ ] Firmware builds (`idf.py build`)
 - [ ] No new compiler warnings

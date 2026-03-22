@@ -6,7 +6,7 @@ allowed-tools: Read, Glob, Grep
 
 # Lint Firmware Code
 
-Check firmware code against the DOMES project coding standards defined in `firmware/GUIDELINES.md`.
+Check firmware code against the DOMES project coding standards defined in `firmware/CLAUDE.md`.
 
 ## Arguments
 
@@ -20,7 +20,7 @@ Check firmware code against the DOMES project coding standards defined in `firmw
    - Find all `.cpp`, `.hpp`, `.c`, `.h` files
 
 2. **Read the guidelines:**
-   - Read `firmware/GUIDELINES.md` for the authoritative rules
+   - Read `firmware/CLAUDE.md` for the authoritative rules
 
 3. **Check each file for violations:**
 
@@ -107,7 +107,7 @@ Format output as:
 
 5. **Provide fix suggestions:**
    - For each violation, suggest the correct pattern
-   - Reference the specific section in GUIDELINES.md
+   - Reference the specific section in firmware/CLAUDE.md
 
 ## Quick Reference: Allowed Patterns
 

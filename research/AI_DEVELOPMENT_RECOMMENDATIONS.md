@@ -204,7 +204,7 @@ I will create:
 3. `drivers/{name}Driver.cpp` - Implementation
 4. `test/mocks/mock{Name}Driver.hpp` - Mock for testing
 
-All following the patterns in firmware/CLAUDE.md and firmware/GUIDELINES.md.
+All following the patterns in firmware/CLAUDE.md.
 ```
 
 ---
@@ -444,7 +444,7 @@ Review the recently changed code and simplify it:
 1. Remove unnecessary complexity
 2. Consolidate duplicate code
 3. Improve naming for clarity
-4. Ensure consistency with firmware/GUIDELINES.md
+4. Ensure consistency with firmware/CLAUDE.md
 5. Remove dead code
 
 Do not change functionality, only improve code quality.

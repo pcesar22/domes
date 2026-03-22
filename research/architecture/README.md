@@ -124,9 +124,9 @@ This folder contains modular architecture documentation. **Load only the files r
 ## Cross-References
 
 - **Hardware specs:** `research/SYSTEM_ARCHITECTURE.md`
-- **Coding standards:** `firmware/GUIDELINES.md`
+- **Coding standards:** `firmware/CLAUDE.md`
 - **AI guidelines:** `firmware/CLAUDE.md`
-- **Development roadmap:** `research/DEVELOPMENT_ROADMAP.md`
+- **Development roadmap:** `firmware/MILESTONES.md`
 - **AI recommendations:** `research/AI_DEVELOPMENT_RECOMMENDATIONS.md`
 
 ---

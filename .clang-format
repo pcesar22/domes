@@ -1,5 +1,5 @@
 # DOMES Firmware Clang-Format Configuration
-# Based on GUIDELINES.md and existing code style
+# Based on firmware/CLAUDE.md and existing code style
 
 Language: Cpp
 BasedOnStyle: Google

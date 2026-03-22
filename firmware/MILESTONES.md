@@ -2,21 +2,21 @@
 
 ## Current Status Summary
 
-**Last Updated:** 2026-02-23
+**Last Updated:** 2026-03-22
 
 | Category | Status |
 |----------|--------|
-| **Implemented & Tested** | LED driver, FreeRTOS infrastructure, NVS config, watchdog, logging, runtime config protocol, OTA system, performance tracing, WiFi, TCP config, BLE OTA, game engine, ESP-NOW service, multi-pod simulation |
-| **Implemented (Hardware Verified)** | WiFi manager, TCP config server, BLE OTA service, ESP-NOW 2-pod drill |
-| **Implemented (Needs NFF Board)** | Touch driver, IMU service (tap detection), LED ring (16x RGBW) |
+| **Implemented & Tested** | LED driver, FreeRTOS infrastructure, NVS config, watchdog, logging, runtime config protocol, OTA system, performance tracing, WiFi, TCP config, BLE OTA, game engine, ESP-NOW service, multi-pod simulation, touch driver, IMU service (tap detection), LED ring (16x RGBW) |
+| **Implemented (Hardware Verified)** | WiFi manager, TCP config server, BLE OTA service, ESP-NOW 2-pod drill, LIS2DW12 accelerometer, capacitive touch 4-pad sensing |
 | **Not Started** | Audio driver, haptic driver, observability tooling (M6.5) |
-| **Blocking** | NFF devboard assembly (enables I2C/audio/full LED ring testing) |
+| **Blocking** | NFF devboards assembled and validated; haptic (DRV2605L) and audio (MAX98357A) drivers not yet implemented |
 
 ### What Actually Works Right Now
 
-On **ESP32-S3-DevKitC-1** (2 pods):
+On **NFF Development Boards** (2 pods):
 - ✅ Firmware boots and runs stable
 - ✅ LED color cycling + solid color via CLI
+- ✅ 16x RGBW LED ring (SK6812, fully working)
 - ✅ USB-CDC serial communication
 - ✅ Runtime config protocol (list/set features, system info)
 - ✅ Serial OTA firmware updates
@@ -28,15 +28,13 @@ On **ESP32-S3-DevKitC-1** (2 pods):
 - ✅ ESP-NOW 2-pod discovery + ping-pong + role assignment
 - ✅ ESP-NOW drill orchestration (10-round MASTER/SLAVE game loop)
 - ✅ Game engine FSM (arm → touch/timeout → feedback)
-- ✅ IMU service (accelerometer + tap detection)
+- ✅ IMU service (LIS2DW12 accelerometer + tap detection)
 - ✅ Touch service (capacitive 4-pad sensing)
 - ✅ 195 unit tests passing (including 25 multi-pod sim tests)
 
-On **NFF Development Board** (pending assembly):
-- 🔲 16x RGBW LED ring (driver ready, needs hardware)
-- 🔲 LIS2DW12 accelerometer (driver ready, needs I2C bus)
-- 🔲 DRV2605L haptic feedback
-- 🔲 MAX98357A audio playback
+Pending on **NFF Development Board**:
+- 🔲 DRV2605L haptic feedback (driver not yet implemented)
+- 🔲 MAX98357A audio playback (driver not yet implemented)
 
 ---
 
@@ -44,13 +42,13 @@ On **NFF Development Board** (pending assembly):
 
 | Stage | Platform | Features Available |
 |-------|----------|-------------------|
-| **Current** | ESP32-S3-DevKitC-1 | 1x LED, USB, touch pins |
-| **Next** | [NFF Development Board](../hardware/nff-devboard/) | 16x RGBW LEDs, IMU, haptics, audio |
+| **Previous** | ESP32-S3-DevKitC-1 | 1x LED, USB, touch pins |
+| **Current** | [NFF Development Board](../hardware/nff-devboard/) | 16x RGBW LEDs, IMU, haptics, audio |
 | **Future** | Production PCB | Full system in enclosure |
 
 **Pin Reference:** See [`docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md) for complete GPIO mappings.
 
-## Current Hardware: ESP32-S3-DevKitC-1 (bare, no peripherals)
+## Current Hardware: NFF Development Board (ESP32-S3 + full peripherals)
 
 ---
 
@@ -105,17 +103,17 @@ esp_err_t err = led_strip_new_spi_device(&strip_config, &spi_config, &led_strip)
 
 ---
 
-## Phase 3: Touch Sensing (No External Hardware)
-**Status:** Not Started
+## Phase 3: Touch Sensing
+**Status:** ✅ Complete
 **Goal:** Validate touch driver using bare GPIO pins
 
-- [ ] Create ITouchDriver interface
-- [ ] Implement ESP32-S3 touch peripheral driver
-- [ ] Test touch detection on GPIO1-4 (touch pins with finger)
-- [ ] Implement baseline calibration
-- [ ] Implement threshold detection
+- [x] Create ITouchDriver interface
+- [x] Implement ESP32-S3 touch peripheral driver
+- [x] Test touch detection on GPIO1-4 (touch pins with finger)
+- [x] Implement baseline calibration
+- [x] Implement threshold detection
 
-**Hardware:** Touch GPIO1-14 with finger directly
+**Hardware:** Capacitive 4-pad sensing on NFF devboard
 
 ---
 
@@ -150,19 +148,16 @@ esp_err_t err = led_strip_new_spi_device(&strip_config, &spi_config, &led_strip)
 
 ---
 
-## Phase 5: I2C Peripherals (Requires Hardware)
-**Status:** Blocked - waiting for hardware
+## Phase 5: I2C Peripherals
+**Status:** Partially Complete (IMU working, haptic blocked)
 **Goal:** Haptic and IMU drivers
 
-- [ ] I2C bus initialization
-- [ ] DRV2605L haptic driver
-- [ ] LIS2DW12 accelerometer driver
-- [ ] I2C device scanning utility
+- [x] I2C bus initialization
+- [ ] DRV2605L haptic driver (not yet implemented)
+- [x] LIS2DW12 accelerometer driver (working on NFF devboard)
+- [x] I2C device scanning utility
 
-**Hardware Required:**
-- DRV2605L breakout board
-- LIS2DW12 breakout board
-- LRA motor
+**Hardware:** NFF devboard has LIS2DW12 + DRV2605L on I2C bus. IMU verified, haptic driver not yet written.
 
 ---
 
@@ -226,8 +221,8 @@ log reading. These tools would have caught most of them faster.
 
 ---
 
-## Phase 8: Integration (Requires Dev PCB)
-**Status:** Blocked - waiting for PCB
+## Phase 8: Integration (NFF Dev PCB)
+**Status:** 🔄 In Progress - NFF devboards available
 **Goal:** All drivers working together on custom hardware
 
 - [ ] Flash to dev PCB

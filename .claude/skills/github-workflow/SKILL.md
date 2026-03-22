@@ -255,5 +255,5 @@ Never force push to protected branches.
 
 ## See Also
 
-- [GUIDELINES.md](../../firmware/GUIDELINES.md) - Coding standards
+- [firmware/CLAUDE.md](../../firmware/CLAUDE.md) - Coding standards
 - [MILESTONES.md](../../firmware/MILESTONES.md) - Development milestones

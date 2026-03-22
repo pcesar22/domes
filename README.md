@@ -31,9 +31,10 @@ A wireless reaction training pod system for athletic training, physical therapy,
 | ESP-NOW Sync | Done | Sub-2ms latency pod-to-pod communication |
 | WiFi Transport | Done | TCP-based config and OTA over WiFi |
 | OTA Updates | Done | Over-the-air firmware updates via serial, WiFi, or BLE |
+| Game Engine | Done | Drill patterns, scoring, and ESP-NOW orchestration |
+| IMU (Tap Detection) | Done | LIS2DW12 accelerometer for tap/shake input |
 | Haptic Feedback | Planned | LRA motor for tactile response |
 | Audio Output | Planned | I2S speaker for audio cues |
-| Game Engine | Planned | Drill patterns and scoring |
 
 ## Quick Start
 
@@ -161,10 +162,12 @@ domes/
 | Document | Description |
 |----------|-------------|
 | [Developer Quickstart](DEVELOPER_QUICKSTART.md) | Get productive in 30 minutes |
-| [Firmware Guidelines](firmware/GUIDELINES.md) | Coding standards and memory rules |
+| [Firmware Standards](firmware/CLAUDE.md) | Coding standards, architecture rules, memory rules |
+| [Milestones](firmware/MILESTONES.md) | Development phases and current status |
 | [Pin Reference](docs/PIN_REFERENCE.md) | Hardware pin mappings |
-| [Tools README](tools/README.md) | CLI and test script usage |
+| [Architecture Docs](research/architecture/) | Deep design docs (drivers, comms, game engine) |
 | [System Architecture](research/SYSTEM_ARCHITECTURE.md) | Hardware design decisions |
+| [Tools README](tools/README.md) | CLI and test script usage |
 
 ## Architecture
 

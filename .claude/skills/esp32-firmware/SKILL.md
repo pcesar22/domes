@@ -207,7 +207,7 @@ cmake -B build && cd build && make simple_ota_sender
 ## Additional References
 
 - **Configuration options**: See [CONFIGS.md](CONFIGS.md) for sdkconfig options, partition tables, and pin mappings
-- **Project firmware guidelines**: See [firmware/GUIDELINES.md](../../firmware/GUIDELINES.md)
+- **Project firmware guidelines**: See [firmware/CLAUDE.md](../../firmware/CLAUDE.md)
 - **ESP-IDF documentation**: https://docs.espressif.com/projects/esp-idf/en/v5.2.2/
 - **OTA architecture**: See `research/architecture/08-ota-updates.md`
 

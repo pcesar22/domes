@@ -15,7 +15,7 @@ namespace domes::utils {
 /**
  * @brief RAII wrapper for FreeRTOS mutex
  *
- * Uses static allocation to comply with GUIDELINES.md requirement
+ * Uses static allocation to comply with firmware/CLAUDE.md requirement
  * of no heap allocation after app_main() initialization.
  */
 class Mutex {

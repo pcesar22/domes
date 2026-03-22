@@ -2,14 +2,7 @@
 
 ## Project Context
 
-DOMES (Distributed Open-source Motion & Exercise System) is a reaction training pod system. Each pod has LEDs, audio, haptics, touch sensing, and communicates via ESP-NOW + BLE.
-
-**Reference Documents:**
-- `research/SOFTWARE_ARCHITECTURE.md` - Full firmware design spec
-- `research/SYSTEM_ARCHITECTURE.md` - Hardware architecture, pin mappings
-- `research/DEVELOPMENT_ROADMAP.md` - Milestone definitions, task dependencies
-
----
+DOMES (Distributed Open-source Motion & Exercise System) is a reaction training pod system. Each pod has LEDs, audio, haptics, touch sensing, IMU, and communicates via ESP-NOW + BLE. Firmware runs on ESP32-S3 with FreeRTOS under ESP-IDF v5.x (NOT Arduino). C++20 for application code, C for low-level drivers.
 
 ## Technical Stack
 
@@ -20,56 +13,155 @@ DOMES (Distributed Open-source Motion & Exercise System) is a reaction training 
 | RTOS | FreeRTOS (bundled with ESP-IDF) |
 | Language | C++20 for application, C for low-level drivers |
 | Build | CMake via `idf.py` |
+| Containers | ETL (Embedded Template Library) — no STL containers |
+| Error handling | `tl::expected<T, esp_err_t>` or `esp_err_t` — no exceptions |
 
----
+## Coding Standards
 
-## Code Style
+### Naming Conventions
+
+| Element | Convention | Example |
+|---------|------------|---------|
+| Files | camelCase | `ledDriver.hpp`, `feedbackService.cpp` |
+| Classes | PascalCase | `LedDriver`, `FeedbackService` |
+| Interfaces | I + PascalCase | `IHapticDriver`, `IAudioDriver` |
+| Methods/Functions | camelCase | `init()`, `playEffect()` |
+| Variables | camelCase | `reactionTime`, `ledCount` |
+| Member variables | camelCase + trailing `_` | `ledDriver_`, `intensity_` |
+| Constants | k + PascalCase | `kTag`, `kMaxRetries` |
+| Namespaces | lowercase | `pins`, `config`, `utils` |
+| Macros | SCREAMING_SNAKE_CASE | `CONFIG_DOMES_LED_COUNT` |
+
+### Formatting
+
+| Rule | Value |
+|------|-------|
+| Line length | 100 characters max |
+| Indentation | 4 spaces (no tabs) |
+| Braces | K&R style (opening brace same line) |
+| Pointer/reference | `Type* ptr`, `Type& ref` (attached to type) |
+| Include guard | `#pragma once` |
+| Include order | 1. Corresponding header, 2. ESP-IDF, 3. stdlib, 4. ETL, 5. Project |
 
 ### C++20 Features to Use
-- `std::optional`, `std::variant`, `std::string_view`, `std::span`
-- `constexpr` for compile-time constants
-- `enum class` for type safety
+- `std::optional`, `std::variant`, `std::string_view`, `std::span`, `constexpr`, `enum class`
 - Structured bindings: `auto [success, value] = func();`
 - RAII wrappers for hardware resources
 
-### What to Avoid
-- `<iostream>` - adds 200KB, use `ESP_LOG*` macros instead
-- Exceptions - disabled by default
-- RTTI - disabled by default
-- Heavy STL in ISRs - use fixed-size buffers
-- Global singletons - use dependency injection
+### Forbidden Features
+
+| Feature | Reason | Alternative |
+|---------|--------|-------------|
+| `<iostream>` | Adds ~200KB | `ESP_LOGx` macros |
+| C++ exceptions | Disabled | `tl::expected` |
+| RTTI | Disabled | Design without `dynamic_cast` |
+| `std::vector`, `std::string`, `std::map` | Dynamic alloc | ETL equivalents |
+| `new`/`delete`/`malloc`/`free` after init | Heap fragmentation | Pre-allocate at startup |
+
+### ETL Containers (Required)
+
+```cpp
+// FORBIDDEN: STL containers
+std::vector<int> values;
+std::string name;
+
+// REQUIRED: ETL fixed-capacity containers
+etl::vector<int, 32> values;
+etl::string<64> name;
+etl::map<int, Data, 16> lookup;
+```
+
+### Error Handling
+
+Use `tl::expected` for fallible operations, `ESP_RETURN_ON_ERROR` for simple propagation:
+
+```cpp
+tl::expected<SensorReading, esp_err_t> readSensor() {
+    uint8_t data[4];
+    esp_err_t err = i2cRead(kSensorAddr, data, sizeof(data));
+    if (err != ESP_OK) {
+        return tl::unexpected(err);
+    }
+    return SensorReading{data};
+}
+
+esp_err_t init() {
+    ESP_RETURN_ON_ERROR(driverA.init(), kTag, "Driver A init failed");
+    return ESP_OK;
+}
+```
 
 ### Logging
-```cpp
-#include "esp_log.h"
-static const char* TAG = "module_name";
 
-ESP_LOGE(TAG, "Error: %s", esp_err_to_name(err));
-ESP_LOGW(TAG, "Warning message");
-ESP_LOGI(TAG, "Info message");
-ESP_LOGD(TAG, "Debug message");
+```cpp
+static constexpr const char* kTag = "module_name";
+
+ESP_LOGE(kTag, "Error: %s", esp_err_to_name(err));
+ESP_LOGW(kTag, "Warning message");
+ESP_LOGI(kTag, "Info message");
+ESP_LOGD(kTag, "Debug: reg 0x%02X = 0x%02X", reg, val);
 ```
+
+### ISR Safety
+
+ISRs must do minimal work and defer to tasks:
+
+```cpp
+void IRAM_ATTR touchIsr(void* arg) {
+    auto* self = static_cast<TouchDriver*>(arg);
+    BaseType_t woken = pdFALSE;
+    uint32_t timestamp = esp_timer_get_time();
+    xQueueSendFromISR(self->queue_, &timestamp, &woken);
+    portYIELD_FROM_ISR(woken);
+}
+```
+
+ISR requirements: `IRAM_ATTR` on function, `DRAM_ATTR` on data, no logging, no heap, no floats, complete in <10us, only `*FromISR` FreeRTOS APIs.
+
+### Thread Safety (RAII Mutex)
+
+```cpp
+class Mutex {
+public:
+    Mutex() { handle_ = xSemaphoreCreateMutexStatic(&buffer_); }
+    void lock() { xSemaphoreTake(handle_, portMAX_DELAY); }
+    void unlock() { xSemaphoreGive(handle_); }
+private:
+    StaticSemaphore_t buffer_;
+    SemaphoreHandle_t handle_;
+};
+
+class MutexGuard {
+public:
+    explicit MutexGuard(Mutex& m) : mutex_(m) { mutex_.lock(); }
+    ~MutexGuard() { mutex_.unlock(); }
+    MutexGuard(const MutexGuard&) = delete;
+    MutexGuard& operator=(const MutexGuard&) = delete;
+private:
+    Mutex& mutex_;
+};
+```
+
+### Memory & Ownership
+
+- Heap allocation allowed **during init only** — no allocation after `app_main()` setup completes
+- `std::unique_ptr` for factory-created objects at init; references for DI after init
+- Raw pointers only for C API interop or nullable references
+- Prefer static allocation for FreeRTOS tasks, queues, semaphores
+- Use fixed-width integer types for hardware registers, protocol fields, buffers, timestamps
+- Strict const-correctness: `const` on non-mutating methods and parameters, `constexpr` for constants
+- Doxygen-style comments on all public APIs
 
 ---
 
 ## Architecture Rules
 
 ### Driver Abstraction
-All drivers MUST have an abstract interface for testability:
 
-```cpp
-// interfaces/i_haptic_driver.hpp
-class IHapticDriver {
-public:
-    virtual ~IHapticDriver() = default;
-    virtual esp_err_t init() = 0;
-    virtual esp_err_t playEffect(uint8_t effect_id) = 0;
-};
-```
-
-Real implementations go in `drivers/`, mocks go in `test/mocks/`.
+All drivers MUST have an abstract interface for testability. Real implementations in `drivers/`, mocks in `test/mocks/`.
 
 ### Dependency Injection
+
 Services receive driver interfaces via constructor, not globals:
 
 ```cpp
@@ -80,168 +172,14 @@ public:
 ```
 
 ### Task Pinning
-- Core 0: WiFi, BLE, ESP-NOW (protocol stack tasks)
-- Core 1: Audio, game logic (user-responsive tasks)
-- Either core: LED updates, touch polling
 
----
+- **Core 0**: WiFi, BLE, ESP-NOW (protocol stack tasks)
+- **Core 1**: Audio, game logic (user-responsive tasks)
+- **Either core**: LED updates, touch polling
 
-## Directory Structure
+### Platform Abstraction
 
-```
-firmware/
-├── CMakeLists.txt
-├── sdkconfig.defaults
-├── partitions.csv
-├── main/
-│   ├── CMakeLists.txt
-│   ├── main.cpp
-│   ├── config.hpp              # Pin definitions, constants
-│   ├── interfaces/             # Abstract base classes
-│   ├── drivers/                # Hardware drivers
-│   ├── services/               # Business logic services
-│   ├── game/                   # Game engine, drills
-│   └── utils/                  # Helpers, error codes
-├── components/                 # Reusable ESP-IDF components
-└── test/
-    ├── mocks/                  # Mock implementations
-    └── test_*.cpp              # Unit tests
-```
-
----
-
-## Hardware Interfaces
-
-| Peripheral | Interface | Driver IC | Notes |
-|------------|-----------|-----------|-------|
-| LEDs | RMT | SK6812 RGBW | 16 LEDs in ring |
-| Audio | I2S | MAX98357A | 23mm speaker |
-| Haptic | I2C | DRV2605L | LRA motor |
-| Touch | ESP32 touch peripheral | - | Capacitive sense |
-| IMU | I2C | LIS2DW12 | Tap detection |
-| Power | ADC | - | Battery voltage |
-
-Pin assignments are in `research/SYSTEM_ARCHITECTURE.md`.
-
----
-
-## Testing Strategy
-
-### Unit Tests (Host)
-- Run on Linux target: `idf.py --preview set-target linux`
-- Use CMock for driver mocks
-- Test business logic without hardware
-
-### Smoke Tests (Device) - PLANNED, NOT YET IMPLEMENTED
-- Will be built into firmware, triggered by button hold at boot
-- Will validate each peripheral individually (LED, audio, haptic, IMU, touch)
-- Used for hardware bring-up and CI
-- **Status:** Planned for E7 milestone (see `MILESTONES.md`)
-- **Current alternative:** Use `test_config.py` for protocol validation
-
----
-
-## Performance Tracing
-
-The firmware includes a lightweight tracing framework for post-mortem performance analysis.
-
-### Adding Trace Points
-
-```cpp
-#include "trace/traceApi.hpp"
-
-void myFunction() {
-    // RAII scope trace - begin on entry, end on exit
-    TRACE_SCOPE(TRACE_ID("Module.Function"), domes::trace::TraceCategory::kGame);
-
-    // Manual begin/end
-    TRACE_BEGIN(TRACE_ID("Module.SubOp"), domes::trace::TraceCategory::kGame);
-    doWork();
-    TRACE_END(TRACE_ID("Module.SubOp"), domes::trace::TraceCategory::kGame);
-
-    // Point event
-    TRACE_INSTANT(TRACE_ID("Module.Event"), domes::trace::TraceCategory::kGame);
-
-    // Counter
-    TRACE_COUNTER(TRACE_ID("Module.Value"), value, domes::trace::TraceCategory::kGame);
-}
-```
-
-### Available Categories
-
-`kKernel`, `kTransport`, `kOta`, `kWifi`, `kLed`, `kAudio`, `kTouch`, `kGame`, `kUser`, `kHaptic`, `kBle`, `kNvs`
-
-### Dumping Traces
-
-```bash
-python tools/trace/trace_dump.py -p /dev/ttyACM0 -o trace.json
-# Open trace.json in https://ui.perfetto.dev
-```
-
-### Key Files
-
-- `main/trace/traceApi.hpp` - User macros (`TRACE_SCOPE`, `TRACE_BEGIN`, etc.)
-- `main/trace/traceRecorder.hpp` - Singleton recorder
-- `main/trace/traceEvent.hpp` - 16-byte event struct
-- `tools/trace/trace_dump.py` - Host dump tool
-
-See `research/architecture/07-debugging.md` for full documentation.
-
----
-
-## Error Handling
-
-Use ESP-IDF error codes. Check and propagate errors:
-
-```cpp
-esp_err_t init() {
-    esp_err_t err = hardware_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Init failed: %s", esp_err_to_name(err));
-        return err;
-    }
-    return ESP_OK;
-}
-```
-
-Do NOT silently ignore errors. Every `esp_err_t` must be checked.
-
----
-
-## Validation Before Commit
-
-Before considering any task complete:
-
-1. **Compiles** - `idf.py build` succeeds with no warnings
-2. **No hardcoded values** - Use `config.hpp` for pins, constants
-3. **Interface exists** - Every driver has an abstract interface
-4. **Mock exists** - Every interface has a mock for testing
-5. **Logs present** - Key operations have `ESP_LOGI`/`ESP_LOGD`
-6. **Errors handled** - No unchecked `esp_err_t` returns
-
----
-
-## Common Pitfalls
-
-| Pitfall | Solution |
-|---------|----------|
-| DMA buffers in PSRAM | Use `MALLOC_CAP_DMA` for I2S/SPI buffers |
-| WiFi + BLE conflicts | Enable coexistence: `ESP_COEX_PREFER_BALANCE` |
-| Stack overflow | Monitor with `uxTaskGetStackHighWaterMark()` |
-| Watchdog timeout | Call `esp_task_wdt_reset()` in long loops |
-| Flash write in ISR | Queue data, write in task context |
-
----
-
-## Key Constants
-
-```cpp
-// From SYSTEM_ARCHITECTURE.md
-constexpr uint8_t LED_COUNT = 16;
-constexpr uint32_t ESPNOW_LATENCY_TARGET_US = 2000;  // P95 < 2ms
-constexpr size_t AUDIO_SAMPLE_RATE = 16000;
-constexpr size_t OTA_PARTITION_SIZE = 0x400000;  // 4MB
-```
+Platforms selected via Kconfig. Pin mappings in `platform/pinsDevkit.hpp` (or `pinsPcbV1.hpp`), unified via `platform/pins.hpp` with `#if defined(CONFIG_DOMES_PLATFORM_*)`. Hardware features gated by Kconfig flags.
 
 ---
 
@@ -249,24 +187,22 @@ constexpr size_t OTA_PARTITION_SIZE = 0x400000;  // 4MB
 
 **Keep it simple. No over-engineering.**
 
-- **No backward compatibility wrappers** - When refactoring, just change the code. Update all call sites. Don't create wrapper files or alias namespaces.
-- **No umbrella headers** - Don't create `all.hpp` or `index.hpp` files. Include what you need directly.
-- **Delete unused code** - Don't comment it out, don't deprecate it, just delete it.
-- **One file, one purpose** - Don't split simple configs into multiple files for "organization".
-- **Flat over nested** - Avoid unnecessary directory hierarchies.
+- **No backward compatibility wrappers** — when refactoring, just change the code and update all call sites
+- **No umbrella headers** — include what you need directly
+- **Delete unused code** — don't comment out or deprecate, just delete
+- **One file, one purpose** — one class per `.hpp`/`.cpp` pair
+- **Flat over nested** — avoid unnecessary directory hierarchies
 
 ---
 
 ## Runtime Configuration
 
-The firmware supports runtime feature toggles via a binary protocol.
-
 ### Transport Architecture
 
 ```
 ┌─────────────────┐                    ┌─────────────────┐
-│   Host Tool     │   USB-CDC/TCP      │   ESP32-S3      │
-│   (CLI/Python)  │◄──────────────────►│   Firmware      │
+│   Host Tool     │   USB-CDC/TCP/BLE  │   ESP32-S3      │
+│   (domes-cli)   │◄──────────────────►│   Firmware      │
 └─────────────────┘                    └─────────────────┘
         │                                      │
    Frame Protocol                    ConfigCommandHandler
@@ -283,69 +219,125 @@ The firmware supports runtime feature toggles via a binary protocol.
 | UsbCdcTransport | `transport/usbCdcTransport.hpp` | USB serial transport |
 | TcpTransport | `transport/tcpTransport.hpp` | TCP socket transport |
 | TcpConfigServer | `transport/tcpConfigServer.hpp` | TCP server (port 5000) |
+| BleOtaService | `transport/bleOtaService.hpp` | BLE GATT service (NimBLE) |
 | ConfigCommandHandler | `config/configCommandHandler.hpp` | Handles config messages |
 | FeatureManager | `config/featureManager.hpp` | Feature state (atomic bitmask) |
 | FrameDecoder | `protocol/frameCodec.hpp` | Frame parsing |
 
-### Multi-Device Architecture
+---
 
-Each pod is a standalone device with per-pod singletons (FeatureManager, ModeManager, GameEngine, TraceRecorder). Multi-device coordination happens via the host CLI (for dev/test) or ESP-NOW (for production games).
+## Multi-Device Architecture
+
+Each pod is standalone with per-pod singletons (FeatureManager, ModeManager, GameEngine, TraceRecorder). Multi-device coordination happens via host CLI (dev/test) or ESP-NOW (production games).
 
 **Per-pod identity:**
-- `pod_id` stored in NVS (`config_key::kPodId`, uint8_t 1-255)
-- Read at boot in `main.cpp::readPodId()`
-- Used for BLE device name: `DOMES-Pod-01` (or MAC fallback: `DOMES-Pod-3A2B`)
+- `pod_id` stored in NVS (`config_key::kPodId`, uint8_t 1-255), read at boot in `main.cpp::readPodId()`
+- Used for BLE name: `DOMES-Pod-01` (or MAC fallback: `DOMES-Pod-3A2B`)
 - Included in protocol responses (`ListFeaturesResponse.pod_id`, `GetSystemInfoResponse.pod_id`)
 - Set via CLI: `domes-cli system set-pod-id 1` (persisted to NVS, reboot for BLE name)
 
-**mDNS (WiFi-connected pods):**
-- Service: `_domes._tcp.local.` on port 5000
-- Hostname: `domes-pod-{pod_id}.local`
-- TXT records: `pod_id`, `version`
+**mDNS (WiFi):** Service `_domes._tcp.local.` on port 5000, hostname `domes-pod-{pod_id}.local`
 
-**GameEvent tagging:**
-- `GameEvent.podId` is populated from NVS at `GameEngine` construction
-- Enables per-pod attribution of hits/misses in multi-pod games
+**GameEvent tagging:** `GameEvent.podId` populated from NVS at `GameEngine` construction for per-pod attribution.
 
 **What NOT to change:**
 - FeatureManager, ModeManager, GameEngine are per-pod singletons — correct by design
-- Transport trait is single-connection — multi-device is handled at CLI dispatch layer
-- WiFi TCP config server on port 5000 per-IP — already fine
-
-### Adding New Features
-
-1. Add feature ID to `config/configProtocol.hpp`:
-```cpp
-enum class Feature : uint8_t {
-    kLedEffects = 1,
-    kBle = 2,
-    // Add new feature here
-    kMyFeature = 8,
-};
-```
-
-2. Handle the feature in your service by checking FeatureManager:
-```cpp
-if (featureManager.isEnabled(Feature::kMyFeature)) {
-    // Feature is enabled
-}
-```
-
-### Initialization Order (main.cpp)
-
-1. `initFeatureManager()` - Create feature manager (required first)
-2. `initTcpConfigServer()` - Start TCP server (if WiFi connected)
-3. `initSerialOta()` - Start serial OTA receiver (takes over USB-CDC console)
-
-**Important**: FeatureManager must be initialized before both TCP and serial config handlers.
+- Transport trait is single-connection — multi-device handled at CLI dispatch layer
 
 ---
 
-## When in Doubt
+## Performance Tracing
 
-1. Check `research/SOFTWARE_ARCHITECTURE.md` for design decisions
-2. Check `research/SYSTEM_ARCHITECTURE.md` for hardware specs
-3. Check `research/DEVELOPMENT_ROADMAP.md` for task dependencies
-4. Prefer explicit over clever
-5. Prefer tested over fast
-6. **Delete code rather than deprecate it**
+```cpp
+#include "trace/traceApi.hpp"
+
+void processGameTick() {
+    TRACE_SCOPE(TRACE_ID("Game.Tick"), domes::trace::TraceCategory::kGame);
+    TRACE_INSTANT(TRACE_ID("Game.Hit"), domes::trace::TraceCategory::kGame);
+    TRACE_COUNTER(TRACE_ID("Game.Score"), score, domes::trace::TraceCategory::kGame);
+}
+```
+
+Categories: `kKernel`, `kTransport`, `kOta`, `kWifi`, `kLed`, `kAudio`, `kTouch`, `kGame`, `kUser`, `kHaptic`, `kBle`, `kNvs`
+
+Dump: `python tools/trace/trace_dump.py -p /dev/ttyACM0 -o trace.json` then open at `https://ui.perfetto.dev`
+
+Key files: `main/trace/traceApi.hpp` (macros), `main/trace/traceRecorder.hpp` (recorder), `tools/trace/trace_dump.py` (host tool). See `research/architecture/07-debugging.md` for full docs.
+
+---
+
+## Initialization Order (main.cpp)
+
+1. **WiFi** before TCP config server and BLE (for coexistence)
+2. **BLE OTA service** early (advertising starts automatically)
+3. **FeatureManager** before TCP/Serial/BLE config handlers
+4. **TcpConfigServer** before Serial OTA (to see logs)
+5. **Serial OTA** last (takes over USB-CDC console — logs stop after this point)
+
+**Important**: After `initSerialOta()`, USB-CDC becomes OTA/config transport. Debug init issues by adding delays before serial OTA init or temporarily disabling it.
+
+---
+
+## Validation Checklist
+
+- [ ] `idf.py build` succeeds with no warnings
+- [ ] No `new`/`malloc` after initialization phase
+- [ ] No `std::vector`, `std::string`, `std::map` (use ETL)
+- [ ] No `<iostream>` includes
+- [ ] Every driver has an abstract interface and mock
+- [ ] All public APIs have Doxygen comments
+- [ ] All non-mutating methods are `const`
+- [ ] All ISR code has `IRAM_ATTR`, data has `DRAM_ATTR`
+- [ ] Error returns use `tl::expected` or `esp_err_t` — no unchecked returns
+- [ ] Mutex access uses `MutexGuard` RAII wrapper
+- [ ] Key operations have `ESP_LOGI`/`ESP_LOGD` logging
+- [ ] No hardcoded values — use `config.hpp` / constants for pins and magic numbers
+
+---
+
+## Common Pitfalls
+
+| Pitfall | Solution |
+|---------|----------|
+| DMA buffers in PSRAM | Use `MALLOC_CAP_DMA` for I2S/SPI buffers |
+| WiFi + BLE conflicts | Enable coexistence: `ESP_COEX_PREFER_BALANCE` |
+| Stack overflow | Monitor with `uxTaskGetStackHighWaterMark()` |
+| Watchdog timeout | Call `esp_task_wdt_reset()` in long loops |
+| Flash write in ISR | Queue data, write in task context |
+| USB-CDC console lost | Serial OTA takes over — debug init issues before that point |
+
+---
+
+## Hardware Interfaces
+
+| Peripheral | Interface | Driver IC | Notes |
+|------------|-----------|-----------|-------|
+| LEDs | RMT | SK6812 RGBW | 16 LEDs in ring |
+| Audio | I2S | MAX98357A | 23mm speaker |
+| Haptic | I2C | DRV2605L | LRA motor |
+| Touch | ESP32 touch peripheral | — | Capacitive sense |
+| IMU | I2C | LIS2DW12 | Tap detection |
+| Power | ADC | — | Battery voltage |
+
+---
+
+## Key Constants
+
+```cpp
+constexpr uint8_t LED_COUNT = 16;
+constexpr uint32_t ESPNOW_LATENCY_TARGET_US = 2000;  // P95 < 2ms
+constexpr size_t AUDIO_SAMPLE_RATE = 16000;
+constexpr size_t OTA_PARTITION_SIZE = 0x400000;  // 4MB
+```
+
+---
+
+## Reference Documents
+
+| Document | Purpose |
+|----------|---------|
+| `firmware/MILESTONES.md` | Project status and milestone tracking |
+| `research/architecture/` | Deep design docs (per-subsystem) |
+| `research/SYSTEM_ARCHITECTURE.md` | Hardware architecture and specs |
+| `docs/PIN_REFERENCE.md` | Pin mappings for all platforms |
+| `research/architecture/07-debugging.md` | Tracing and debugging guide |
