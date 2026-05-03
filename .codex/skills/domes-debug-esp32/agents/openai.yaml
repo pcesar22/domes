@@ -1,0 +1,4 @@
+interface:
+  display_name: "DOMES ESP32 Debugging"
+  short_description: "Debug DOMES ESP32-S3 firmware with GDB"
+  default_prompt: "Use $domes-debug-esp32 to investigate a DOMES ESP32 firmware crash."

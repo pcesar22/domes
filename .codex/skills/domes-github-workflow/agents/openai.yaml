@@ -1,0 +1,4 @@
+interface:
+  display_name: "DOMES GitHub Workflow"
+  short_description: "DOMES branch, commit, PR, and review standards"
+  default_prompt: "Use $domes-github-workflow to prepare a DOMES pull request."
