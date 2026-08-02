@@ -96,16 +96,10 @@ public:
         gpio_set_level(sdPin_, 0);
 
         // Configure I2S channel
-        i2s_chan_config_t chanConfig = {
-            .id = I2S_NUM_0,
-            .role = I2S_ROLE_MASTER,
-            .dma_desc_num = kDmaBufferCount,
-            .dma_frame_num = kDmaBufferFrames,
-            .auto_clear = true,  // Clear DMA buffer on underrun
-            .auto_clear_before_cb = false,
-            .allow_pd = false,
-            .intr_priority = 0,
-        };
+        i2s_chan_config_t chanConfig = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+        chanConfig.dma_desc_num = kDmaBufferCount;
+        chanConfig.dma_frame_num = kDmaBufferFrames;
+        chanConfig.auto_clear = true;  // Clear DMA buffer on underrun
 
         err = i2s_new_channel(&chanConfig, &txHandle_, nullptr);
         if (err != ESP_OK) {

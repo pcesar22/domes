@@ -48,7 +48,12 @@ jobs:
       - name: Check generated firmware bindings
         run: |
           . $IDF_PATH/export.sh
-          tools/generate_protocols.sh --check nanopb
+          GENERATOR_PYTHONPATH="${RUNNER_TEMP:-/tmp}/nanopb-generator"
+          python -m pip install --disable-pip-version-check --require-hashes \
+            --target "$GENERATOR_PYTHONPATH" \
+            -r firmware/third_party/nanopb/extra/requirements_lock.txt
+          PYTHONPATH="$GENERATOR_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}" \
+            tools/generate_protocols.sh --check nanopb
 
       - name: Build firmware
         working-directory: firmware/domes
