@@ -33,6 +33,13 @@ It checks generated bindings, host firmware tests, CLI format/lint/build/tests, 
 Flutter app, and the ESP-IDF firmware build. `scripts/verify.sh --quick` skips only the ESP-IDF
 build; use it for iteration, not final firmware verification.
 
+For scoped iteration, use `scripts/verify.sh --changed <base>` or repeat
+`--component firmware|cli|flutter|docs`. Add `--json-summary <path>` for a versioned result and
+`--keep-artifacts <directory>` for complete logs and build outputs. Protocol, transport, OTA,
+runtime-config, workflow, and unknown paths expand conservatively across consumers. The no-argument
+command remains the required final software gate; see `tools/verify/README.md` for the selection and
+schema contract.
+
 When the pinned IDF is installed outside the default path, set
 `IDF_EXPORT_SCRIPT=/path/to/esp-idf/export.sh` for `scripts/verify.sh` and
 `tools/firmware/flash_and_verify.sh`.
