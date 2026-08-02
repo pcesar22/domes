@@ -5,6 +5,10 @@ not maintain separate, conflicting test requirements.
 
 ## Aggregate Local Check
 
+Run `scripts/doctor.sh` first to see which software and hardware verification paths this host can
+support. `scripts/doctor.sh --json` provides versioned machine-readable capability data; missing
+optional hardware does not fail the probe. The doctor is read-only and never performs remediation.
+
 Initialize submodules and install the toolchains used by the aggregate check: ESP-IDF v5.4.4, a
 C++20 compiler and CMake, Rust 1.92.0/Cargo, Flutter 3.44.8/Dart, Python 3, `protoc`, Dart
 `protoc_plugin` 25.0.0, Go, and ShellCheck.

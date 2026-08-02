@@ -16,6 +16,7 @@ Use progressive disclosure:
 | `hardware/` | `hardware/AGENTS.md` |
 | GitHub, commits, reviews, or releases | `$domes-github-workflow` |
 | Platform, BLE, USB, or multi-device setup | `.codex/PLATFORM.md` |
+| Host capability discovery | `scripts/doctor.sh` (use `--json` for automation) |
 | Detailed verification commands | `docs/TESTING.md` |
 
 Reusable procedures live in `.codex/skills/`; do not copy their runbooks into always-loaded

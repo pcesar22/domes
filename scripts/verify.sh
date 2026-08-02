@@ -119,6 +119,7 @@ if (
         pre-commit run --all-files --show-diff-on-failure &&
         python3 -m unittest discover -s tools/agent_eval -p 'test_*.py' -v &&
         python3 -m unittest discover -s tools/ci -p 'test_*.py' -v &&
+        python3 -m unittest discover -s tools/doctor -p 'test_*.py' -v &&
         python3 -m unittest discover -s tools/docs -p 'test_*.py' -v &&
         python3 tools/docs/check_markdown_links.py &&
         python3 -m unittest discover -s tools/trace -p 'test_*.py' -v &&
