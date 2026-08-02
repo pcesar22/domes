@@ -17,6 +17,7 @@ Use progressive disclosure:
 | GitHub, commits, reviews, or releases | `$domes-github-workflow` |
 | Platform, BLE, USB, or multi-device setup | `.codex/PLATFORM.md` |
 | Host capability discovery | `scripts/doctor.sh` (use `--json` for automation) |
+| Codex defaults and specialist agents | `.codex/README.md` |
 | Detailed verification commands | `docs/TESTING.md` |
 
 Reusable procedures live in `.codex/skills/`; do not copy their runbooks into always-loaded
@@ -104,4 +105,5 @@ paths.
 | `research/SYSTEM_ARCHITECTURE.md` | Product target, not as-built status |
 | `research/architecture/README.md` | Historical/proposed record lifecycle |
 | `.codex/PLATFORM.md` | Host, BLE, USB, udev, and multi-device setup |
+| `.codex/README.md` | Project model defaults, trust boundary, and specialist agents |
 | `.codex/skills/domes-esp32-firmware/references/runbooks.md` | Firmware operational runbooks |
