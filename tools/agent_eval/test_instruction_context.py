@@ -27,6 +27,7 @@ class InstructionContextTest(unittest.TestCase):
         for relative in (
             "firmware/domes/main",
             "tools/domes-cli/src",
+            "ios/domes_app/lib",
             "hardware",
         ):
             chain = instruction_chain(relative)
@@ -37,6 +38,7 @@ class InstructionContextTest(unittest.TestCase):
         expected = {
             "firmware/domes/main": ["AGENTS.md", "firmware/AGENTS.md"],
             "tools/domes-cli/src": ["AGENTS.md", "tools/domes-cli/AGENTS.md"],
+            "ios/domes_app/lib": ["AGENTS.md", "ios/domes_app/AGENTS.md"],
             "hardware": ["AGENTS.md", "hardware/AGENTS.md"],
         }
         for relative, paths in expected.items():
@@ -49,6 +51,7 @@ class InstructionContextTest(unittest.TestCase):
         targets = (
             "firmware/AGENTS.md",
             "tools/domes-cli/AGENTS.md",
+            "ios/domes_app/AGENTS.md",
             "hardware/AGENTS.md",
             "docs/TESTING.md",
             ".codex/PLATFORM.md",

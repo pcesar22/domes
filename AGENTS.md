@@ -12,6 +12,7 @@ Use progressive disclosure:
 | `firmware/` | `firmware/AGENTS.md`; use `$domes-esp32-firmware` for build, flash, monitor, runtime, or hardware work |
 | ESP32 crashes or stepping | `$domes-debug-esp32` |
 | `tools/domes-cli/` | `tools/domes-cli/AGENTS.md` |
+| `ios/domes_app/` | `ios/domes_app/AGENTS.md` |
 | `hardware/` | `hardware/AGENTS.md` |
 | GitHub, commits, reviews, or releases | `$domes-github-workflow` |
 | Platform, BLE, USB, or multi-device setup | `.codex/PLATFORM.md` |
@@ -37,6 +38,7 @@ silently treating a proposal as shipped behavior. Useful authority routes:
 | Verification | `docs/TESTING.md` |
 | GPIO mappings | `docs/PIN_REFERENCE.md` and active `firmware/domes/main/config.hpp` |
 | Host protocol schemas | `firmware/common/proto/*.proto` |
+| Flutter app architecture | `ios/domes_app/README.md` and `ios/domes_app/AGENTS.md` |
 | Platform and device access | `.codex/PLATFORM.md` |
 
 ## Verification Contract
