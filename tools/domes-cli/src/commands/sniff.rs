@@ -386,7 +386,10 @@ fn decode_config_payload(kind: ConfigMsgType, payload: &[u8]) -> Vec<(String, St
                     fields.push(("uptime_s".into(), resp.uptime_s.to_string()));
                     fields.push(("free_heap".into(), resp.free_heap.to_string()));
                     fields.push(("backtrace_entries".into(), resp.backtrace.len().to_string()));
-                    fields.push(("boot_count".into(), resp.timestamp.to_string()));
+                    fields.push(("boot_count".into(), resp.boot_count.to_string()));
+                    fields.push(("format_version".into(), resp.format_version.to_string()));
+                    fields.push(("firmware".into(), resp.firmware_version));
+                    fields.push(("elf_sha256".into(), resp.elf_sha256));
                 }
             }
         }
@@ -856,6 +859,41 @@ mod tests {
             .iter()
             .any(|(key, value)| key == "timestamp_us" && value == "1234567"));
         assert!(!fields.iter().any(|(key, _)| key == "status"));
+    }
+
+    #[test]
+    fn test_decode_restart_snapshot_identity() {
+        use crate::proto::config::{CrashDumpResponse, Status};
+
+        let response = CrashDumpResponse {
+            has_dump: true,
+            reason: "shutdown/restart".into(),
+            task_name: "serial_ota".into(),
+            uptime_s: 42,
+            free_heap: 49_152,
+            backtrace: vec![0x4200_1234],
+            boot_count: 7,
+            firmware_version: "v1.2.3".into(),
+            format_version: 2,
+            elf_sha256: "a".repeat(64),
+        };
+        let mut payload = vec![Status::Ok as u8];
+        payload.extend(response.encode_to_vec());
+
+        let fields = decode_payload(ConfigMsgType::GetCrashDumpRsp.as_u8(), &payload);
+        for (key, expected) in [
+            ("boot_count", "7"),
+            ("format_version", "2"),
+            ("firmware", "v1.2.3"),
+            ("elf_sha256", &"a".repeat(64)),
+        ] {
+            assert!(
+                fields
+                    .iter()
+                    .any(|(name, value)| name == key && value == expected),
+                "missing {key}={expected}: {fields:?}"
+            );
+        }
     }
 
     #[test]

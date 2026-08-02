@@ -139,7 +139,9 @@ $CLI --ble "DOMES-Pod-01" system info
 - [ ] In an app-driven drill, a physical touch on the active pod completes its round; a touch on an
   inactive pod is ignored, and stop/disconnect does not advance a stale round.
 - [ ] WiFi/TCP feature listing succeeds when credentials are configured.
-- [ ] With a second pod, ESP-NOW discovers one peer and exchanges packets.
+- [ ] With a second pod, the canonical ESP-NOW runbook completes repeated fresh lifecycles with
+  complementary roles, one peer each, slave-first and master-second zero-loss benchmarks, exact
+  `disabled` teardown, and a separate trace-backed simulated drill.
 - [ ] All enabled peripherals run together for at least 10 minutes without reset or watchdog event.
 
 The clean-board CLI does not provision WiFi credentials. Record WiFi/TCP as blocked unless the
@@ -157,12 +159,18 @@ unversioned `domes-factory.bin`) when validating the merged factory artifact des
 - [ ] `system info`, health, and self-test pass after initial programming.
 
 Build a retained OTA application with a fresh configuration, then extract the version embedded in
-that exact image. The declared value must be parser-valid, at most 31 ASCII bytes, and byte-for-byte
-identical to the embedded value. Exercise serial and BLE on separate test targets, or restore the
-baseline between flows, so each transport actually changes the selected app partition:
+that exact image. Retain the exact ELF for the image already running before each OTA and record its
+version and boot count. The declared value must be parser-valid, at most 31 ASCII bytes, and
+byte-for-byte identical to the embedded value. Exercise serial and BLE on separate test targets, or
+restore the baseline between flows, so each transport actually changes the selected app partition:
 
 ```bash
 CLI=tools/domes-cli/target/debug/domes-cli
+BASELINE_ELF='<exact domes.elf for the image currently running on this board>'
+BASELINE_INFO=$($CLI --port "$PORT" system info)
+BASELINE_VERSION=$(awk '/Firmware:/ {print $2; exit}' <<< "$BASELINE_INFO")
+BASELINE_BOOT_COUNT=$(awk '/Boot count:/ {print $3; exit}' <<< "$BASELINE_INFO")
+test -f "$BASELINE_ELF"
 OTA_ROOT="$(mktemp -d)"
 (cd firmware/domes && . ~/esp/esp-idf/export.sh && \
   idf.py -B "$OTA_ROOT/build" -D "IDF_TARGET=esp32s3" \
@@ -181,6 +189,9 @@ sleep 15
 $CLI --port "$PORT" system info
 $CLI --port "$PORT" system health
 $CLI --port "$PORT" system self-test
+tools/firmware/verify_restart_snapshot.sh \
+  "$PORT" "$BASELINE_BOOT_COUNT" "$BASELINE_VERSION" "$BASELINE_ELF" "$CLI"
+$CLI --port "$PORT" system crash-dump --clear
 
 # Reset once more and repeat the checks to confirm the image was accepted.
 . ~/esp/esp-idf/export.sh
@@ -193,6 +204,11 @@ $CLI --port "$PORT" system self-test
 # Repeat the complete acceptance sequence on the BLE test target.
 BLE_TARGET='<BLE address from devices scan>'
 BLE_PORT='<matching CP2102N serial path>'
+BLE_BASELINE_ELF='<exact domes.elf currently running on the BLE test target>'
+BLE_BASELINE_INFO=$($CLI --port "$BLE_PORT" system info)
+BLE_BASELINE_VERSION=$(awk '/Firmware:/ {print $2; exit}' <<< "$BLE_BASELINE_INFO")
+BLE_BASELINE_BOOT_COUNT=$(awk '/Boot count:/ {print $3; exit}' <<< "$BLE_BASELINE_INFO")
+test -f "$BLE_BASELINE_ELF"
 $CLI --ble "$BLE_TARGET" ota flash "$OTA_BIN" \
   --version "$EXPECTED_VERSION"
 sleep 15
@@ -200,6 +216,10 @@ $CLI --port "$BLE_PORT" system info
 $CLI --port "$BLE_PORT" system health
 $CLI --port "$BLE_PORT" system self-test
 $CLI --ble "$BLE_TARGET" system info
+tools/firmware/verify_restart_snapshot.sh \
+  "$BLE_PORT" "$BLE_BASELINE_BOOT_COUNT" "$BLE_BASELINE_VERSION" \
+  "$BLE_BASELINE_ELF" "$CLI"
+$CLI --port "$BLE_PORT" system crash-dump --clear
 
 python -m esptool --chip esp32s3 --port "$BLE_PORT" run
 sleep 10
@@ -217,6 +237,11 @@ $CLI --ble "$BLE_TARGET" system info
   the BLE session path.
 - [ ] Forced failed-self-test rollback was tested with a purpose-built image, or is explicitly
   recorded as unverified. A successful normal OTA does not exercise this path.
+- [ ] The first post-OTA boot exposes a format-2 clean-restart snapshot whose CRC-protected boot
+  count, firmware version, internal heap, processed PCs, and ELF SHA match the exact pre-OTA image.
+- [ ] An unreadable or unsupported snapshot fails closed, and an explicit
+  `system crash-dump --clear` restores the no-record state. Use a controlled malformed-record fixture;
+  do not corrupt NVS on a board with calibration or identity data that has not been backed up.
 
 Bounded serial rejection and interruption checks mirror the hardware workflow:
 
@@ -247,6 +272,11 @@ $CLI --port "$PORT" system self-test
 Use the purpose-built rollback image and assertions in
 [`../../.github/workflows/firmware-hw-test.yml`](../../.github/workflows/firmware-hw-test.yml) for
 the destructive rollback gate. Do not improvise a failing release image.
+
+Use the complete
+[`$domes-esp32-firmware` ESP-NOW integration runbook](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#esp-now-integration-test)
+for the two-pod gate. `stopping` is not a ready state; wait for exact `disabled` before every new
+lifecycle.
 
 Capture a bounded trace and confirm that the exported JSON opens in Perfetto:
 

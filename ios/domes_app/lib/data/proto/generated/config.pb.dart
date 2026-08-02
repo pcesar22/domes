@@ -2179,7 +2179,10 @@ class CrashDumpResponse extends $pb.GeneratedMessage {
     $core.int? uptimeS,
     $core.int? freeHeap,
     $core.Iterable<$core.int>? backtrace,
-    $core.int? timestamp,
+    $core.int? bootCount,
+    $core.String? firmwareVersion,
+    $core.int? formatVersion,
+    $core.String? elfSha256,
   }) {
     final result = create();
     if (hasDump != null) result.hasDump = hasDump;
@@ -2188,7 +2191,10 @@ class CrashDumpResponse extends $pb.GeneratedMessage {
     if (uptimeS != null) result.uptimeS = uptimeS;
     if (freeHeap != null) result.freeHeap = freeHeap;
     if (backtrace != null) result.backtrace.addAll(backtrace);
-    if (timestamp != null) result.timestamp = timestamp;
+    if (bootCount != null) result.bootCount = bootCount;
+    if (firmwareVersion != null) result.firmwareVersion = firmwareVersion;
+    if (formatVersion != null) result.formatVersion = formatVersion;
+    if (elfSha256 != null) result.elfSha256 = elfSha256;
     return result;
   }
 
@@ -2211,7 +2217,11 @@ class CrashDumpResponse extends $pb.GeneratedMessage {
     ..aI(4, _omitFieldNames ? '' : 'uptimeS', fieldType: $pb.PbFieldType.OU3)
     ..aI(5, _omitFieldNames ? '' : 'freeHeap', fieldType: $pb.PbFieldType.OU3)
     ..p<$core.int>(6, _omitFieldNames ? '' : 'backtrace', $pb.PbFieldType.KU3)
-    ..aI(7, _omitFieldNames ? '' : 'timestamp', fieldType: $pb.PbFieldType.OU3)
+    ..aI(7, _omitFieldNames ? '' : 'bootCount', fieldType: $pb.PbFieldType.OU3)
+    ..aOS(8, _omitFieldNames ? '' : 'firmwareVersion')
+    ..aI(9, _omitFieldNames ? '' : 'formatVersion',
+        fieldType: $pb.PbFieldType.OU3)
+    ..aOS(10, _omitFieldNames ? '' : 'elfSha256')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2282,13 +2292,40 @@ class CrashDumpResponse extends $pb.GeneratedMessage {
   $pb.PbList<$core.int> get backtrace => $_getList(5);
 
   @$pb.TagNumber(7)
-  $core.int get timestamp => $_getIZ(6);
+  $core.int get bootCount => $_getIZ(6);
   @$pb.TagNumber(7)
-  set timestamp($core.int value) => $_setUnsignedInt32(6, value);
+  set bootCount($core.int value) => $_setUnsignedInt32(6, value);
   @$pb.TagNumber(7)
-  $core.bool hasTimestamp() => $_has(6);
+  $core.bool hasBootCount() => $_has(6);
   @$pb.TagNumber(7)
-  void clearTimestamp() => $_clearField(7);
+  void clearBootCount() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.String get firmwareVersion => $_getSZ(7);
+  @$pb.TagNumber(8)
+  set firmwareVersion($core.String value) => $_setString(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasFirmwareVersion() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearFirmwareVersion() => $_clearField(8);
+
+  @$pb.TagNumber(9)
+  $core.int get formatVersion => $_getIZ(8);
+  @$pb.TagNumber(9)
+  set formatVersion($core.int value) => $_setUnsignedInt32(8, value);
+  @$pb.TagNumber(9)
+  $core.bool hasFormatVersion() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearFormatVersion() => $_clearField(9);
+
+  @$pb.TagNumber(10)
+  $core.String get elfSha256 => $_getSZ(9);
+  @$pb.TagNumber(10)
+  set elfSha256($core.String value) => $_setString(9, value);
+  @$pb.TagNumber(10)
+  $core.bool hasElfSha256() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearElfSha256() => $_clearField(10);
 }
 
 class ClearCrashDumpRequest extends $pb.GeneratedMessage {

@@ -320,7 +320,7 @@ enum SystemAction {
 
     /// Get the clean-restart diagnostic snapshot stored in NVS
     CrashDump {
-        /// Clear the crash dump after displaying
+        /// Clear the restart snapshot after displaying
         #[arg(long)]
         clear: bool,
     },
@@ -1078,31 +1078,80 @@ fn main() -> anyhow::Result<()> {
                         validate_system_health(&health)?;
                     }
                     SystemAction::CrashDump { clear } => {
-                        let dump = commands::system_crash_dump(transport)?;
-                        if dump.has_dump {
-                            println!("{}Crash Dump:", prefix);
-                            println!("{}  Reason:    {}", prefix, dump.reason);
-                            println!("{}  Task:      {}", prefix, dump.task_name);
-                            println!("{}  Uptime:    {} s", prefix, dump.uptime_s);
-                            println!("{}  Free heap: {} bytes", prefix, dump.free_heap);
-                            println!("{}  Boot count: {}", prefix, dump.timestamp);
-                            if !dump.backtrace.is_empty() {
-                                println!("{}  Backtrace:", prefix);
-                                for (i, addr) in dump.backtrace.iter().enumerate() {
-                                    println!("{}    #{}: 0x{:08X}", prefix, i, addr);
-                                }
-                                println!(
-                                    "{}  (use addr2line -e build/domes.elf to resolve)",
-                                    prefix
+                        let dump = match commands::system_crash_dump(transport) {
+                            Ok(dump) => Some(dump),
+                            Err(error) if *clear => {
+                                eprintln!(
+                                    "{}Unable to read restart snapshot before clearing: {:#}",
+                                    prefix, error
                                 );
+                                None
                             }
-                            if *clear {
-                                let cleared = commands::system_clear_crash_dump(transport)?;
-                                ensure_command_succeeded("clear crash dump", cleared)?;
-                                println!("{}Crash dump cleared.", prefix);
+                            Err(error) => return Err(error),
+                        };
+
+                        if let Some(dump) = dump {
+                            if dump.has_dump {
+                                let legacy = dump.format_version == 0;
+                                if legacy {
+                                    println!("{}Legacy Clean-Restart Snapshot:", prefix);
+                                } else {
+                                    println!("{}Clean-Restart Snapshot:", prefix);
+                                }
+                                println!("{}  Reason:    {}", prefix, dump.reason);
+                                println!("{}  Task:      {}", prefix, dump.task_name);
+                                println!("{}  Uptime:    {} s", prefix, dump.uptime_s);
+                                if legacy {
+                                    println!(
+                                        "{}  Recorded free heap: {} bytes",
+                                        prefix, dump.free_heap
+                                    );
+                                } else {
+                                    println!(
+                                        "{}  Internal free heap: {} bytes",
+                                        prefix, dump.free_heap
+                                    );
+                                }
+                                println!("{}  Boot count: {}", prefix, dump.boot_count);
+                                if legacy {
+                                    println!(
+                                        "{}  Snapshot format: legacy (semantics unverified)",
+                                        prefix
+                                    );
+                                    println!("{}  Firmware:   not recorded", prefix);
+                                } else {
+                                    println!(
+                                        "{}  Snapshot format: {}",
+                                        prefix, dump.format_version
+                                    );
+                                    println!("{}  Firmware:   {}", prefix, dump.firmware_version);
+                                    println!("{}  ELF SHA256: {}", prefix, dump.elf_sha256);
+                                }
+                                if !dump.backtrace.is_empty() {
+                                    if legacy {
+                                        println!("{}  Legacy raw backtrace values:", prefix);
+                                    } else {
+                                        println!("{}  Backtrace:", prefix);
+                                    }
+                                    for (i, addr) in dump.backtrace.iter().enumerate() {
+                                        println!("{}    #{}: 0x{:08X}", prefix, i, addr);
+                                    }
+                                    if !legacy {
+                                        println!(
+                                            "{}  (symbolize with addr2line and the exact SHA-matched pre-restart domes.elf)",
+                                            prefix
+                                        );
+                                    }
+                                }
+                            } else {
+                                println!("{}No restart snapshot stored.", prefix);
                             }
-                        } else {
-                            println!("{}No crash dump stored.", prefix);
+                        }
+
+                        if *clear {
+                            let cleared = commands::system_clear_crash_dump(transport)?;
+                            ensure_command_succeeded("clear restart snapshot", cleared)?;
+                            println!("{}Restart snapshot cleared.", prefix);
                         }
                     }
                     SystemAction::Memory { json } => {

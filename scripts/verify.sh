@@ -105,10 +105,11 @@ if (
     cd "$ROOT_DIR/tools/domes-cli" &&
         cargo fmt --check &&
         cargo clippy --locked --all-targets --all-features -- -D warnings &&
+        cargo build --locked &&
         cargo build --locked --release &&
         cargo test --locked --all-targets --all-features
 ); then
-    pass "CLI format, lint, release build, and tests"
+    pass "CLI format, lint, debug/release builds, and tests"
 else
     fail "Rust CLI"
 fi
@@ -117,6 +118,7 @@ section "Host Tooling"
 if (
     cd "$ROOT_DIR" &&
         pre-commit run --all-files --show-diff-on-failure &&
+        python3 -m unittest discover -s tools/agent_eval -p 'test_*.py' -v &&
         python3 -m unittest discover -s tools/ci -p 'test_*.py' -v &&
         python3 -m unittest discover -s tools/docs -p 'test_*.py' -v &&
         python3 tools/docs/check_markdown_links.py &&
@@ -173,6 +175,20 @@ elif (
         -D "IDF_TARGET=esp32s3" \
         -D "SDKCONFIG=$IDF_SDKCONFIG" \
         build || exit 1
+    python3 - "$IDF_BUILD_DIR/config/sdkconfig.json" <<'PY' || exit 1
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as config_file:
+    config = json.load(config_file)
+if config.get("BOOTLOADER_APP_ROLLBACK_ENABLE") is not True:
+    raise SystemExit("firmware build does not enable bootloader app rollback")
+PY
+    if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+        echo "ESP-IDF rewrote firmware/domes/dependencies.lock" >&2
+        git diff -- dependencies.lock >&2
+        exit 1
+    fi
 
     size=$(stat -c%s "$IDF_BUILD_DIR/domes.bin") || exit 1
     max_size=1966080

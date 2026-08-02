@@ -78,7 +78,7 @@ class MsgType extends $pb.ProtobufEnum {
   static const MsgType MSG_TYPE_ESPNOW_BENCH_RSP =
       MsgType._(61, _omitEnumNames ? '' : 'MSG_TYPE_ESPNOW_BENCH_RSP');
 
-  /// Crash dump commands (0x3E-0x41)
+  /// Clean-restart snapshot commands with legacy crash-dump names (0x3E-0x41)
   static const MsgType MSG_TYPE_GET_CRASH_DUMP_REQ =
       MsgType._(62, _omitEnumNames ? '' : 'MSG_TYPE_GET_CRASH_DUMP_REQ');
   static const MsgType MSG_TYPE_GET_CRASH_DUMP_RSP =

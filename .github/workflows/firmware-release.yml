@@ -41,7 +41,7 @@ jobs:
           semver="^v(${core})\\.(${core})\\.(${core})$"
 
           if [[ ! "$RELEASE_VERSION" =~ $semver ]]; then
-            echo "::error::Release tag is not valid SemVer: $RELEASE_VERSION"
+            echo "::error::Release tag must be a stable vMAJOR.MINOR.PATCH version: $RELEASE_VERSION"
             exit 1
           fi
           if ((${#RELEASE_VERSION} > 31)); then
@@ -175,11 +175,16 @@ jobs:
           sed \
             -e 's#bootloader/bootloader.bin#bootloader.bin#' \
             -e 's#partition_table/partition-table.bin#partition-table.bin#' \
+            -e "s#domes\\.bin#domes-${RELEASE_VERSION}.bin#" \
             flash_args > "$release_dir/flash_args"
 
           cd "$release_dir"
           test -s "domes-${RELEASE_VERSION}.bin"
           test -s "domes-${RELEASE_VERSION}-factory.bin"
+          manual_flash_image="${RUNNER_TEMP:-/tmp}/domes-release-flash-args.bin"
+          python -m esptool --chip esp32s3 merge_bin -o "$manual_flash_image" @flash_args
+          cmp -- "$manual_flash_image" "domes-${RELEASE_VERSION}-factory.bin"
+          rm -f "$manual_flash_image"
           sha256sum -- *.bin flash_args > SHA256SUMS
           sha256sum --check SHA256SUMS
           app_sha256=$(sha256sum "domes-${RELEASE_VERSION}.bin" | cut -d ' ' -f 1)

@@ -4,6 +4,15 @@
 
 set -euo pipefail
 
+usage() {
+    echo "Usage: $0 [project-dir] [comma-separated-ports]" >&2
+}
+
+if [[ $# -gt 2 ]]; then
+    usage
+    exit 2
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PROJECT_ARG="${1:-firmware/domes}"
@@ -15,10 +24,6 @@ if [[ "$PROJECT_ARG" = /* ]]; then
     PROJECT_DIR="$PROJECT_ARG"
 else
     PROJECT_DIR="$(cd "$REPO_ROOT" && realpath -m "$PROJECT_ARG")"
-fi
-
-if [[ $# -ge 3 ]]; then
-    echo "Warning: the legacy verify-string argument is ignored; verification uses domes-cli system info." >&2
 fi
 
 if [[ ! -f "$PROJECT_DIR/CMakeLists.txt" ]]; then

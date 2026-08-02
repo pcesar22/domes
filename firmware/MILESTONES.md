@@ -1,4 +1,4 @@
-# DOMES Firmware Milestones
+# DOMES Delivery Milestones
 
 This document owns delivery status. It records what is implemented, what has passed host
 verification, and what has been exercised on hardware. Product targets belong in
@@ -34,17 +34,17 @@ on the final pull-request head before promoting any pending release gate.
 | UART config protocol | Yes | Yes | Verified on both attached pods | Framed protobuf messages use UART0 GPIO43/GPIO44 through the CP2102N bridge. Each pod completed 100 fresh CLI connections without rebooting. |
 | Build-gated WiFi/TCP config protocol | Yes | Yes | Not exercised in this review | The default profile intentionally omits WiFi. Device verification requires a `CONFIG_DOMES_WIFI_AUTO_CONNECT` image and stored credentials. |
 | BLE config and OTA transport | Yes | Yes for framing and reassembly | Config and diagnostics verified on both pods; OTA verified on Pod 2 | Native Linux with Intel AX210 discovered each pod and completed sequential info, health, self-test, memory, and feature commands. Pod 2 also completed the BLE OTA acceptance sequence below. |
-| Serial OTA | Yes | Yes | Verified on Pod 1 | A 1,417,440-byte image transferred, booted as `v0.0.0-0-gdd152bad2f7d`, passed health and 10/10 self-test, and survived an explicit second reboot. Invalid and interrupted recovery also passed. |
-| BLE OTA | Yes | Yes for host protocol and fragmentation | Verified on Pod 2 | A 1,417,440-byte image transferred, booted as `v0.0.0-0-gdd152bad2f7d`, passed UART and BLE reconnection, health, and 10/10 self-test, and survived an explicit second reboot. Invalid and interrupted recovery also passed. |
+| Serial OTA | Yes | Yes | Verified on Pod 1; also used to update both pods during the review | Full-image transfer, exact embedded-version matching, first- and second-boot acceptance, health/self-test, truncated-image rejection, interrupted-session recovery, and subsequent update recovery passed. |
+| BLE OTA | Yes | Yes for host protocol and fragmentation | Verified on Pod 2 | Full-image transfer, UART/BLE reconnection, exact embedded-version matching, first- and second-boot acceptance, health/self-test, truncated-image rejection, interrupted-session recovery, and subsequent update recovery passed. |
 | Raw WiFi/TCP OTA transfer | No | Yes, rejection path | Not applicable | The TCP config server does not dispatch OTA frame types, and the CLI rejects this unsupported route before connecting. |
-| ESP-NOW discovery, benchmark, and two-pod drill | Yes | Yes, including simulation | Discovery and benchmark verified; final drill rerun pending | Both pods discovered one peer and exchanged 100/100 benchmark packets in each direction. Current firmware uses deterministic MAC-based roles and a fixed drill. |
-| Game engine finite-state machine | Yes | Yes | Host verified; physical drill rerun pending | Arm, touch or timeout, then feedback. |
+| ESP-NOW discovery, benchmark, and two-pod drill | Yes | Yes, including simulation | Verified on both attached pods | Three fresh enable/disable lifecycles completed 300/300 benchmark rounds from each pod with zero failures. A separate trace-backed ten-round simulated drill completed with one peer per pod and zero radio send failures. |
+| Game engine finite-state machine | Yes | Yes | Trace-backed simulated drill verified; physical input pending | Arm, touch or timeout, then feedback. |
 | DRV2605L haptic output | Yes | Partial | Not verified | Configured conservatively for the schematic's LD0832AA-0099F at fixed 235 Hz open-loop drive; confirm the populated part and physical output. |
 | MAX98357A audio output | Driver exists | Partial | Not verified | Basic I2S/DMA path exists; sample storage and CLI volume workflow remain incomplete. |
-| Tracing and Perfetto export | Yes | Yes | Final low-noise two-pod capture rerun pending | CLI supports capture and dump. The merge tool groups local timelines by capture start; no truthful cross-clock correlation exists yet. |
+| Tracing and Perfetto export | Yes | Yes | Two-pod capture, dump, and merge verified | The final source candidate produced 384 and 467 device events, 885 merged events, and zero drops. The merge groups local timelines by capture start; no truthful cross-clock correlation exists yet. |
 | Diagnostics and memory profiling | Yes | Yes | Verified over UART and BLE on both pods | Includes system health, ESP-NOW statistics, self-test, and bounded memory samples. |
 | Protocol sniffer | Partial | Yes | Normal live topology not verified | Config IDs derive from generated protobuf enums. The passive reader cannot share the command UART and still needs a non-resetting mirrored/capture workflow. |
-| Restart snapshot retrieval | Yes | Partial | Verified on both pods | The legacy `crash-dump` command returns a clean `esp_restart()` snapshot, not a panic core dump. |
+| Restart snapshot retrieval | Yes | Yes for format and CLI contract | Verified on both pods | Format-2 records are CRC protected and bind boot count, firmware version, internal heap, processed PCs, and the exact pre-restart ELF SHA-256. Both records resolved against retained ELFs; corrupt-record failure and explicit clearing also passed. This remains distinct from a panic core dump. |
 | Panic core-dump storage | Yes | Build/config verified | Deliberate panic and decode not verified | The 8 MB partition table reserves `0x20000` bytes and ESP-IDF ELF flash dumps are enabled. Retrieval uses ESP-IDF tooling and the exact matching ELF, not `domes-cli system crash-dump`. |
 | Flutter application | Substantial prototype | Yes, analysis and unit/widget tests | BLE/device app workflow not verified | Providers, protocol, BLE fragmentation, OTA abort, and UI flows exist; generated bindings match the schema. The Rust CLI remains the primary service tool. |
 
@@ -53,11 +53,11 @@ on the final pull-request head before promoting any pending release gate.
 | Check | Most recent result | Scope |
 | --- | --- | --- |
 | Host firmware tests | 267/267 passed in a fresh build on 2026-08-02 | Protocol, services, simulation, and selected drivers on the final pre-hardware source revision. |
-| ESP-IDF firmware build | Exact ESP-IDF v5.4.4 clean build passed on 2026-08-02 | The 1,430,608-byte application fit the `0x1E0000` OTA slot with 535,472 bytes free. |
-| Rust CLI | Format, strict Clippy, debug/release locked builds, and 91/91 tests passed on 2026-08-02 | The count is 82 unit tests plus 9 CLI integration tests. |
+| ESP-IDF firmware build | Exact ESP-IDF v5.4.4 clean build passed on 2026-08-02 | The 1,433,120-byte source candidate fit the `0x1E0000` OTA slot with 532,960 bytes free; rollback was enabled in the resolved configuration. |
+| Rust CLI | Format, strict Clippy, debug/release locked builds, and 95/95 tests passed on 2026-08-02 | The count is 85 unit tests plus 10 CLI integration tests. |
 | Flutter app | Pinned Flutter 3.44.8 analysis, 161 tests, and a Linux release build passed locally on 2026-08-02 | The local toolchain matches CI. Native iOS build remains unavailable on Linux. |
 | Protocol generation | Nanopb and Dart drift checks passed on 2026-08-02 | `tools/generate_protocols.sh --check all`. |
-| Attached hardware | Two NFF N8R8 pods exercised on 2026-08-02 | App flash, UART/BLE diagnostics, feature/mode control, registry fan-out, two-way ESP-NOW benchmark, Pod 1 serial OTA/recovery, and Pod 2 BLE OTA/recovery passed. Physical output/input, factory programming, trace, and forced rollback remain listed below. |
+| Attached hardware | Two NFF N8R8 pods exercised on 2026-08-02 | Erase plus merged-factory programming, normal multi-image programming, UART/BLE diagnostics, feature/mode control, registry fan-out, serial/BLE OTA and recovery, forced rollback, repeated two-way ESP-NOW benchmarks, and a trace-backed drill passed. Physical output/input remains listed below. |
 
 Use `ctest -N` for the live test count. Do not copy a count into another document.
 
@@ -79,20 +79,21 @@ device identity.
 | `touch` / `imu` | All four simulated pads and IMU triage enable/disable passed. | Exercise all physical pads, orientation changes, and physical tap interrupt/feedback. |
 | `devices` and multi-target dispatch | Add/list/scan/remove, named targets, `--all`, duplicate-address rejection, UART discovery, and BLE discovery passed. | WiFi/mDNS discovery is intentionally absent; BLE names and MACs require deliberate canonical registration before destructive fan-out. |
 | BLE transport | Scan plus sequential system, health, self-test, memory, feature, and advertising-state checks passed for both addresses. Pod 2 completed a full BLE OTA plus UART/BLE checks on the first and second boots. | Flutter/mobile BLE workflow remains unverified. |
-| ESP-NOW | Both pods discovered one peer, reported live peer RSSI, selected deterministic roles, and completed 100/100 benchmark packets in each direction. | Re-run the fixed drill and grouped two-board trace on the final image. |
+| ESP-NOW | Both pods repeatedly crossed exact `disabled` lifecycle boundaries, discovered one peer, selected complementary deterministic roles, and completed 300/300 benchmark packets from each pod with zero failures. | Six-pod timing and recovery remain unverified. |
 | WiFi/TCP | Default-build feature/status commands returned `InvalidFeature`; raw OTA and generic trace preflight reject unsupported TCP routes before connecting. | Build with `CONFIG_DOMES_WIFI_AUTO_CONNECT`, provision credentials, and test config TCP port 5000 plus the dedicated trace endpoint. |
-| OTA | Pod 1 accepted the full 1,417,440-byte serial image and Pod 2 accepted it over BLE. Both reported `v0.0.0-0-gdd152bad2f7d`, passed health and 10/10 self-test on their first and explicit second boots, and reached boot count 38 with rollback availability reported. Truncated and interrupted serial recovery passed on Pod 1; invalid and interrupted BLE recovery passed on Pod 2. | Repeat on the final pull-request image, then complete merged-factory programming and forced failed-self-test rollback below. |
-| Trace and sniffer | Host codecs, dump integrity, trace grouping, name generation, and passive sniffer tests pass. | Complete the final two-board capture; passive sniffing cannot share an exclusively opened command UART. |
+| OTA | Pod 1 serial OTA and Pod 2 BLE OTA passed full transfer, exact-version, first/second boot, rollback-availability, and health/self-test checks. Truncated and interrupted recovery passed on the respective transports. Merged-factory programming and a separately forced failed-self-test rollback also passed. | Release tags still require the same exact-artifact checks; a successful normal OTA is not rollback evidence. |
+| Trace and sniffer | Host codecs, dump integrity, trace grouping, name generation, and passive sniffer tests pass. The latest two-board drill capture produced the required hit/send/receive/completion events with zero drops. | Passive sniffing cannot share an exclusively opened command UART; a non-resetting mirror topology remains undefined. |
 
 The 100-round ESP-NOW benchmark measured command/acknowledgment round-trip latency, not one-way
 radio latency:
 
-| Direction | Received | Min | Mean | P50 | P95 | Max |
-| --- | --- | --- | --- | --- | --- | --- |
-| Pod 1 to Pod 2 | 100/100 | 2.664 ms | 7.839 ms | 6.813 ms | 20.716 ms | 24.723 ms |
-| Pod 2 to Pod 1 | 100/100 | 2.581 ms | 7.493 ms | 6.339 ms | 17.668 ms | 25.961 ms |
+| Direction | Received across three fresh sessions | Observed min | Per-session mean range | Observed max |
+| --- | --- | --- | --- | --- |
+| Pod 1 to Pod 2 | 300/300 | 2.782 ms | 3.923-4.740 ms | 19.928 ms |
+| Pod 2 to Pod 1 | 300/300 | 2.771 ms | 3.852-4.162 ms | 12.745 ms |
 
-These results establish lossless two-pod exchange on the reviewed boards; they do not demonstrate
+These results establish lossless exchange across repeated fresh lifecycles on the reviewed boards;
+they measure command/acknowledgment round trips rather than one-way radio latency and do not demonstrate
 the product architecture's sub-millisecond latency target.
 
 ## Milestone History And Remaining Work
@@ -168,7 +169,7 @@ together until they are migrated.
 
 ### M6: Multi-Pod Runtime
 
-**Status:** Two-pod implementation and host simulation complete; final on-device drill rerun pending
+**Status:** Two-pod implementation, host simulation, and on-device drill verified
 
 - [x] ESP-NOW discovery, beacon, unicast, and heartbeat paths
 - [x] Deterministic role assignment
@@ -177,7 +178,7 @@ together until they are migrated.
 - [x] Multi-pod simulation tests
 - [x] Verify two-pod discovery and bidirectional 100-packet benchmarks with no loss
 - [x] Implement direct-BLE app drill orchestration with device-originated physical-touch notifications
-- [ ] Re-run the fixed drill on the final image with simulated hits and trace evidence
+- [x] Re-run the fixed drill on the final source candidate with simulated hits and trace evidence
 - [ ] Validate timing and recovery with six physical pods
 - [ ] Implement the phone-selected ESP-NOW master and general drill interpreter product target
 
@@ -193,6 +194,8 @@ together until they are migrated.
 - [ ] Define and verify a non-resetting live capture/mirror topology
 - [x] Memory profiler
 - [x] Clean-restart snapshot stored in NVS and exposed by the legacy `crash-dump` command
+- [x] Bind format-2 restart snapshots to CRC-protected firmware, boot, heap, PC, and exact ELF identity
+- [x] Verify exact-ELF symbolization on both pods and explicit recovery from an unreadable record
 - [x] Extend the sniffer mapping and config filter through the full current message range
 - [x] Bound memory-profile responses to the shared frame payload limit
 - [x] Reserve flash coredump storage and enable ESP-IDF ELF core dumps
@@ -218,27 +221,17 @@ firmware emits and validates a truthful synchronization marker.
 - [x] Confirm serial OTA through full transfer, expected-version boot, health/self-test, and a second reboot
 - [x] Exercise serial invalid-image rejection and interrupted-session recovery on hardware
 - [x] Confirm BLE OTA through full transfer, UART/BLE reconnection, health/self-test, and a second reboot
-- [ ] Program and verify the merged factory image from address `0x0`
-- [ ] Force a post-OTA self-test failure and verify rollback to the previous image
+- [x] Program and verify the merged factory image from address `0x0`
+- [x] Force a post-OTA self-test failure and verify rollback to the previous image
 - [x] Remove unsupported raw WiFi/TCP OTA from the CLI contract
 - [ ] Validate six-pod timing and failure recovery
 - [ ] Define the production RGBW and 16 MB board profile separately from the 8 MB NFF profile
 
-## Active NFF Pin Summary
+## Active NFF Pin Authority
 
-The schematic/netlist owns physical connectivity. `firmware/domes/main/config.hpp` owns the compiled
-board mapping. [`docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md) explains how the NFF header
-positions map to ESP32 GPIO numbers.
-
-| Function | Active NFF GPIO |
-| --- | --- |
-| LED data | 16 |
-| I2C SDA / SCL | 8 / 9 |
-| IMU interrupt | 5 |
-| I2S BCLK / LRCLK / data | 12 / 11 / 13 |
-| Audio shutdown | 7 |
-| Touch pads | 1 / 2 / 4 / 6 |
-| UART0 TX / RX to CP2102N | 43 / 44 |
+The schematic/netlist owns physical connectivity, and `firmware/domes/main/config.hpp` owns the
+compiled board mapping. Use [`docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md) for their maintained
+reconciliation; this status ledger intentionally does not duplicate the pin table.
 
 ## Release Gates
 
@@ -258,9 +251,7 @@ The firmware binary must fit the smallest configured OTA app slot; the current d
 | Item | Required decision or work |
 | --- | --- |
 | Haptic hardware | Confirm the populated actuator is LD0832AA-0099F and record physical output at the configured voltage and frequency. |
-| OTA hardware | Complete merged-factory programming and a separately forced failed-self-test rollback. Pod 1 serial OTA and Pod 2 BLE OTA success/recovery are verified on the reviewed image; a normal successful boot does not verify forced rollback, and final pull-request edits require a fresh image rerun. |
 | Physical peripherals | Visually confirm LED patterns and physically exercise touch, IMU taps, haptic output, and audio output on both pods. Accepted CLI commands are not sufficient evidence. |
-| Trace hardware | Capture both pods during the final fixed drill and retain grouped local timelines. A truthful cross-clock synchronization marker remains future work. |
 | Panic diagnostics | Deliberately capture and decode an ELF flash coredump with the exact matching firmware ELF; do not relabel clean restart data. |
 | Hardware CI runner | Provision an online two-device Linux x64 runner using Actions Runner 2.327.1 or newer before applying `hw-test`. |
 | Six-pod demo | Manufacture additional pods, then run timing and recovery tests. |

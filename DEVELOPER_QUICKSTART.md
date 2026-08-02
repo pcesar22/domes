@@ -109,7 +109,8 @@ tools/firmware/flash_and_verify.sh \
   firmware/domes "$PORT"
 ```
 
-The helper verifies `domes-cli system info` after flashing. Attach native USB separately and use
+The helper verifies the exact built firmware version through `domes-cli system info`, then requires
+`system health` and the complete `system self-test` to pass. Attach native USB separately and use
 `tools/firmware/monitor_serial.py` when console boot logs are required.
 
 Exercise the runtime protocol:
@@ -182,12 +183,12 @@ $CLI devices add pod1 serial "$PORT1"
 $CLI devices add pod2 serial "$PORT2"
 $CLI devices list
 $CLI --target pod1 --target pod2 feature list
-$CLI --all feature enable esp-now
-$CLI --all espnow status
 ```
 
 Multi-device ESP-NOW validation needs at least two pods. Serial-number device links and BLE platform
-requirements are documented in [`.codex/PLATFORM.md`](.codex/PLATFORM.md).
+requirements are documented in [`.codex/PLATFORM.md`](.codex/PLATFORM.md). Follow the complete
+[`$domes-esp32-firmware` ESP-NOW runbook](.codex/skills/domes-esp32-firmware/references/runbooks.md#esp-now-integration-test);
+single-status or sleep-based checks are not sufficient evidence.
 
 ## Before Submitting A Change
 

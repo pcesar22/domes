@@ -786,10 +786,10 @@ pub struct CliBenchResult {
 }
 
 // ============================================================================
-// Crash dump types and parsers
+// Clean-restart snapshot types and parsers (legacy crash-dump message names)
 // ============================================================================
 
-/// Crash dump info for CLI use
+/// Clean-restart snapshot for CLI use
 #[derive(Debug, Clone)]
 pub struct CliCrashDump {
     pub has_dump: bool,
@@ -798,7 +798,10 @@ pub struct CliCrashDump {
     pub uptime_s: u32,
     pub free_heap: u32,
     pub backtrace: Vec<u32>,
-    pub timestamp: u32,
+    pub boot_count: u32,
+    pub firmware_version: String,
+    pub format_version: u32,
+    pub elf_sha256: String,
 }
 
 /// Parse CrashDumpResponse payload
@@ -828,7 +831,10 @@ pub fn parse_crash_dump_response(payload: &[u8]) -> Result<CliCrashDump, Protoco
         uptime_s: resp.uptime_s,
         free_heap: resp.free_heap,
         backtrace: resp.backtrace,
-        timestamp: resp.timestamp,
+        boot_count: resp.boot_count,
+        firmware_version: resp.firmware_version,
+        format_version: resp.format_version,
+        elf_sha256: resp.elf_sha256,
     })
 }
 
@@ -1194,6 +1200,57 @@ mod feature_contract_tests {
         assert!(matches!(
             parse_self_test_response(&response),
             Err(ProtocolError::InconsistentSelfTest { .. })
+        ));
+    }
+
+    #[test]
+    fn restart_snapshot_maps_boot_count_and_diagnostics() {
+        let response = ok_payload(CrashDumpResponse {
+            has_dump: true,
+            reason: "shutdown/restart".to_string(),
+            task_name: "serial_ota".to_string(),
+            uptime_s: 42,
+            free_heap: 49_152,
+            backtrace: vec![0x4200_1234, 0x4200_5678],
+            boot_count: 17,
+            firmware_version: "v1.2.3".to_string(),
+            format_version: 2,
+            elf_sha256: "a".repeat(64),
+        });
+
+        let snapshot = parse_crash_dump_response(&response).unwrap();
+        assert!(snapshot.has_dump);
+        assert_eq!(snapshot.reason, "shutdown/restart");
+        assert_eq!(snapshot.task_name, "serial_ota");
+        assert_eq!(snapshot.uptime_s, 42);
+        assert_eq!(snapshot.free_heap, 49_152);
+        assert_eq!(snapshot.backtrace, vec![0x4200_1234, 0x4200_5678]);
+        assert_eq!(snapshot.boot_count, 17);
+        assert_eq!(snapshot.firmware_version, "v1.2.3");
+        assert_eq!(snapshot.format_version, 2);
+        assert_eq!(snapshot.elf_sha256, "a".repeat(64));
+    }
+
+    #[test]
+    fn restart_snapshot_parser_handles_empty_error_and_truncated_payloads() {
+        let no_snapshot = parse_crash_dump_response(&ok_payload(CrashDumpResponse::default()))
+            .expect("empty snapshot response should decode");
+        assert!(!no_snapshot.has_dump);
+
+        assert!(matches!(
+            parse_crash_dump_response(&[]),
+            Err(ProtocolError::PayloadTooShort {
+                expected: 1,
+                actual: 0
+            })
+        ));
+        assert!(matches!(
+            parse_crash_dump_response(&[Status::Error as u8]),
+            Err(ProtocolError::DeviceError(Status::Error))
+        ));
+        assert!(matches!(
+            parse_crash_dump_response(&[Status::Ok as u8, 0x80]),
+            Err(ProtocolError::DecodeError(_))
         ));
     }
 }

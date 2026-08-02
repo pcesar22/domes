@@ -33,6 +33,11 @@ When the pinned IDF is installed outside the default path, set
 `IDF_EXPORT_SCRIPT=/path/to/esp-idf/export.sh` for `scripts/verify.sh` and
 `tools/firmware/flash_and_verify.sh`.
 
+The coding-agent evaluation harness is under `tools/agent_eval/`. Its unit tests run as host tooling
+in the aggregate check. Live model evaluations are opt-in because they consume model usage; follow
+its README, retain model and effort metadata, and compare one repository or model variable at a
+time.
+
 ## Verification Matrix
 
 | Change type | Required checks | Hardware expectation |
@@ -40,11 +45,11 @@ When the pinned IDF is installed outside the default path, set
 | Documentation only | `python3 tools/docs/check_markdown_links.py` and relevant command syntax | None unless instructions changed a hardware workflow |
 | Host firmware logic | Host unit tests | None when behavior is fully simulated |
 | Firmware build/config | Host unit tests and ESP-IDF build | Flash when runtime behavior can change |
-| Protocol or transport | Host tests, firmware build, CLI tests | Verify at least one real transport |
+| Protocol or transport | Host tests, firmware build, CLI tests | Verify every affected real transport; for a shared-only contract change, verify at least one representative real transport |
 | CLI-only behavior | Format, strict Clippy, locked build, and all-target/all-feature tests | Verify against firmware when commands or transport behavior change |
-| Flutter application | Locked dependency restore, fatal analysis, tests, and no-codesign iOS build | Verify BLE and device workflows on a supported host and physical pod |
+| Flutter application | Locked dependency restore, fatal analysis, tests, Linux release build, and no-codesign iOS build | Verify BLE and device workflows on a supported host and physical pod |
 | Driver, sensor, LED, audio, or haptic | Host tests and firmware build | Flash and exercise the affected peripheral |
-| Multi-pod or ESP-NOW | Host simulation and all builds | Two-pod discovery and command/drill verification |
+| Multi-pod or ESP-NOW | Host simulation and all builds | Two-pod discovery, simulation-off bidirectional benchmarks, then a separate simulated drill and trace capture |
 | OTA success path | Firmware, CLI, and Flutter protocol tests/builds | Transfer, expected-version boot, health/self-test, second reboot, and expected-version confirmation |
 | OTA failure and rollback paths | Abort/digest tests and firmware build | Invalid-image rejection, interrupted-session recovery, and a separately forced failed-self-test rollback |
 
@@ -114,7 +119,8 @@ For changes under `firmware/common/proto/` or shared framing:
 4. Regenerate Flutter protobuf output when the app consumes the changed schema and confirm the
    generated files have no unexplained diff.
 5. Run the host frame/protobuf tests.
-6. Verify request/response behavior over serial, TCP, or BLE on a device.
+6. Verify request/response behavior on every affected device transport. For a change confined to the
+   shared frame or message contract, exercise at least one representative real transport.
 
 The OTA transfer protocol is a current legacy exception implemented in
 [`firmware/common/protocol/otaProtocol.hpp`](../firmware/common/protocol/otaProtocol.hpp),
@@ -156,8 +162,9 @@ tools/firmware/flash_and_verify.sh \
 
 On the NFF DevKit, the CP2102N bridge (`/dev/ttyUSB*`, preferably its `/dev/serial/by-id/` link)
 carries flashing, framed UART commands, and serial OTA. Native ESP32-S3 USB Serial/JTAG
-(`/dev/ttyACM*`) is a separate console/JTAG interface. The helper verifies `system info` over the
-framed UART after flashing; attach native USB separately when console logs are required.
+(`/dev/ttyACM*`) is a separate console/JTAG interface. Over framed UART, the helper verifies the
+exact built firmware version through `system info` and requires `system health` plus the complete
+`system self-test` to pass; attach native USB separately when console logs are required.
 
 Then use `domes-cli` for the affected behavior. Examples:
 
@@ -183,6 +190,16 @@ For serial or BLE OTA, a successful upload is only the first step. Record all of
 4. Invalid-image rejection and an interrupted transfer left the device responsive to a subsequent
    command or update.
 
+Record the boot count and version before each clean `esp_restart()` and retain that build's ELF plus
+`project_description.json`. The hardware workflow uses
+`tools/firmware/verify_restart_snapshot.sh` to confirm that the stored count and version match the
+pre-restart build, the format is 2, the recorded ELF SHA-256 matches that exact ELF, the internal
+heap is plausible, and the processed backtrace resolves. Format-2 records are CRC-protected. Legacy
+format-0 records are display-only because their heap and backtrace semantics are unverified; corrupt
+or unsupported records fail closed, and `system crash-dump --clear` can remove an unreadable record.
+A reset through ROM or the reset pin does not run the shutdown handler and must not be described as
+producing a new clean-restart snapshot.
+
 The normal success path does not prove rollback. Forced failed-self-test rollback requires a
 purpose-built failing image or fault injection, then evidence that the bootloader selected the
 previous image. Record it as unverified unless that destructive path was deliberately exercised.
@@ -192,6 +209,17 @@ For multi-pod trace inspection, capture the pods during the same ESP-NOW session
 `--align raw` preserves each file's local timestamps. Those are the only supported alignment modes;
 neither creates synchronized timing evidence.
 
+Keep the ESP-NOW latency and drill checks in separate lifecycles. With simulation off, enable both
+pods, wait for complementary master/slave roles and exactly one peer each, benchmark the slave first
+and then the master, and disable both. Clear and restart trace capture, enable simulation, start a
+fresh ESP-NOW lifecycle, and wait for the complete drill before collecting traces.
+After a disable request, `stopping` means a previous lifecycle is still unwinding. Wait until both
+pods report the exact `disabled` state before re-enabling; cached role or peer data is not readiness.
+
+Trace control and dump commands use serial or BLE. In a provisioned
+`CONFIG_DOMES_WIFI_AUTO_CONNECT` build, live streaming uses its dedicated TCP port 5001; it is
+separate from config port 5000 and does not make generic trace control valid over `--wifi`.
+
 Flash coredumps and clean-restart snapshots are separate diagnostics. The active profile reserves a
 `coredump` partition and enables ESP-IDF ELF dumps; retrieve and decode those with the exact matching
 `domes.elf`. `domes-cli system crash-dump` reads only the NVS clean-restart snapshot.
@@ -200,23 +228,31 @@ Flash coredumps and clean-restart snapshots are separate diagnostics. The active
 
 | Workflow | Purpose | Trigger scope |
 | --- | --- | --- |
-| [`firmware-ci.yml`](../.github/workflows/firmware-ci.yml) | Aggregate Software CI: ESP-IDF build/package validation, host tests, CLI checks, host tooling, protocol drift, and Flutter checks, exposed through `CI Gate` | Every pull request, merge queue entry, and push to `main` |
-| [`flutter-ci.yml`](../.github/workflows/flutter-ci.yml) | Reusable generated-binding, analysis, Flutter test, and no-codesign iOS release-build jobs called by Software CI | `workflow_call` only |
+| [`firmware-ci.yml`](../.github/workflows/firmware-ci.yml) | Aggregate Software CI: ESP-IDF build/package validation, host tests, CLI checks, host tooling, protocol drift, and Flutter checks, exposed through `CI Gate` | Unfiltered `pull_request`, merge queue entry, and push to `main` |
+| [`flutter-ci.yml`](../.github/workflows/flutter-ci.yml) | Reusable generated-binding, analysis, Flutter test, Linux release-build, and no-codesign iOS release-build jobs called by Software CI | `workflow_call` only |
 | [`firmware-hw-test.yml`](../.github/workflows/firmware-hw-test.yml) | Self-hosted device checks | `hw-test` label and subsequent synchronize/reopen events while labeled, or manual run |
-| [`firmware-release.yml`](../.github/workflows/firmware-release.yml) | Tag validation, the complete reusable Software CI gate, then OTA app and merged factory images with checksums | SemVer release tags on `main` |
+| [`firmware-release.yml`](../.github/workflows/firmware-release.yml) | Tag validation, the complete reusable Software CI gate, then OTA app and merged factory images with checksums | Stable `vMAJOR.MINOR.PATCH` tags on `main` |
 
-Release tags must be parser-valid SemVer and at most 31 bytes so the exact tag fits the ESP-IDF
-application descriptor and OTA wire field. Release metadata names the OTA application
-`domes-<tag>.bin`; the merged factory image is a separate artifact.
+The Software CI workflow has no pull-request path filter, so documentation-only and code changes use
+the same aggregate gate. The repository ruleset or branch-protection configuration must require the
+exact `CI Gate` check name for that result to block merges; workflow configuration alone does not
+enforce it. Resolve base-branch conflicts before relying on a pull-request result because GitHub
+cannot build the pull-request merge revision while it is conflicted.
 
-Software/release CI uses isolated build directories and fresh SDKCONFIG files. Hardware CI builds
+Release tags must use the stable `vMAJOR.MINOR.PATCH` form and be at most 31 bytes so the exact tag
+fits the ESP-IDF application descriptor and OTA wire field. Prerelease identifiers and build
+metadata are intentionally rejected. Release metadata names the OTA application `domes-<tag>.bin`;
+the merged factory image is a separate artifact.
+
+Software/release CI uses fresh build directories and SDKCONFIG files. Hardware CI builds
 separate normal, versioned-OTA, and purpose-built failed-self-test images, also with isolated
 SDKCONFIG files, and asserts that `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` is active before it performs
 the destructive rollback sequence. The failure image is test-only and must never be published as a
-release artifact.
+release artifact. The hardware workflow also verifies direct and registry-backed multi-device
+fan-out and exercises truncated and interrupted recovery over serial and BLE before accepted OTA.
 
 Ask before applying the `hw-test` pull-request label because it consumes attached lab hardware.
-Manual hardware dispatch requires at least two devices and accepts a comma-separated `ports` input;
+Manual hardware dispatch requires exactly two selected devices and accepts a comma-separated `ports` input;
 use CP2102N `/dev/serial/by-id/` paths on a runner with stable device identities. The workflow does
 not provision the machine: an online Linux x64 self-hosted runner, Actions Runner 2.327.1 or newer,
 ESP-IDF v5.4.4, Rust 1.92.0, native BLE, and two attached NFF pods are prerequisites. Do not apply

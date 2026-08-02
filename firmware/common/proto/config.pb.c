@@ -102,7 +102,7 @@ PB_BIND(domes_config_EspNowBenchResponse, domes_config_EspNowBenchResponse, AUTO
 PB_BIND(domes_config_GetCrashDumpRequest, domes_config_GetCrashDumpRequest, AUTO)
 
 
-PB_BIND(domes_config_CrashDumpResponse, domes_config_CrashDumpResponse, AUTO)
+PB_BIND(domes_config_CrashDumpResponse, domes_config_CrashDumpResponse, 2)
 
 
 PB_BIND(domes_config_ClearCrashDumpRequest, domes_config_ClearCrashDumpRequest, AUTO)

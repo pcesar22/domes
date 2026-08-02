@@ -16,7 +16,7 @@
 | Flash layout | 8 MB, two `0x1E0000` OTA app slots | 16 MB production layout, still to be finalized |
 | Pod orchestration | Deterministic MAC roles and a fixed two-pod drill | App-directed master and multi-pod drills |
 | Host control | Rust `domes-cli` over CP2102N UART, BLE, or build-gated WiFi/TCP config | Mobile application plus service tooling |
-| OTA | Serial and BLE raw-image paths exist with SHA-256 verification; raw WiFi/TCP transfer is rejected | Authenticated, integrity-checked field updates |
+| OTA | Serial and BLE raw-image paths verify SHA-256 and require the declared version to equal the embedded image version; raw WiFi/TCP transfer is rejected | Authenticated, integrity-checked field updates |
 
 Proposed part choices, performance figures, prices, and certification notes require validation
 before they become release requirements.
@@ -88,7 +88,7 @@ development target. The bare DevKit and production profiles are incomplete desig
 
 | Platform | Form Factor | Features | Primary Use |
 | ---------- | ------------- | ---------- | ------------- |
-| **ESP32-S3-DevKitC-1** | Bare dev board | 1x WS2812 LED, USB, GPIO access | Initial bring-up, CI testing |
+| **ESP32-S3-DevKitC-1** | Bare dev board | 1x WS2812 LED, USB, GPIO access | Historical initial bring-up; not a current CI target |
 | **NFF Development Board** | Custom carrier + DevKit | 16 addressable LEDs in RGB mode, LIS2DW12 IMU, DRV2605L haptics, MAX98357A audio, speaker | Current full-feature development |
 | **Production PCB** | Integrated (planned) | All features in final enclosure | End-user devices |
 
@@ -705,14 +705,15 @@ sequenceDiagram
 ### 9.3 Target OTA Security Features
 
 These are product requirements, not claims that the complete security model exists today. The
-serial receiver verifies the transmitted SHA-256 digest before selecting the new image. Raw WiFi
-OTA remains unimplemented in the TCP config server and is rejected by the CLI.
+serial and BLE raw-image receivers verify the transmitted SHA-256 digest and require the declared
+version to match the version embedded in the image before selecting the new boot partition. Raw
+WiFi OTA remains unimplemented in the TCP config server and is rejected by the CLI.
 
 The GitHub update-check service is not a verified release path: automatic checks are disabled by
 default, and the clean-board CLI workflow does not provision WiFi credentials. Do not describe
 background or automatic WiFi update as current behavior.
 
-| Feature | Implementation |
+| Feature | Product target |
 | --------- | ---------------- |
 | **Signed Firmware** | RSA-3072 or ECDSA signature verification |
 | **Encrypted Transport** | BLE encryption + app-level encryption |
@@ -735,9 +736,10 @@ background or automatic WiFi update as current behavior.
 - Target: cascade from the app through a master pod
 - Target: background download, confirmation, then apply
 
-The current 8 MB development layout has no factory app partition. `domes.bin` at `0x20000` is an
-app-only image and is not a complete blank-device installation; use `idf.py flash` for initial
-programming.
+The current 8 MB development layout has no factory app partition. The Software CI
+`domes-factory.bin` and tagged `domes-<tag>-factory.bin` artifacts are merged blank-device installers,
+not factory app partitions. `domes.bin` is app-only; use a matching merged factory image at address
+`0x0`, or `idf.py flash` from a matching checkout, for initial programming.
 
 ---
 

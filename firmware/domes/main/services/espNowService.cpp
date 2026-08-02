@@ -65,6 +65,10 @@ bool EspNowService::startBenchmark(uint32_t rounds) {
         ESP_LOGW(kTag, "Cannot start benchmark: no peer discovered");
         return false;
     }
+    if (!gameLoopActive_.load(std::memory_order_acquire)) {
+        ESP_LOGW(kTag, "Cannot start benchmark: ESP-NOW lifecycle is not ready");
+        return false;
+    }
     if (!transport_.isConnected()) {
         ESP_LOGW(kTag, "Cannot start benchmark: ESP-NOW transport requires recovery");
         return false;
@@ -80,6 +84,12 @@ bool EspNowService::startBenchmark(uint32_t rounds) {
     if (benchmarkRequested_.load(std::memory_order_acquire)) {
         benchmarkStartLock_.store(0, std::memory_order_release);
         ESP_LOGW(kTag, "Benchmark already in progress");
+        return false;
+    }
+    if (!isFeatureEnabled() || !peerFound_.load(std::memory_order_acquire) ||
+        !gameLoopActive_.load(std::memory_order_acquire) || !transport_.isConnected()) {
+        benchmarkStartLock_.store(0, std::memory_order_release);
+        ESP_LOGW(kTag, "Cannot start benchmark: ESP-NOW lifecycle changed");
         return false;
     }
     if (rounds == 0 || rounds > kBenchMaxRounds) {
@@ -129,12 +139,14 @@ void EspNowService::run() {
             continue;  // Keep polling until re-enabled
         }
 
+        lifecycleActive_.store(true, std::memory_order_release);
         ESP_LOGI(kTag, "ESP-NOW service task started");
         TRACE_INSTANT(TRACE_ID("EspNow.DiscoveryStart"), trace::Category::kEspNow);
 
         // Reset state for a fresh lifecycle and remove stale unicast registrations.
         clearPeers();
         if (!ensureTransportReady()) {
+            lifecycleActive_.store(false, std::memory_order_release);
             vTaskDelay(pdMS_TO_TICKS(kBeaconIntervalMs));
             continue;
         }
@@ -151,16 +163,19 @@ void EspNowService::run() {
             break;
         if (!isFeatureEnabled()) {
             ESP_LOGI(kTag, "Discovery stopped because ESP-NOW was disabled");
+            lifecycleActive_.store(false, std::memory_order_release);
             continue;
         }
         if (!transport_.isConnected()) {
             ESP_LOGW(kTag, "Discovery stopped for ESP-NOW transport recovery");
+            lifecycleActive_.store(false, std::memory_order_release);
             continue;
         }
         if (!joinGameReceived_.load(std::memory_order_acquire) &&
             !peerFound_.load(std::memory_order_acquire)) {
             ESP_LOGW(kTag, "Discovery ended without a peer; restarting");
             vTaskDelay(pdMS_TO_TICKS(kBeaconIntervalMs));
+            lifecycleActive_.store(false, std::memory_order_release);
             continue;
         }
 
@@ -175,26 +190,37 @@ void EspNowService::run() {
         if (!running_)
             break;
 
-        // Phase 3: Game loop (returns when drill completes or STOP_ALL received)
+        // Phase 3: Game loop (returns when drill completes or STOP_ALL received).
         if (isMaster_.load(std::memory_order_relaxed)) {
             runMaster();
         } else {
             runSlave();
         }
+        gameLoopActive_.store(false, std::memory_order_release);
 
         if (!running_)
             break;
 
         if (!transport_.isConnected()) {
             ESP_LOGW(kTag, "Game loop ended for ESP-NOW transport recovery");
+            lifecycleActive_.store(false, std::memory_order_release);
+            continue;
+        }
+
+        if (!isFeatureEnabled()) {
+            ESP_LOGI(kTag, "Game loop stopped because ESP-NOW was disabled");
+            lifecycleActive_.store(false, std::memory_order_release);
             continue;
         }
 
         // Brief pause before restarting discovery
         ESP_LOGI(kTag, "Game loop ended, restarting discovery in 5s...");
         vTaskDelay(pdMS_TO_TICKS(5000));
+        lifecycleActive_.store(false, std::memory_order_release);
     }
 
+    gameLoopActive_.store(false, std::memory_order_release);
+    lifecycleActive_.store(false, std::memory_order_release);
     clearPeers();
     ESP_LOGI(kTag, "ESP-NOW service task exiting");
 }
@@ -523,6 +549,8 @@ void EspNowService::runMaster() {
     if (!enterPeerGameMode()) {
         return;
     }
+    // Publish role readiness only after the service can process benchmark traffic.
+    gameLoopActive_.store(true, std::memory_order_release);
 
     // Send JOIN_GAME as unicast to peer (reliable — unicast gets ACK, broadcast doesn't)
     espnow::JoinGameMsg joinMsg = {};
@@ -531,15 +559,15 @@ void EspNowService::runMaster() {
     TRACE_INSTANT(TRACE_ID("EspNow.SendJoinGame"), trace::Category::kEspNow);
     sendMsgTo(peerMac_, reinterpret_cast<const uint8_t*>(&joinMsg), sizeof(joinMsg));
 
-    // Wait for slave to be ready
-    vTaskDelay(pdMS_TO_TICKS(kJoinGameSettleMs));
-
-    // Drain any pending RX messages
-    {
-        uint8_t rxBuf[kEspNowMaxPayload];
-        size_t rxLen = sizeof(rxBuf);
-        while (isOk(transport_.receive(rxBuf, &rxLen, 0))) {
-            rxLen = sizeof(rxBuf);
+    // Keep serving diagnostics while the slave enters game mode. Role assignment
+    // is already visible to the host, and the benchmark PONG timeout is the same
+    // length as this settle window, so a blind delay can lose the first round.
+    const int64_t settleDeadlineUs =
+        esp_timer_get_time() + static_cast<int64_t>(kJoinGameSettleMs) * 1000;
+    while (running_ && isFeatureEnabled() && transport_.isConnected() &&
+           esp_timer_get_time() < settleDeadlineUs) {
+        if (!serviceBenchmarkRequest()) {
+            receiveAndDispatchBenchmarkTraffic(50);
         }
     }
 
@@ -757,6 +785,7 @@ void EspNowService::runSlave() {
     if (!enterPeerGameMode()) {
         return;
     }
+    gameLoopActive_.store(true, std::memory_order_release);
 
     // Heartbeat: track last message from master. If nothing arrives for
     // kSlaveHeartbeatTimeoutMs, assume master is dead and restart discovery.
@@ -1070,7 +1099,8 @@ void EspNowService::runBenchmark() {
         esp_timer_get_time() + static_cast<int64_t>(kBenchMaxDurationMs) * 1000;
 
     auto shouldContinue = [&]() {
-        return running_.load(std::memory_order_relaxed) && isFeatureEnabled() &&
+        return running_.load(std::memory_order_relaxed) &&
+               gameLoopActive_.load(std::memory_order_acquire) && isFeatureEnabled() &&
                transport_.isConnected() &&
                !benchmarkCancelRequested_.load(std::memory_order_acquire) &&
                esp_timer_get_time() < deadlineUs;
@@ -1206,6 +1236,35 @@ bool EspNowService::receiveAndDispatch(uint32_t timeoutMs) {
         return handleReceived(rxBuf, rxLen);
     }
     return false;
+}
+
+bool EspNowService::receiveAndDispatchBenchmarkTraffic(uint32_t timeoutMs) {
+    uint8_t rxBuf[kEspNowMaxPayload];
+    size_t rxLen = sizeof(rxBuf);
+    const TransportError err = transport_.receive(rxBuf, &rxLen, timeoutMs);
+    if (!isOk(err) || rxLen < sizeof(espnow::MsgHeader)) {
+        return false;
+    }
+
+    const auto* hdr = reinterpret_cast<const espnow::MsgHeader*>(rxBuf);
+    uint8_t sourceMac[ESP_NOW_ETH_ALEN] = {};
+    if (!validateReceivedSource(*hdr, sourceMac) || !isSelectedPeer(sourceMac)) {
+        return false;
+    }
+
+    const auto type = static_cast<espnow::MsgType>(hdr->type);
+    if ((type != espnow::MsgType::kPing && type != espnow::MsgType::kPong) ||
+        rxLen != espnow::expectedMessageSize(type)) {
+        ESP_LOGW(kTag, "Ignoring %s during master settle window", espnow::msgTypeName(type));
+        return false;
+    }
+
+    if (type == espnow::MsgType::kPing) {
+        handlePing(hdr);
+    } else {
+        handlePong(hdr);
+    }
+    return true;
 }
 
 bool EspNowService::handleReceived(const uint8_t* data, size_t len) {

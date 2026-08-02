@@ -271,21 +271,15 @@ domes-cli --all feature list
 domes-cli --all led solid --color ff0000
 ```
 
-For ESP-NOW testing:
+For ESP-NOW testing, follow the complete `$domes-esp32-firmware` integration runbook. It requires an
+exact `disabled` state before every fresh lifecycle, complementary master/slave roles with one peer
+each, a slave-first and master-second benchmark with simulation off, and a separate trace-backed
+simulated drill. `stopping` is transitional and is not safe to re-enable. Status from one pod or a
+sleep-based check is not communication evidence.
 
-```bash
-domes-cli --all feature enable esp-now
-mapfile -t CONSOLES < <(
-  find -L /dev/serial/by-id -maxdepth 1 -type c \
-    -name 'usb-Espressif_USB_JTAG_serial_debug_unit*' | sort
-)
-test "${#CONSOLES[@]}" -ge 2
-python3 tools/firmware/monitor_serial.py \
-  "${CONSOLES[0]},${CONSOLES[1]}" 30
-```
-
-The monitor command reads the separately connected native USB console ports. Use the CP2102N
-`/dev/serial/by-id/` paths for `domes-cli`, flashing, and serial OTA.
+Native USB console monitoring is optional supporting evidence. It does not replace framed CLI
+results, benchmark cardinality, or trace assertions. Use the CP2102N `/dev/serial/by-id/` paths for
+`domes-cli`, flashing, and serial OTA.
 
 ## Platform Requirements
 

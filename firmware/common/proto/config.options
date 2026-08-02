@@ -27,10 +27,12 @@ domes.config.EspNowPeer.mac  max_size:6
 domes.config.GetEspNowStatusResponse.discovery_state  max_size:16
 domes.config.GetEspNowStatusResponse.peers  max_count:8
 
-# Crash dump messages
+# Clean-restart snapshot messages (legacy crash-dump names)
 domes.config.CrashDumpResponse.reason  max_size:64
 domes.config.CrashDumpResponse.task_name  max_size:16
 domes.config.CrashDumpResponse.backtrace  max_count:16
+domes.config.CrashDumpResponse.firmware_version  max_size:32
+domes.config.CrashDumpResponse.elf_sha256  max_size:65
 
 # Memory profiler messages
 domes.config.GetMemoryProfileResponse.samples  max_count:38

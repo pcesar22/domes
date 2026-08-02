@@ -934,32 +934,41 @@ void ConfigCommandHandler::handleEspNowBench(const uint8_t* payload, size_t len)
 }
 
 // ============================================================================
-// Crash dump handlers
+// Clean-restart snapshot handlers (legacy crash-dump protocol names)
 // ============================================================================
 
 void ConfigCommandHandler::handleGetCrashDump() {
     domes_config_CrashDumpResponse resp = domes_config_CrashDumpResponse_init_zero;
 
     infra::CrashDumpData dump;
-    if (infra::ShutdownDumpHandler::loadDump(dump) == ESP_OK) {
+    const esp_err_t loadErr = infra::ShutdownDumpHandler::loadDump(dump);
+    Status status = Status::kOk;
+    if (loadErr == ESP_OK) {
         resp.has_dump = true;
         std::strncpy(resp.reason, dump.reason, sizeof(resp.reason) - 1);
         std::strncpy(resp.task_name, dump.taskName, sizeof(resp.task_name) - 1);
         resp.uptime_s = dump.uptimeS;
         resp.free_heap = dump.freeHeap;
-        resp.timestamp = dump.bootCount;
+        resp.boot_count = dump.bootCount;
+        std::strncpy(resp.firmware_version, dump.firmwareVersion,
+                     sizeof(resp.firmware_version) - 1);
+        resp.format_version = dump.formatVersion;
+        std::strncpy(resp.elf_sha256, dump.elfSha256, sizeof(resp.elf_sha256) - 1);
 
         resp.backtrace_count = dump.backtraceDepth;
         for (uint8_t i = 0; i < dump.backtraceDepth && i < 16; ++i) {
             resp.backtrace[i] = dump.backtrace[i];
         }
-    } else {
+    } else if (loadErr == ESP_ERR_NOT_FOUND) {
         resp.has_dump = false;
+    } else {
+        ESP_LOGE(kTag, "Failed to load restart snapshot: %s", esp_err_to_name(loadErr));
+        status = Status::kError;
     }
 
     // Encode: [status_byte][protobuf]
     std::array<uint8_t, domes_config_CrashDumpResponse_size + 10> payload;
-    payload[0] = static_cast<uint8_t>(Status::kOk);
+    payload[0] = static_cast<uint8_t>(status);
 
     pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
     if (!pb_encode(&stream, domes_config_CrashDumpResponse_fields, &resp)) {

@@ -48,10 +48,32 @@ it matches the source and application image being verified:
 
 ```bash
 FACTORY_BIN='domes-<tag>-factory.bin'  # or domes-factory.bin from Software CI
+APP_BIN='domes-<tag>.bin'              # or domes.bin from the same package
+CLI=tools/domes-cli/target/release/domes-cli
+POD_ID=1
 sha256sum --check SHA256SUMS
+EXPECTED_VERSION=$(
+  python -m esptool image_info --version 2 "$APP_BIN" |
+    sed -n 's/^App version: //p'
+)
+test -n "$EXPECTED_VERSION"
+python -m esptool --chip esp32s3 --port "$PORT" erase_flash
 python -m esptool --chip esp32s3 --port "$PORT" write_flash \
   0x0 "$FACTORY_BIN"
+sleep 10
+info=$($CLI --port "$PORT" system info)
+grep -F "Firmware:   $EXPECTED_VERSION" <<< "$info"
+grep -Eq 'Pod ID:[[:space:]]+not set$' <<< "$info"
+$CLI --port "$PORT" system health
+$CLI --port "$PORT" system self-test | grep -E 'Running App.*PASS.*ota_0,'
+$CLI --port "$PORT" system set-pod-id "$POD_ID"
+python -m esptool --chip esp32s3 --port "$PORT" run
+sleep 10
+$CLI --port "$PORT" system info | grep -Eq "Pod ID:[[:space:]]+$POD_ID$"
 ```
+
+Erasing first is part of factory verification; otherwise stale NVS identity or OTA metadata can
+survive and make a merged-image test inconclusive.
 
 Use `domes.bin` with `domes-cli ota flash` only on a board that already has the matching partition
 layout. The declared OTA version must be parser-valid, no longer than 31 ASCII bytes, and
@@ -121,7 +143,7 @@ protobuf. The paired sender and decoder own this per-message distinction.
 
 ## Current Hardware Target
 
-`domes/main/config.hpp` compiles the verified NFF DevKit mapping:
+`domes/main/config.hpp` compiles the NFF DevKit mapping reviewed against the board schematic:
 
 | Function | GPIO |
 | --- | --- |
@@ -143,7 +165,10 @@ the attached NFF ESP32-S3 N8R8 modules with 8 MB flash and 8 MB octal PSRAM.
 That layout reserves a `0x20000` flash coredump partition and enables ESP-IDF ELF panic dumps.
 Decode one with ESP-IDF and the exact matching `domes.elf`. The CLI's legacy
 `system crash-dump` command returns a clean-restart NVS snapshot instead and is not a panic-dump
-retrieval path.
+retrieval path. Current format-2 snapshots are CRC-protected and record the boot count, firmware
+version, exact ELF SHA-256, internal heap, and processed PCs. Format-0 records are displayed only as
+legacy data with unverified heap/backtrace semantics. Corrupt or unsupported records fail closed;
+`system crash-dump --clear` remains an explicit recovery path.
 
 ## Host Tests
 
