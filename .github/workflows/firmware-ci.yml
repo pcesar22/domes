@@ -5,11 +5,25 @@ on:
     branches: [main, develop, 'feature/**']
     paths:
       - 'firmware/**'
+      - 'tools/domes-cli/**'
+      - 'tools/firmware/**'
+      - 'tools/trace/**'
+      - 'tools/generate_protocols.sh'
+      - 'scripts/verify.sh'
+      - '.codex/skills/domes-esp32-firmware/scripts/**'
+      - '.claude/skills/esp32-firmware/scripts/**'
       - '.github/workflows/firmware-ci.yml'
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - 'firmware/**'
+      - 'tools/domes-cli/**'
+      - 'tools/firmware/**'
+      - 'tools/trace/**'
+      - 'tools/generate_protocols.sh'
+      - 'scripts/verify.sh'
+      - '.codex/skills/domes-esp32-firmware/scripts/**'
+      - '.claude/skills/esp32-firmware/scripts/**'
       - '.github/workflows/firmware-ci.yml'
 
 # Cancel stale runs when new commits are pushed to the same PR/branch
@@ -30,6 +44,11 @@ jobs:
         with:
           fetch-depth: 0  # For git describe version
           submodules: recursive
+
+      - name: Check generated firmware bindings
+        run: |
+          . $IDF_PATH/export.sh
+          tools/generate_protocols.sh --check nanopb
 
       - name: Build firmware
         working-directory: firmware/domes
@@ -110,6 +129,16 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check CLI formatting
+        working-directory: tools/domes-cli
+        run: cargo fmt --check
+
+      - name: Lint CLI
+        working-directory: tools/domes-cli
+        run: cargo clippy --all-targets --all-features
 
       - name: Build CLI
         working-directory: tools/domes-cli
@@ -118,3 +147,34 @@ jobs:
       - name: Run CLI tests
         working-directory: tools/domes-cli
         run: cargo test
+
+  host-tooling:
+    name: Test Host Tooling
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Test trace merge
+        run: python3 -m unittest tools.trace.test_trace_merge
+
+      - name: Check Python entry points
+        run: |
+          python3 -m py_compile \
+            tools/trace/trace_merge.py \
+            tools/trace/test_trace_merge.py \
+            tools/firmware/monitor_serial.py \
+            .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py \
+            .claude/skills/esp32-firmware/scripts/monitor_serial.py
+
+      - name: Check shell entry points
+        run: |
+          bash -n \
+            scripts/verify.sh \
+            tools/generate_protocols.sh \
+            tools/firmware/flash_and_verify.sh \
+            .codex/skills/domes-esp32-firmware/scripts/flash_and_verify.sh \
+            .claude/skills/esp32-firmware/scripts/flash_and_verify.sh

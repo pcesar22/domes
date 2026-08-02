@@ -15,6 +15,7 @@
 #include "esp_ota_ops.h"
 #include "interfaces/iTaskRunner.hpp"
 #include "interfaces/iTransport.hpp"
+#include "mbedtls/sha256.h"
 #include "trace/traceCommandHandler.hpp"
 
 #include <atomic>
@@ -56,7 +57,7 @@ public:
                                 config::FeatureManager* features = nullptr,
                                 uint8_t podId = 0);
 
-    ~SerialOtaReceiver() override = default;
+    ~SerialOtaReceiver() override;
 
     // Non-copyable
     SerialOtaReceiver(const SerialOtaReceiver&) = delete;
@@ -199,6 +200,8 @@ private:
     size_t bytesReceived_;
     uint32_t expectedOffset_;
     uint8_t expectedSha256_[32];
+    mbedtls_sha256_context sha256Context_;
+    bool sha256Active_;
 };
 
 }  // namespace domes

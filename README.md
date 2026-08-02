@@ -2,234 +2,175 @@
 
 **Distributed Open-source Motion & Exercise System**
 
-[![Build Status](https://github.com/pcesar22/domes/actions/workflows/firmware.yml/badge.svg)](https://github.com/pcesar22/domes/actions/workflows/firmware.yml)
-[![CLI Build](https://github.com/pcesar22/domes/actions/workflows/cli.yml/badge.svg)](https://github.com/pcesar22/domes/actions/workflows/cli.yml)
+[![Firmware CI](https://github.com/pcesar22/domes/actions/workflows/firmware-ci.yml/badge.svg)](https://github.com/pcesar22/domes/actions/workflows/firmware-ci.yml)
+[![Flutter CI](https://github.com/pcesar22/domes/actions/workflows/flutter-ci.yml/badge.svg)](https://github.com/pcesar22/domes/actions/workflows/flutter-ci.yml)
 
-A wireless reaction training pod system for athletic training, physical therapy, and fitness. Each pod features RGB LEDs, audio, haptic feedback, and touch sensing, communicating via ESP-NOW for sub-2ms latency synchronized drills.
+DOMES is an ESP32-S3 reaction-training pod system. A pod combines an addressable LED ring,
+capacitive touch, an accelerometer, audio, and haptic hardware. Pods coordinate over ESP-NOW;
+development and configuration use USB serial, WiFi/TCP, or BLE through `domes-cli`.
 
-```
-    ┌─────────┐     ESP-NOW      ┌─────────┐
-    │  Pod 1  │◄────(< 2ms)─────►│  Pod 2  │
-    │  LED    │                  │  LED    │
-    │  Touch  │                  │  Touch  │
-    └────┬────┘                  └────┬────┘
-         │                            │
-         │ BLE                        │ BLE
-         ▼                            ▼
-    ┌─────────────────────────────────────┐
-    │          Phone / Controller         │
-    └─────────────────────────────────────┘
-```
+## Project Status
 
-## Features
+The current development platform is the NFF carrier board with an ESP32-S3 DevKit. Firmware,
+serial/TCP/BLE configuration, serial/BLE OTA, tracing, touch, IMU, the game state machine, and
+two-pod ESP-NOW drills are implemented. The haptic driver is configured for the target LRA, but
+haptic/audio hardware verification remains open. The integrated production PCB remains planned.
 
-| Feature | Status | Description |
-|---------|--------|-------------|
-| LED Effects | Done | 16x RGBW LED ring with patterns and animations |
-| Touch Sensing | Done | Capacitive touch pads for user input |
-| BLE Communication | Done | Bluetooth Low Energy for phone/host connectivity |
-| ESP-NOW Sync | Done | Sub-2ms latency pod-to-pod communication |
-| WiFi Transport | Done | TCP-based config and OTA over WiFi |
-| OTA Updates | Done | Over-the-air firmware updates via serial, WiFi, or BLE |
-| Game Engine | Done | Drill patterns, scoring, and ESP-NOW orchestration |
-| IMU (Tap Detection) | Done | LIS2DW12 accelerometer for tap/shake input |
-| Haptic Feedback | Planned | LRA motor for tactile response |
-| Audio Output | Planned | I2S speaker for audio cues |
+See [`firmware/MILESTONES.md`](firmware/MILESTONES.md) for delivery evidence and remaining work.
+That file owns status; architecture documents describe design and must not be used as completion
+claims.
+
+The repository does not currently contain a license file. Public visibility alone does not define
+reuse or contribution terms; license selection remains a project-owner decision.
 
 ## Quick Start
 
-### Prerequisites
+Prerequisites:
 
-- [ESP-IDF v5.2+](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/)
-- [Rust](https://rustup.rs/) (for the CLI tool)
-- Python 3.8+
+- ESP-IDF v5.x
+- CMake and a C++20 host compiler
+- Rust for the CLI
+- Python 3 with `pyserial` for serial helper scripts
+- `protobuf-compiler`, `pkg-config`, `libudev-dev`, and `libdbus-1-dev` for the CLI
 
-### Build & Flash Firmware
+Clone and initialize dependencies:
 
 ```bash
 git clone https://github.com/pcesar22/domes.git
 cd domes
-
-# Initialize submodules
 git submodule update --init --recursive
-
-# Set up ESP-IDF environment
-. ~/esp/esp-idf/export.sh
-
-# Build and flash
-cd firmware/domes
-idf.py set-target esp32s3
-idf.py build flash monitor
 ```
 
-### Install the CLI Tool
+Build firmware:
+
+```bash
+cd firmware/domes
+. ~/esp/esp-idf/export.sh
+idf.py build
+```
+
+Run host firmware tests:
+
+```bash
+cd firmware/test_app
+mkdir -p build
+cd build
+cmake ..
+cmake --build .
+ctest --output-on-failure
+```
+
+Build and test the CLI:
 
 ```bash
 cd tools/domes-cli
-cargo install --path .
-
-# Or run directly
-cargo build --release
-./target/release/domes-cli --help
+cargo build
+cargo test
 ```
 
-## CLI Usage
+The complete verification matrix, including hardware expectations, is in
+[`docs/TESTING.md`](docs/TESTING.md).
 
-The `domes-cli` tool communicates with pods over USB serial, WiFi, or BLE.
+## CLI Examples
 
 ```bash
-# List available features
+# Discover and inspect
+domes-cli --list-ports
+domes-cli --scan-ble
+domes-cli --port /dev/ttyACM0 system info
 domes-cli --port /dev/ttyACM0 feature list
 
-# Enable/disable features
-domes-cli --port /dev/ttyACM0 feature enable led-effects
-domes-cli --port /dev/ttyACM0 feature disable wifi
+# LED patterns
+domes-cli --port /dev/ttyACM0 led solid --color ff0000
+domes-cli --port /dev/ttyACM0 led breathing --color 0000ff --period 3000
+domes-cli --port /dev/ttyACM0 led cycle --period 2000
+domes-cli --port /dev/ttyACM0 led off
 
-# LED control
-domes-cli --port /dev/ttyACM0 led set --color "#FF0000"
-domes-cli --port /dev/ttyACM0 led pattern rainbow
-
-# WiFi transport
+# Other transports
 domes-cli --wifi 192.168.1.100:5000 feature list
+domes-cli --ble "DOMES-Pod-01" feature list
 
-# BLE transport (Linux only)
-domes-cli --scan-ble                           # Discover devices
-domes-cli --ble "DOMES-Pod-01" feature list    # Connect by name
-
-# OTA firmware update
-domes-cli --port /dev/ttyACM0 ota flash firmware.bin --version v1.0.0
+# OTA and tracing
+domes-cli --port /dev/ttyACM0 ota flash firmware/domes/build/domes.bin --version v1.0.0
+domes-cli --port /dev/ttyACM0 trace dump -o trace.json \
+  --names tools/trace/trace_names.json
 ```
 
-### Multi-Pod Operations
+Multi-device operations use repeated transport flags or the registry:
 
 ```bash
-# Scan and discover all connected pods
-domes-cli devices scan
-
-# Register devices
 domes-cli devices add pod1 serial /dev/ttyACM0
 domes-cli devices add pod2 serial /dev/ttyACM1
-
-# Commands across multiple devices
-domes-cli --all feature list
-domes-cli --target pod1 --target pod2 led solid --color ff0000
-
-# Set unique pod IDs (persisted to NVS)
-domes-cli --port /dev/ttyACM0 system set-pod-id 1
-domes-cli --port /dev/ttyACM1 system set-pod-id 2
-
-# BLE: auto-connect to all DOMES pods
-domes-cli --connect-all-ble feature list
-
-# OTA all devices
-domes-cli --all ota flash firmware.bin --version v1.0.0
+domes-cli --target pod1 --target pod2 feature list
+domes-cli --all led solid --color 00ff00
 ```
 
-## Hardware Platforms
+See [`tools/domes-cli/README.md`](tools/domes-cli/README.md) for the current command surface. The
+executable's `--help` output is authoritative for syntax.
 
-| Platform | Description | Use Case |
-|----------|-------------|----------|
-| [ESP32-S3-DevKitC-1](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/hw-reference/esp32s3/user-guide-devkitc-1.html) | Off-the-shelf dev board | Basic firmware development |
-| [NFF Development Board](hardware/nff-devboard/) | Custom board with LED ring, IMU, haptics | Full feature development |
-| Production PCB | Final form-factor (planned) | Enclosed pod units |
+## Architecture At A Glance
 
-## Project Structure
-
+```text
+Phone / host tools
+        |
+        | BLE, WiFi/TCP, or USB serial
+        v
+Config and trace framing + protobuf payloads
+        |
+        v
+Per-pod services and game state machine
+        |
+        +---- ESP-NOW ---- peer pods
+        |
+        v
+LED, touch, IMU, haptic, and audio drivers
 ```
-domes/
-├── firmware/
-│   ├── domes/                 # Main firmware application
-│   │   └── main/
-│   │       ├── drivers/       # LED, touch, audio drivers
-│   │       ├── services/      # WiFi, OTA, LED service
-│   │       ├── transport/     # USB-CDC, TCP, BLE transports
-│   │       ├── config/        # Feature manager, command handler
-│   │       └── trace/         # Performance tracing
-│   ├── common/                # Shared code
-│   │   └── proto/             # Protocol Buffer definitions
-│   └── test_app/              # Unit tests (Google Test)
-├── hardware/
-│   └── nff-devboard/          # Development board files
-├── tools/
-│   ├── domes-cli/             # Rust CLI tool
-│   └── trace/                 # Trace visualization tools
-├── docs/                      # Additional documentation
-└── research/                  # Architecture docs
+
+Current ownership boundaries:
+
+| Area | Source |
+| --- | --- |
+| Firmware application | [`firmware/domes/main/`](firmware/domes/main/) |
+| Shared framing and OTA codec | [`firmware/common/protocol/`](firmware/common/protocol/) |
+| Config and trace schemas | [`firmware/common/proto/`](firmware/common/proto/) |
+| Host CLI | [`tools/domes-cli/`](tools/domes-cli/) |
+| Flutter application | [`ios/domes_app/`](ios/domes_app/) |
+| Host simulations and tests | [`firmware/test_app/`](firmware/test_app/) |
+| Current hardware mapping | [`firmware/domes/main/config.hpp`](firmware/domes/main/config.hpp) |
+| Hardware design files | [`hardware/`](hardware/) |
+
+Config and trace payloads are protobuf-encoded. OTA transfer messages and the internal ESP-NOW peer
+protocol are bounded fixed-binary exceptions; mirrored definitions must remain wire-compatible until
+they are migrated.
+
+## Repository Layout
+
+```text
+firmware/
+  common/           Shared schemas, framing, OTA codec, and utilities
+  domes/            ESP-IDF application
+  test_app/         GoogleTest host suite and multi-pod simulation
+hardware/           Board design, BOM, and bring-up material
+ios/domes_app/      Flutter application prototype
+tools/domes-cli/    Rust device CLI
+tools/trace/        Multi-device trace utilities and name mapping
+docs/               Current documentation map, testing, and pin reference
+research/           System/software decisions and design references
 ```
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [Developer Quickstart](DEVELOPER_QUICKSTART.md) | Get productive in 30 minutes |
-| [Firmware Standards](firmware/CLAUDE.md) | Coding standards, architecture rules, memory rules |
-| [Milestones](firmware/MILESTONES.md) | Development phases and current status |
-| [Pin Reference](docs/PIN_REFERENCE.md) | Hardware pin mappings |
-| [Architecture Docs](research/architecture/) | Deep design docs (drivers, comms, game engine) |
-| [System Architecture](research/SYSTEM_ARCHITECTURE.md) | Hardware design decisions |
-| [Tools README](tools/README.md) | CLI and test script usage |
+Start with [`docs/README.md`](docs/README.md). It defines document ownership and the reading order.
 
-## Architecture
+| Document | Purpose |
+| --- | --- |
+| [`DEVELOPER_QUICKSTART.md`](DEVELOPER_QUICKSTART.md) | First local build and change workflow |
+| [`docs/TESTING.md`](docs/TESTING.md) | Verification matrix and CI/hardware expectations |
+| [`firmware/MILESTONES.md`](firmware/MILESTONES.md) | Implemented, verified, and pending work |
+| [`docs/PIN_REFERENCE.md`](docs/PIN_REFERENCE.md) | Compiled and planned GPIO mappings |
+| [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md) | Software boundaries and decisions |
+| [`research/SYSTEM_ARCHITECTURE.md`](research/SYSTEM_ARCHITECTURE.md) | Hardware and network system design |
+| [`research/architecture/README.md`](research/architecture/README.md) | Detailed design-document lifecycle |
 
-### Communication Protocol
-
-All host-to-device communication uses a framed binary protocol with Protocol Buffer payloads:
-
-```
-Frame: [0xAA][0x55][Length:2][Type:1][Payload:N][CRC32:4]
-```
-
-Protocol definitions are in `firmware/common/proto/config.proto`.
-
-### Transport Layer
-
-| Transport | Port/Interface | Use Case |
-|-----------|----------------|----------|
-| USB-CDC | /dev/ttyACM0 | Development, wired OTA |
-| TCP | Port 5000 | WiFi-based config/OTA |
-| BLE GATT | Custom service | Phone connectivity, wireless OTA |
-
-## Performance Tracing
-
-The firmware includes a lightweight tracing framework for profiling:
-
-```bash
-# Dump traces from device
-python tools/trace/trace_dump.py -p /dev/ttyACM0 -o trace.json
-
-# Visualize at https://ui.perfetto.dev
-```
-
-## Development
-
-### Run Unit Tests
-
-```bash
-cd firmware/test_app
-mkdir -p build && cd build
-cmake .. && make -j$(nproc)
-ctest --output-on-failure
-```
-
-### Code Style
-
-- C++20 for firmware (ESP-IDF v5.x)
-- Rust for CLI tool
-- Pre-commit hooks for formatting (`.pre-commit-config.yaml`)
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Run tests and ensure firmware builds
-4. Submit a pull request
-
-See [Developer Quickstart](DEVELOPER_QUICKSTART.md) for detailed guidelines.
-
-## License
-
-[MIT License](LICENSE) (pending)
-
----
-
-Built with [ESP-IDF](https://github.com/espressif/esp-idf) and [Claude Code](https://claude.com/claude-code)
+AI-specific operating instructions live in `AGENTS.md` and the scoped `AGENTS.md` files. They defer
+project facts to the same sources listed above.

@@ -11,6 +11,10 @@ on:
     paths:
       - 'firmware/**'
       - 'tools/domes-cli/**'
+      - 'tools/firmware/**'
+      - 'tools/trace/**'
+      - 'tools/generate_protocols.sh'
+      - '.github/workflows/firmware-hw-test.yml'
 
   # Keep manual trigger as backup
   workflow_dispatch:
@@ -19,15 +23,6 @@ on:
         description: 'Comma-separated serial ports (e.g., /dev/ttyACM0,/dev/ttyACM1)'
         required: false
         default: '/dev/ttyACM0'
-      device_count:
-        description: 'Number of devices to test (1 or 2)'
-        required: false
-        default: '1'
-        type: choice
-        options:
-          - '1'
-          - '2'
-
 # Only one hardware test can run at a time on the self-hosted runner.
 # New runs cancel queued/stale runs to prevent infinite queue buildup.
 concurrency:
@@ -37,7 +32,6 @@ concurrency:
 env:
   # Comma-separated list of serial ports
   SERIAL_PORTS: ${{ github.event.inputs.ports || '/dev/ttyACM0' }}
-  DEVICE_COUNT: ${{ github.event.inputs.device_count || '1' }}
 
 jobs:
   hardware-test:
@@ -112,6 +106,7 @@ jobs:
           fi
 
       - name: Build firmware
+        id: firmware_build
         working-directory: firmware/domes
         run: |
           . ~/esp/esp-idf/export.sh
@@ -120,12 +115,14 @@ jobs:
           echo "Binary size: $(stat -c%s build/domes.bin) bytes"
 
       - name: Build domes-cli
+        id: cli_build
         working-directory: tools/domes-cli
         run: |
           cargo build --release
           echo "CLI built successfully"
 
       - name: Flash all devices
+        id: flash
         working-directory: firmware/domes
         run: |
           . ~/esp/esp-idf/export.sh
@@ -152,6 +149,7 @@ jobs:
           fi
 
       - name: Test - Feature List (all devices)
+        id: feature_list
         run: |
           IFS=',' read -ra PORTS <<< "${{ steps.detect.outputs.ports }}"
           CLI=tools/domes-cli/target/release/domes-cli
@@ -176,7 +174,7 @@ jobs:
           echo "Feature list test passed on all devices"
 
       - name: Test - Serial OTA (primary device)
-        continue-on-error: true
+        id: serial_ota
         run: |
           PRIMARY="${{ steps.detect.outputs.primary }}"
           echo "Testing Serial OTA on $PRIMARY..."
@@ -190,7 +188,7 @@ jobs:
           sleep 15
 
       - name: Test - Post-OTA Verification (primary device)
-        continue-on-error: true
+        id: post_ota
         run: |
           PRIMARY="${{ steps.detect.outputs.primary }}"
           echo "Verifying $PRIMARY responds after OTA..."
@@ -198,6 +196,7 @@ jobs:
           echo "Post-OTA verification passed"
 
       - name: Test - Multi-Device Feature List
+        id: multi_feature_list
         if: steps.detect.outputs.multi == 'true'
         run: |
           echo "Testing multi-device feature list..."
@@ -214,7 +213,6 @@ jobs:
       - name: Test - ESP-NOW Communication
         id: espnow
         if: steps.detect.outputs.multi == 'true'
-        continue-on-error: true
         run: |
           echo "Testing ESP-NOW between devices..."
           CLI=tools/domes-cli/target/release/domes-cli
@@ -223,8 +221,8 @@ jobs:
 
           # Enable ESP-NOW on both devices
           echo "=== Enabling ESP-NOW on both devices ==="
-          $CLI --port "$PRIMARY" feature enable esp-now || { echo "::warning::ESP-NOW not available on primary"; exit 0; }
-          $CLI --port "$SECONDARY" feature enable esp-now || { echo "::warning::ESP-NOW not available on secondary"; exit 0; }
+          $CLI --port "$PRIMARY" feature enable esp-now
+          $CLI --port "$SECONDARY" feature enable esp-now
 
           # Wait for peer discovery
           echo "Waiting 10s for ESP-NOW peer discovery..."
@@ -232,24 +230,25 @@ jobs:
 
           # Check ESP-NOW status on both devices
           echo "=== ESP-NOW status: primary ==="
-          $CLI --port "$PRIMARY" espnow status || true
+          $CLI --port "$PRIMARY" espnow status
           echo ""
           echo "=== ESP-NOW status: secondary ==="
-          $CLI --port "$SECONDARY" espnow status || true
+          $CLI --port "$SECONDARY" espnow status
           echo ""
 
           # Run latency benchmark (short: 20 rounds for CI)
           echo "=== ESP-NOW latency benchmark (20 rounds) ==="
-          BENCH_OUTPUT=$($CLI --port "$PRIMARY" espnow bench --rounds 20 2>&1) || true
+          BENCH_OUTPUT=$($CLI --port "$PRIMARY" espnow bench --rounds 20 2>&1)
           echo "$BENCH_OUTPUT"
 
           # Parse benchmark result for summary
-          if echo "$BENCH_OUTPUT" | grep -q "avg"; then
+          if echo "$BENCH_OUTPUT" | grep -q "Mean RTT:"; then
             echo "espnow_bench_passed=true" >> $GITHUB_OUTPUT
             echo "$BENCH_OUTPUT" > /tmp/espnow-bench.txt
           else
             echo "espnow_bench_passed=false" >> $GITHUB_OUTPUT
-            echo "Benchmark did not produce results (ESP-NOW may not have peers)"
+            echo "::error::Benchmark did not produce results"
+            exit 1
           fi
 
           echo "ESP-NOW test complete"
@@ -266,14 +265,14 @@ jobs:
           done
 
       - name: Test - System Health (all devices)
-        continue-on-error: true
+        id: system_health
         run: |
           IFS=',' read -ra PORTS <<< "${{ steps.detect.outputs.ports }}"
           CLI=tools/domes-cli/target/release/domes-cli
 
           for port in "${PORTS[@]}"; do
             echo "=== System health: $port ==="
-            $CLI --port "$port" system health || true
+            $CLI --port "$port" system health
             echo ""
           done
 
@@ -338,6 +337,8 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          SUMMARY_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           echo "## Hardware Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -346,24 +347,27 @@ jobs:
           echo "| Devices | ${{ steps.detect.outputs.count }} (${{ steps.detect.outputs.ports }}) |" >> $GITHUB_STEP_SUMMARY
           echo "| Multi-device | ${{ steps.detect.outputs.multi }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Branch | ${{ github.head_ref || github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | $SUMMARY_BRANCH |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Firmware build" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] CLI build" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Flash all devices" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Feature list (all devices)" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Serial OTA (primary)" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Post-OTA verification" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.detect.outputs.multi }}" = "true" ]; then
-            echo "- [x] Multi-device feature list" >> $GITHUB_STEP_SUMMARY
-            if [ "${{ steps.espnow.outcome }}" = "success" ]; then
-              echo "- [x] ESP-NOW communication" >> $GITHUB_STEP_SUMMARY
+          report() {
+            if [ "$2" = "success" ]; then
+              echo "- [x] $1" >> $GITHUB_STEP_SUMMARY
             else
-              echo "- [ ] ESP-NOW communication (skipped or failed)" >> $GITHUB_STEP_SUMMARY
+              echo "- [ ] $1 ($2)" >> $GITHUB_STEP_SUMMARY
             fi
+          }
+          report "Firmware build" "${{ steps.firmware_build.outcome }}"
+          report "CLI build" "${{ steps.cli_build.outcome }}"
+          report "Flash all devices" "${{ steps.flash.outcome }}"
+          report "Feature list (all devices)" "${{ steps.feature_list.outcome }}"
+          report "Serial OTA (primary)" "${{ steps.serial_ota.outcome }}"
+          report "Post-OTA verification" "${{ steps.post_ota.outcome }}"
+          if [ "${{ steps.detect.outputs.multi }}" = "true" ]; then
+            report "Multi-device feature list" "${{ steps.multi_feature_list.outcome }}"
+            report "ESP-NOW communication" "${{ steps.espnow.outcome }}"
           fi
-          echo "- [x] System health check" >> $GITHUB_STEP_SUMMARY
+          report "System health check" "${{ steps.system_health.outcome }}"
           if [ "${{ steps.traces.outputs.has_traces }}" = "true" ]; then
             echo "- [x] Trace collection (artifacts uploaded)" >> $GITHUB_STEP_SUMMARY
           else
@@ -371,10 +375,11 @@ jobs:
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Trace Artifacts" >> $GITHUB_STEP_SUMMARY
-          if ls trace-artifacts/*.json 1>/dev/null 2>&1; then
-            for f in trace-artifacts/*.json; do
+          TRACE_DIR="${{ steps.traces.outputs.trace_dir }}"
+          if [ -n "$TRACE_DIR" ] && compgen -G "$TRACE_DIR/*.json" > /dev/null; then
+            for f in "$TRACE_DIR"/*.json; do
               SIZE=$(stat -c%s "$f" 2>/dev/null || echo "0")
-              echo "- \`$(basename $f)\` (${SIZE} bytes)" >> $GITHUB_STEP_SUMMARY
+              echo "- \`$(basename "$f")\` (${SIZE} bytes)" >> $GITHUB_STEP_SUMMARY
             done
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Download trace files from the **Artifacts** section and open at [ui.perfetto.dev](https://ui.perfetto.dev)" >> $GITHUB_STEP_SUMMARY

@@ -15,7 +15,6 @@ Open the output at https://ui.perfetto.dev
 import argparse
 import json
 import sys
-from pathlib import Path
 
 # Category ID -> human name (must match firmware traceEvent.hpp)
 CATEGORIES = {
@@ -70,13 +69,22 @@ def resolve_name(raw_name, names_map):
     return raw_name
 
 
+def event_timestamp(event):
+    """Return a numeric event timestamp, or None for metadata and untimed events."""
+    timestamp = event.get("ts")
+    if isinstance(timestamp, (int, float)) and not isinstance(timestamp, bool):
+        return timestamp
+    return None
+
+
 def find_beacon_timestamps(events, names_map):
     """Find SendBeacon begin timestamps for alignment."""
     beacons = []
     for e in events:
         name = resolve_name(e.get("name", ""), names_map)
-        if name == "EspNow.SendBeacon" and e.get("ph") == "B":
-            beacons.append(e["ts"])
+        timestamp = event_timestamp(e)
+        if name == "EspNow.SendBeacon" and e.get("ph") == "B" and timestamp is not None:
+            beacons.append(timestamp)
     return beacons
 
 
@@ -114,11 +122,12 @@ def merge_traces(pod_files, pod_names, names_map, align_mode="zero"):
     if align_mode == "zero":
         # Align all traces to start at t=0
         for events in pod_data:
-            if events:
-                min_ts = min(e["ts"] for e in events)
-                offsets.append(-min_ts)
-            else:
-                offsets.append(0)
+            timestamps = [
+                timestamp
+                for event in events
+                if (timestamp := event_timestamp(event)) is not None
+            ]
+            offsets.append(-min(timestamps) if timestamps else 0)
 
     elif align_mode == "raw":
         offsets = [0] * len(pod_data)
@@ -149,6 +158,16 @@ def merge_traces(pod_files, pod_names, names_map, align_mode="zero"):
             event = dict(e)
             # Assign pid from pod index
             event["pid"] = pod_idx
+
+            timestamp = event_timestamp(event)
+            if event.get("ph") == "M" or timestamp is None:
+                # Preserve metadata and untimed records. Metadata thread IDs and
+                # arguments carry Perfetto semantics and must not be recategorized.
+                if timestamp is not None:
+                    event["ts"] = timestamp + offset
+                merged.append(event)
+                continue
+
             # Resolve category to tid
             cat = event.get("cat", "unknown")
             if cat == "unknown":
@@ -161,11 +180,15 @@ def merge_traces(pod_files, pod_names, names_map, align_mode="zero"):
             # Resolve span name
             event["name"] = resolve_name(event.get("name", ""), names_map)
             # Apply time offset
-            event["ts"] = event["ts"] + offset
+            event["ts"] = timestamp + offset
             merged.append(event)
 
     # Sort by timestamp for nice viewing
-    merged.sort(key=lambda e: (e.get("ts", 0), e.get("pid", 0)))
+    merged.sort(key=lambda e: (
+        event_timestamp(e) is not None,
+        event_timestamp(e) or 0,
+        e.get("pid", 0),
+    ))
     return merged
 
 

@@ -1,5 +1,9 @@
 # 09 - Reference
 
+> **Document status: Superseded reference.** Do not use the pin, NVS, partition, UUID, or error-code
+> tables below as live values. Follow the authority map in
+> [`../SOFTWARE_ARCHITECTURE.md`](../SOFTWARE_ARCHITECTURE.md) to the owning source files.
+
 ## AI Agent Instructions
 
 Load this file when:

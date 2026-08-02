@@ -1,0 +1,60 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [main, develop, 'feature/**']
+    paths:
+      - 'ios/domes_app/**'
+      - 'firmware/common/proto/**'
+      - 'tools/generate_protocols.sh'
+      - '.github/workflows/flutter-ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'ios/domes_app/**'
+      - 'firmware/common/proto/**'
+      - 'tools/generate_protocols.sh'
+      - '.github/workflows/flutter-ci.yml'
+
+concurrency:
+  group: flutter-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    name: Analyze And Test Flutter App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: ios/domes_app
+        run: flutter pub get
+
+      - name: Check generated Dart bindings
+        run: |
+          dart pub global activate protoc_plugin 25.0.0
+          tools/generate_protocols.sh --check dart
+
+      - name: Analyze
+        working-directory: ios/domes_app
+        run: flutter analyze
+
+      - name: Run tests
+        working-directory: ios/domes_app
+        run: flutter test

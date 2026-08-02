@@ -55,6 +55,7 @@ add_executable(test_app
     main/test_feature_manager.cpp
     main/test_mode_manager.cpp
     main/test_game_engine.cpp
+    main/test_trace_stream_writer.cpp
     main/test_multi_pod_sim.cpp
     main/test_sim_drill.cpp
     ${CONFIG_SOURCES}

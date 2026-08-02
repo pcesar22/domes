@@ -1,5 +1,10 @@
 # 08 - OTA Updates
 
+> **Document status: Design proposal, partially implemented.** OTA is implemented, but the 16 MB
+> layout, phone-relay flow, and several examples below are not current behavior. Use
+> `firmware/domes/partitions.csv`, OTA firmware/CLI source, and
+> [`../../docs/TESTING.md`](../../docs/TESTING.md).
+
 ## AI Agent Instructions
 
 Load this file when:

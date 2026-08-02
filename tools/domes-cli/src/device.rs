@@ -149,8 +149,8 @@ pub fn resolve_devices(
                 "Connecting to {} ({} @ {})...",
                 name, entry.transport_type, entry.address
             );
-            let transport = connect_device(entry)
-                .with_context(|| format!("Failed to connect to {}", name))?;
+            let transport =
+                connect_device(entry).with_context(|| format!("Failed to connect to {}", name))?;
             connections.push(DeviceConnection {
                 name: name.clone(),
                 transport,

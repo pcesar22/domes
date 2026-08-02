@@ -18,10 +18,12 @@ src/
 
 ## Protocol Rules
 
-All protocol definitions come from `firmware/common/proto/*.proto`. The CLI uses prost-generated
-types from `build.rs`.
+Config and trace protocol definitions come from `firmware/common/proto/*.proto`. The CLI uses
+prost-generated types from `build.rs`.
 
-Never hand-roll protocol enums or message structs.
+Never hand-roll a new host protocol enum or message struct. The existing OTA transfer structs are a
+bounded fixed-binary exception mirrored from `firmware/common/protocol/otaProtocol.hpp`; keep them
+wire-compatible until migrated.
 
 Frame format:
 
@@ -39,7 +41,7 @@ Message ranges:
 
 ## Adding Commands
 
-1. Add or update protobuf messages first.
+1. Add or update protobuf messages first unless modifying the existing OTA exception.
 2. Run `cargo build` to regenerate prost types.
 3. Add the command implementation in `src/commands/`.
 4. Add the subcommand in `src/main.rs`.
@@ -83,5 +85,7 @@ cargo run -- devices list
 
 ## Verification Expectations
 
-For CLI-only changes, run `cargo test`. For protocol or transport changes, also verify against
-firmware or simulator when available. For BLE behavior, do not treat WSL2 results as valid.
+For CLI-only changes, run `cargo fmt --check`, `cargo clippy --all-targets --all-features`, and
+`cargo test`. For protocol or transport changes, also verify against firmware or a simulator when
+available. For BLE behavior, do not treat WSL2 results as valid. The repository-wide matrix lives in
+`docs/TESTING.md`.

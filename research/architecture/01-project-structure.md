@@ -1,5 +1,10 @@
 # 01 - Project Structure
 
+> **Document status: Historical scaffold.** The proposed tree and snake_case filenames were not
+> adopted. Current layout and naming rules live in
+> [`../../firmware/README.md`](../../firmware/README.md) and
+> [`../../firmware/AGENTS.md`](../../firmware/AGENTS.md).
+
 ## AI Agent Instructions
 
 Load this file when:

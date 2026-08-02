@@ -1,5 +1,10 @@
 # 03 - Driver Development
 
+> **Document status: Design proposal, partially implemented.** Interface and dependency-injection
+> concepts remain useful, but examples and paths are not normative. Verify against
+> `firmware/domes/main/interfaces/`, `firmware/domes/main/drivers/`, and
+> [`../../firmware/AGENTS.md`](../../firmware/AGENTS.md).
+
 ## AI Agent Instructions
 
 Load this file when:

@@ -1,126 +1,121 @@
 # NFF Development Board Bring-Up Checklist
 
-Use this checklist when you receive boards from the fab house. Complete each step in order.
+Run this checklist for each newly assembled carrier. Record the board identifier, firmware commit,
+date, and tester so a checkmark is meaningful.
 
-## Before Powering On
+**Board ID:** __________  **Firmware commit:** __________  **Date/tester:** __________
 
-- [ ] **Visual inspection**
-  - No solder bridges visible
-  - All components placed correctly (check orientation of U1, U3, U4, U6)
-  - No missing components
-  - No burnt or damaged components
+## 1. Before Power
 
-- [ ] **Check for shorts** (multimeter continuity mode)
-  - [ ] 3.3V to GND: Should be open (no continuity)
-  - [ ] 5V to GND: Should be open
-  - [ ] VBAT pads to GND: Should be open
+- [ ] Inspect orientation, missing parts, solder bridges, and damaged components.
+- [ ] Confirm the DevKit header orientation before insertion.
+- [ ] Check 3.3 V to ground and 5 V to ground for shorts.
+- [ ] Confirm the speaker and haptic actuator match the design; U5 should be `LD0832AA-0099F`.
 
-## Power-On Test
+## 2. Power Rails
 
-- [ ] **Insert ESP32-S3-DevKitC-1 module** into headers (check orientation!)
-- [ ] **Connect USB** to DevKit (not the NFF board USB if present)
-- [ ] **Check power rails** (multimeter DC voltage)
-  - [ ] 3.3V rail: 3.25V - 3.35V
-  - [ ] 5V rail (if present): 4.9V - 5.1V
+- [ ] Insert the ESP32-S3 DevKit and power it from the DevKit USB connector.
+- [ ] Measure the 3.3 V rail within the board tolerance.
+- [ ] Measure the 5 V LED/audio rail when populated.
+- [ ] Stop immediately for unexpected heating or excessive current.
 
-## LED Ring Test
+## 3. Build, Flash, And Identify
 
-- [ ] **Flash LED test firmware**
-  ```bash
-  cd firmware/domes
-  idf.py build flash monitor
-  ```
-- [ ] **Verify LED behavior**
-  - [ ] All 16 LEDs light up
-  - [ ] Colors cycle correctly (R → G → B → W)
-  - [ ] No flickering or dead LEDs
-  - [ ] Brightness is uniform
+```bash
+cd /path/to/domes
+. ~/esp/esp-idf/export.sh
+cargo build --manifest-path tools/domes-cli/Cargo.toml
+tools/firmware/flash_and_verify.sh \
+  firmware/domes /dev/ttyACM0 "DOMES"
+```
 
-**Troubleshooting:**
-- No LEDs: Check level shifter (U1) is powered and LED data line (GPIO48)
-- Some LEDs dead: Check solder joints on affected LED and previous LED in chain
-- Flickering: Check 100nF decoupling caps near LEDs
+The helper builds and flashes the firmware, captures the boot log, and checks for the expected
+marker. Continue from the repository root:
 
-## I2C Bus Test
+```bash
+tools/domes-cli/target/debug/domes-cli --port /dev/ttyACM0 system info
+tools/domes-cli/target/debug/domes-cli --port /dev/ttyACM0 system self-test
+tools/domes-cli/target/debug/domes-cli --port /dev/ttyACM0 feature list
+```
 
-- [ ] **Scan I2C bus** (add this to firmware or use logic analyzer)
-  ```
-  Expected devices:
-  - 0x18 or 0x19: LIS2DW12 accelerometer
-  - 0x5A: DRV2605L haptic driver
-  ```
+- [ ] Boot log reports NFF LED mapping: GPIO16, 16 devices, RGBW disabled.
+- [ ] System info and feature list return over serial.
+- [ ] On-device self-test returns without transport or storage failure.
 
-- [ ] **Accelerometer (LIS2DW12)**
-  - [ ] WHO_AM_I register returns 0x44
-  - [ ] Acceleration readings change when board is tilted
-  - [ ] Tap detection triggers interrupt on GPIO3
+## 4. LED Ring
 
-- [ ] **Haptic Driver (DRV2605L)**
-  - [ ] Device ACKs on I2C
-  - [ ] Can read status register
-  - [ ] (If LRA motor connected) Effect plays when triggered
+```bash
+CLI=tools/domes-cli/target/debug/domes-cli
+$CLI --port /dev/ttyACM0 led solid --color ff0000
+$CLI --port /dev/ttyACM0 led solid --color 00ff00
+$CLI --port /dev/ttyACM0 led solid --color 0000ff
+$CLI --port /dev/ttyACM0 led solid --color ffffff
+$CLI --port /dev/ttyACM0 led cycle --period 1000
+$CLI --port /dev/ttyACM0 led off
+```
 
-**Troubleshooting:**
-- No devices found: Check I2C pull-ups (R2, R3 = 4.7kΩ)
-- Wrong address: LIS2DW12 SA0 pin determines address (0x18 or 0x19)
+- [ ] All 16 devices respond in order.
+- [ ] Red, green, blue, and mixed white are correct in RGB mode.
+- [ ] Brightness is uniform with no flicker or dead device.
 
-## Audio Test
+If the ring is dark, inspect the GPIO16 `LED_DATA_3V3` path, level shifter, 5 V supply, and first LED.
 
-- [ ] **Connect speaker** to SPK1 pads (check polarity)
-- [ ] **Flash audio test firmware** (if available) or use I2S test
-- [ ] **Verify audio output**
-  - [ ] Sound is audible from speaker
-  - [ ] No distortion at moderate volume
-  - [ ] Audio SD pin (GPIO13) controls shutdown
+## 5. I2C, IMU, And Haptic
 
-**Troubleshooting:**
-- No sound: Check Audio SD pin is HIGH (not shutdown)
-- Distorted: Check speaker impedance (should be 8Ω)
-- Quiet: Verify I2S clock configuration
+Current expected addresses are LIS2DW12 `0x19` and DRV2605L `0x5A` on GPIO8/GPIO9.
 
-## GPIO Breakout Test
+- [ ] Both devices acknowledge.
+- [ ] Accelerometer readings change with orientation.
+- [ ] Tap detection asserts through IMU INT1 on GPIO5.
+- [ ] The haptic driver identifies successfully.
+- [ ] Fixed 235 Hz LRA drive and at least one effect are physically verified.
 
-- [ ] **Test GPIO breakout pads** (optional)
-  - [ ] GPIO6: Can toggle as output
-  - [ ] GPIO4: Can toggle as output
-  - [ ] GPIO2: Can read as input
-  - [ ] GPIO1: Can read as input
-  - [ ] GND pads have continuity to ground
+The NFF firmware profile is bounded for the schematic's 1.8 Vrms, 235 Hz LD0832AA-0099F. Do not run
+haptic effects if a different actuator is populated until its profile is reviewed. The current driver
+uses fixed-frequency open-loop operation and does not expose auto-calibration. An I2C ACK alone is
+not a haptic pass.
 
-## Full System Test
+## 6. Touch
 
-- [ ] **Run all peripherals simultaneously**
-  - [ ] LED animation running
-  - [ ] IMU reading acceleration
-  - [ ] Audio playing (if test sound available)
-  - [ ] No crashes or watchdog resets for 10 minutes
+Touch pads K1-K4 map to GPIO1, GPIO2, GPIO4, and GPIO6.
 
-- [ ] **Test config protocol**
-  ```bash
-  python3 tools/test_config.py /dev/ttyACM0
-  ```
-  - [ ] LIST_FEATURES returns all features
-  - [ ] SET_FEATURE toggles LED effects
+- [ ] Each untouched baseline is stable.
+- [ ] Each physical pad triggers only its expected logical pad.
+- [ ] Repeated touches do not cause stuck or cross-triggered input.
 
-- [ ] **Test WiFi (if configured)**
-  ```bash
-  # From Windows (WSL2 limitation)
-  /mnt/c/Python313/python.exe tools/test_config_wifi.py <DEVICE_IP>:5000
-  ```
+Use `domes-cli touch simulate --pad N` only to verify downstream logic; it does not validate the
+physical pad or touch peripheral.
 
-## Sign-Off
+## 7. Audio
 
-| Test | Result | Date | Tester |
-|------|--------|------|--------|
-| Visual Inspection | ☐ Pass / ☐ Fail | | |
-| Power Rails | ☐ Pass / ☐ Fail | | |
-| LED Ring | ☐ Pass / ☐ Fail | | |
-| I2C Bus | ☐ Pass / ☐ Fail | | |
-| Accelerometer | ☐ Pass / ☐ Fail | | |
-| Haptic Driver | ☐ Pass / ☐ Fail | | |
-| Audio | ☐ Pass / ☐ Fail | | |
-| Full System | ☐ Pass / ☐ Fail | | |
+Current mapping is BCLK GPIO12, LRCLK GPIO11, data GPIO13, and shutdown GPIO7.
 
-**Board Serial Number:** _______________
+- [ ] Amplifier shutdown control works.
+- [ ] The built-in sample is audible.
+- [ ] Output is free of obvious clipping at moderate level.
+- [ ] Speaker and amplifier remain within a safe temperature.
 
-**Notes:**
+## 8. Connectivity And Stability
+
+- [ ] BLE advertisement is discoverable and `domes-cli --ble ... system info` succeeds.
+- [ ] WiFi/TCP feature listing succeeds when credentials are configured.
+- [ ] With a second pod, ESP-NOW discovers one peer and exchanges packets.
+- [ ] All enabled peripherals run together for at least 10 minutes without reset or watchdog event.
+
+## Results
+
+| Area | Pass/Fail | Evidence or notes |
+| --- | --- | --- |
+| Power | | |
+| Serial/system | | |
+| LED ring | | |
+| I2C/IMU | | |
+| Haptic | | |
+| Touch | | |
+| Audio | | |
+| BLE/WiFi | | |
+| ESP-NOW | | |
+| Stability | | |
+
+Update [`../../firmware/MILESTONES.md`](../../firmware/MILESTONES.md) only when recorded evidence
+changes the project-wide verification status.

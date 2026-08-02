@@ -5,19 +5,16 @@
 
 #include "traceStreamServer.hpp"
 
-#include "protocol/frameCodec.hpp"
-#include "traceProtocol.hpp"
-#include "traceRecorder.hpp"
-
-#include "pb_encode.h"
-#include "trace.pb.h"
-
 #include "esp_log.h"
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
 #include "lwip/sockets.h"
+#include "pb_encode.h"
+#include "protocol/frameCodec.hpp"
+#include "trace.pb.h"
+#include "traceProtocol.hpp"
+#include "traceRecorder.hpp"
+#include "traceStreamWriter.hpp"
 
 #include <array>
 #include <cstring>
@@ -172,10 +169,17 @@ void TraceStreamServer::handleClient(int clientSock) {
             continue;
         }
 
-        // Send over TCP
-        ssize_t sent = send(clientSock, frameBuf.data(), frameLen, 0);
-        if (sent < 0) {
-            ESP_LOGW(kTag, "Send failed (client disconnected?)");
+        // TCP may accept only part of a frame in one send call.
+        auto sendResult = detail::sendAll(frameBuf.data(), frameLen,
+                                          [clientSock](const uint8_t* data, size_t len) {
+                                              ssize_t sent;
+                                              do {
+                                                  sent = send(clientSock, data, len, 0);
+                                              } while (sent < 0 && errno == EINTR);
+                                              return sent;
+                                          });
+        if (sendResult != detail::SendAllResult::kOk) {
+            ESP_LOGW(kTag, "Send failed or client disconnected");
             break;
         }
     }

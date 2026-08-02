@@ -102,6 +102,9 @@ public:
             .dma_desc_num = kDmaBufferCount,
             .dma_frame_num = kDmaBufferFrames,
             .auto_clear = true,  // Clear DMA buffer on underrun
+            .auto_clear_before_cb = false,
+            .allow_pd = false,
+            .intr_priority = 0,
         };
 
         err = i2s_new_channel(&chanConfig, &txHandle_, nullptr);
@@ -112,27 +115,29 @@ public:
 
         // Configure I2S standard mode (Philips I2S format)
         i2s_std_config_t stdConfig = {
-            .clk_cfg = {
-                .sample_rate_hz = kSampleRate,
-                .clk_src = I2S_CLK_SRC_DEFAULT,
-                .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-            },
-            .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(
-                I2S_DATA_BIT_WIDTH_16BIT,
-                I2S_SLOT_MODE_MONO
-            ),
-            .gpio_cfg = {
-                .mclk = I2S_GPIO_UNUSED,
-                .bclk = bclkPin_,
-                .ws = lrclkPin_,
-                .dout = doutPin_,
-                .din = I2S_GPIO_UNUSED,
-                .invert_flags = {
-                    .mclk_inv = false,
-                    .bclk_inv = false,
-                    .ws_inv = false,
+            .clk_cfg =
+                {
+                    .sample_rate_hz = kSampleRate,
+                    .clk_src = I2S_CLK_SRC_DEFAULT,
+                    .ext_clk_freq_hz = 0,
+                    .mclk_multiple = I2S_MCLK_MULTIPLE_256,
                 },
-            },
+            .slot_cfg =
+                I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+            .gpio_cfg =
+                {
+                    .mclk = I2S_GPIO_UNUSED,
+                    .bclk = bclkPin_,
+                    .ws = lrclkPin_,
+                    .dout = doutPin_,
+                    .din = I2S_GPIO_UNUSED,
+                    .invert_flags =
+                        {
+                            .mclk_inv = false,
+                            .bclk_inv = false,
+                            .ws_inv = false,
+                        },
+                },
         };
 
         err = i2s_channel_init_std_mode(txHandle_, &stdConfig);

@@ -11,11 +11,10 @@ use crate::proto::config::{
     EspNowBenchResponse, Feature, GetEspNowStatusResponse, GetHealthResponse,
     GetLedPatternResponse, GetMemoryProfileResponse, GetModeResponse, GetSystemInfoResponse,
     LedPattern, LedPatternType, ListFeaturesResponse, SelfTestResponse, SetAutoUpdateRequest,
-    SetAutoUpdateResponse, SetFeatureRequest, SetFeatureResponse,
-    SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest, SetLedPatternResponse,
-    SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse,
-    SetSimModeRequest, SetSimModeResponse, SimulateTouchRequest, SimulateTouchResponse,
-    Status, SystemMode,
+    SetAutoUpdateResponse, SetFeatureRequest, SetFeatureResponse, SetImuTriageRequest,
+    SetImuTriageResponse, SetLedPatternRequest, SetLedPatternResponse, SetModeRequest,
+    SetModeResponse, SetPodIdRequest, SetPodIdResponse, SetSimModeRequest, SetSimModeResponse,
+    SimulateTouchRequest, SimulateTouchResponse, Status, SystemMode,
 };
 use prost::Message;
 use thiserror::Error;
@@ -119,8 +118,8 @@ pub fn parse_list_features_response(payload: &[u8]) -> Result<Vec<CliFeatureStat
 
     let mut features = Vec::with_capacity(resp.features.len());
     for fs in resp.features {
-        let feature = Feature::try_from(fs.feature)
-            .map_err(|_| ProtocolError::UnknownFeature(fs.feature))?;
+        let feature =
+            Feature::try_from(fs.feature).map_err(|_| ProtocolError::UnknownFeature(fs.feature))?;
         features.push(CliFeatureState {
             feature,
             enabled: fs.enabled,
@@ -291,17 +290,12 @@ pub fn parse_led_pattern_response(payload: &[u8]) -> Result<CliLedPattern, Proto
         actual: payload.len(),
     })?;
 
-    let pattern_type = LedPatternType::try_from(pattern.r#type)
-        .unwrap_or(LedPatternType::LedPatternOff);
+    let pattern_type =
+        LedPatternType::try_from(pattern.r#type).unwrap_or(LedPatternType::LedPatternOff);
 
-    let color = pattern.color.map(|c| {
-        (
-            c.r as u8,
-            c.g as u8,
-            c.b as u8,
-            c.w as u8,
-        )
-    });
+    let color = pattern
+        .color
+        .map(|c| (c.r as u8, c.g as u8, c.b as u8, c.w as u8));
 
     let colors: Vec<_> = pattern
         .colors
@@ -370,9 +364,7 @@ pub struct CliSystemInfo {
 
 /// Serialize SetModeRequest using protobuf encoding
 pub fn serialize_set_mode(mode: SystemMode) -> Vec<u8> {
-    let req = SetModeRequest {
-        mode: mode as i32,
-    };
+    let req = SetModeRequest { mode: mode as i32 };
     req.encode_to_vec()
 }
 
@@ -573,9 +565,7 @@ pub fn parse_get_health_response(payload: &[u8]) -> Result<CliHealthInfo, Protoc
 
 /// Parse GetEspNowStatusResponse payload
 /// Format: [status_byte][protobuf_GetEspNowStatusResponse]
-pub fn parse_get_espnow_status_response(
-    payload: &[u8],
-) -> Result<CliEspNowStatus, ProtocolError> {
+pub fn parse_get_espnow_status_response(payload: &[u8]) -> Result<CliEspNowStatus, ProtocolError> {
     if payload.is_empty() {
         return Err(ProtocolError::PayloadTooShort {
             expected: 1,

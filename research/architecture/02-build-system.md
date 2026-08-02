@@ -1,5 +1,9 @@
 # 02 - Build System
 
+> **Document status: Historical scaffold.** The platform Kconfig, source lists, Linux target, and
+> size limits below do not describe the current build. Use the checked-in CMake, Kconfig,
+> `sdkconfig.defaults`, `partitions.csv`, and [`../../docs/TESTING.md`](../../docs/TESTING.md).
+
 ## AI Agent Instructions
 
 Load this file when:

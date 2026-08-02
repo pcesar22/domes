@@ -252,7 +252,7 @@ mod tests {
         assert_eq!(frame[2], 1); // Length low byte (just type)
         assert_eq!(frame[3], 0); // Length high byte
         assert_eq!(frame[4], 0x20); // Type
-        // CRC follows
+                                    // CRC follows
         assert_eq!(frame.len(), FRAME_OVERHEAD);
     }
 
@@ -291,7 +291,10 @@ mod tests {
             }
         }
 
-        assert!(matches!(result.unwrap(), Err(FrameError::CrcMismatch { .. })));
+        assert!(matches!(
+            result.unwrap(),
+            Err(FrameError::CrcMismatch { .. })
+        ));
     }
 
     #[test]

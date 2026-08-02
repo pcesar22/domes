@@ -4,10 +4,8 @@
 # 1. ESP-IDF component (when IDF_TARGET is defined)
 # 2. Standard CMake library (for host tools)
 #
-# Proto files:
-#   Source: proto/config.proto
-#   Generated: proto/config.pb.c, proto/config.pb.h
-#   To regenerate: python3 nanopb/generator/nanopb_generator.py proto/config.proto
+# Proto sources and generated bindings are documented in proto/README.md.
+# ESP-IDF and host builds compile committed bindings; they do not regenerate them.
 
 # Collect source files
 set(COMMON_SRCS

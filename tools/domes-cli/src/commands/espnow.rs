@@ -49,8 +49,7 @@ pub fn espnow_bench(transport: &mut dyn Transport, rounds: u32) -> Result<CliBen
         );
     }
 
-    parse_espnow_bench_response(&frame.payload)
-        .context("Failed to parse espnow bench response")
+    parse_espnow_bench_response(&frame.payload).context("Failed to parse espnow bench response")
 }
 
 /// Set sim drill mode on the ESP-NOW service
@@ -74,6 +73,5 @@ pub fn espnow_sim_mode(
         );
     }
 
-    parse_set_sim_mode_response(&frame.payload)
-        .context("Failed to parse set sim mode response")
+    parse_set_sim_mode_response(&frame.payload).context("Failed to parse set sim mode response")
 }

@@ -1,5 +1,9 @@
 # 11 - System Modes & Power Management
 
+> **Document status: Design proposal, partially implemented.** `ModeManager` and mode commands exist;
+> power management and several transition triggers below remain future work. Current behavior lives
+> in `modeManager.*`, `config.proto`, and `main.cpp`.
+
 ## AI Agent Instructions
 
 Load this file when:

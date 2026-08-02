@@ -1,5 +1,10 @@
 # 00 - Getting Started
 
+> **Document status: Historical scaffold.** This predates the current `firmware/domes/` project and
+> contains obsolete paths, partition sizes, and commands. Do not use it for setup. Use
+> [`../../firmware/README.md`](../../firmware/README.md) and
+> [`../../docs/TESTING.md`](../../docs/TESTING.md).
+
 ## AI Agent Instructions
 
 Load this file when:

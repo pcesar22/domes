@@ -29,13 +29,13 @@ ls /dev/ttyACM* 2>/dev/null
 Use when the user asks to flash, build-and-flash, or verify firmware on a pod.
 
 ```bash
-.codex/skills/domes-esp32-firmware/scripts/flash_and_verify.sh firmware/domes /dev/ttyACM0 "DOMES"
+tools/firmware/flash_and_verify.sh firmware/domes /dev/ttyACM0 "DOMES"
 ```
 
 Multiple ports:
 
 ```bash
-.codex/skills/domes-esp32-firmware/scripts/flash_and_verify.sh firmware/domes /dev/ttyACM0,/dev/ttyACM1 "DOMES"
+tools/firmware/flash_and_verify.sh firmware/domes /dev/ttyACM0,/dev/ttyACM1 "DOMES"
 ```
 
 After flashing, run the feature list over the relevant transport:
@@ -52,8 +52,8 @@ sourced.
 Use this instead of `idf.py monitor` in non-TTY Codex sessions:
 
 ```bash
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0 15
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+python3 tools/firmware/monitor_serial.py /dev/ttyACM0 15
+python3 tools/firmware/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
 ```
 
 Do not use `cat`, `dd`, `head`, or `tail` on `/dev/ttyACM*` or `/dev/ttyUSB*`. Do not use `stty`
@@ -62,10 +62,10 @@ against serial devices unless the user explicitly asks for low-level port config
 Filtered examples:
 
 ```bash
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py "$PORTS" 20 2>&1 | rg -i "espnow|esp-now|beacon|discover"
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py "$PORTS" 30 2>&1 | rg -i "game|arm|hit|miss|drill|round"
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py "$PORTS" 10 2>&1 | rg -i "touch|pad"
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py "$PORTS" 10 2>&1 | rg -i "heap|mem|diag"
+python3 tools/firmware/monitor_serial.py "$PORTS" 20 2>&1 | rg -i "espnow|esp-now|beacon|discover"
+python3 tools/firmware/monitor_serial.py "$PORTS" 30 2>&1 | rg -i "game|arm|hit|miss|drill|round"
+python3 tools/firmware/monitor_serial.py "$PORTS" 10 2>&1 | rg -i "touch|pad"
+python3 tools/firmware/monitor_serial.py "$PORTS" 10 2>&1 | rg -i "heap|mem|diag"
 ```
 
 ## Erase Flash And Reflash
@@ -176,7 +176,7 @@ Both devices should show one peer, one master/slave pairing, and RX packets grea
 Monitor drill execution:
 
 ```bash
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py "$PORT1,$PORT2" 20 2>&1 | rg -i "round|arm|hit|miss|drill|game|espnow"
+python3 tools/firmware/monitor_serial.py "$PORT1,$PORT2" 20 2>&1 | rg -i "round|arm|hit|miss|drill|game|espnow"
 ```
 
 Cleanup:
@@ -192,7 +192,7 @@ $CLI --port $PORT2 feature enable wifi
 
 ```bash
 PORT=/dev/ttyACM0
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py $PORT 5 2>&1 | rg -i "imu|lis2dw12|accel|tap|mag"
+python3 tools/firmware/monitor_serial.py $PORT 5 2>&1 | rg -i "imu|lis2dw12|accel|tap|mag"
 ```
 
 Expected:
@@ -204,7 +204,7 @@ Expected:
 For tap detection, ask the user to tap the board:
 
 ```bash
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py $PORT 10 2>&1 | rg -i "tap|triage|mode"
+python3 tools/firmware/monitor_serial.py $PORT 10 2>&1 | rg -i "tap|triage|mode"
 ```
 
 Hardware details: LIS2DW12 at I2C address 0x19, SDA GPIO8, SCL GPIO9, INT1 GPIO5.
@@ -236,7 +236,7 @@ Ask the user to confirm all 16 LEDs, correct colors, and no dead or dim LEDs.
 CLI="tools/domes-cli/target/debug/domes-cli"
 PORT=/dev/ttyACM0
 
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py $PORT 6 2>&1 | rg -i "TouchService|touch"
+python3 tools/firmware/monitor_serial.py $PORT 6 2>&1 | rg -i "TouchService|touch"
 
 for pad in 0 1 2 3; do
   $CLI --port $PORT touch simulate --pad $pad

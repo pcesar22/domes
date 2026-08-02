@@ -129,6 +129,7 @@ static const struct ble_gatt_chr_def otaCharacteristics[] = {
         .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
         .min_key_size = 0,
         .val_handle = nullptr,
+        .cpfd = nullptr,
     },
     {
         // OTA Status characteristic (notify for ACK/ABORT)
@@ -139,6 +140,7 @@ static const struct ble_gatt_chr_def otaCharacteristics[] = {
         .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
         .min_key_size = 0,
         .val_handle = &g_statusCharHandle,
+        .cpfd = nullptr,
     },
     {
         // Terminator
@@ -149,6 +151,7 @@ static const struct ble_gatt_chr_def otaCharacteristics[] = {
         .flags = 0,
         .min_key_size = 0,
         .val_handle = nullptr,
+        .cpfd = nullptr,
     }};
 
 static const struct ble_gatt_svc_def otaServices[] = {{

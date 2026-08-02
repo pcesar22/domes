@@ -7,7 +7,8 @@ v5.x. Application code is C++20, low-level code may be C. This is not an Arduino
 
 | Aspect | Choice |
 | --- | --- |
-| MCU | ESP32-S3-WROOM-1-N16R8, 16 MB flash, 8 MB PSRAM |
+| Current development target | NFF carrier with the checked-in 8 MB flash partition layout |
+| Production target | ESP32-S3-WROOM-1-N16R8, 16 MB flash, 8 MB PSRAM; not the active partition profile |
 | Framework | ESP-IDF v5.x |
 | RTOS | FreeRTOS bundled with ESP-IDF |
 | Language | C++20 for application, C for low-level drivers |
@@ -49,7 +50,7 @@ Forbidden:
 | Exceptions | Disabled | `tl::expected` or `esp_err_t` |
 | RTTI | Disabled | Avoid `dynamic_cast` designs |
 | `std::vector`, `std::string`, `std::map` | Dynamic allocation | ETL equivalents |
-| `new`, `delete`, `malloc`, `free` after init | Heap fragmentation | Static or startup allocation |
+| Unbounded allocation in deterministic loops or latency-critical tasks | Fragmentation and jitter | Static storage, fixed-capacity containers, or bounded startup allocation |
 
 Prefer ETL fixed-capacity containers:
 
@@ -114,8 +115,9 @@ ISR requirements:
 
 ## Memory And Ownership
 
-- Heap allocation is allowed during initialization only.
-- After `app_main()` setup completes, avoid heap allocation.
+- Prefer initialization-time allocation and fixed-capacity storage.
+- Do not add unbounded allocation to deterministic loops, ISRs, or latency-critical paths. Existing
+  network and audio-library allocations must remain bounded and be reviewed for task impact.
 - Use `std::unique_ptr` for factory-created init-time objects only.
 - Use references for dependency injection after init.
 - Use raw pointers only for C API interop or nullable references.
@@ -126,8 +128,9 @@ ISR requirements:
 
 ## Architecture Rules
 
-All hardware drivers must have abstract interfaces for testability. Real implementations live in
-`firmware/domes/main/drivers/`; mocks live in `firmware/domes/test/mocks/`.
+Hardware drivers used by service logic should expose an injectable interface when isolation has
+meaningful test value. Real implementations live in `firmware/domes/main/drivers/`; host fakes and
+simulators live under `firmware/test_app/`. Do not create a mock solely to satisfy a file-count rule.
 
 Services receive driver interfaces through constructors, not globals.
 
@@ -179,7 +182,9 @@ Key components:
 | FeatureManager | `main/config/featureManager.hpp` | Atomic feature bitmask |
 | FrameCodec | `firmware/common/protocol/frameCodec.hpp` | Shared frame parsing |
 
-All message definitions come from `firmware/common/proto/*.proto`.
+Config and trace messages come from `firmware/common/proto/*.proto`. Existing OTA transfer structs,
+compact trace recorder events, and internal ESP-NOW peer packets are bounded fixed-binary
+exceptions. Keep mirrored implementations compatible and do not create another exception family.
 
 ## Multi-Device Architecture
 
@@ -238,10 +243,10 @@ with binary protocol data.
 ## Validation Checklist
 
 - `idf.py build` succeeds with no new warnings.
-- No `new` or `malloc` after initialization.
+- No unbounded allocation in ISRs, deterministic loops, or latency-critical tasks.
 - No forbidden STL dynamic containers.
 - No `<iostream>`, exceptions, or RTTI.
-- Every driver has an abstract interface and mock.
+- Driver/service boundaries are injectable where host isolation provides meaningful coverage.
 - Public APIs have Doxygen comments.
 - Non-mutating methods are `const`.
 - ISR code is IRAM-safe and uses only `FromISR` APIs.
@@ -264,7 +269,7 @@ with binary protocol data.
 
 | Peripheral | Interface | Driver IC | Notes |
 | --- | --- | --- | --- |
-| LEDs | RMT | SK6812 RGBW | 16 LEDs in ring |
+| LEDs | RMT | Addressable LED ring | Current NFF profile uses 16 devices in RGB mode; RGBW is a production target |
 | Audio | I2S | MAX98357A | 23 mm speaker |
 | Haptic | I2C | DRV2605L | LRA motor |
 | Touch | ESP32 touch peripheral | none | Capacitive sense |
@@ -274,7 +279,10 @@ with binary protocol data.
 Reference documents:
 
 - `firmware/MILESTONES.md`
-- `research/architecture/`
+- `docs/README.md`
+- `docs/TESTING.md`
+- `research/SOFTWARE_ARCHITECTURE.md`
+- `research/architecture/README.md`
 - `research/SYSTEM_ARCHITECTURE.md`
 - `docs/PIN_REFERENCE.md`
 - `research/architecture/07-debugging.md`

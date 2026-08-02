@@ -1,5 +1,11 @@
 # AI Development Recommendations
 
+> **Document status: Historical planning record.** This captures an earlier Claude Code workflow
+> assessment and an implementation checklist that no longer describes the repository. Current agent
+> guidance lives in [`../AGENTS.md`](../AGENTS.md) and `.codex/`; use
+> [`../docs/README.md`](../docs/README.md) for documentation ownership. Retain this file for rationale,
+> not as setup or implementation instructions.
+
 ## Maximizing Claude Code Effectiveness for DOMES
 
 This document outlines recommendations for optimizing the project architecture based on best practices from Boris Cherny (Claude Code creator) and Anthropic's engineering guidelines.

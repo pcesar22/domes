@@ -25,20 +25,26 @@ static const char* TAG = "serial_ota";
 
 namespace domes {
 
-SerialOtaReceiver::SerialOtaReceiver(ITransport& transport,
-                                       config::FeatureManager* features,
-                                       uint8_t podId)
-    : transport_(transport)
-    , stopRequested_(false)
-    , otaInProgress_(false)
-    , traceHandler_(std::make_unique<trace::CommandHandler>(transport, podId))
-    , configHandler_(features ? std::make_unique<config::ConfigCommandHandler>(transport, *features) : nullptr)
-    , otaHandle_(0)
-    , updatePartition_(nullptr)
-    , firmwareSize_(0)
-    , bytesReceived_(0)
-    , expectedOffset_(0) {
+SerialOtaReceiver::SerialOtaReceiver(ITransport& transport, config::FeatureManager* features,
+                                     uint8_t podId)
+    : transport_(transport),
+      stopRequested_(false),
+      otaInProgress_(false),
+      traceHandler_(std::make_unique<trace::CommandHandler>(transport, podId)),
+      configHandler_(features ? std::make_unique<config::ConfigCommandHandler>(transport, *features)
+                              : nullptr),
+      otaHandle_(0),
+      updatePartition_(nullptr),
+      firmwareSize_(0),
+      bytesReceived_(0),
+      expectedOffset_(0),
+      sha256Active_(false) {
     std::memset(expectedSha256_, 0, sizeof(expectedSha256_));
+    mbedtls_sha256_init(&sha256Context_);
+}
+
+SerialOtaReceiver::~SerialOtaReceiver() {
+    mbedtls_sha256_free(&sha256Context_);
 }
 
 void SerialOtaReceiver::run() {
@@ -147,13 +153,21 @@ void SerialOtaReceiver::handleOtaBegin(const uint8_t* payload, size_t len) {
 
     // Deserialize
     char version[32];
+    uint32_t firmwareSize = 0;
     TransportError err =
-        deserializeOtaBegin(payload, len, reinterpret_cast<uint32_t*>(&firmwareSize_),
-                            expectedSha256_, version, sizeof(version));
+        deserializeOtaBegin(payload, len, &firmwareSize, expectedSha256_, version, sizeof(version));
 
     if (!isOk(err)) {
         ESP_LOGE(TAG, "Failed to deserialize OTA_BEGIN");
         sendAck(OtaStatus::kAborted, 0);
+        return;
+    }
+
+    firmwareSize_ = firmwareSize;
+
+    if (firmwareSize_ == 0) {
+        ESP_LOGE(TAG, "Firmware image is empty");
+        sendAck(OtaStatus::kSizeMismatch, 0);
         return;
     }
 
@@ -185,7 +199,16 @@ void SerialOtaReceiver::handleOtaBegin(const uint8_t* payload, size_t len) {
         return;
     }
 
+    if (mbedtls_sha256_starts(&sha256Context_, 0) != 0) {
+        ESP_LOGE(TAG, "Failed to initialize OTA SHA-256 context");
+        esp_ota_abort(otaHandle_);
+        otaHandle_ = 0;
+        sendAck(OtaStatus::kVerifyFailed, 0);
+        return;
+    }
+
     otaInProgress_.store(true);
+    sha256Active_ = true;
     bytesReceived_ = 0;
     expectedOffset_ = 0;
 
@@ -218,11 +241,23 @@ void SerialOtaReceiver::handleOtaData(const uint8_t* payload, size_t len) {
         return;
     }
 
+    if (bytesReceived_ > firmwareSize_ || dataLen > firmwareSize_ - bytesReceived_) {
+        ESP_LOGE(TAG, "OTA data exceeds declared image size");
+        sendAbortAndCleanup(OtaStatus::kSizeMismatch);
+        return;
+    }
+
     // Write to flash
     esp_err_t espErr = esp_ota_write(otaHandle_, data, dataLen);
     if (espErr != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(espErr));
         sendAbortAndCleanup(OtaStatus::kFlashError);
+        return;
+    }
+
+    if (!sha256Active_ || mbedtls_sha256_update(&sha256Context_, data, dataLen) != 0) {
+        ESP_LOGE(TAG, "Failed to update OTA SHA-256");
+        sendAbortAndCleanup(OtaStatus::kVerifyFailed);
         return;
     }
 
@@ -253,6 +288,22 @@ void SerialOtaReceiver::handleOtaEnd() {
         sendAbortAndCleanup(OtaStatus::kSizeMismatch);
         return;
     }
+
+    std::array<uint8_t, 32> actualSha256 = {};
+    if (!sha256Active_ || mbedtls_sha256_finish(&sha256Context_, actualSha256.data()) != 0) {
+        ESP_LOGE(TAG, "Failed to finalize OTA SHA-256");
+        sendAbortAndCleanup(OtaStatus::kVerifyFailed);
+        return;
+    }
+    sha256Active_ = false;
+
+    if (std::memcmp(actualSha256.data(), expectedSha256_, actualSha256.size()) != 0) {
+        ESP_LOGE(TAG, "OTA SHA-256 mismatch");
+        sendAbortAndCleanup(OtaStatus::kVerifyFailed);
+        return;
+    }
+
+    ESP_LOGI(TAG, "OTA SHA-256 verified");
 
     // Finish OTA (validates image)
     esp_err_t espErr = esp_ota_end(otaHandle_);
@@ -343,6 +394,11 @@ void SerialOtaReceiver::cleanupOta() {
     firmwareSize_ = 0;
     bytesReceived_ = 0;
     expectedOffset_ = 0;
+    if (sha256Active_) {
+        mbedtls_sha256_free(&sha256Context_);
+        mbedtls_sha256_init(&sha256Context_);
+        sha256Active_ = false;
+    }
 }
 
 }  // namespace domes

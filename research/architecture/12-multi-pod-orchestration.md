@@ -1,5 +1,10 @@
 # 12 - Multi-Pod Orchestration
 
+> **Document status: Target design, partially implemented.** Current firmware supports ESP-NOW
+> discovery, MAC-based role assignment, and a fixed drill. Phone-selected masters, general drill
+> interpretation, and several packet types below remain proposed; use `espNowService.*` and
+> `espNowProtocol.hpp` for current behavior.
+
 ## AI Agent Instructions
 
 Load this file when:

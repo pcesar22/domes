@@ -27,7 +27,6 @@ const OTA_STATUS_CHAR_UUID: Uuid = Uuid::from_u128(0x12345678_1234_5678_1234_567
 /// Default BLE operation timeout
 const DEFAULT_TIMEOUT_MS: u64 = 5000;
 
-
 /// Target device identifier for BLE connection
 #[derive(Clone, Debug)]
 pub enum BleTarget {
@@ -97,8 +96,7 @@ impl BleTransport {
                 .context("Failed to start BLE scan")?;
 
             // Find the target device
-            let (peripheral, device_name) =
-                find_device(&adapter, &target, scan_timeout).await?;
+            let (peripheral, device_name) = find_device(&adapter, &target, scan_timeout).await?;
 
             // Stop scanning
             let _ = adapter.stop_scan().await;
@@ -193,8 +191,8 @@ impl BleTransport {
                     if let Ok(Some(props)) = p.properties().await {
                         // Check if this device advertises the OTA service or has DOMES in name
                         let name = props.local_name.unwrap_or_default();
-                        let is_domes = name.contains("DOMES")
-                            || props.services.contains(&OTA_SERVICE_UUID);
+                        let is_domes =
+                            name.contains("DOMES") || props.services.contains(&OTA_SERVICE_UUID);
 
                         if is_domes {
                             seen_addresses.insert(addr.clone());
@@ -228,7 +226,6 @@ impl BleTransport {
             .block_on(self.peripheral.is_connected())
             .unwrap_or(false)
     }
-
 
     /// Send a frame to the device
     pub fn send_frame(&mut self, msg_type: u8, payload: &[u8]) -> Result<()> {
@@ -350,9 +347,7 @@ async fn find_device(
                     BleTarget::Name(target_name) => {
                         name.contains(target_name) || name == *target_name
                     }
-                    BleTarget::Address(target_addr) => {
-                        addr.eq_ignore_ascii_case(target_addr)
-                    }
+                    BleTarget::Address(target_addr) => addr.eq_ignore_ascii_case(target_addr),
                 };
 
                 if matches {

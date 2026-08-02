@@ -1,6 +1,6 @@
 //! OTA update commands
 //!
-//! Sends firmware updates to DOMES devices over serial or WiFi.
+//! Sends firmware updates to DOMES devices over serial or BLE.
 //! Also includes GitHub OTA check and auto-update configuration commands.
 
 use crate::protocol::{
@@ -297,7 +297,11 @@ const OTA_CHECK_TIMEOUT_MS: u64 = 15000;
 /// Check for firmware updates via GitHub releases
 pub fn ota_check(transport: &mut dyn Transport) -> Result<CliUpdateInfo> {
     let frame = transport
-        .send_command_with_timeout(ConfigMsgType::CheckUpdateReq as u8, &[], OTA_CHECK_TIMEOUT_MS)
+        .send_command_with_timeout(
+            ConfigMsgType::CheckUpdateReq as u8,
+            &[],
+            OTA_CHECK_TIMEOUT_MS,
+        )
         .context("Failed to send check update command")?;
 
     if frame.msg_type != ConfigMsgType::CheckUpdateRsp as u8 {
@@ -346,11 +350,6 @@ fn print_progress(current: usize, total: usize) {
             print!(" ");
         }
     }
-    print!(
-        "] {} / {} bytes ({:.1}%)",
-        current,
-        total,
-        progress * 100.0
-    );
+    print!("] {} / {} bytes ({:.1}%)", current, total, progress * 100.0);
     std::io::stdout().flush().ok();
 }

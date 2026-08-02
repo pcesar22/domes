@@ -1,5 +1,9 @@
 # DOMES Trace Overhaul: Architecture Design
 
+> **Document status: Design record, partially implemented.** Protobuf trace control, Rust CLI
+> tooling, and streaming landed in part, so the "current system" analysis below is dated. Use
+> `trace.proto`, `firmware/domes/main/trace/`, and the CLI trace commands for current behavior.
+
 **Author:** Research Agent (Task #3)
 **Date:** 2026-02-10
 **Status:** Design Proposal

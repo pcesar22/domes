@@ -5,14 +5,19 @@
  * Tests protobuf encoding/decoding using nanopb.
  */
 
-#include <gtest/gtest.h>
-#include "config/configProtocol.hpp"
 #include "config.pb.h"
-#include "pb_encode.h"
+
+#include "config/configProtocol.hpp"
 #include "pb_decode.h"
+#include "pb_encode.h"
+#include "protocol/frameCodec.hpp"
+#include "protocol/memoryProfileLimits.hpp"
 
 #include <array>
+#include <cstdint>
 #include <cstring>
+
+#include <gtest/gtest.h>
 
 using namespace domes::config;
 
@@ -231,6 +236,42 @@ TEST(Protobuf, EmptyListFeaturesResponse) {
     ASSERT_TRUE(pb_decode(&istream, domes_config_ListFeaturesResponse_fields, &decoded));
 
     EXPECT_EQ(decoded.features_count, 0u);
+}
+
+TEST(Protobuf, MaxMemoryProfileResponseFitsSharedFramePayload) {
+    static_assert(domes::memory_profile::kMaxSamples == 38);
+
+    domes_config_GetMemoryProfileResponse resp = domes_config_GetMemoryProfileResponse_init_zero;
+    resp.current_free_heap = UINT32_MAX;
+    resp.current_min_free_heap = UINT32_MAX;
+    resp.current_largest_block = UINT32_MAX;
+    resp.total_heap = UINT32_MAX;
+    resp.samples_count = static_cast<pb_size_t>(domes::memory_profile::kMaxSamples);
+
+    for (size_t i = 0; i < domes::memory_profile::kMaxSamples; ++i) {
+        resp.samples[i].timestamp_s = UINT32_MAX;
+        resp.samples[i].free_heap = UINT32_MAX;
+        resp.samples[i].largest_block = UINT32_MAX;
+        resp.samples[i].min_free_heap = UINT32_MAX;
+    }
+
+    std::array<uint8_t, domes::kMaxPayloadSize> payload{};
+    payload[0] = static_cast<uint8_t>(Status::kOk);
+    pb_ostream_t ostream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
+
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_GetMemoryProfileResponse_fields, &resp));
+    EXPECT_EQ(ostream.bytes_written, domes_config_GetMemoryProfileResponse_size);
+
+    const size_t payloadLen = domes::memory_profile::kStatusSize + ostream.bytes_written;
+    EXPECT_EQ(payloadLen, domes::memory_profile::kMaxPayloadSize);
+    ASSERT_LE(payloadLen, domes::kMaxPayloadSize);
+
+    std::array<uint8_t, domes::kMaxFrameSize> frame{};
+    size_t frameLen = 0;
+    EXPECT_EQ(domes::encodeFrame(static_cast<uint8_t>(MsgType::kGetMemoryProfileRsp),
+                                 payload.data(), payloadLen, frame.data(), frame.size(), &frameLen),
+              domes::TransportError::kOk);
+    EXPECT_EQ(frameLen, domes::kFrameOverhead + payloadLen);
 }
 
 // =============================================================================

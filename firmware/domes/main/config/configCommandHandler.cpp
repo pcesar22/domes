@@ -7,33 +7,30 @@
 
 #include "configCommandHandler.hpp"
 
-#include "trace/traceApi.hpp"
+#include "config.pb.h"
 
 #include "drivers/injectableTouchDriver.hpp"
-#include "protocol/frameCodec.hpp"
-#include "services/imuService.hpp"
-#include "services/ledService.hpp"
-
-#include "infra/crashDumpHandler.hpp"
-#include "infra/memoryProfiler.hpp"
-#include "infra/nvsConfig.hpp"
-#include "infra/smokeTest.hpp"
-#include "interfaces/iOtaManager.hpp"
-#include "transport/espNowTransport.hpp"
-#include "services/espNowService.hpp"
-
-#include "config.pb.h"
-#include "pb_encode.h"
-#include "pb_decode.h"
-
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "infra/crashDumpHandler.hpp"
+#include "infra/memoryProfiler.hpp"
+#include "infra/nvsConfig.hpp"
+#include "infra/smokeTest.hpp"
+#include "interfaces/iOtaManager.hpp"
+#include "pb_decode.h"
+#include "pb_encode.h"
+#include "protocol/frameCodec.hpp"
+#include "protocol/memoryProfileLimits.hpp"
+#include "services/espNowService.hpp"
+#include "services/imuService.hpp"
+#include "services/ledService.hpp"
+#include "trace/traceApi.hpp"
+#include "transport/espNowTransport.hpp"
 
 #include <array>
 #include <cstring>
@@ -888,8 +885,8 @@ void ConfigCommandHandler::handleGetMemoryProfile() {
     resp.total_heap = infra::MemoryProfiler::totalHeapSize();
 
     // Historical samples
-    infra::HeapSample samples[infra::kMaxHeapSamples];
-    size_t count = infra::MemoryProfiler::getSamples(samples, infra::kMaxHeapSamples);
+    std::array<infra::HeapSample, memory_profile::kMaxSamples> samples;
+    size_t count = infra::MemoryProfiler::getSamples(samples.data(), samples.size());
 
     resp.samples_count = static_cast<pb_size_t>(count);
     for (size_t i = 0; i < count; ++i) {
@@ -900,7 +897,7 @@ void ConfigCommandHandler::handleGetMemoryProfile() {
     }
 
     // Encode: [status_byte][protobuf]
-    std::array<uint8_t, domes_config_GetMemoryProfileResponse_size + 10> payload;
+    std::array<uint8_t, domes::kMaxPayloadSize> payload;
     payload[0] = static_cast<uint8_t>(Status::kOk);
 
     pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);

@@ -41,29 +41,21 @@ TEST(OtaBegin, SerializeDeserializeRoundTrip) {
     EXPECT_STREQ(version, outVersion);
 }
 
-TEST(OtaBegin, SerializeWithNullSHA256) {
+TEST(OtaBegin, SerializeWithNullSHA256ReturnsError) {
     std::array<uint8_t, 128> buf{};
     size_t len = 0;
 
     TransportError err = serializeOtaBegin(1000, nullptr, "v1.0.0", buf.data(), buf.size(), &len);
-    EXPECT_EQ(TransportError::kOk, err);
-
-    uint32_t outSize = 0;
-    uint8_t outSha[kSha256Size];
-    std::memset(outSha, 0xFF, sizeof(outSha));
-
-    deserializeOtaBegin(buf.data(), len, &outSize, outSha, nullptr, 0);
-
-    for (size_t i = 0; i < kSha256Size; ++i) {
-        EXPECT_EQ(0x00, outSha[i]);
-    }
+    EXPECT_EQ(TransportError::kInvalidArg, err);
 }
 
 TEST(OtaBegin, SerializeWithNullVersion) {
     std::array<uint8_t, 128> buf{};
+    std::array<uint8_t, kSha256Size> sha256{};
     size_t len = 0;
 
-    TransportError err = serializeOtaBegin(1000, nullptr, nullptr, buf.data(), buf.size(), &len);
+    TransportError err =
+        serializeOtaBegin(1000, sha256.data(), nullptr, buf.data(), buf.size(), &len);
     EXPECT_EQ(TransportError::kOk, err);
 
     uint32_t outSize = 0;
@@ -75,9 +67,11 @@ TEST(OtaBegin, SerializeWithNullVersion) {
 
 TEST(OtaBegin, BufferTooSmallReturnsError) {
     std::array<uint8_t, 10> smallBuf{};
+    std::array<uint8_t, kSha256Size> sha256{};
     size_t len = 0;
 
-    TransportError err = serializeOtaBegin(1000, nullptr, "v1.0.0", smallBuf.data(), smallBuf.size(), &len);
+    TransportError err =
+        serializeOtaBegin(1000, sha256.data(), "v1.0.0", smallBuf.data(), smallBuf.size(), &len);
     EXPECT_EQ(TransportError::kInvalidArg, err);
 }
 
@@ -286,10 +280,11 @@ TEST(OtaAbort, DeserializeWithEmptyPayloadReturnsError) {
 // =============================================================================
 
 TEST(OtaSerializer, RejectsNullBuffer) {
+    std::array<uint8_t, kSha256Size> sha256{};
     size_t len = 0;
 
     EXPECT_EQ(TransportError::kInvalidArg,
-        serializeOtaBegin(0, nullptr, nullptr, nullptr, 0, &len));
+              serializeOtaBegin(0, sha256.data(), nullptr, nullptr, 0, &len));
     EXPECT_EQ(TransportError::kInvalidArg,
         serializeOtaData(0, nullptr, 0, nullptr, 0, &len));
     EXPECT_EQ(TransportError::kInvalidArg,
@@ -300,9 +295,10 @@ TEST(OtaSerializer, RejectsNullBuffer) {
 
 TEST(OtaSerializer, RejectsNullOutLen) {
     std::array<uint8_t, 128> buf{};
+    std::array<uint8_t, kSha256Size> sha256{};
 
     EXPECT_EQ(TransportError::kInvalidArg,
-        serializeOtaBegin(0, nullptr, nullptr, buf.data(), buf.size(), nullptr));
+              serializeOtaBegin(0, sha256.data(), nullptr, buf.data(), buf.size(), nullptr));
     EXPECT_EQ(TransportError::kInvalidArg,
         serializeOtaData(0, nullptr, 0, buf.data(), buf.size(), nullptr));
     EXPECT_EQ(TransportError::kInvalidArg,

@@ -1,5 +1,9 @@
 # 07 - Debugging
 
+> **Document status: Historical operational reference.** Use the project Codex skills, current
+> firmware trace source, and `domes-cli --help` as the executable authorities when an example here
+> diverges from the implementation.
+
 ## AI Agent Instructions
 
 Load this file when:
@@ -377,7 +381,7 @@ The firmware includes a lightweight tracing framework for post-mortem performanc
 └────────────────────────────┼────────────────────────────────┘
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  tools/trace/trace_dump.py → trace.json → ui.perfetto.dev  │
+│  domes-cli trace dump → trace.json → ui.perfetto.dev       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -423,19 +427,16 @@ void processGameTick() {
 #### Dumping Traces
 
 ```bash
-# Install dependencies
-pip install pyserial
-
 # Check status
-python tools/trace/trace_dump.py -p /dev/ttyACM0 --status
+domes-cli --port /dev/ttyACM0 trace status
 
 # Dump traces with human-readable names
-python tools/trace/trace_dump.py -p /dev/ttyACM0 -o trace.json -n tools/trace/trace_names.json
+domes-cli --port /dev/ttyACM0 trace dump -o trace.json -n tools/trace/trace_names.json
 
 # Control tracing
-python tools/trace/trace_dump.py -p /dev/ttyACM0 --start   # Enable
-python tools/trace/trace_dump.py -p /dev/ttyACM0 --stop    # Disable
-python tools/trace/trace_dump.py -p /dev/ttyACM0 --clear   # Clear buffer
+domes-cli --port /dev/ttyACM0 trace start
+domes-cli --port /dev/ttyACM0 trace stop
+domes-cli --port /dev/ttyACM0 trace clear
 ```
 
 #### Visualizing in Perfetto
@@ -567,16 +568,22 @@ xtensa-esp32s3-elf-gdb -ex "target remote :3334" build/domes.elf
 Use the monitor script with comma-separated ports for color-coded, labeled output from both pods:
 
 ```bash
-python .claude/skills/esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+python3 tools/firmware/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
 ```
 
 ### Multi-Device Trace Dump
 
-Dump traces from both pods in a single invocation. Separate output files are created per device for Perfetto visualization:
+Dump each pod independently, then merge the JSON files for correlated Perfetto visualization:
 
 ```bash
-python tools/trace/trace_dump.py --ports /dev/ttyACM0,/dev/ttyACM1 -o trace.json -n tools/trace/trace_names.json
-# Creates trace-dev0.json, trace-dev1.json
+domes-cli --port /dev/ttyACM0 trace dump -o trace-pod0.json -n tools/trace/trace_names.json
+domes-cli --port /dev/ttyACM1 trace dump -o trace-pod1.json -n tools/trace/trace_names.json
+python3 tools/trace/trace_merge.py \
+  --pod trace-pod0.json --pod-name "Pod 0" \
+  --pod trace-pod1.json --pod-name "Pod 1" \
+  --names tools/trace/trace_names.json \
+  --align beacon \
+  -o trace-merged.json
 ```
 
 ---

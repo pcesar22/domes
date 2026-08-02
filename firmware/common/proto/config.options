@@ -33,7 +33,7 @@ domes.config.CrashDumpResponse.task_name  max_size:16
 domes.config.CrashDumpResponse.backtrace  max_count:16
 
 # Memory profiler messages
-domes.config.GetMemoryProfileResponse.samples  max_count:60
+domes.config.GetMemoryProfileResponse.samples  max_count:38
 
 # SelfTestResult: test name max 16 chars, message max 48 chars
 domes.config.SelfTestResult.name  max_size:16

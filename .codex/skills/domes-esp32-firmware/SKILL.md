@@ -17,8 +17,8 @@ the DOMES CLI workflows that exercise real pods.
 | First serial device | `/dev/ttyACM0` |
 | Second serial device | `/dev/ttyACM1` |
 | CLI project | `tools/domes-cli` |
-| Serial monitor script | `scripts/monitor_serial.py` |
-| Flash helper | `scripts/flash_and_verify.sh` |
+| Serial monitor script | `tools/firmware/monitor_serial.py` |
+| Flash helper | `tools/firmware/flash_and_verify.sh` |
 
 Before running any `idf.py` command, source ESP-IDF:
 
@@ -29,8 +29,8 @@ Before running any `idf.py` command, source ESP-IDF:
 ## Choose A Workflow
 
 - **Build only**: run `idf.py build` from `firmware/domes`.
-- **Flash and verify**: use `scripts/flash_and_verify.sh` when a device is available.
-- **Monitor serial**: use `scripts/monitor_serial.py`; do not read serial ports with `cat`, `dd`,
+- **Flash and verify**: use `tools/firmware/flash_and_verify.sh` when a device is available.
+- **Monitor serial**: use `tools/firmware/monitor_serial.py`; do not read serial ports with `cat`, `dd`,
   `head`, or `tail`, and do not adjust serial devices with `stty` unless the user explicitly asks.
 - **Hardware validation**: read `references/runbooks.md` and run the relevant subsystem runbook.
 - **Config, Kconfig, or partition work**: read `references/configs.md`.
@@ -47,20 +47,20 @@ idf.py build
 Single device:
 
 ```bash
-.codex/skills/domes-esp32-firmware/scripts/flash_and_verify.sh firmware/domes /dev/ttyACM0 "DOMES"
+tools/firmware/flash_and_verify.sh firmware/domes /dev/ttyACM0 "DOMES"
 ```
 
 Two devices:
 
 ```bash
-.codex/skills/domes-esp32-firmware/scripts/flash_and_verify.sh firmware/domes /dev/ttyACM0,/dev/ttyACM1 "DOMES"
+tools/firmware/flash_and_verify.sh firmware/domes /dev/ttyACM0,/dev/ttyACM1 "DOMES"
 ```
 
 ## Monitor Serial
 
 ```bash
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0 15
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+python3 tools/firmware/monitor_serial.py /dev/ttyACM0 15
+python3 tools/firmware/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
 ```
 
 Look for boot messages, errors, warnings, feature init, mode transitions, IMU/touch readings,
@@ -68,20 +68,23 @@ ESP-NOW discovery, and heap diagnostics.
 
 ## Protocol Rules
 
-All firmware/host/app protocol definitions come from `firmware/common/proto/*.proto`. Do not add
-manual duplicate enums or message structs in C++, Rust, or Dart.
+Config and trace protocol definitions come from `firmware/common/proto/*.proto`. Do not add manual
+duplicates in C++, Rust, or Dart. OTA transfer structs, compact trace recorder events, and internal
+ESP-NOW peer packets are bounded existing fixed-binary exceptions; keep their consumers compatible
+and do not create another exception family.
 
 When protocol messages change:
 
 1. Edit the `.proto` file.
-2. Rebuild firmware so nanopb output updates.
+2. Run `tools/generate_protocols.sh`; firmware builds only compile committed nanopb output.
 3. Rebuild `tools/domes-cli` so prost output updates.
 4. Regenerate Flutter protobufs if the app consumes the changed message.
 5. Verify over at least one real transport when hardware is available.
 
 ## Resources
 
-- `scripts/monitor_serial.py`: non-TTY serial monitor with multi-device labels.
-- `scripts/flash_and_verify.sh`: build, flash one or more devices, and search boot output.
+- `tools/firmware/monitor_serial.py`: canonical non-TTY serial monitor with multi-device labels.
+- `tools/firmware/flash_and_verify.sh`: canonical build, flash, and boot-marker helper.
+- `scripts/`: compatibility wrappers for existing skill invocations.
 - `references/runbooks.md`: Codex-friendly conversions of the old DOMES slash-command workflows.
 - `references/configs.md`: ESP-IDF config, partition, and pin reference.

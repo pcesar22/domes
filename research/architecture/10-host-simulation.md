@@ -1,5 +1,9 @@
 # 10 - Host Simulation Architecture
 
+> **Document status: Design proposal, partially implemented.** Host simulation exists under
+> `firmware/test_app/sim/`, but the topology and interfaces below were not adopted as written. Use
+> that test project and [`../../docs/TESTING.md`](../../docs/TESTING.md) for current behavior.
+
 ## Overview
 
 This document describes how to use a Linux host (WSL2/Ubuntu) to simulate pod behavior for development and testing. The goal is maximum code reuse between host simulation and actual ESP32 firmware.

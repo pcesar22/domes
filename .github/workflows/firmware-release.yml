@@ -5,16 +5,22 @@ on:
     tags:
       - 'v*.*.*'
 
+permissions:
+  contents: write
+
 jobs:
   build-and-release:
     name: Build and Release Firmware
     runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.2.2
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - name: Extract version from tag
         id: version
@@ -23,15 +29,14 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building release: $VERSION"
 
-      - name: Set up ESP-IDF
-        uses: espressif/esp-idf-ci-action@v1
-        with:
-          esp_idf_version: v5.2.2
-          target: esp32s3
-          path: firmware/domes
+      - name: Check generated firmware bindings
+        run: |
+          . $IDF_PATH/export.sh
+          tools/generate_protocols.sh --check nanopb
 
       - name: Build firmware
         run: |
+          . $IDF_PATH/export.sh
           cd firmware/domes
           idf.py build
 
@@ -60,7 +65,7 @@ jobs:
           cp firmware/domes/build/domes.bin firmware/domes/build/domes-${{ steps.version.outputs.version }}.bin
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             firmware/domes/build/domes.bin
@@ -81,7 +86,7 @@ jobs:
 
             #### Manual Flash
             ```bash
-            esptool.py --port /dev/ttyUSB0 write_flash 0x20000 domes.bin
+            esptool.py --port /dev/ttyACM0 write_flash 0x20000 domes.bin
             ```
 
             ---

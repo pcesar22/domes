@@ -18,7 +18,7 @@ TransportError serializeOtaBegin(uint32_t firmwareSize, const uint8_t* sha256, c
                                  uint8_t* buf, size_t bufSize, size_t* outLen) {
     constexpr size_t payloadSize = sizeof(OtaBeginPayload);
 
-    if (buf == nullptr || outLen == nullptr) {
+    if (sha256 == nullptr || buf == nullptr || outLen == nullptr) {
         return TransportError::kInvalidArg;
     }
     if (bufSize < payloadSize) {
@@ -31,11 +31,7 @@ TransportError serializeOtaBegin(uint32_t firmwareSize, const uint8_t* sha256, c
     payload->firmwareSize = firmwareSize;
 
     // SHA256
-    if (sha256 != nullptr) {
-        std::memcpy(payload->sha256.data(), sha256, kSha256Size);
-    } else {
-        std::memset(payload->sha256.data(), 0, kSha256Size);
-    }
+    std::memcpy(payload->sha256.data(), sha256, kSha256Size);
 
     // Version string
     payload->version.fill('\0');

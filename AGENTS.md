@@ -29,8 +29,15 @@ idf.py build
 
 # Host CLI, when modified
 cd tools/domes-cli
+cargo fmt --check
+cargo clippy --all-targets --all-features
 cargo build
 cargo test
+
+# Flutter app, when modified
+cd ../../ios/domes_app
+flutter analyze
+flutter test
 ```
 
 ### Level 3: Hardware or End-to-End Verification
@@ -40,7 +47,7 @@ serial logs, BLE/WiFi/serial transport, or visual confirmation.
 
 ```bash
 . ~/esp/esp-idf/export.sh
-.codex/skills/domes-esp32-firmware/scripts/flash_and_verify.sh firmware/domes /dev/ttyACM0 "DOMES"
+tools/firmware/flash_and_verify.sh firmware/domes /dev/ttyACM0 "DOMES"
 ```
 
 Feature-specific verification:
@@ -101,12 +108,17 @@ Always ask before creating or publishing a PR. Never use `.claude/worktrees/` fo
 
 ## Protocol Buffers
 
-All message serialization between firmware, CLI, and app layers must use Protocol Buffers.
+New host-facing config and trace messages must use Protocol Buffers.
 
-- Never hand-roll protocol definitions.
-- Never duplicate enums or message types in C++, Rust, or Dart.
-- All protocol definitions come from `firmware/common/proto/*.proto`.
+- Never hand-roll a new host protocol definition.
+- Never duplicate protobuf enums or message types in C++, Rust, or Dart.
+- All config and trace message definitions come from `firmware/common/proto/*.proto`.
 - If creating a message, add it to the relevant `.proto` file first.
+
+Bounded existing exceptions are the OTA chunk-transfer structs, trace recorder's compact internal
+event records, and the internal ESP-NOW peer packets mirrored by the host simulator. Keep each
+existing pair wire-compatible until migrated; do not extend these exceptions to new protocol
+families.
 
 Source of truth:
 
@@ -116,13 +128,16 @@ Source of truth:
 | `firmware/common/proto/config.options` | nanopb size constraints |
 | `firmware/common/proto/trace.proto` | Trace protocol messages |
 | `tools/domes-cli/build.rs` | prost generation for the Rust CLI |
-| `ios/domes_app/scripts/generate_proto.sh` | Dart protobuf generation |
+| `tools/generate_protocols.sh` | Committed nanopb and Dart generation/checking |
 
 Generation paths:
 
 - Firmware: nanopb generates `*.pb.h` and `*.pb.c`.
 - CLI: prost generates Rust types at build time.
 - Flutter app: generated Dart types live under `ios/domes_app/lib/data/proto/generated/`.
+
+Run `tools/generate_protocols.sh` after schema changes; a firmware build alone does not regenerate
+committed nanopb files.
 
 ## Runtime Config Protocol
 
@@ -147,11 +162,11 @@ Key files:
 
 ## OTA Updates
 
-`domes-cli` is the supported OTA path for serial, WiFi/TCP, BLE, and multi-device updates.
+`domes-cli` supports serial and BLE OTA. Raw WiFi/TCP image transfer is currently not routed by the
+firmware TCP config server and must not be presented as verified.
 
 ```bash
 domes-cli --port /dev/ttyACM0 ota flash firmware/domes/build/domes.bin --version v1.0.0
-domes-cli --wifi 192.168.1.100:5000 ota flash firmware/domes/build/domes.bin
 domes-cli --all ota flash firmware/domes/build/domes.bin --version v1.0.0
 ```
 
@@ -202,7 +217,7 @@ For ESP-NOW testing:
 
 ```bash
 domes-cli --all feature enable esp-now
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+python3 tools/firmware/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
 ```
 
 ## Platform Requirements

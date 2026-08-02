@@ -30,7 +30,7 @@ impl ProtocolFilter {
     /// Check if a message type belongs to this protocol filter
     pub fn matches(&self, msg_type: u8) -> bool {
         match self {
-            Self::Config => (0x20..=0x3F).contains(&msg_type),
+            Self::Config => config_msg_type(msg_type).is_some(),
             Self::Trace => (0x10..=0x1F).contains(&msg_type),
             Self::Ota => (0x01..=0x05).contains(&msg_type),
         }
@@ -137,6 +137,27 @@ fn should_display(frame: &Frame, filters: &[ProtocolFilter]) -> bool {
     filters.iter().any(|f| f.matches(frame.msg_type))
 }
 
+fn config_msg_type(msg_type: u8) -> Option<crate::proto::config::MsgType> {
+    crate::proto::config::MsgType::try_from(i32::from(msg_type))
+        .ok()
+        .filter(|kind| *kind != crate::proto::config::MsgType::Unknown)
+}
+
+fn config_response_has_status(msg_type: u8) -> bool {
+    config_msg_type(msg_type)
+        .map(|kind| {
+            kind != crate::proto::config::MsgType::ListFeaturesRsp
+                && kind.as_str_name().ends_with("_RSP")
+        })
+        .unwrap_or(false)
+}
+
+fn config_status_name(status: i32) -> String {
+    crate::proto::config::Status::try_from(status)
+        .map(|status| status.as_str_name().to_string())
+        .unwrap_or_else(|_| format!("UNKNOWN({})", status))
+}
+
 /// Decode a frame into human-readable info
 fn decode_frame(timestamp: Duration, frame: &Frame) -> DecodedFrame {
     let msg_type = frame.msg_type;
@@ -179,35 +200,23 @@ fn identify_message(msg_type: u8) -> (String, &'static str, &'static str) {
         0x1A => ("TRACE_SESSION_INFO".into(), "dev->host", "trace"),
         0x1B => ("TRACE_ACK".into(), "dev->host", "trace"),
 
-        // Config messages (0x20-0x3F)
-        0x20 => ("LIST_FEATURES_REQ".into(), "host->dev", "config"),
-        0x21 => ("LIST_FEATURES_RSP".into(), "dev->host", "config"),
-        0x22 => ("SET_FEATURE_REQ".into(), "host->dev", "config"),
-        0x23 => ("SET_FEATURE_RSP".into(), "dev->host", "config"),
-        0x24 => ("GET_FEATURE_REQ".into(), "host->dev", "config"),
-        0x25 => ("GET_FEATURE_RSP".into(), "dev->host", "config"),
-        0x26 => ("SET_LED_PATTERN_REQ".into(), "host->dev", "config"),
-        0x27 => ("SET_LED_PATTERN_RSP".into(), "dev->host", "config"),
-        0x28 => ("GET_LED_PATTERN_REQ".into(), "host->dev", "config"),
-        0x29 => ("GET_LED_PATTERN_RSP".into(), "dev->host", "config"),
-        0x2A => ("SET_IMU_TRIAGE_REQ".into(), "host->dev", "config"),
-        0x2B => ("SET_IMU_TRIAGE_RSP".into(), "dev->host", "config"),
-        0x30 => ("GET_MODE_REQ".into(), "host->dev", "config"),
-        0x31 => ("GET_MODE_RSP".into(), "dev->host", "config"),
-        0x32 => ("SET_MODE_REQ".into(), "host->dev", "config"),
-        0x33 => ("SET_MODE_RSP".into(), "dev->host", "config"),
-        0x34 => ("GET_SYSTEM_INFO_REQ".into(), "host->dev", "config"),
-        0x35 => ("GET_SYSTEM_INFO_RSP".into(), "dev->host", "config"),
-        0x36 => ("SET_POD_ID_REQ".into(), "host->dev", "config"),
-        0x37 => ("SET_POD_ID_RSP".into(), "dev->host", "config"),
-        0x38 => ("GET_HEALTH_REQ".into(), "host->dev", "config"),
-        0x39 => ("GET_HEALTH_RSP".into(), "dev->host", "config"),
-        0x3A => ("GET_ESPNOW_STATUS_REQ".into(), "host->dev", "config"),
-        0x3B => ("GET_ESPNOW_STATUS_RSP".into(), "dev->host", "config"),
-        0x3C => ("ESPNOW_BENCH_REQ".into(), "host->dev", "config"),
-        0x3D => ("ESPNOW_BENCH_RSP".into(), "dev->host", "config"),
-
-        _ => (format!("UNKNOWN_0x{:02X}", msg_type), "unknown", "unknown"),
+        _ => {
+            if let Some(kind) = config_msg_type(msg_type) {
+                let proto_name = kind.as_str_name();
+                let name = proto_name
+                    .strip_prefix("MSG_TYPE_")
+                    .unwrap_or(proto_name)
+                    .to_string();
+                let direction = if proto_name.ends_with("_RSP") {
+                    "dev->host"
+                } else {
+                    "host->dev"
+                };
+                (name, direction, "config")
+            } else {
+                (format!("UNKNOWN_0x{:02X}", msg_type), "unknown", "unknown")
+            }
+        }
     }
 }
 
@@ -216,19 +225,14 @@ fn decode_payload(msg_type: u8, payload: &[u8]) -> Vec<(String, String)> {
     let mut fields = Vec::new();
 
     // Skip status byte for response messages that include one
-    let (status_byte, proto_payload) = match msg_type {
-        // Responses that have a leading status byte
-        0x23 | 0x25 | 0x27 | 0x29 | 0x2B | 0x31 | 0x33 | 0x35 | 0x37 | 0x39 | 0x3B | 0x3D => {
-            if payload.is_empty() {
-                return fields;
-            }
-            let status_name = crate::proto::config::Status::try_from(payload[0] as i32)
-                .map(|s| s.as_str_name())
-                .unwrap_or("UNKNOWN");
-            fields.push(("status".into(), status_name.into()));
-            (Some(payload[0]), &payload[1..])
+    let (status_byte, proto_payload) = if config_response_has_status(msg_type) {
+        if payload.is_empty() {
+            return fields;
         }
-        _ => (None, payload),
+        fields.push(("status".into(), config_status_name(i32::from(payload[0]))));
+        (Some(payload[0]), &payload[1..])
+    } else {
+        (None, payload)
     };
 
     // Don't try to decode further if status was error
@@ -241,9 +245,7 @@ fn decode_payload(msg_type: u8, payload: &[u8]) -> Vec<(String, String)> {
     match msg_type {
         // LIST_FEATURES_RSP
         0x21 => {
-            if let Ok(resp) =
-                crate::proto::config::ListFeaturesResponse::decode(proto_payload)
-            {
+            if let Ok(resp) = crate::proto::config::ListFeaturesResponse::decode(proto_payload) {
                 if resp.pod_id > 0 {
                     fields.push(("pod_id".into(), resp.pod_id.to_string()));
                 }
@@ -257,59 +259,40 @@ fn decode_payload(msg_type: u8, payload: &[u8]) -> Vec<(String, String)> {
 
         // SET_FEATURE_REQ
         0x22 => {
-            if let Ok(req) =
-                crate::proto::config::SetFeatureRequest::decode(proto_payload)
-            {
+            if let Ok(req) = crate::proto::config::SetFeatureRequest::decode(proto_payload) {
                 fields.push(("feature".into(), feature_name(req.feature)));
-                fields.push((
-                    "enabled".into(),
-                    req.enabled.to_string(),
-                ));
+                fields.push(("enabled".into(), req.enabled.to_string()));
             }
         }
 
         // SET_FEATURE_RSP
         0x23 => {
-            if let Ok(resp) =
-                crate::proto::config::SetFeatureResponse::decode(proto_payload)
-            {
+            if let Ok(resp) = crate::proto::config::SetFeatureResponse::decode(proto_payload) {
                 if let Some(fs) = &resp.feature {
                     fields.push(("feature".into(), feature_name(fs.feature)));
-                    fields.push((
-                        "enabled".into(),
-                        fs.enabled.to_string(),
-                    ));
+                    fields.push(("enabled".into(), fs.enabled.to_string()));
                 }
             }
         }
 
         // GET_MODE_RSP
         0x31 => {
-            if let Ok(resp) =
-                crate::proto::config::GetModeResponse::decode(proto_payload)
-            {
+            if let Ok(resp) = crate::proto::config::GetModeResponse::decode(proto_payload) {
                 fields.push(("mode".into(), mode_name(resp.mode)));
-                fields.push((
-                    "time_in_mode_ms".into(),
-                    resp.time_in_mode_ms.to_string(),
-                ));
+                fields.push(("time_in_mode_ms".into(), resp.time_in_mode_ms.to_string()));
             }
         }
 
         // SET_MODE_REQ
         0x32 => {
-            if let Ok(req) =
-                crate::proto::config::SetModeRequest::decode(proto_payload)
-            {
+            if let Ok(req) = crate::proto::config::SetModeRequest::decode(proto_payload) {
                 fields.push(("mode".into(), mode_name(req.mode)));
             }
         }
 
         // GET_SYSTEM_INFO_RSP
         0x35 => {
-            if let Ok(resp) =
-                crate::proto::config::GetSystemInfoResponse::decode(proto_payload)
-            {
+            if let Ok(resp) = crate::proto::config::GetSystemInfoResponse::decode(proto_payload) {
                 fields.push(("firmware".into(), resp.firmware_version));
                 fields.push(("pod_id".into(), resp.pod_id.to_string()));
                 fields.push(("mode".into(), mode_name(resp.mode)));
@@ -321,30 +304,17 @@ fn decode_payload(msg_type: u8, payload: &[u8]) -> Vec<(String, String)> {
 
         // GET_HEALTH_RSP
         0x39 => {
-            if let Ok(resp) =
-                crate::proto::config::GetHealthResponse::decode(proto_payload)
-            {
+            if let Ok(resp) = crate::proto::config::GetHealthResponse::decode(proto_payload) {
                 fields.push(("free_heap".into(), resp.free_heap.to_string()));
-                fields.push((
-                    "min_free_heap".into(),
-                    resp.min_free_heap.to_string(),
-                ));
-                fields.push((
-                    "uptime_s".into(),
-                    resp.uptime_seconds.to_string(),
-                ));
-                fields.push((
-                    "tasks".into(),
-                    resp.tasks.len().to_string(),
-                ));
+                fields.push(("min_free_heap".into(), resp.min_free_heap.to_string()));
+                fields.push(("uptime_s".into(), resp.uptime_seconds.to_string()));
+                fields.push(("tasks".into(), resp.tasks.len().to_string()));
             }
         }
 
         // TRACE_ACK
         0x1B => {
-            if let Ok(ack) =
-                crate::proto::trace::AckResponse::decode(proto_payload)
-            {
+            if let Ok(ack) = crate::proto::trace::AckResponse::decode(proto_payload) {
                 let status = crate::proto::trace::Status::try_from(ack.status)
                     .map(|s| format!("{}", s))
                     .unwrap_or_else(|_| format!("unknown({})", ack.status));
@@ -354,9 +324,7 @@ fn decode_payload(msg_type: u8, payload: &[u8]) -> Vec<(String, String)> {
 
         // TRACE_STATUS_RESP
         0x17 => {
-            if let Ok(resp) =
-                crate::proto::trace::TraceStatusResponse::decode(proto_payload)
-            {
+            if let Ok(resp) = crate::proto::trace::TraceStatusResponse::decode(proto_payload) {
                 fields.push(("initialized".into(), resp.initialized.to_string()));
                 fields.push(("enabled".into(), resp.enabled.to_string()));
                 fields.push(("streaming".into(), resp.streaming.to_string()));
@@ -368,9 +336,7 @@ fn decode_payload(msg_type: u8, payload: &[u8]) -> Vec<(String, String)> {
 
         // TRACE_SESSION_INFO
         0x1A => {
-            if let Ok(info) =
-                crate::proto::trace::TraceSessionInfo::decode(proto_payload)
-            {
+            if let Ok(info) = crate::proto::trace::TraceSessionInfo::decode(proto_payload) {
                 fields.push(("pod_id".into(), info.pod_id.to_string()));
                 fields.push(("events".into(), info.event_count.to_string()));
                 fields.push(("dropped".into(), info.dropped_count.to_string()));
@@ -380,36 +346,24 @@ fn decode_payload(msg_type: u8, payload: &[u8]) -> Vec<(String, String)> {
 
         // TRACE_DATA
         0x13 => {
-            if let Ok(chunk) =
-                crate::proto::trace::TraceDataChunk::decode(proto_payload)
-            {
+            if let Ok(chunk) = crate::proto::trace::TraceDataChunk::decode(proto_payload) {
                 fields.push(("offset".into(), chunk.offset.to_string()));
                 fields.push(("count".into(), chunk.count.to_string()));
-                fields.push((
-                    "data_bytes".into(),
-                    chunk.events.len().to_string(),
-                ));
+                fields.push(("data_bytes".into(), chunk.events.len().to_string()));
             }
         }
 
         // TRACE_END
         0x14 => {
-            if let Ok(end) =
-                crate::proto::trace::TraceDumpComplete::decode(proto_payload)
-            {
+            if let Ok(end) = crate::proto::trace::TraceDumpComplete::decode(proto_payload) {
                 fields.push(("total_events".into(), end.total_events.to_string()));
-                fields.push((
-                    "checksum".into(),
-                    format!("0x{:08X}", end.checksum),
-                ));
+                fields.push(("checksum".into(), format!("0x{:08X}", end.checksum)));
             }
         }
 
         // SET_LED_PATTERN_REQ
         0x26 => {
-            if let Ok(req) =
-                crate::proto::config::SetLedPatternRequest::decode(proto_payload)
-            {
+            if let Ok(req) = crate::proto::config::SetLedPatternRequest::decode(proto_payload) {
                 if let Some(p) = &req.pattern {
                     let ptype = match p.r#type {
                         0 => "off",
@@ -433,9 +387,7 @@ fn decode_payload(msg_type: u8, payload: &[u8]) -> Vec<(String, String)> {
 
         // GET_ESPNOW_STATUS_RSP
         0x3B => {
-            if let Ok(resp) =
-                crate::proto::config::GetEspNowStatusResponse::decode(proto_payload)
-            {
+            if let Ok(resp) = crate::proto::config::GetEspNowStatusResponse::decode(proto_payload) {
                 fields.push(("state".into(), resp.discovery_state));
                 fields.push(("peers".into(), resp.peer_count.to_string()));
                 fields.push(("tx".into(), resp.tx_count.to_string()));
@@ -443,13 +395,117 @@ fn decode_payload(msg_type: u8, payload: &[u8]) -> Vec<(String, String)> {
             }
         }
 
+        // GET_CRASH_DUMP_RSP
+        0x3F => {
+            if let Ok(resp) = crate::proto::config::CrashDumpResponse::decode(proto_payload) {
+                fields.push(("has_dump".into(), resp.has_dump.to_string()));
+                if resp.has_dump {
+                    fields.push(("reason".into(), resp.reason));
+                    fields.push(("task".into(), resp.task_name));
+                    fields.push(("uptime_s".into(), resp.uptime_s.to_string()));
+                    fields.push(("free_heap".into(), resp.free_heap.to_string()));
+                    fields.push(("backtrace_entries".into(), resp.backtrace.len().to_string()));
+                    fields.push(("boot_count".into(), resp.timestamp.to_string()));
+                }
+            }
+        }
+
+        // CLEAR_CRASH_DUMP_RSP
+        0x41 => {
+            if let Ok(resp) = crate::proto::config::ClearCrashDumpResponse::decode(proto_payload) {
+                fields.push(("cleared".into(), resp.cleared.to_string()));
+            }
+        }
+
+        // GET_MEMORY_PROFILE_RSP
+        0x43 => {
+            if let Ok(resp) = crate::proto::config::GetMemoryProfileResponse::decode(proto_payload)
+            {
+                fields.push(("free_heap".into(), resp.current_free_heap.to_string()));
+                fields.push((
+                    "min_free_heap".into(),
+                    resp.current_min_free_heap.to_string(),
+                ));
+                fields.push((
+                    "largest_block".into(),
+                    resp.current_largest_block.to_string(),
+                ));
+                fields.push(("total_heap".into(), resp.total_heap.to_string()));
+                fields.push(("samples".into(), resp.samples.len().to_string()));
+            }
+        }
+
+        // SELF_TEST_RSP
+        0x45 => {
+            if let Ok(resp) = crate::proto::config::SelfTestResponse::decode(proto_payload) {
+                fields.push(("tests_run".into(), resp.tests_run.to_string()));
+                fields.push(("tests_passed".into(), resp.tests_passed.to_string()));
+                fields.push(("results".into(), resp.results.len().to_string()));
+            }
+        }
+
+        // CHECK_UPDATE_RSP
+        0x47 => {
+            if let Ok(resp) = crate::proto::config::CheckUpdateResponse::decode(proto_payload) {
+                fields.push(("update_available".into(), resp.update_available.to_string()));
+                fields.push(("current_version".into(), resp.current_version));
+                fields.push(("available_version".into(), resp.available_version));
+                fields.push(("firmware_size".into(), resp.firmware_size.to_string()));
+                fields.push(("auto_update".into(), resp.auto_update_enabled.to_string()));
+            }
+        }
+
+        // SET_AUTO_UPDATE_REQ
+        0x48 => {
+            if let Ok(req) = crate::proto::config::SetAutoUpdateRequest::decode(proto_payload) {
+                fields.push(("enabled".into(), req.enabled.to_string()));
+            }
+        }
+
+        // SET_AUTO_UPDATE_RSP
+        0x49 => {
+            if let Ok(resp) = crate::proto::config::SetAutoUpdateResponse::decode(proto_payload) {
+                fields.push(("enabled".into(), resp.enabled.to_string()));
+            }
+        }
+
+        // SIMULATE_TOUCH_REQ
+        0x4C => {
+            if let Ok(req) = crate::proto::config::SimulateTouchRequest::decode(proto_payload) {
+                fields.push(("pad_index".into(), req.pad_index.to_string()));
+            }
+        }
+
+        // SIMULATE_TOUCH_RSP
+        0x4D => {
+            if let Ok(resp) = crate::proto::config::SimulateTouchResponse::decode(proto_payload) {
+                fields.push(("response_status".into(), config_status_name(resp.status)));
+            }
+        }
+
+        // SET_SIM_MODE_REQ
+        0x4E => {
+            if let Ok(req) = crate::proto::config::SetSimModeRequest::decode(proto_payload) {
+                fields.push(("enabled".into(), req.enabled.to_string()));
+                fields.push(("delay_ms".into(), req.delay_ms.to_string()));
+                fields.push(("pad_index".into(), req.pad_index.to_string()));
+            }
+        }
+
+        // SET_SIM_MODE_RSP
+        0x4F => {
+            if let Ok(resp) = crate::proto::config::SetSimModeResponse::decode(proto_payload) {
+                fields.push(("response_status".into(), config_status_name(resp.status)));
+                fields.push(("enabled".into(), resp.enabled.to_string()));
+                fields.push(("delay_ms".into(), resp.delay_ms.to_string()));
+                fields.push(("pad_index".into(), resp.pad_index.to_string()));
+            }
+        }
+
         _ => {
             // No specific decoder — show payload size
             if !proto_payload.is_empty() {
-                fields.push((
-                    "payload_bytes".into(),
-                    proto_payload.len().to_string(),
-                ));
+                fields.push(("payload_bytes".into(), proto_payload.len().to_string()));
             }
         }
     }
@@ -501,7 +557,13 @@ fn display_raw(frame: &DecodedFrame) {
             let hex: Vec<String> = chunk.iter().map(|b| format!("{:02x}", b)).collect();
             let ascii: String = chunk
                 .iter()
-                .map(|&b| if (0x20..=0x7e).contains(&b) { b as char } else { '.' })
+                .map(|&b| {
+                    if (0x20..=0x7e).contains(&b) {
+                        b as char
+                    } else {
+                        '.'
+                    }
+                })
                 .collect();
             println!("  {:04x}  {:<48}  {}", i * 16, hex.join(" "), ascii);
         }
@@ -521,7 +583,11 @@ fn display_json(frame: &DecodedFrame) {
         fields_json.push_str(&format!("\"{}\":\"{}\"", k, escaped_v));
     }
 
-    let raw_hex: String = frame.raw_payload.iter().map(|b| format!("{:02x}", b)).collect();
+    let raw_hex: String = frame
+        .raw_payload
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
 
     println!(
         "{{\"ts_us\":{},\"msg_type\":\"0x{:02X}\",\"msg_name\":\"{}\",\"direction\":\"{}\",\"protocol\":\"{}\",\"payload_size\":{},\"fields\":{{{}}},\"raw\":\"{}\"}}",
@@ -559,6 +625,11 @@ mod tests {
     fn test_protocol_filter_matches() {
         assert!(ProtocolFilter::Config.matches(0x20));
         assert!(ProtocolFilter::Config.matches(0x3F));
+        assert!(ProtocolFilter::Config.matches(0x40));
+        assert!(ProtocolFilter::Config.matches(0x49));
+        assert!(ProtocolFilter::Config.matches(0x4F));
+        assert!(!ProtocolFilter::Config.matches(0x2C));
+        assert!(!ProtocolFilter::Config.matches(0x4A));
         assert!(!ProtocolFilter::Config.matches(0x10));
 
         assert!(ProtocolFilter::Trace.matches(0x10));
@@ -581,6 +652,19 @@ mod tests {
         assert_eq!(name, "LIST_FEATURES_RSP");
         assert_eq!(dir, "dev->host");
         assert_eq!(proto, "config");
+
+        for (msg_type, expected_name, expected_direction) in [
+            (0x40, "CLEAR_CRASH_DUMP_REQ", "host->dev"),
+            (0x43, "GET_MEMORY_PROFILE_RSP", "dev->host"),
+            (0x49, "SET_AUTO_UPDATE_RSP", "dev->host"),
+            (0x4C, "SIMULATE_TOUCH_REQ", "host->dev"),
+            (0x4F, "SET_SIM_MODE_RSP", "dev->host"),
+        ] {
+            let (name, direction, protocol) = identify_message(msg_type);
+            assert_eq!(name, expected_name);
+            assert_eq!(direction, expected_direction);
+            assert_eq!(protocol, "config");
+        }
 
         let (name, dir, proto) = identify_message(0x10);
         assert_eq!(name, "TRACE_START");
@@ -639,9 +723,7 @@ mod tests {
         assert!(fields
             .iter()
             .any(|(k, v)| k == "led-effects" && v == "enabled"));
-        assert!(fields
-            .iter()
-            .any(|(k, v)| k == "wifi" && v == "disabled"));
+        assert!(fields.iter().any(|(k, v)| k == "wifi" && v == "disabled"));
     }
 
     #[test]
@@ -658,9 +740,46 @@ mod tests {
         assert!(fields
             .iter()
             .any(|(k, v)| k == "feature" && v == "led-effects"));
+        assert!(fields.iter().any(|(k, v)| k == "enabled" && v == "true"));
+    }
+
+    #[test]
+    fn test_decode_latest_config_response_with_status_prefix() {
+        use crate::proto::config::{SetSimModeResponse, Status};
+
+        let response = SetSimModeResponse {
+            status: Status::Ok as i32,
+            enabled: true,
+            delay_ms: 250,
+            pad_index: 3,
+        };
+        let mut payload = vec![Status::Ok as u8];
+        payload.extend(response.encode_to_vec());
+
+        let fields = decode_payload(0x4F, &payload);
         assert!(fields
             .iter()
-            .any(|(k, v)| k == "enabled" && v == "true"));
+            .any(|(key, value)| key == "status" && value == "STATUS_OK"));
+        assert!(fields
+            .iter()
+            .any(|(key, value)| key == "response_status" && value == "STATUS_OK"));
+        assert!(fields
+            .iter()
+            .any(|(key, value)| key == "enabled" && value == "true"));
+        assert!(fields
+            .iter()
+            .any(|(key, value)| key == "delay_ms" && value == "250"));
+        assert!(fields
+            .iter()
+            .any(|(key, value)| key == "pad_index" && value == "3"));
+    }
+
+    #[test]
+    fn test_decode_config_error_status_stops_before_protobuf() {
+        use crate::proto::config::Status;
+
+        let fields = decode_payload(0x4F, &[Status::Busy as u8]);
+        assert_eq!(fields, vec![("status".into(), "STATUS_BUSY".into())]);
     }
 
     #[test]
@@ -682,9 +801,7 @@ mod tests {
         assert!(fields
             .iter()
             .any(|(k, v)| k == "initialized" && v == "true"));
-        assert!(fields
-            .iter()
-            .any(|(k, v)| k == "events" && v == "42"));
+        assert!(fields.iter().any(|(k, v)| k == "events" && v == "42"));
     }
 
     #[test]

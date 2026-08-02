@@ -1,5 +1,25 @@
-# DOMES Pod - System Architecture Document
-## Hardware & Firmware Design Specification
+# DOMES Product System Architecture
+
+> **Lifecycle: target design.** This document defines product goals and candidate production
+> architecture. It is not the source of truth for current firmware behavior, current NFF wiring,
+> delivery status, or verification. Use [`docs/README.md`](../docs/README.md) for document ownership,
+> [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) for delivery status,
+> [`research/SOFTWARE_ARCHITECTURE.md`](SOFTWARE_ARCHITECTURE.md) for the as-built software, and
+> [`docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md) for active board mappings.
+
+## Current And Target Baselines
+
+| Concern | Current NFF development baseline | Product target in this document |
+| --- | --- | --- |
+| Board | NFF carrier populated with an ESP32-S3 development module | Integrated production PCB |
+| LED ring | 16 addressable LEDs driven in RGB mode | 16 SK6812 RGBW LEDs |
+| Flash layout | 8 MB, two `0x1E0000` OTA app slots | 16 MB production layout, still to be finalized |
+| Pod orchestration | Deterministic MAC roles and a fixed two-pod drill | App-directed master and multi-pod drills |
+| Host control | Rust `domes-cli` over serial, TCP, or BLE | Mobile application plus service tooling |
+| OTA | Serial and BLE raw-image paths exist with SHA-256 verification; raw WiFi/TCP transfer is rejected | Authenticated, integrity-checked field updates |
+
+Proposed part choices, performance figures, prices, and certification notes require validation
+before they become release requirements.
 
 ---
 
@@ -67,34 +87,28 @@ The firmware supports multiple hardware platforms during development:
 | Platform | Form Factor | Features | Primary Use |
 |----------|-------------|----------|-------------|
 | **ESP32-S3-DevKitC-1** | Bare dev board | 1x WS2812 LED, USB, GPIO access | Initial bring-up, CI testing |
-| **NFF Development Board** | Custom PCB + DevKit | 16x SK6812 RGBW, LIS2DW12 IMU, DRV2605L haptics, MAX98357A audio, speaker | Full feature development |
+| **NFF Development Board** | Custom carrier + DevKit | 16 addressable LEDs in RGB mode, LIS2DW12 IMU, DRV2605L haptics, MAX98357A audio, speaker | Current full-feature development |
 | **Production PCB** | Integrated (planned) | All features in final enclosure | End-user devices |
 
 ### NFF Development Board
 
-The NFF devboard is the primary platform for feature development. It provides all sensors and actuators from the production design in a development-friendly form factor.
+The NFF devboard is the primary platform for feature development. Its carrier header labels are
+physical connector positions, not ESP32 GPIO numbers. The EDA files own physical connectivity and
+`firmware/domes/main/config.hpp` owns the compiled mapping.
 
 **Key Differences from DevKitC-1:**
-- 16x SK6812MINI-E RGBW LEDs (vs 1x WS2812 on DevKit)
-- LED data on GPIO48 via level shifter (vs GPIO38 direct on DevKit v1.1)
+- 16 addressable LEDs driven in RGB mode (vs 1x WS2812 on DevKit)
+- LED data on GPIO16 through a level shifter (H1 physical position 9)
 - LIS2DW12 accelerometer on I2C bus
 - DRV2605L haptic driver on I2C bus
 - MAX98357A I2S audio amplifier with 23mm speaker
 - GPIO breakouts at corners for expansion
 
-**Pin Mapping (NFF Devboard):**
-| Function | GPIO | Notes |
-|----------|------|-------|
-| LED Data | 48 | Via SN74AHCT1G125 level shifter |
-| I2C SDA | 8 | Shared: LIS2DW12, DRV2605L |
-| I2C SCL | 9 | Shared: LIS2DW12, DRV2605L |
-| IMU INT1 | 3 | Accelerometer interrupt |
-| I2S BCLK | 12 | Audio bit clock |
-| I2S LRCLK | 11 | Audio word select |
-| I2S DATA | 10 | Audio data out |
-| Audio SD | 13 | Amplifier shutdown |
-
-See [`hardware/nff-devboard/README.md`](../hardware/nff-devboard/README.md) for full specifications and fabrication files.
+Use [`docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md) for the reviewed mapping and
+[`firmware/domes/main/config.hpp`](../firmware/domes/main/config.hpp) for the compiled values. See
+[`hardware/nff-devboard/README.md`](../hardware/nff-devboard/README.md) for the available design
+source and bring-up material; manufacturing Gerbers, placement data, and a board-specific BOM are
+not currently checked in.
 
 ---
 
@@ -109,7 +123,7 @@ See [`hardware/nff-devboard/README.md`](../hardware/nff-devboard/README.md) for 
 | **BLE Mesh** | 50-200ms+ | Unlimited (hops) | 32,767 | High | ⚠️ Proxy needed | High |
 | **WiFi Direct** | 5-10ms | 50m | ~8 | High | ⚠️ Complex | Medium |
 
-### 2.2 Recommended Architecture: Hybrid ESP-NOW + BLE
+### 2.2 Target Architecture: Hybrid ESP-NOW + BLE
 
 ```mermaid
 graph LR
@@ -134,14 +148,19 @@ graph LR
     MASTER <-->|ESP-NOW| POD6
 ```
 
-**Rationale:**
+**Target rationale:**
 - Phone connects via standard BLE to one "master" pod
 - Master pod relays commands to other pods via ESP-NOW
 - ESP-NOW delivers <1ms latency for synchronized lighting/timing
 - Any pod can be master (user selects in app, or auto-elect)
 - Fallback: All pods can connect directly via BLE if needed
 
-### 2.3 Communication Protocol Design
+### 2.3 Target Communication Protocol
+
+The diagram below is an early product proposal and is not the implemented wire contract. Current
+config and trace contracts come from `firmware/common/proto/*.proto`. Current OTA and internal
+ESP-NOW packets are bounded fixed-binary exceptions documented in the as-built software
+architecture.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -160,7 +179,7 @@ graph LR
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 2.4 Synchronization Strategy
+### 2.4 Target Synchronization Strategy
 
 For reaction time accuracy:
 - Master broadcasts `SYNC_CLOCK` every 100ms
@@ -405,13 +424,18 @@ graph TB
 - Crisp, satisfying haptic feel (not buzzy)
 - DRV2605L has 123 built-in effects
 - I2C control (simple integration)
-- Auto-resonance tracking for consistent feel
+- Supports either auto-resonance for compatible LRAs or fixed-frequency open-loop drive
 
 **DRV2605L Specifications:**
 - Interface: I2C (address 0x5A)
 - Supply: 2.0-5.2V
 - 6 effect libraries (1 for LRA)
 - Audio-to-vibe mode available
+
+The NFF EasyEDA source and exported schematic specify the LD0832AA-0099F (1.8 Vrms, 235 Hz). Current
+firmware selects LRA library 6 and a bounded manual-frequency open-loop profile for that actuator.
+The populated part and physical output still require verification. A future production motor change
+requires a new motor/driver profile and validation, not silent reuse of these register values.
 
 ### 6.3 Audio System
 
@@ -600,7 +624,10 @@ graph LR
 
 ## 9. OTA & PRODUCTION PROGRAMMING
 
-### 9.1 Partition Scheme
+### 9.1 Target Partition Scheme
+
+This 16 MB layout is a proposal. The current NFF firmware uses the checked-in 8 MB layout in
+`firmware/domes/partitions.csv`, with two `0x1E0000` app slots.
 
 ```
 ┌────────────────────────────────────────────────┐
@@ -624,7 +651,7 @@ graph LR
 └────────────────────────────────────────────────┘
 ```
 
-### 9.2 OTA Update Flow
+### 9.2 Target OTA Update Flow
 
 ```mermaid
 sequenceDiagram
@@ -648,7 +675,11 @@ sequenceDiagram
     Pod->>Pod: Reboot to new firmware
 ```
 
-### 9.3 OTA Security Features
+### 9.3 Target OTA Security Features
+
+These are product requirements, not claims that the complete security model exists today. The
+serial receiver verifies the transmitted SHA-256 digest before selecting the new image. Raw WiFi
+OTA remains unimplemented in the TCP config server and is rejected by the CLI.
 
 | Feature | Implementation |
 |---------|----------------|

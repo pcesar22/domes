@@ -139,7 +139,6 @@ void CommandHandler::handleDump() {
     uint32_t offset = 0;
     uint32_t checksum = 0;
     uint32_t totalSent = 0;
-    uint32_t endTs = startTs;
 
     // First chunk starts with the already-read event
     chunk[0] = firstEvent;
@@ -156,8 +155,6 @@ void CommandHandler::handleDump() {
     TraceEvent event;
     while (Recorder::buffer().read(&event, 0)) {
         chunk[chunkFill] = event;
-        endTs = event.timestamp;
-
         // Update checksum
         const auto* bytes = reinterpret_cast<const uint8_t*>(&event);
         for (size_t j = 0; j < sizeof(TraceEvent); ++j) {

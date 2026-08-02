@@ -1,222 +1,174 @@
 # DOMES CLI
 
-Command-line interface for DOMES firmware runtime configuration and updates.
+`domes-cli` is the primary service and development interface for DOMES pods. It supports runtime
+configuration, diagnostics, tracing, OTA, and multi-device commands over the transports implemented
+by each workflow.
 
-## Installation
+The executable's `--help` output owns command syntax. This guide owns setup, transport constraints,
+and representative workflows.
+
+## Prerequisites And Build
+
+On Debian or Ubuntu:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y protobuf-compiler pkg-config libudev-dev libdbus-1-dev
+```
+
+Build and verify:
 
 ```bash
 cd tools/domes-cli
-cargo build --release
+cargo fmt --check
+cargo clippy --all-targets --all-features
+cargo build
+cargo test
+cargo run -- --help
 ```
 
-The binary will be at `target/release/domes-cli`.
+The debug binary is `target/debug/domes-cli`; use `cargo build --release` for
+`target/release/domes-cli`.
 
-## Usage
+## Transports
 
-### Connection Options
+| Transport | Select with | Current workflow support |
+| --- | --- | --- |
+| USB CDC serial | `--port /dev/ttyACM0` | Config, diagnostics, trace, serial OTA |
+| WiFi TCP config server | `--wifi HOST:5000` | Config and diagnostics |
+| BLE GATT | `--ble NAME_OR_ADDRESS` | Config, diagnostics, BLE OTA |
+| Device registry | `--target NAME` or `--all` | Fan-out across registered serial, TCP, and BLE targets |
+
+Raw image transfer through `--wifi ... ota flash` is not currently supported by the firmware TCP
+server. GitHub update-check commands are config messages and are a separate workflow. Trace live
+streaming connects to its dedicated WiFi endpoint and accepts one target per process.
+
+BLE validation requires native Linux or a supported mobile host. Do not use WSL2 or Raspberry Pi
+Bluetooth for validation-critical results.
+
+## Discover And Inspect
 
 ```bash
-# Serial (USB)
-domes-cli --port /dev/ttyACM0 <command>
-
-# WiFi (TCP)
-domes-cli --wifi 192.168.1.100:5000 <command>
-
-# Bluetooth Low Energy (requires native Linux, not WSL2)
-domes-cli --ble "DOMES-Pod" <command>        # Connect by device name
-domes-cli --ble "94:A9:90:0A:EA:52" <command> # Connect by MAC address
-
-# Discovery
-domes-cli --list-ports                        # List serial ports
-domes-cli --scan-ble                          # Scan for BLE devices
-```
-
-## Multi-Device Usage
-
-### Device Registry
-
-```bash
-# Register devices
-domes-cli devices add pod1 serial /dev/ttyACM0
-domes-cli devices add pod2 serial /dev/ttyACM1
-
-# List registered devices
-domes-cli devices list
-
-# Remove a device
-domes-cli devices remove pod1
-
-# Scan for all connected DOMES devices
-domes-cli devices scan
-```
-
-### Targeting Multiple Devices
-
-```bash
-# By registry name
-domes-cli --target pod1 --target pod2 feature list
-
-# All registered devices
-domes-cli --all feature list
-
-# Multiple ports directly
-domes-cli --port /dev/ttyACM0 --port /dev/ttyACM1 led solid --color ff0000
-
-# Mix transports
-domes-cli --port /dev/ttyACM0 --wifi 192.168.1.100:5000 system info
-```
-
-### Multi-Device Output
-
-When targeting multiple devices, output is labeled per device:
-
-```
---- pod1 ---
-[pod1] Features:
-[pod1] NAME             STATUS
-[pod1] led-effects      enabled
-[pod1] wifi             disabled
-
---- pod2 ---
-[pod2] Features:
-[pod2] NAME             STATUS
-[pod2] led-effects      enabled
-[pod2] wifi             enabled
-```
-
-### Multi-Device OTA
-
-```bash
-# Flash all registered devices
-domes-cli --all ota flash firmware/domes/build/domes.bin --version v1.0.0
-```
-
-### Device Registry File
-
-Devices are stored in `~/.domes/devices.toml`:
-
-```toml
-[devices.pod1]
-transport = "serial"
-address = "/dev/ttyACM0"
-
-[devices.pod2]
-transport = "serial"
-address = "/dev/ttyACM1"
-```
-
-### Feature Management
-
-```bash
-# List all features and their status
+domes-cli --list-ports
+domes-cli --scan-ble
+domes-cli --port /dev/ttyACM0 system info
+domes-cli --port /dev/ttyACM0 system health
+domes-cli --port /dev/ttyACM0 system self-test
 domes-cli --port /dev/ttyACM0 feature list
-
-# Enable a feature
-domes-cli --port /dev/ttyACM0 feature enable wifi
-
-# Disable a feature
-domes-cli --port /dev/ttyACM0 feature disable ble
 ```
 
-Available features: `led-effects`, `ble`, `wifi`, `esp-now`, `touch`, `haptic`, `audio`
+`system crash-dump` is a legacy command name. The current firmware returns a clean-restart snapshot
+saved before `esp_restart()`; it does not retrieve a panic backtrace or ESP-IDF core dump.
 
-### WiFi Control
+## Control A Pod
 
 ```bash
-# Show WiFi status
+domes-cli --port /dev/ttyACM0 feature enable esp-now
 domes-cli --port /dev/ttyACM0 wifi status
-
-# Enable WiFi
-domes-cli --port /dev/ttyACM0 wifi enable
-
-# Disable WiFi
-domes-cli --port /dev/ttyACM0 wifi disable
-```
-
-### LED Pattern Control
-
-```bash
-# Get current LED pattern
-domes-cli --port /dev/ttyACM0 led get
-
-# Turn LEDs off
-domes-cli --port /dev/ttyACM0 led off
-
-# Solid color (hex RGB)
-domes-cli --port /dev/ttyACM0 led solid --color ff0000        # Red
-domes-cli --port /dev/ttyACM0 led solid --color 00ff00        # Green
-
-# Breathing effect
+domes-cli --port /dev/ttyACM0 led solid --color ff0000 --brightness 128
 domes-cli --port /dev/ttyACM0 led breathing --color 0000ff --period 3000
-
-# Color cycle (rainbow)
 domes-cli --port /dev/ttyACM0 led cycle --period 2000
-
-# Set brightness (0-255)
-domes-cli --port /dev/ttyACM0 led solid --color ffffff --brightness 128
+domes-cli --port /dev/ttyACM0 led off
+domes-cli --port /dev/ttyACM0 imu triage --enable
+domes-cli --port /dev/ttyACM0 touch simulate --pad 1
 ```
 
-### OTA Firmware Updates
+Use subcommand help for accepted enum values and options:
 
 ```bash
-# Flash firmware over serial
-domes-cli --port /dev/ttyACM0 ota flash firmware.bin --version v1.2.3
-
-# Flash firmware over WiFi
-domes-cli --wifi 192.168.1.100:5000 ota flash firmware.bin
+domes-cli system --help
+domes-cli ota --help
+domes-cli trace --help
+domes-cli espnow --help
 ```
 
-### Performance Tracing
+## OTA
+
+Build the firmware first, then use a serial or BLE target:
 
 ```bash
-# Start trace recording
+domes-cli --port /dev/ttyACM0 ota flash \
+  firmware/domes/build/domes.bin --version v1.0.0
+
+domes-cli --ble "DOMES-Pod-01" ota flash \
+  firmware/domes/build/domes.bin --version v1.0.0
+```
+
+After transfer, reconnect and verify `system info` reports the expected version and that the pod
+completed a healthy boot. The serial receiver verifies the CLI-provided SHA-256 digest before it
+accepts the image and selects the new boot partition.
+
+## Tracing And Sniffing
+
+```bash
 domes-cli --port /dev/ttyACM0 trace start
-
-# Stop trace recording
+domes-cli --port /dev/ttyACM0 trace status
+domes-cli --port /dev/ttyACM0 trace dump \
+  --output trace.json --names tools/trace/trace_names.json
 domes-cli --port /dev/ttyACM0 trace stop
 
-# Get trace status
-domes-cli --port /dev/ttyACM0 trace status
-
-# Clear trace buffer
-domes-cli --port /dev/ttyACM0 trace clear
-
-# Dump traces to JSON file (Perfetto compatible)
-domes-cli --port /dev/ttyACM0 trace dump -o trace.json
+domes-cli trace stream --wifi 192.168.1.100:5001
+domes-cli --port /dev/ttyACM0 sniff --filter config,trace --json
 ```
 
-Open the trace file in [Perfetto UI](https://ui.perfetto.dev) for visualization.
+Open dump output in [Perfetto](https://ui.perfetto.dev). Merge multiple pod dumps with
+`tools/trace/trace_merge.py`; see [`../README.md`](../README.md).
 
-## Protocol
-
-The CLI communicates using a binary frame protocol over serial, TCP, or BLE:
-
-```
-[0xAA][0x55][LenLE16][MsgType][Payload][CRC32LE]
-```
-
-Message payloads use Protocol Buffers (prost) for serialization, matching the firmware's nanopb encoding.
-
-### BLE Transport
-
-- **Service UUID**: `12345678-1234-5678-1234-56789abcdef0`
-- **Data Characteristic** (Write): `...def1` - Send frames to device
-- **Status Characteristic** (Notify): `...def2` - Receive responses
-
-The CLI uses [btleplug](https://github.com/deviceplug/btleplug) for cross-platform BLE support. BLE requires native Linux (not WSL2).
-
-## Development
+## ESP-NOW
 
 ```bash
-# Build
-cargo build
-
-# Run tests
-cargo test
-
-# Check formatting
-cargo fmt --check
-
-# Lint
-cargo clippy
+domes-cli --port /dev/ttyACM0 espnow status
+domes-cli --port /dev/ttyACM0 espnow bench --rounds 100
+domes-cli --port /dev/ttyACM0 espnow sim-mode on
 ```
+
+Status on one pod does not prove peer communication. A valid result requires at least two physical
+pods, peer discovery, and packet or benchmark evidence.
+
+## Device Registry And Fan-Out
+
+```bash
+domes-cli devices add pod1 serial /dev/ttyACM0
+domes-cli devices add pod2 serial /dev/ttyACM1
+domes-cli devices list
+domes-cli devices scan
+
+domes-cli --target pod1 --target pod2 feature list
+domes-cli --all led solid --color 00ff00
+```
+
+Registry entries are stored in `~/.domes/devices.toml`. Multi-device output is labeled by target.
+Long-running trace streaming is intentionally single-target; start one process per pod when multiple
+streams are needed.
+
+## Command Groups
+
+| Group | Purpose |
+| --- | --- |
+| `feature`, `wifi`, `led`, `imu`, `touch` | Runtime feature and peripheral control |
+| `system` | Mode, identity, health, restart snapshot, memory, and self-test |
+| `ota` | Serial/BLE image transfer and GitHub update configuration |
+| `trace` | Record, inspect, dump, and stream performance events |
+| `espnow` | Peer status, latency benchmark, and simulation controls |
+| `devices` | Persistent registry and discovery |
+| `sniff` | Capture and decode framed config, trace, or OTA traffic |
+
+## Protocol Ownership
+
+Config and trace message IDs and payloads come from `firmware/common/proto/*.proto`. `build.rs`
+generates Rust prost types whenever the CLI builds. The shared frame is:
+
+```text
+[0xAA][0x55][LenLE16][Type][Payload][CRC32LE]
+```
+
+The OTA chunk-transfer structs are a bounded fixed-binary exception mirrored from
+`firmware/common/protocol/otaProtocol.hpp`. Do not add a new handwritten host protocol. See
+[`../../firmware/common/proto/README.md`](../../firmware/common/proto/README.md) for cross-language
+generation rules.
+
+## Verification Limits
+
+Unit tests cover framing, sniffer decoding, and selected command helpers. They do not replace a
+firmware build or device test. Protocol, transport, OTA, BLE, and multi-device changes require the
+corresponding end-to-end check in [`../../docs/TESTING.md`](../../docs/TESTING.md).

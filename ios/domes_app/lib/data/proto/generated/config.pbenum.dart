@@ -46,7 +46,7 @@ class MsgType extends $pb.ProtobufEnum {
   static const MsgType MSG_TYPE_SET_IMU_TRIAGE_RSP =
       MsgType._(43, _omitEnumNames ? '' : 'MSG_TYPE_SET_IMU_TRIAGE_RSP');
 
-  /// System mode commands (0x30-0x35 range)
+  /// System mode commands (0x30-0x37 range)
   static const MsgType MSG_TYPE_GET_MODE_REQ =
       MsgType._(48, _omitEnumNames ? '' : 'MSG_TYPE_GET_MODE_REQ');
   static const MsgType MSG_TYPE_GET_MODE_RSP =
@@ -59,6 +59,68 @@ class MsgType extends $pb.ProtobufEnum {
       MsgType._(52, _omitEnumNames ? '' : 'MSG_TYPE_GET_SYSTEM_INFO_REQ');
   static const MsgType MSG_TYPE_GET_SYSTEM_INFO_RSP =
       MsgType._(53, _omitEnumNames ? '' : 'MSG_TYPE_GET_SYSTEM_INFO_RSP');
+  static const MsgType MSG_TYPE_SET_POD_ID_REQ =
+      MsgType._(54, _omitEnumNames ? '' : 'MSG_TYPE_SET_POD_ID_REQ');
+  static const MsgType MSG_TYPE_SET_POD_ID_RSP =
+      MsgType._(55, _omitEnumNames ? '' : 'MSG_TYPE_SET_POD_ID_RSP');
+
+  /// Observability commands (0x38-0x4F range)
+  static const MsgType MSG_TYPE_GET_HEALTH_REQ =
+      MsgType._(56, _omitEnumNames ? '' : 'MSG_TYPE_GET_HEALTH_REQ');
+  static const MsgType MSG_TYPE_GET_HEALTH_RSP =
+      MsgType._(57, _omitEnumNames ? '' : 'MSG_TYPE_GET_HEALTH_RSP');
+  static const MsgType MSG_TYPE_GET_ESPNOW_STATUS_REQ =
+      MsgType._(58, _omitEnumNames ? '' : 'MSG_TYPE_GET_ESPNOW_STATUS_REQ');
+  static const MsgType MSG_TYPE_GET_ESPNOW_STATUS_RSP =
+      MsgType._(59, _omitEnumNames ? '' : 'MSG_TYPE_GET_ESPNOW_STATUS_RSP');
+  static const MsgType MSG_TYPE_ESPNOW_BENCH_REQ =
+      MsgType._(60, _omitEnumNames ? '' : 'MSG_TYPE_ESPNOW_BENCH_REQ');
+  static const MsgType MSG_TYPE_ESPNOW_BENCH_RSP =
+      MsgType._(61, _omitEnumNames ? '' : 'MSG_TYPE_ESPNOW_BENCH_RSP');
+
+  /// Crash dump commands (0x3E-0x41)
+  static const MsgType MSG_TYPE_GET_CRASH_DUMP_REQ =
+      MsgType._(62, _omitEnumNames ? '' : 'MSG_TYPE_GET_CRASH_DUMP_REQ');
+  static const MsgType MSG_TYPE_GET_CRASH_DUMP_RSP =
+      MsgType._(63, _omitEnumNames ? '' : 'MSG_TYPE_GET_CRASH_DUMP_RSP');
+  static const MsgType MSG_TYPE_CLEAR_CRASH_DUMP_REQ =
+      MsgType._(64, _omitEnumNames ? '' : 'MSG_TYPE_CLEAR_CRASH_DUMP_REQ');
+  static const MsgType MSG_TYPE_CLEAR_CRASH_DUMP_RSP =
+      MsgType._(65, _omitEnumNames ? '' : 'MSG_TYPE_CLEAR_CRASH_DUMP_RSP');
+
+  /// Memory profiler commands (0x42-0x43)
+  static const MsgType MSG_TYPE_GET_MEMORY_PROFILE_REQ =
+      MsgType._(66, _omitEnumNames ? '' : 'MSG_TYPE_GET_MEMORY_PROFILE_REQ');
+  static const MsgType MSG_TYPE_GET_MEMORY_PROFILE_RSP =
+      MsgType._(67, _omitEnumNames ? '' : 'MSG_TYPE_GET_MEMORY_PROFILE_RSP');
+
+  /// Self-test / smoke test commands (0x44-0x45)
+  static const MsgType MSG_TYPE_SELF_TEST_REQ =
+      MsgType._(68, _omitEnumNames ? '' : 'MSG_TYPE_SELF_TEST_REQ');
+  static const MsgType MSG_TYPE_SELF_TEST_RSP =
+      MsgType._(69, _omitEnumNames ? '' : 'MSG_TYPE_SELF_TEST_RSP');
+
+  /// GitHub OTA commands (0x46-0x49)
+  static const MsgType MSG_TYPE_CHECK_UPDATE_REQ =
+      MsgType._(70, _omitEnumNames ? '' : 'MSG_TYPE_CHECK_UPDATE_REQ');
+  static const MsgType MSG_TYPE_CHECK_UPDATE_RSP =
+      MsgType._(71, _omitEnumNames ? '' : 'MSG_TYPE_CHECK_UPDATE_RSP');
+  static const MsgType MSG_TYPE_SET_AUTO_UPDATE_REQ =
+      MsgType._(72, _omitEnumNames ? '' : 'MSG_TYPE_SET_AUTO_UPDATE_REQ');
+  static const MsgType MSG_TYPE_SET_AUTO_UPDATE_RSP =
+      MsgType._(73, _omitEnumNames ? '' : 'MSG_TYPE_SET_AUTO_UPDATE_RSP');
+
+  /// Touch injection commands (0x4C-0x4D)
+  static const MsgType MSG_TYPE_SIMULATE_TOUCH_REQ =
+      MsgType._(76, _omitEnumNames ? '' : 'MSG_TYPE_SIMULATE_TOUCH_REQ');
+  static const MsgType MSG_TYPE_SIMULATE_TOUCH_RSP =
+      MsgType._(77, _omitEnumNames ? '' : 'MSG_TYPE_SIMULATE_TOUCH_RSP');
+
+  /// Sim drill mode commands (0x4E-0x4F)
+  static const MsgType MSG_TYPE_SET_SIM_MODE_REQ =
+      MsgType._(78, _omitEnumNames ? '' : 'MSG_TYPE_SET_SIM_MODE_REQ');
+  static const MsgType MSG_TYPE_SET_SIM_MODE_RSP =
+      MsgType._(79, _omitEnumNames ? '' : 'MSG_TYPE_SET_SIM_MODE_RSP');
 
   static const $core.List<MsgType> values = <MsgType>[
     MSG_TYPE_UNKNOWN,
@@ -80,6 +142,30 @@ class MsgType extends $pb.ProtobufEnum {
     MSG_TYPE_SET_MODE_RSP,
     MSG_TYPE_GET_SYSTEM_INFO_REQ,
     MSG_TYPE_GET_SYSTEM_INFO_RSP,
+    MSG_TYPE_SET_POD_ID_REQ,
+    MSG_TYPE_SET_POD_ID_RSP,
+    MSG_TYPE_GET_HEALTH_REQ,
+    MSG_TYPE_GET_HEALTH_RSP,
+    MSG_TYPE_GET_ESPNOW_STATUS_REQ,
+    MSG_TYPE_GET_ESPNOW_STATUS_RSP,
+    MSG_TYPE_ESPNOW_BENCH_REQ,
+    MSG_TYPE_ESPNOW_BENCH_RSP,
+    MSG_TYPE_GET_CRASH_DUMP_REQ,
+    MSG_TYPE_GET_CRASH_DUMP_RSP,
+    MSG_TYPE_CLEAR_CRASH_DUMP_REQ,
+    MSG_TYPE_CLEAR_CRASH_DUMP_RSP,
+    MSG_TYPE_GET_MEMORY_PROFILE_REQ,
+    MSG_TYPE_GET_MEMORY_PROFILE_RSP,
+    MSG_TYPE_SELF_TEST_REQ,
+    MSG_TYPE_SELF_TEST_RSP,
+    MSG_TYPE_CHECK_UPDATE_REQ,
+    MSG_TYPE_CHECK_UPDATE_RSP,
+    MSG_TYPE_SET_AUTO_UPDATE_REQ,
+    MSG_TYPE_SET_AUTO_UPDATE_RSP,
+    MSG_TYPE_SIMULATE_TOUCH_REQ,
+    MSG_TYPE_SIMULATE_TOUCH_RSP,
+    MSG_TYPE_SET_SIM_MODE_REQ,
+    MSG_TYPE_SET_SIM_MODE_RSP,
   ];
 
   static final $core.Map<$core.int, MsgType> _byValue =
@@ -101,6 +187,8 @@ class Status extends $pb.ProtobufEnum {
       Status._(3, _omitEnumNames ? '' : 'STATUS_BUSY');
   static const Status STATUS_INVALID_PATTERN =
       Status._(4, _omitEnumNames ? '' : 'STATUS_INVALID_PATTERN');
+  static const Status STATUS_NO_DATA =
+      Status._(5, _omitEnumNames ? '' : 'STATUS_NO_DATA');
 
   static const $core.List<Status> values = <Status>[
     STATUS_OK,
@@ -108,10 +196,11 @@ class Status extends $pb.ProtobufEnum {
     STATUS_INVALID_FEATURE,
     STATUS_BUSY,
     STATUS_INVALID_PATTERN,
+    STATUS_NO_DATA,
   ];
 
   static final $core.List<Status?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 4);
+      $pb.ProtobufEnum.$_initByValueList(values, 5);
   static Status? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 

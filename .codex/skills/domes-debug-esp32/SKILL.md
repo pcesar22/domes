@@ -19,7 +19,7 @@ idf.py build
 ```
 
 ```bash
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0 10
+python3 tools/firmware/monitor_serial.py /dev/ttyACM0 10
 ```
 
 If symbols or breakpoints look wrong, rebuild and reflash before continuing.
@@ -70,7 +70,7 @@ Debug one pod at a time unless separate JTAG adapters are configured. While one 
 monitor the second pod over serial:
 
 ```bash
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py /dev/ttyACM1 30
+python3 tools/firmware/monitor_serial.py /dev/ttyACM1 30
 ```
 
 For ESP-NOW issues, set breakpoints in callbacks on the debugged pod and monitor the peer's serial

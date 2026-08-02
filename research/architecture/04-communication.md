@@ -1,5 +1,9 @@
 # 04 - Communication
 
+> **Document status: Design proposal, partially implemented.** Packet layouts, message IDs, and BLE
+> topology below are not current wire contracts. Use `firmware/common/proto/`, `frameCodec.hpp`,
+> transport source, and `espNowProtocol.hpp`; see [`README.md`](README.md) for lifecycle details.
+
 ## AI Agent Instructions
 
 Load this file when:

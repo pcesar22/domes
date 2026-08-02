@@ -1,5 +1,9 @@
 # 05 - Game Engine
 
+> **Document status: Design proposal, partially implemented.** The per-pod arm/touch/feedback FSM
+> exists, while general drill interpretation and several primitives remain proposed. Current behavior
+> lives in `gameEngine.*` and `espNowService.*`.
+
 ## AI Agent Instructions
 
 Load this file when:

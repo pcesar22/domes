@@ -26,7 +26,7 @@
 //!   domes-cli --wifi 192.168.1.100:5000 feature enable led-effects
 //!   domes-cli --wifi 192.168.1.100:5000 wifi status
 //!   domes-cli --wifi 192.168.1.100:5000 led cycle --period 2000
-//!   domes-cli --wifi 192.168.1.100:5000 ota flash firmware.bin
+//!   domes-cli --wifi 192.168.1.100:5000 ota check
 //!
 //! Usage (BLE):
 //!   domes-cli --scan-ble                           # Scan for nearby DOMES devices
@@ -306,7 +306,7 @@ enum SystemAction {
     /// Get system health diagnostics (heap, tasks, RSSI)
     Health,
 
-    /// Get crash dump (last panic backtrace from NVS)
+    /// Get the clean-restart diagnostic snapshot stored in NVS
     CrashDump {
         /// Clear the crash dump after displaying
         #[arg(long)]
@@ -450,6 +450,16 @@ fn main() -> anyhow::Result<()> {
             }
         }
         return Ok(());
+    }
+
+    // Trace streaming connects directly to the dedicated TCP port and does not
+    // use the generic serial/TCP/BLE transport resolver.
+    if let Some(Commands::Trace {
+        action: TraceAction::Stream { wifi },
+    }) = &cli.command
+    {
+        validate_trace_stream_selection(&cli)?;
+        return commands::trace_stream(wifi);
     }
 
     // Handle --connect-all-ble: scan and add DOMES devices to BLE targets
@@ -639,11 +649,7 @@ fn main() -> anyhow::Result<()> {
                 if !ble_devices.is_empty() {
                     println!("BLE devices:");
                     for (name, addr) in &ble_devices {
-                        let display_name = if name.is_empty() {
-                            "(unknown)"
-                        } else {
-                            name
-                        };
+                        let display_name = if name.is_empty() { "(unknown)" } else { name };
                         let is_domes = display_name.starts_with("DOMES-Pod");
                         println!(
                             "  {:<20} {}{}",
@@ -662,19 +668,16 @@ fn main() -> anyhow::Result<()> {
     }
 
     // All other commands require at least one transport
+    validate_ota_flash_transport_selection(&cli)?;
+
     let Some(command) = cli.command else {
         eprintln!("No command specified. Use --help for usage.");
         std::process::exit(1);
     };
 
     // Resolve device connections
-    let mut devices = device::resolve_devices(
-        &cli.port,
-        &cli.wifi,
-        &cli.ble,
-        &cli.target,
-        cli.all,
-    )?;
+    let mut devices =
+        device::resolve_devices(&cli.port, &cli.wifi, &cli.ble, &cli.target, cli.all)?;
 
     if devices.is_empty() {
         eprintln!("No transport specified. Use --port, --wifi, --ble, --target, or --all");
@@ -705,460 +708,595 @@ fn main() -> anyhow::Result<()> {
         }
 
         let result: anyhow::Result<()> = (|| {
-        match &command {
-            Commands::Feature { action } => match action {
-                FeatureAction::List => {
-                    let features = commands::feature_list(transport)?;
-                    println!("{}Features:", prefix);
-                    println!("{}{:<16} {}", prefix, "NAME", "STATUS");
-                    println!("{}{:-<16} {:-<8}", prefix, "", "");
-                    for state in features {
-                        let status = if state.enabled { "enabled" } else { "disabled" };
-                        println!("{}{:<16} {}", prefix, state.feature.cli_name(), status);
-                    }
-                }
-                FeatureAction::Enable { feature } => {
-                    let feature: Feature = feature
-                        .parse()
-                        .map_err(|_| anyhow::anyhow!("Unknown feature: {}", feature))?;
-                    let state = commands::feature_enable(transport, feature)?;
-                    println!(
-                        "{}Feature '{}' is now {}",
-                        prefix,
-                        state.feature.cli_name(),
-                        if state.enabled { "enabled" } else { "disabled" }
-                    );
-                }
-                FeatureAction::Disable { feature } => {
-                    let feature: Feature = feature
-                        .parse()
-                        .map_err(|_| anyhow::anyhow!("Unknown feature: {}", feature))?;
-                    let state = commands::feature_disable(transport, feature)?;
-                    println!(
-                        "{}Feature '{}' is now {}",
-                        prefix,
-                        state.feature.cli_name(),
-                        if state.enabled { "enabled" } else { "disabled" }
-                    );
-                }
-            },
-
-            Commands::Wifi { action } => match action {
-                WifiAction::Enable => {
-                    let enabled = commands::wifi_enable(transport)?;
-                    println!(
-                        "{}WiFi subsystem {}",
-                        prefix,
-                        if enabled {
-                            "enabled"
-                        } else {
-                            "failed to enable"
+            match &command {
+                Commands::Feature { action } => match action {
+                    FeatureAction::List => {
+                        let features = commands::feature_list(transport)?;
+                        println!("{}Features:", prefix);
+                        println!("{}{:<16} {}", prefix, "NAME", "STATUS");
+                        println!("{}{:-<16} {:-<8}", prefix, "", "");
+                        for state in features {
+                            let status = if state.enabled { "enabled" } else { "disabled" };
+                            println!("{}{:<16} {}", prefix, state.feature.cli_name(), status);
                         }
-                    );
-                }
-                WifiAction::Disable => {
-                    let disabled = commands::wifi_disable(transport)?;
-                    println!(
-                        "{}WiFi subsystem {}",
-                        prefix,
-                        if disabled {
-                            "disabled"
-                        } else {
-                            "failed to disable"
-                        }
-                    );
-                }
-                WifiAction::Status => {
-                    let enabled = commands::wifi_status(transport)?;
-                    println!(
-                        "{}WiFi subsystem: {}",
-                        prefix,
-                        if enabled { "enabled" } else { "disabled" }
-                    );
-                }
-            },
-
-            Commands::Led { action } => match action {
-                LedAction::Get => {
-                    let pattern = commands::led_get(transport)?;
-                    if multi {
-                        println!("{}LED pattern:", prefix);
                     }
-                    print_led_pattern(&pattern);
-                }
-                LedAction::Off => {
-                    let pattern = commands::led_off(transport)?;
-                    println!("{}LEDs turned off", prefix);
-                    print_led_pattern(&pattern);
-                }
-                LedAction::Solid { color, brightness } => {
-                    let (r, g, b) = parse_hex_color(color)?;
-                    let mut pattern = crate::protocol::CliLedPattern::solid(r, g, b);
-                    pattern.brightness = *brightness;
-                    let pattern = commands::led_set(transport, &pattern)?;
-                    println!("{}LED pattern set to solid", prefix);
-                    print_led_pattern(&pattern);
-                }
-                LedAction::Breathing {
-                    color,
-                    period,
-                    brightness,
-                } => {
-                    let (r, g, b) = parse_hex_color(color)?;
-                    let mut pattern =
-                        crate::protocol::CliLedPattern::breathing(r, g, b, *period);
-                    pattern.brightness = *brightness;
-                    let pattern = commands::led_set(transport, &pattern)?;
-                    println!("{}LED pattern set to breathing", prefix);
-                    print_led_pattern(&pattern);
-                }
-                LedAction::Cycle { period, brightness } => {
-                    let colors = vec![
-                        (255, 0, 0, 0),
-                        (255, 127, 0, 0),
-                        (255, 255, 0, 0),
-                        (0, 255, 0, 0),
-                        (0, 0, 255, 0),
-                        (75, 0, 130, 0),
-                        (148, 0, 211, 0),
-                    ];
-                    let mut pattern =
-                        crate::protocol::CliLedPattern::color_cycle(colors, *period);
-                    pattern.brightness = *brightness;
-                    let pattern = commands::led_set(transport, &pattern)?;
-                    println!("{}LED pattern set to color cycle", prefix);
-                    print_led_pattern(&pattern);
-                }
-            },
-
-            Commands::Ota { action } => match action {
-                OtaAction::Flash { firmware, version } => {
-                    if multi {
-                        println!("{}Flashing OTA...", prefix);
-                    }
-                    commands::ota_flash(transport, firmware, version.as_deref())?;
-                }
-                OtaAction::Check => {
-                    println!("{}Checking for firmware updates...", prefix);
-                    let info = commands::ota_check(transport)?;
-                    println!("{}Current version:  {}", prefix,
-                        if info.current_version.is_empty() { "unknown" } else { &info.current_version });
-                    println!("{}Auto-update:      {}", prefix,
-                        if info.auto_update_enabled { "enabled" } else { "disabled" });
-                    if info.update_available {
-                        println!("{}Update available: {} ({} bytes)", prefix,
-                            info.available_version, info.firmware_size);
-                    } else {
-                        println!("{}No update available", prefix);
-                    }
-                }
-                OtaAction::AutoUpdate { enable, disable } => {
-                    let enabled = if *enable && *disable {
-                        anyhow::bail!("Cannot specify both --enable and --disable");
-                    } else if *enable {
-                        true
-                    } else if *disable {
-                        false
-                    } else {
-                        anyhow::bail!("Must specify either --enable or --disable");
-                    };
-                    let result = commands::ota_auto_update(transport, enabled)?;
-                    println!("{}Auto-update {}", prefix,
-                        if result { "enabled" } else { "disabled" });
-                }
-            },
-
-            Commands::Trace { action } => match action {
-                TraceAction::Start => {
-                    commands::trace_start(transport)?;
-                    println!("{}Tracing started", prefix);
-                }
-                TraceAction::Stop => {
-                    commands::trace_stop(transport)?;
-                    println!("{}Tracing stopped", prefix);
-                }
-                TraceAction::Clear => {
-                    commands::trace_clear(transport)?;
-                    println!("{}Trace buffer cleared", prefix);
-                }
-                TraceAction::Status => {
-                    let status = commands::trace_status(transport)?;
-                    println!("{}Trace status:", prefix);
-                    println!("{}  Initialized: {}", prefix, status.initialized);
-                    println!("{}  Enabled:     {}", prefix, status.enabled);
-                    println!("{}  Streaming:   {}", prefix, status.streaming);
-                    println!("{}  Events:      {}", prefix, status.event_count);
-                    println!("{}  Dropped:     {}", prefix, status.dropped_count);
-                    println!("{}  Buffer size: {} bytes", prefix, status.buffer_size);
-                }
-                TraceAction::Stream { wifi } => {
-                    commands::trace_stream(wifi)?;
-                }
-                TraceAction::Dump { output, names } => {
-                    let dump_path = if multi {
-                        // Per-device output file
-                        let stem = output
-                            .file_stem()
-                            .unwrap_or_default()
-                            .to_string_lossy();
-                        let ext = output
-                            .extension()
-                            .unwrap_or_default()
-                            .to_string_lossy();
-                        output.with_file_name(format!("{}-{}.{}", stem, dev.name, ext))
-                    } else {
-                        output.clone()
-                    };
-                    println!("{}Dumping traces to {}...", prefix, dump_path.display());
-                    let result = commands::trace_dump(transport, &dump_path, names.as_deref())?;
-                    println!("{}Dump complete: {} events (pod_id={})", prefix, result.event_count, result.pod_id);
-                    if result.dropped_count > 0 {
-                        println!("{}  Dropped: {} events", prefix, result.dropped_count);
-                    }
-                    println!("{}Output: {}", prefix, result.output_path.display());
-                }
-            },
-
-            Commands::Imu { action } => match action {
-                ImuAction::Triage { enable, disable } => {
-                    let enabled = if *enable && *disable {
-                        anyhow::bail!("Cannot specify both --enable and --disable");
-                    } else if *enable {
-                        true
-                    } else if *disable {
-                        false
-                    } else {
-                        anyhow::bail!("Must specify either --enable or --disable");
-                    };
-                    let result = commands::imu_triage_set(transport, enabled)?;
-                    println!(
-                        "{}IMU triage mode {}",
-                        prefix,
-                        if result { "enabled" } else { "disabled" }
-                    );
-                }
-            },
-
-            Commands::System { action } => match action {
-                SystemAction::Mode => {
-                    let info = commands::system_get_mode(transport)?;
-                    println!("{}System mode: {}", prefix, info.mode);
-                    println!("{}  Time in mode: {} ms", prefix, info.time_in_mode_ms);
-                }
-                SystemAction::SetMode { mode } => {
-                    let mode: SystemMode = mode.parse().map_err(|_| {
-                        anyhow::anyhow!(
-                            "Unknown mode: {}. Valid: idle, triage, connected, game, error",
-                            mode
-                        )
-                    })?;
-                    let (new_mode, ok) = commands::system_set_mode(transport, mode)?;
-                    if ok {
-                        println!("{}System mode set to: {}", prefix, new_mode);
-                    } else {
+                    FeatureAction::Enable { feature } => {
+                        let feature: Feature = feature
+                            .parse()
+                            .map_err(|_| anyhow::anyhow!("Unknown feature: {}", feature))?;
+                        let state = commands::feature_enable(transport, feature)?;
                         println!(
-                            "{}Mode transition rejected (current mode: {})",
-                            prefix, new_mode
+                            "{}Feature '{}' is now {}",
+                            prefix,
+                            state.feature.cli_name(),
+                            if state.enabled { "enabled" } else { "disabled" }
                         );
                     }
-                }
-                SystemAction::Info => {
-                    let info = commands::system_info(transport)?;
-                    println!("{}System Information:", prefix);
-                    println!("{}  Firmware:   {}", prefix, info.firmware_version);
-                    println!("{}  Pod ID:     {}", prefix, if info.pod_id == 0 { "not set".to_string() } else { info.pod_id.to_string() });
-                    println!("{}  Mode:       {}", prefix, info.mode);
-                    println!("{}  Uptime:     {} s", prefix, info.uptime_s);
-                    println!("{}  Free heap:  {} bytes", prefix, info.free_heap);
-                    println!("{}  Boot count: {}", prefix, info.boot_count);
-                    println!("{}  Features:   0x{:08X}", prefix, info.feature_mask);
-                }
-                SystemAction::SetPodId { id } => {
-                    let new_id = commands::system_set_pod_id(transport, *id)?;
-                    println!("{}Pod ID set to {} (reboot device for BLE name change)", prefix, new_id);
-                }
-                SystemAction::Health => {
-                    let health = commands::system_health(transport)?;
-                    println!("{}System Health:", prefix);
-                    println!("{}  Free heap:     {} bytes", prefix, health.free_heap);
-                    println!("{}  Min free heap: {} bytes", prefix, health.min_free_heap);
-                    println!("{}  Uptime:        {} s", prefix, health.uptime_seconds);
-                    if health.wifi_rssi != 0 {
-                        println!("{}  WiFi RSSI:     {} dBm", prefix, health.wifi_rssi);
-                    } else {
-                        println!("{}  WiFi RSSI:     n/a (not connected)", prefix);
+                    FeatureAction::Disable { feature } => {
+                        let feature: Feature = feature
+                            .parse()
+                            .map_err(|_| anyhow::anyhow!("Unknown feature: {}", feature))?;
+                        let state = commands::feature_disable(transport, feature)?;
+                        println!(
+                            "{}Feature '{}' is now {}",
+                            prefix,
+                            state.feature.cli_name(),
+                            if state.enabled { "enabled" } else { "disabled" }
+                        );
                     }
-                    if !health.tasks.is_empty() {
-                        println!("{}  Tasks ({}):", prefix, health.tasks.len());
-                        println!("{}    {:<16} {:>6} {:>4} {:>4}", prefix, "NAME", "STACK", "PRI", "CORE");
-                        println!("{}    {:-<16} {:->6} {:->4} {:->4}", prefix, "", "", "", "");
-                        for task in &health.tasks {
-                            println!("{}    {:<16} {:>6} {:>4} {:>4}",
-                                prefix, task.name, task.stack_high_water, task.priority, task.core);
-                        }
-                    }
-                }
-                SystemAction::CrashDump { clear } => {
-                    let dump = commands::system_crash_dump(transport)?;
-                    if dump.has_dump {
-                        println!("{}Crash Dump:", prefix);
-                        println!("{}  Reason:    {}", prefix, dump.reason);
-                        println!("{}  Task:      {}", prefix, dump.task_name);
-                        println!("{}  Uptime:    {} s", prefix, dump.uptime_s);
-                        println!("{}  Free heap: {} bytes", prefix, dump.free_heap);
-                        if !dump.backtrace.is_empty() {
-                            println!("{}  Backtrace:", prefix);
-                            for (i, addr) in dump.backtrace.iter().enumerate() {
-                                println!("{}    #{}: 0x{:08X}", prefix, i, addr);
-                            }
-                            println!("{}  (use addr2line -e build/domes.elf to resolve)", prefix);
-                        }
-                        if *clear {
-                            let cleared = commands::system_clear_crash_dump(transport)?;
-                            if cleared {
-                                println!("{}Crash dump cleared.", prefix);
-                            } else {
-                                println!("{}Failed to clear crash dump.", prefix);
-                            }
-                        }
-                    } else {
-                        println!("{}No crash dump stored.", prefix);
-                    }
-                }
-                SystemAction::Memory { json } => {
-                    let profile = commands::system_memory_profile(transport)?;
-                    if *json {
-                        // JSON output
-                        println!("{{");
-                        println!("  \"current_free_heap\": {},", profile.current_free_heap);
-                        println!("  \"current_min_free_heap\": {},", profile.current_min_free_heap);
-                        println!("  \"current_largest_block\": {},", profile.current_largest_block);
-                        println!("  \"total_heap\": {},", profile.total_heap);
-                        println!("  \"usage_pct\": {:.1},",
-                            if profile.total_heap > 0 {
-                                (1.0 - profile.current_free_heap as f64 / profile.total_heap as f64) * 100.0
-                            } else { 0.0 });
-                        println!("  \"samples\": [");
-                        for (i, s) in profile.samples.iter().enumerate() {
-                            let comma = if i + 1 < profile.samples.len() { "," } else { "" };
-                            println!("    {{\"t\": {}, \"free\": {}, \"largest\": {}, \"min_free\": {}}}{}",
-                                s.timestamp_s, s.free_heap, s.largest_block, s.min_free_heap, comma);
-                        }
-                        println!("  ]");
-                        println!("}}");
-                    } else {
-                        let usage_pct = if profile.total_heap > 0 {
-                            (1.0 - profile.current_free_heap as f64 / profile.total_heap as f64) * 100.0
-                        } else { 0.0 };
-                        println!("{}Memory Profile:", prefix);
-                        println!("{}  Total heap:      {} bytes", prefix, profile.total_heap);
-                        println!("{}  Free heap:       {} bytes ({:.1}% used)", prefix, profile.current_free_heap, usage_pct);
-                        println!("{}  Min free heap:   {} bytes", prefix, profile.current_min_free_heap);
-                        println!("{}  Largest block:   {} bytes", prefix, profile.current_largest_block);
-                        if !profile.samples.is_empty() {
-                            println!("{}  History ({} samples):", prefix, profile.samples.len());
-                            // Sparkline using free heap values
-                            let values: Vec<u32> = profile.samples.iter().map(|s| s.free_heap).collect();
-                            let min_val = *values.iter().min().unwrap_or(&0);
-                            let max_val = *values.iter().max().unwrap_or(&1);
-                            let range = if max_val > min_val { max_val - min_val } else { 1 };
-                            let spark_chars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-                            let sparkline: String = values.iter().map(|v| {
-                                let idx = (((*v - min_val) as f64 / range as f64) * 7.0) as usize;
-                                spark_chars[idx.min(7)]
-                            }).collect();
-                            println!("{}    Free heap: {} ({}-{} bytes)", prefix, sparkline, min_val, max_val);
-                        }
-                    }
-                }
-                SystemAction::SelfTest => {
-                    println!("{}Running on-device self-test suite...", prefix);
-                    let info = commands::system_self_test(transport)?;
-                    println!("{}Self-Test Results: {}/{} passed", prefix, info.tests_passed, info.tests_run);
-                    println!("{}{:<8} {:<6} {}", prefix, "TEST", "STATUS", "MESSAGE");
-                    println!("{}{:-<8} {:-<6} {:-<40}", prefix, "", "", "");
-                    for result in &info.results {
-                        let status = if result.passed { "PASS" } else { "FAIL" };
-                        println!("{}{:<8} {:<6} {}", prefix, result.name, status, result.message);
-                    }
-                    if info.tests_passed == info.tests_run {
-                        println!("{}All tests passed!", prefix);
-                    } else {
-                        println!("{}{} test(s) FAILED", prefix, info.tests_run - info.tests_passed);
-                    }
-                }
-            },
+                },
 
-            Commands::Espnow { action } => match action {
-                EspnowAction::Status => {
-                    let status = commands::espnow_status(transport)?;
-                    println!("{}ESP-NOW Status:", prefix);
-                    println!("{}  State:      {}", prefix, status.discovery_state);
-                    println!("{}  Channel:    {}", prefix, status.channel);
-                    println!("{}  Peers:      {}", prefix, status.peer_count);
-                    println!("{}  TX packets: {}", prefix, status.tx_count);
-                    println!("{}  RX packets: {}", prefix, status.rx_count);
-                    println!("{}  TX fails:   {}", prefix, status.tx_fail_count);
-                    if status.last_rtt_us > 0 {
-                        println!("{}  Last RTT:   {} us", prefix, status.last_rtt_us);
+                Commands::Wifi { action } => match action {
+                    WifiAction::Enable => {
+                        let enabled = commands::wifi_enable(transport)?;
+                        println!(
+                            "{}WiFi subsystem {}",
+                            prefix,
+                            if enabled {
+                                "enabled"
+                            } else {
+                                "failed to enable"
+                            }
+                        );
                     }
-                    if !status.peers.is_empty() {
-                        println!("{}  Discovered peers:", prefix);
-                        println!("{}    {:<20} {:>6} {:>10}", prefix, "MAC", "RSSI", "LAST SEEN");
-                        println!("{}    {:-<20} {:->6} {:->10}", prefix, "", "", "");
-                        for peer in &status.peers {
-                            println!("{}    {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}   {:>4} {:>8} ms",
+                    WifiAction::Disable => {
+                        let disabled = commands::wifi_disable(transport)?;
+                        println!(
+                            "{}WiFi subsystem {}",
+                            prefix,
+                            if disabled {
+                                "disabled"
+                            } else {
+                                "failed to disable"
+                            }
+                        );
+                    }
+                    WifiAction::Status => {
+                        let enabled = commands::wifi_status(transport)?;
+                        println!(
+                            "{}WiFi subsystem: {}",
+                            prefix,
+                            if enabled { "enabled" } else { "disabled" }
+                        );
+                    }
+                },
+
+                Commands::Led { action } => match action {
+                    LedAction::Get => {
+                        let pattern = commands::led_get(transport)?;
+                        if multi {
+                            println!("{}LED pattern:", prefix);
+                        }
+                        print_led_pattern(&pattern);
+                    }
+                    LedAction::Off => {
+                        let pattern = commands::led_off(transport)?;
+                        println!("{}LEDs turned off", prefix);
+                        print_led_pattern(&pattern);
+                    }
+                    LedAction::Solid { color, brightness } => {
+                        let (r, g, b) = parse_hex_color(color)?;
+                        let mut pattern = crate::protocol::CliLedPattern::solid(r, g, b);
+                        pattern.brightness = *brightness;
+                        let pattern = commands::led_set(transport, &pattern)?;
+                        println!("{}LED pattern set to solid", prefix);
+                        print_led_pattern(&pattern);
+                    }
+                    LedAction::Breathing {
+                        color,
+                        period,
+                        brightness,
+                    } => {
+                        let (r, g, b) = parse_hex_color(color)?;
+                        let mut pattern =
+                            crate::protocol::CliLedPattern::breathing(r, g, b, *period);
+                        pattern.brightness = *brightness;
+                        let pattern = commands::led_set(transport, &pattern)?;
+                        println!("{}LED pattern set to breathing", prefix);
+                        print_led_pattern(&pattern);
+                    }
+                    LedAction::Cycle { period, brightness } => {
+                        let colors = vec![
+                            (255, 0, 0, 0),
+                            (255, 127, 0, 0),
+                            (255, 255, 0, 0),
+                            (0, 255, 0, 0),
+                            (0, 0, 255, 0),
+                            (75, 0, 130, 0),
+                            (148, 0, 211, 0),
+                        ];
+                        let mut pattern =
+                            crate::protocol::CliLedPattern::color_cycle(colors, *period);
+                        pattern.brightness = *brightness;
+                        let pattern = commands::led_set(transport, &pattern)?;
+                        println!("{}LED pattern set to color cycle", prefix);
+                        print_led_pattern(&pattern);
+                    }
+                },
+
+                Commands::Ota { action } => match action {
+                    OtaAction::Flash { firmware, version } => {
+                        if multi {
+                            println!("{}Flashing OTA...", prefix);
+                        }
+                        commands::ota_flash(transport, firmware, version.as_deref())?;
+                    }
+                    OtaAction::Check => {
+                        println!("{}Checking for firmware updates...", prefix);
+                        let info = commands::ota_check(transport)?;
+                        println!(
+                            "{}Current version:  {}",
+                            prefix,
+                            if info.current_version.is_empty() {
+                                "unknown"
+                            } else {
+                                &info.current_version
+                            }
+                        );
+                        println!(
+                            "{}Auto-update:      {}",
+                            prefix,
+                            if info.auto_update_enabled {
+                                "enabled"
+                            } else {
+                                "disabled"
+                            }
+                        );
+                        if info.update_available {
+                            println!(
+                                "{}Update available: {} ({} bytes)",
+                                prefix, info.available_version, info.firmware_size
+                            );
+                        } else {
+                            println!("{}No update available", prefix);
+                        }
+                    }
+                    OtaAction::AutoUpdate { enable, disable } => {
+                        let enabled = if *enable && *disable {
+                            anyhow::bail!("Cannot specify both --enable and --disable");
+                        } else if *enable {
+                            true
+                        } else if *disable {
+                            false
+                        } else {
+                            anyhow::bail!("Must specify either --enable or --disable");
+                        };
+                        let result = commands::ota_auto_update(transport, enabled)?;
+                        println!(
+                            "{}Auto-update {}",
+                            prefix,
+                            if result { "enabled" } else { "disabled" }
+                        );
+                    }
+                },
+
+                Commands::Trace { action } => match action {
+                    TraceAction::Start => {
+                        commands::trace_start(transport)?;
+                        println!("{}Tracing started", prefix);
+                    }
+                    TraceAction::Stop => {
+                        commands::trace_stop(transport)?;
+                        println!("{}Tracing stopped", prefix);
+                    }
+                    TraceAction::Clear => {
+                        commands::trace_clear(transport)?;
+                        println!("{}Trace buffer cleared", prefix);
+                    }
+                    TraceAction::Status => {
+                        let status = commands::trace_status(transport)?;
+                        println!("{}Trace status:", prefix);
+                        println!("{}  Initialized: {}", prefix, status.initialized);
+                        println!("{}  Enabled:     {}", prefix, status.enabled);
+                        println!("{}  Streaming:   {}", prefix, status.streaming);
+                        println!("{}  Events:      {}", prefix, status.event_count);
+                        println!("{}  Dropped:     {}", prefix, status.dropped_count);
+                        println!("{}  Buffer size: {} bytes", prefix, status.buffer_size);
+                    }
+                    TraceAction::Stream { .. } => {
+                        unreachable!("trace stream is handled before transport resolution")
+                    }
+                    TraceAction::Dump { output, names } => {
+                        let dump_path = if multi {
+                            // Per-device output file
+                            let stem = output.file_stem().unwrap_or_default().to_string_lossy();
+                            let ext = output.extension().unwrap_or_default().to_string_lossy();
+                            output.with_file_name(format!("{}-{}.{}", stem, dev.name, ext))
+                        } else {
+                            output.clone()
+                        };
+                        println!("{}Dumping traces to {}...", prefix, dump_path.display());
+                        let result = commands::trace_dump(transport, &dump_path, names.as_deref())?;
+                        println!(
+                            "{}Dump complete: {} events (pod_id={})",
+                            prefix, result.event_count, result.pod_id
+                        );
+                        if result.dropped_count > 0 {
+                            println!("{}  Dropped: {} events", prefix, result.dropped_count);
+                        }
+                        println!("{}Output: {}", prefix, result.output_path.display());
+                    }
+                },
+
+                Commands::Imu { action } => match action {
+                    ImuAction::Triage { enable, disable } => {
+                        let enabled = if *enable && *disable {
+                            anyhow::bail!("Cannot specify both --enable and --disable");
+                        } else if *enable {
+                            true
+                        } else if *disable {
+                            false
+                        } else {
+                            anyhow::bail!("Must specify either --enable or --disable");
+                        };
+                        let result = commands::imu_triage_set(transport, enabled)?;
+                        println!(
+                            "{}IMU triage mode {}",
+                            prefix,
+                            if result { "enabled" } else { "disabled" }
+                        );
+                    }
+                },
+
+                Commands::System { action } => match action {
+                    SystemAction::Mode => {
+                        let info = commands::system_get_mode(transport)?;
+                        println!("{}System mode: {}", prefix, info.mode);
+                        println!("{}  Time in mode: {} ms", prefix, info.time_in_mode_ms);
+                    }
+                    SystemAction::SetMode { mode } => {
+                        let mode: SystemMode = mode.parse().map_err(|_| {
+                            anyhow::anyhow!(
+                                "Unknown mode: {}. Valid: idle, triage, connected, game, error",
+                                mode
+                            )
+                        })?;
+                        let (new_mode, ok) = commands::system_set_mode(transport, mode)?;
+                        if ok {
+                            println!("{}System mode set to: {}", prefix, new_mode);
+                        } else {
+                            println!(
+                                "{}Mode transition rejected (current mode: {})",
+                                prefix, new_mode
+                            );
+                        }
+                    }
+                    SystemAction::Info => {
+                        let info = commands::system_info(transport)?;
+                        println!("{}System Information:", prefix);
+                        println!("{}  Firmware:   {}", prefix, info.firmware_version);
+                        println!(
+                            "{}  Pod ID:     {}",
+                            prefix,
+                            if info.pod_id == 0 {
+                                "not set".to_string()
+                            } else {
+                                info.pod_id.to_string()
+                            }
+                        );
+                        println!("{}  Mode:       {}", prefix, info.mode);
+                        println!("{}  Uptime:     {} s", prefix, info.uptime_s);
+                        println!("{}  Free heap:  {} bytes", prefix, info.free_heap);
+                        println!("{}  Boot count: {}", prefix, info.boot_count);
+                        println!("{}  Features:   0x{:08X}", prefix, info.feature_mask);
+                    }
+                    SystemAction::SetPodId { id } => {
+                        let new_id = commands::system_set_pod_id(transport, *id)?;
+                        println!(
+                            "{}Pod ID set to {} (reboot device for BLE name change)",
+                            prefix, new_id
+                        );
+                    }
+                    SystemAction::Health => {
+                        let health = commands::system_health(transport)?;
+                        println!("{}System Health:", prefix);
+                        println!("{}  Free heap:     {} bytes", prefix, health.free_heap);
+                        println!("{}  Min free heap: {} bytes", prefix, health.min_free_heap);
+                        println!("{}  Uptime:        {} s", prefix, health.uptime_seconds);
+                        if health.wifi_rssi != 0 {
+                            println!("{}  WiFi RSSI:     {} dBm", prefix, health.wifi_rssi);
+                        } else {
+                            println!("{}  WiFi RSSI:     n/a (not connected)", prefix);
+                        }
+                        if !health.tasks.is_empty() {
+                            println!("{}  Tasks ({}):", prefix, health.tasks.len());
+                            println!(
+                                "{}    {:<16} {:>6} {:>4} {:>4}",
+                                prefix, "NAME", "STACK", "PRI", "CORE"
+                            );
+                            println!("{}    {:-<16} {:->6} {:->4} {:->4}", prefix, "", "", "", "");
+                            for task in &health.tasks {
+                                println!(
+                                    "{}    {:<16} {:>6} {:>4} {:>4}",
+                                    prefix,
+                                    task.name,
+                                    task.stack_high_water,
+                                    task.priority,
+                                    task.core
+                                );
+                            }
+                        }
+                    }
+                    SystemAction::CrashDump { clear } => {
+                        let dump = commands::system_crash_dump(transport)?;
+                        if dump.has_dump {
+                            println!("{}Crash Dump:", prefix);
+                            println!("{}  Reason:    {}", prefix, dump.reason);
+                            println!("{}  Task:      {}", prefix, dump.task_name);
+                            println!("{}  Uptime:    {} s", prefix, dump.uptime_s);
+                            println!("{}  Free heap: {} bytes", prefix, dump.free_heap);
+                            if !dump.backtrace.is_empty() {
+                                println!("{}  Backtrace:", prefix);
+                                for (i, addr) in dump.backtrace.iter().enumerate() {
+                                    println!("{}    #{}: 0x{:08X}", prefix, i, addr);
+                                }
+                                println!(
+                                    "{}  (use addr2line -e build/domes.elf to resolve)",
+                                    prefix
+                                );
+                            }
+                            if *clear {
+                                let cleared = commands::system_clear_crash_dump(transport)?;
+                                if cleared {
+                                    println!("{}Crash dump cleared.", prefix);
+                                } else {
+                                    println!("{}Failed to clear crash dump.", prefix);
+                                }
+                            }
+                        } else {
+                            println!("{}No crash dump stored.", prefix);
+                        }
+                    }
+                    SystemAction::Memory { json } => {
+                        let profile = commands::system_memory_profile(transport)?;
+                        if *json {
+                            // JSON output
+                            println!("{{");
+                            println!("  \"current_free_heap\": {},", profile.current_free_heap);
+                            println!(
+                                "  \"current_min_free_heap\": {},",
+                                profile.current_min_free_heap
+                            );
+                            println!(
+                                "  \"current_largest_block\": {},",
+                                profile.current_largest_block
+                            );
+                            println!("  \"total_heap\": {},", profile.total_heap);
+                            println!(
+                                "  \"usage_pct\": {:.1},",
+                                if profile.total_heap > 0 {
+                                    (1.0 - profile.current_free_heap as f64
+                                        / profile.total_heap as f64)
+                                        * 100.0
+                                } else {
+                                    0.0
+                                }
+                            );
+                            println!("  \"samples\": [");
+                            for (i, s) in profile.samples.iter().enumerate() {
+                                let comma = if i + 1 < profile.samples.len() {
+                                    ","
+                                } else {
+                                    ""
+                                };
+                                println!("    {{\"t\": {}, \"free\": {}, \"largest\": {}, \"min_free\": {}}}{}",
+                                s.timestamp_s, s.free_heap, s.largest_block, s.min_free_heap, comma);
+                            }
+                            println!("  ]");
+                            println!("}}");
+                        } else {
+                            let usage_pct = if profile.total_heap > 0 {
+                                (1.0 - profile.current_free_heap as f64 / profile.total_heap as f64)
+                                    * 100.0
+                            } else {
+                                0.0
+                            };
+                            println!("{}Memory Profile:", prefix);
+                            println!("{}  Total heap:      {} bytes", prefix, profile.total_heap);
+                            println!(
+                                "{}  Free heap:       {} bytes ({:.1}% used)",
+                                prefix, profile.current_free_heap, usage_pct
+                            );
+                            println!(
+                                "{}  Min free heap:   {} bytes",
+                                prefix, profile.current_min_free_heap
+                            );
+                            println!(
+                                "{}  Largest block:   {} bytes",
+                                prefix, profile.current_largest_block
+                            );
+                            if !profile.samples.is_empty() {
+                                println!(
+                                    "{}  History ({} samples):",
+                                    prefix,
+                                    profile.samples.len()
+                                );
+                                // Sparkline using free heap values
+                                let values: Vec<u32> =
+                                    profile.samples.iter().map(|s| s.free_heap).collect();
+                                let min_val = *values.iter().min().unwrap_or(&0);
+                                let max_val = *values.iter().max().unwrap_or(&1);
+                                let range = if max_val > min_val {
+                                    max_val - min_val
+                                } else {
+                                    1
+                                };
+                                let spark_chars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+                                let sparkline: String = values
+                                    .iter()
+                                    .map(|v| {
+                                        let idx =
+                                            (((*v - min_val) as f64 / range as f64) * 7.0) as usize;
+                                        spark_chars[idx.min(7)]
+                                    })
+                                    .collect();
+                                println!(
+                                    "{}    Free heap: {} ({}-{} bytes)",
+                                    prefix, sparkline, min_val, max_val
+                                );
+                            }
+                        }
+                    }
+                    SystemAction::SelfTest => {
+                        println!("{}Running on-device self-test suite...", prefix);
+                        let info = commands::system_self_test(transport)?;
+                        println!(
+                            "{}Self-Test Results: {}/{} passed",
+                            prefix, info.tests_passed, info.tests_run
+                        );
+                        println!("{}{:<8} {:<6} {}", prefix, "TEST", "STATUS", "MESSAGE");
+                        println!("{}{:-<8} {:-<6} {:-<40}", prefix, "", "", "");
+                        for result in &info.results {
+                            let status = if result.passed { "PASS" } else { "FAIL" };
+                            println!(
+                                "{}{:<8} {:<6} {}",
+                                prefix, result.name, status, result.message
+                            );
+                        }
+                        if info.tests_passed == info.tests_run {
+                            println!("{}All tests passed!", prefix);
+                        } else {
+                            println!(
+                                "{}{} test(s) FAILED",
+                                prefix,
+                                info.tests_run - info.tests_passed
+                            );
+                        }
+                    }
+                },
+
+                Commands::Espnow { action } => match action {
+                    EspnowAction::Status => {
+                        let status = commands::espnow_status(transport)?;
+                        println!("{}ESP-NOW Status:", prefix);
+                        println!("{}  State:      {}", prefix, status.discovery_state);
+                        println!("{}  Channel:    {}", prefix, status.channel);
+                        println!("{}  Peers:      {}", prefix, status.peer_count);
+                        println!("{}  TX packets: {}", prefix, status.tx_count);
+                        println!("{}  RX packets: {}", prefix, status.rx_count);
+                        println!("{}  TX fails:   {}", prefix, status.tx_fail_count);
+                        if status.last_rtt_us > 0 {
+                            println!("{}  Last RTT:   {} us", prefix, status.last_rtt_us);
+                        }
+                        if !status.peers.is_empty() {
+                            println!("{}  Discovered peers:", prefix);
+                            println!(
+                                "{}    {:<20} {:>6} {:>10}",
+                                prefix, "MAC", "RSSI", "LAST SEEN"
+                            );
+                            println!("{}    {:-<20} {:->6} {:->10}", prefix, "", "", "");
+                            for peer in &status.peers {
+                                println!("{}    {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}   {:>4} {:>8} ms",
                                 prefix,
                                 peer.mac[0], peer.mac[1], peer.mac[2],
                                 peer.mac[3], peer.mac[4], peer.mac[5],
                                 peer.rssi, peer.last_seen_ms);
+                            }
                         }
                     }
-                }
-                EspnowAction::Bench { rounds } => {
-                    println!("{}Running ESP-NOW latency benchmark ({} rounds)...", prefix, rounds);
-                    let result = commands::espnow_bench(transport, *rounds)?;
-                    println!("{}ESP-NOW Benchmark Results:", prefix);
-                    println!("{}  Rounds:     {}/{} completed ({} failed)",
-                        prefix, result.rounds_completed,
-                        result.rounds_completed + result.rounds_failed,
-                        result.rounds_failed);
-                    if result.rounds_completed > 0 {
-                        println!("{}  Min RTT:    {} us ({:.2} ms)",
-                            prefix, result.min_rtt_us, result.min_rtt_us as f64 / 1000.0);
-                        println!("{}  Max RTT:    {} us ({:.2} ms)",
-                            prefix, result.max_rtt_us, result.max_rtt_us as f64 / 1000.0);
-                        println!("{}  Mean RTT:   {} us ({:.2} ms)",
-                            prefix, result.mean_rtt_us, result.mean_rtt_us as f64 / 1000.0);
-                        println!("{}  P50 RTT:    {} us ({:.2} ms)",
-                            prefix, result.p50_rtt_us, result.p50_rtt_us as f64 / 1000.0);
-                        println!("{}  P95 RTT:    {} us ({:.2} ms)",
-                            prefix, result.p95_rtt_us, result.p95_rtt_us as f64 / 1000.0);
-                        println!("{}  P99 RTT:    {} us ({:.2} ms)",
-                            prefix, result.p99_rtt_us, result.p99_rtt_us as f64 / 1000.0);
+                    EspnowAction::Bench { rounds } => {
+                        println!(
+                            "{}Running ESP-NOW latency benchmark ({} rounds)...",
+                            prefix, rounds
+                        );
+                        let result = commands::espnow_bench(transport, *rounds)?;
+                        println!("{}ESP-NOW Benchmark Results:", prefix);
+                        println!(
+                            "{}  Rounds:     {}/{} completed ({} failed)",
+                            prefix,
+                            result.rounds_completed,
+                            result.rounds_completed + result.rounds_failed,
+                            result.rounds_failed
+                        );
+                        if result.rounds_completed > 0 {
+                            println!(
+                                "{}  Min RTT:    {} us ({:.2} ms)",
+                                prefix,
+                                result.min_rtt_us,
+                                result.min_rtt_us as f64 / 1000.0
+                            );
+                            println!(
+                                "{}  Max RTT:    {} us ({:.2} ms)",
+                                prefix,
+                                result.max_rtt_us,
+                                result.max_rtt_us as f64 / 1000.0
+                            );
+                            println!(
+                                "{}  Mean RTT:   {} us ({:.2} ms)",
+                                prefix,
+                                result.mean_rtt_us,
+                                result.mean_rtt_us as f64 / 1000.0
+                            );
+                            println!(
+                                "{}  P50 RTT:    {} us ({:.2} ms)",
+                                prefix,
+                                result.p50_rtt_us,
+                                result.p50_rtt_us as f64 / 1000.0
+                            );
+                            println!(
+                                "{}  P95 RTT:    {} us ({:.2} ms)",
+                                prefix,
+                                result.p95_rtt_us,
+                                result.p95_rtt_us as f64 / 1000.0
+                            );
+                            println!(
+                                "{}  P99 RTT:    {} us ({:.2} ms)",
+                                prefix,
+                                result.p99_rtt_us,
+                                result.p99_rtt_us as f64 / 1000.0
+                            );
+                        }
                     }
-                }
-                EspnowAction::SimMode { state, delay_ms, pad } => {
-                    let enabled = state == "on";
-                    let result = commands::espnow_sim_mode(transport, enabled, *delay_ms, *pad)?;
-                    println!("{}Sim mode: {}", prefix, if result.enabled { "ON" } else { "OFF" });
-                    if result.enabled {
-                        println!("{}  Delay:  {} ms", prefix, result.delay_ms);
-                        println!("{}  Pad:    {}", prefix, result.pad_index);
+                    EspnowAction::SimMode {
+                        state,
+                        delay_ms,
+                        pad,
+                    } => {
+                        let enabled = state == "on";
+                        let result =
+                            commands::espnow_sim_mode(transport, enabled, *delay_ms, *pad)?;
+                        println!(
+                            "{}Sim mode: {}",
+                            prefix,
+                            if result.enabled { "ON" } else { "OFF" }
+                        );
+                        if result.enabled {
+                            println!("{}  Delay:  {} ms", prefix, result.delay_ms);
+                            println!("{}  Pad:    {}", prefix, result.pad_index);
+                        }
                     }
-                }
-            },
+                },
 
-            Commands::Touch { action } => match action {
-                TouchAction::Simulate { pad } => {
-                    commands::touch_simulate(transport, *pad)?;
-                    println!("{}Injected touch on pad {}", prefix, pad);
-                }
-            },
+                Commands::Touch { action } => match action {
+                    TouchAction::Simulate { pad } => {
+                        commands::touch_simulate(transport, *pad)?;
+                        println!("{}Injected touch on pad {}", prefix, pad);
+                    }
+                },
 
-            Commands::Devices { .. } | Commands::Sniff { .. } => unreachable!(), // Handled above
-        }
-        Ok(())
+                Commands::Devices { .. } | Commands::Sniff { .. } => unreachable!(), // Handled above
+            }
+            Ok(())
         })();
 
         if let Err(e) = result {
@@ -1185,6 +1323,80 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn validate_trace_stream_selection(cli: &Cli) -> anyhow::Result<()> {
+    let has_global_selector = !cli.port.is_empty()
+        || !cli.wifi.is_empty()
+        || !cli.ble.is_empty()
+        || !cli.target.is_empty()
+        || cli.all
+        || cli.scan_ble
+        || cli.connect_all_ble;
+
+    if has_global_selector {
+        anyhow::bail!(
+            "trace stream supports one WiFi host via `trace stream --wifi HOST`; do not combine it with global transport or multi-device selectors"
+        );
+    }
+
+    Ok(())
+}
+
+fn validate_ota_flash_transport_selection(cli: &Cli) -> anyhow::Result<()> {
+    if !matches!(
+        cli.command.as_ref(),
+        Some(Commands::Ota {
+            action: OtaAction::Flash { .. }
+        })
+    ) {
+        return Ok(());
+    }
+
+    if !cli.wifi.is_empty() {
+        anyhow::bail!(
+            "Raw OTA flash is not supported over WiFi/TCP; use --port for serial or --ble for BLE"
+        );
+    }
+
+    if cli.target.is_empty() && !cli.all {
+        return Ok(());
+    }
+
+    let registry = device::load_device_registry()?;
+    let mut unsupported_targets = Vec::new();
+
+    if cli.all {
+        for (name, entry) in &registry {
+            if is_wifi_transport_type(&entry.transport_type) {
+                unsupported_targets.push(name.clone());
+            }
+        }
+    } else {
+        for name in &cli.target {
+            if registry
+                .get(name)
+                .map(|entry| is_wifi_transport_type(&entry.transport_type))
+                .unwrap_or(false)
+            {
+                unsupported_targets.push(name.clone());
+            }
+        }
+    }
+
+    if !unsupported_targets.is_empty() {
+        unsupported_targets.sort();
+        anyhow::bail!(
+            "Raw OTA flash is not supported over WiFi/TCP (selected target(s): {}); use serial or BLE targets",
+            unsupported_targets.join(", ")
+        );
+    }
+
+    Ok(())
+}
+
+fn is_wifi_transport_type(transport_type: &str) -> bool {
+    matches!(transport_type, "wifi" | "tcp")
 }
 
 /// Parse hex color string (e.g., "ff0000" or "FF0000") to RGB
@@ -1218,7 +1430,10 @@ fn print_led_pattern(pattern: &crate::protocol::CliLedPattern) {
     println!("  Type:       {}", type_name);
 
     if let Some((r, g, b, w)) = pattern.color {
-        println!("  Color:      #{:02x}{:02x}{:02x} (RGBW: {},{},{},{})", r, g, b, r, g, b, w);
+        println!(
+            "  Color:      #{:02x}{:02x}{:02x} (RGBW: {},{},{},{})",
+            r, g, b, r, g, b, w
+        );
     }
 
     if !pattern.colors.is_empty() {
@@ -1227,4 +1442,95 @@ fn print_led_pattern(pattern: &crate::protocol::CliLedPattern) {
 
     println!("  Period:     {} ms", pattern.period_ms);
     println!("  Brightness: {}", pattern.brightness);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trace_stream_uses_its_subcommand_wifi_without_global_transport() {
+        let cli = Cli::try_parse_from(["domes-cli", "trace", "stream", "--wifi", "192.168.1.100"])
+            .unwrap();
+
+        validate_trace_stream_selection(&cli).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Trace {
+                action: TraceAction::Stream { wifi }
+            }) if wifi == "192.168.1.100"
+        ));
+    }
+
+    #[test]
+    fn trace_stream_rejects_global_and_multi_device_selectors() {
+        let cli = Cli::try_parse_from([
+            "domes-cli",
+            "--wifi",
+            "192.168.1.100:5000",
+            "trace",
+            "stream",
+            "--wifi",
+            "192.168.1.100",
+        ])
+        .unwrap();
+
+        let error = validate_trace_stream_selection(&cli)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("do not combine"));
+    }
+
+    #[test]
+    fn raw_ota_flash_rejects_direct_wifi_before_transport_resolution() {
+        let cli = Cli::try_parse_from([
+            "domes-cli",
+            "--wifi",
+            "192.168.1.100:5000",
+            "ota",
+            "flash",
+            "firmware.bin",
+        ])
+        .unwrap();
+
+        let error = validate_ota_flash_transport_selection(&cli)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("not supported over WiFi/TCP"));
+    }
+
+    #[test]
+    fn raw_ota_flash_keeps_serial_and_ble_targets_supported() {
+        for args in [
+            vec![
+                "domes-cli",
+                "--port",
+                "/dev/ttyACM0",
+                "ota",
+                "flash",
+                "firmware.bin",
+            ],
+            vec![
+                "domes-cli",
+                "--ble",
+                "DOMES-Pod",
+                "ota",
+                "flash",
+                "firmware.bin",
+            ],
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            validate_ota_flash_transport_selection(&cli).unwrap();
+        }
+
+        assert!(is_wifi_transport_type("wifi"));
+        assert!(is_wifi_transport_type("tcp"));
+        assert!(!is_wifi_transport_type("serial"));
+        assert!(!is_wifi_transport_type("ble"));
+
+        let wifi_check =
+            Cli::try_parse_from(["domes-cli", "--wifi", "192.168.1.100:5000", "ota", "check"])
+                .unwrap();
+        validate_ota_flash_transport_selection(&wifi_check).unwrap();
+    }
 }

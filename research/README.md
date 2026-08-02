@@ -1,0 +1,32 @@
+# DOMES Research And Design Documents
+
+This directory contains the current software overview, product target documents, detailed design
+history, and archived plans. Delivery status and executable workflows live elsewhere; start with
+[`../docs/README.md`](../docs/README.md) when deciding which source owns a fact.
+
+## Document Map
+
+| Document | Lifecycle | Use |
+| --- | --- | --- |
+| [`SOFTWARE_ARCHITECTURE.md`](SOFTWARE_ARCHITECTURE.md) | Current as-built overview | Software surfaces, runtime boundaries, protocol ownership, and implementation links |
+| [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md) | Product target | Intended hardware, networking, power, enclosure, and production direction |
+| [`ID_REQUIREMENTS.md`](ID_REQUIREMENTS.md) | Product requirements | Industrial-design goals and unresolved physical-design inputs |
+| [`architecture/README.md`](architecture/README.md) | Current lifecycle index | Classification and replacements for detailed architecture proposals |
+| [`AI_DEVELOPMENT_RECOMMENDATIONS.md`](AI_DEVELOPMENT_RECOMMENDATIONS.md) | Historical planning record | Earlier Claude workflow recommendations retained for context |
+| [`archive/README.md`](archive/README.md) | Archive index | Superseded roadmaps, implementation plans, and simulation artifacts |
+
+## Authority Boundaries
+
+- Use [`../firmware/MILESTONES.md`](../firmware/MILESTONES.md) for implemented and hardware-verified
+  status.
+- Use [`../docs/TESTING.md`](../docs/TESTING.md) for build, test, and hardware verification commands.
+- Use [`../docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md), the active firmware configuration, and
+  board design files for GPIO and physical connectivity.
+- Use protobuf schemas and implementation source for wire contracts.
+- Treat prices, performance targets, proposed parts, and unimplemented flows in research documents as
+  inputs to validate, not current capabilities.
+
+Detailed proposals remain in place to preserve rationale and inbound links. Their lifecycle banners
+and the architecture index identify obsolete commands, paths, packet tables, and implementation
+plans; do not promote those details back into current guides without verifying them against code and
+hardware evidence.

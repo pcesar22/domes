@@ -1,135 +1,58 @@
-# DOMES Firmware Architecture
+# DOMES Detailed Architecture Archive
 
-## AI Agent Instructions
+> **Document status: Current lifecycle index.** This page classifies the detailed documents in this
+> directory. The documents themselves are design history and proposals, not contributor instructions
+> or implementation truth.
 
-This folder contains modular architecture documentation. **Load only the files relevant to your current task** to optimize context usage.
+## How To Use This Directory
 
-### Quick Reference: Which File to Load
+Start with [`../SOFTWARE_ARCHITECTURE.md`](../SOFTWARE_ARCHITECTURE.md) for the as-built system and
+its authority map. Use the files in this directory to recover rationale, compare proposed designs,
+or plan future work.
 
-| Task | Load This File |
-|------|----------------|
-| First-time setup, hello world | `00-getting-started.md` |
-| Creating new files, naming conventions | `01-project-structure.md` |
-| Build commands, configurations | `02-build-system.md` |
-| Writing a driver (LED, haptic, audio, etc.) | `03-driver-development.md` |
-| ESP-NOW, BLE, protocols | `04-communication.md` |
-| Game logic, state machine, drills | `05-game-engine.md` |
-| Unit tests, mocks, CI | `06-testing.md` |
-| Debugging, logging, crash analysis | `07-debugging.md` |
-| OTA updates, partitions | `08-ota-updates.md` |
-| Pin maps, NVS keys, error codes | `09-reference.md` |
+Do not copy pin values, packet layouts, partition sizes, NVS keys, commands, paths, or test counts
+from these documents without checking the authoritative source. A document marked "partially
+implemented" still contains future or superseded material.
 
----
+Contributor rules live in [`../../AGENTS.md`](../../AGENTS.md), firmware-specific rules in
+[`../../firmware/AGENTS.md`](../../firmware/AGENTS.md), and current verification commands in
+[`../../docs/TESTING.md`](../../docs/TESTING.md).
 
-## System Overview
+## Lifecycle States
 
-**DOMES** (Distributed Open-source Motion & Exercise System) is a reaction training pod system.
+| State | Meaning |
+| --- | --- |
+| Current reference | Maintained as an index or as-built map and safe to navigate from |
+| Historical scaffold | Early setup or implementation guidance retained only for history |
+| Design proposal | Intended behavior or structure that was not adopted as written |
+| Partially implemented | Some concepts exist, but the document is not an accurate description of current behavior |
+| Superseded reference | Lookup data replaced by source-controlled implementation or hardware artifacts |
 
-### Hardware Summary
-- **MCU:** ESP32-S3-WROOM-1-N16R8 (16MB flash, 8MB PSRAM)
-- **LEDs:** 16x SK6812 RGBW in ring
-- **Audio:** MAX98357A I2S amp + 23mm speaker
-- **Haptic:** DRV2605L + LRA motor
-- **Touch:** ESP32 capacitive + LIS2DW12 IMU fusion
-- **Power:** 1200mAh LiPo, TP4056 charger
-- **Connectivity:** ESP-NOW (pod-to-pod) + BLE (phone control)
+## Document Index
 
-### Tech Stack
-| Aspect | Choice |
-|--------|--------|
-| Framework | ESP-IDF v5.x |
-| RTOS | FreeRTOS (dual-core SMP) |
-| Language | C++20 (app), C (drivers) |
-| Build | CMake via `idf.py` |
-| Testing | Unity + CMock |
+| Document | Lifecycle state | Current relationship and replacement |
+| --- | --- | --- |
+| [`00-getting-started.md`](00-getting-started.md) | Historical scaffold | Uses the old project root and a proposed 16 MB layout. Use `firmware/README.md` and `docs/TESTING.md`. |
+| [`01-project-structure.md`](01-project-structure.md) | Historical scaffold | Describes a tree and snake_case convention that were not adopted. Use `firmware/README.md` and `firmware/AGENTS.md`. |
+| [`02-build-system.md`](02-build-system.md) | Historical scaffold | Describes unimplemented platform Kconfig and Linux-target workflows. Use checked-in CMake/Kconfig files and `docs/TESTING.md`. |
+| [`03-driver-development.md`](03-driver-development.md) | Design proposal, partially implemented | Interface and dependency-injection concepts remain relevant; examples and paths require verification against `main/interfaces/` and `main/drivers/`. |
+| [`04-communication.md`](04-communication.md) | Design proposal, partially implemented | Packet tables and BLE topology are not current contracts. Use protobuf schemas, frame codec, transport source, and `espNowProtocol.hpp`. |
+| [`05-game-engine.md`](05-game-engine.md) | Design proposal, partially implemented | The per-pod FSM exists, but general drill orchestration and several primitives remain proposed. Use `gameEngine.*` and `espNowService.*`. |
+| [`06-testing.md`](06-testing.md) | Historical scaffold | Unity/CMock instructions are obsolete. Host firmware tests use GoogleTest/CTest; use `docs/TESTING.md`. |
+| [`07-debugging.md`](07-debugging.md) | Partially implemented, operational details stale | Some debugging rationale remains useful. Use project Codex skills, current trace source, and `domes-cli --help` for commands. |
+| [`08-ota-updates.md`](08-ota-updates.md) | Design proposal, partially implemented | OTA exists, but the documented partitions, phone relay, and examples differ. Use `partitions.csv`, OTA source, CLI source, and `docs/TESTING.md`. |
+| [`09-reference.md`](09-reference.md) | Superseded reference | Its pins, NVS keys, partitions, UUIDs, and error examples are not live data. Use the authority map in `SOFTWARE_ARCHITECTURE.md`. |
+| [`10-host-simulation.md`](10-host-simulation.md) | Design proposal, partially implemented | Host simulation exists under `firmware/test_app/sim/`, but not with the topology and interfaces shown throughout this document. |
+| [`11-system-modes.md`](11-system-modes.md) | Design proposal, partially implemented | `ModeManager` and mode commands exist; power management and several transition triggers remain proposed. Use `modeManager.*` and `main.cpp`. |
+| [`12-multi-pod-orchestration.md`](12-multi-pod-orchestration.md) | Target design, partially implemented | Current firmware supports discovery, MAC-based roles, and a fixed drill. Phone-selected master and general drill interpretation remain proposed. |
+| [`trace-overhaul-architecture.md`](trace-overhaul-architecture.md) | Design record, partially implemented | Protobuf trace control, Rust tooling, and streaming landed in part. Use `trace.proto`, firmware trace source, and CLI trace commands for current behavior. |
 
----
+## Promotion And Retirement
 
-## Architecture Layers
+A proposal is promoted only when implementation, automated checks, and any required hardware
+verification are complete. Promotion means updating the as-built architecture and milestone tracker;
+it does not make every example in the original proposal current.
 
-```
-┌─────────────────────────────────────────────────┐
-│              APPLICATION LAYER                   │
-│  Game Engine, Drill Manager, State Machine      │
-│  → See: 05-game-engine.md                       │
-├─────────────────────────────────────────────────┤
-│              SERVICE LAYER                       │
-│  Feedback, Communication, Timing, Config        │
-│  → See: 03-driver-development.md (services)     │
-├─────────────────────────────────────────────────┤
-│              DRIVER LAYER                        │
-│  LED, Audio, Haptic, Touch, IMU, Power          │
-│  → See: 03-driver-development.md                │
-├─────────────────────────────────────────────────┤
-│              PLATFORM LAYER                      │
-│  FreeRTOS, ESP-IDF APIs, HAL                    │
-│  → See: 09-reference.md                         │
-└─────────────────────────────────────────────────┘
-```
-
----
-
-## Development Milestones
-
-| Milestone | Description | Verification | Docs |
-|-----------|-------------|--------------|------|
-| M0 | Hello World boots | UART shows heartbeat | `00-getting-started.md` |
-| M1 | Target compiles | `idf.py build` exits 0 | `02-build-system.md` |
-| M2 | DevKit boots | `app_main` runs | `00-getting-started.md` |
-| M3 | Debug works | GDB breakpoints hit | `07-debugging.md` |
-| M4 | RF validated | WiFi + BLE coexist | `04-communication.md` |
-| M5 | Unit tests pass | Host tests green | `06-testing.md` |
-| M6 | Drivers work | All peripherals respond | `03-driver-development.md` |
-| M7 | ESP-NOW latency | P95 < 2ms | `04-communication.md` |
-
----
-
-## Critical Rules (Always Apply)
-
-### DO
-- Use ESP-IDF v5.x (never Arduino)
-- Use `ESP_LOGx` macros for logging
-- Use `esp_err_t` or `tl::expected` for errors
-- Use ETL containers (`etl::vector`, `etl::string`)
-- Create interfaces for all drivers (`IHapticDriver`, etc.)
-- Pin protocol tasks to Core 0, app tasks to Core 1
-- Check every `esp_err_t` return value
-
-### DON'T
-- Use `std::vector`, `std::string`, `std::map` (heap fragmentation)
-- Use `<iostream>` (adds 200KB binary size)
-- Allocate heap after initialization phase
-- Use exceptions or RTTI (disabled)
-- Ignore error returns
-
----
-
-## File Index
-
-| File | Purpose | Lines |
-|------|---------|-------|
-| `00-getting-started.md` | Setup, hello world, first flash | ~200 |
-| `01-project-structure.md` | Directory layout, naming conventions | ~150 |
-| `02-build-system.md` | Build configs, targets, sdkconfig | ~180 |
-| `03-driver-development.md` | Interfaces, driver templates, DI | ~400 |
-| `04-communication.md` | ESP-NOW, BLE, protocol messages | ~300 |
-| `05-game-engine.md` | State machine, drills, timing | ~250 |
-| `06-testing.md` | Unity, CMock, mocks, CI pipeline | ~300 |
-| `07-debugging.md` | OpenOCD, GDB, logging, core dumps | ~200 |
-| `08-ota-updates.md` | OTA flow, partitions, rollback | ~150 |
-| `09-reference.md` | Pin maps, NVS schema, error codes | ~300 |
-
----
-
-## Cross-References
-
-- **Hardware specs:** `research/SYSTEM_ARCHITECTURE.md`
-- **Coding standards:** `firmware/CLAUDE.md`
-- **AI guidelines:** `firmware/CLAUDE.md`
-- **Development roadmap:** `firmware/MILESTONES.md`
-- **AI recommendations:** `research/AI_DEVELOPMENT_RECOMMENDATIONS.md`
-
----
-
-*Document Version: 2.0*
-*Last Updated: 2026-01-05*
+When a proposal is abandoned or replaced, keep the file for rationale, change its banner to
+"superseded," and link the replacement. Do not maintain a second live copy of protocol values,
+pinouts, NVS schemas, or build configuration in this directory.

@@ -18,7 +18,7 @@
 | Term | Refers To | Description |
 |------|-----------|-------------|
 | **Dev Boards** | ESP32-S3-DevKitC-1 | Off-the-shelf boards for initial firmware development |
-| **Dev PCB / NFF Devboard** | [`hardware/nff-devboard/`](../hardware/nff-devboard/) | Custom sensor board with all peripherals (LEDs, IMU, haptics, audio) |
+| **Dev PCB / NFF Devboard** | [`hardware/nff-devboard/`](../../hardware/nff-devboard/) | Custom sensor board with all peripherals (LEDs, IMU, haptics, audio) |
 | **Form-Factor PCB** | Production PCB | Final integrated design for enclosed pods |
 
 ---

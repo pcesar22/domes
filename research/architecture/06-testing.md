@@ -1,5 +1,9 @@
 # 06 - Testing
 
+> **Document status: Historical scaffold.** The Unity/CMock layout and commands below are obsolete.
+> Host firmware tests use GoogleTest and CTest under `firmware/test_app/`; use
+> [`../../docs/TESTING.md`](../../docs/TESTING.md) for current verification requirements.
+
 ## AI Agent Instructions
 
 Load this file when:
@@ -480,61 +484,10 @@ TEST_IGNORE()
 
 ## CI Pipeline
 
-### GitHub Actions Workflow
-
-```yaml
-# .github/workflows/test.yml
-name: Test
-
-on: [push, pull_request]
-
-jobs:
-  unit-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up ESP-IDF
-        uses: espressif/esp-idf-ci-action@v1
-        with:
-          esp_idf_version: v5.2
-
-      - name: Build for Linux
-        run: |
-          cd firmware
-          idf.py --preview set-target linux
-          idf.py build
-
-      - name: Run Unit Tests
-        run: |
-          cd firmware
-          ./build/domes.elf
-
-  build-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up ESP-IDF
-        uses: espressif/esp-idf-ci-action@v1
-        with:
-          esp_idf_version: v5.2
-
-      - name: Build for ESP32-S3
-        run: |
-          cd firmware
-          idf.py set-target esp32s3
-          idf.py build
-
-      - name: Check Binary Size
-        run: |
-          SIZE=$(stat -c%s firmware/build/domes.bin)
-          echo "Binary size: $SIZE bytes"
-          if [ $SIZE -gt 4194304 ]; then
-            echo "::error::Binary exceeds 4MB limit"
-            exit 1
-          fi
-```
+Current workflow ownership and the local aggregate command are documented in
+[`../../docs/TESTING.md`](../../docs/TESTING.md). The executable definitions live under
+`.github/workflows/`; do not copy their YAML into architecture notes because trigger scopes and
+tool versions change independently.
 
 ---
 
@@ -665,7 +618,7 @@ ESP-NOW peer-to-peer communication requires two physical pods. Enable ESP-NOW on
 
 ```bash
 domes-cli --all feature enable esp-now
-python .claude/skills/esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+python3 tools/firmware/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
 ```
 
 ---

@@ -133,8 +133,7 @@ pub fn system_memory_profile(transport: &mut dyn Transport) -> Result<CliMemoryP
         );
     }
 
-    parse_memory_profile_response(&frame.payload)
-        .context("Failed to parse memory profile response")
+    parse_memory_profile_response(&frame.payload).context("Failed to parse memory profile response")
 }
 
 /// Timeout for self-test command (tests WiFi scan, BLE, NVS, etc.)
