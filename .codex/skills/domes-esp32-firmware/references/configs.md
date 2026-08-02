@@ -77,12 +77,10 @@ CONFIG_LOG_COLORS=y
 ```
 # Enable WiFi
 CONFIG_ESP_WIFI_ENABLED=y
-
-# WiFi mode
-CONFIG_ESP_WIFI_MODE_STA=y
-CONFIG_ESP_WIFI_MODE_AP=y
-CONFIG_ESP_WIFI_MODE_APSTA=y
 ```
+
+STA, AP, and APSTA are runtime modes selected with `esp_wifi_set_mode()`; ESP-IDF v5.4 does not
+provide `CONFIG_ESP_WIFI_MODE_*` Kconfig symbols.
 
 ### Bluetooth Configuration
 

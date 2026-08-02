@@ -146,8 +146,9 @@ Task pinning:
 | Core 1 | Audio and game logic |
 | Either | LED updates and touch polling |
 
-Platform selection is through Kconfig. Keep pin mappings in platform-specific headers and expose
-them through a unified platform header selected by `CONFIG_DOMES_PLATFORM_*`.
+Platform selection currently uses one `BOARD_*` define near the top of `main/config.hpp`. Keep pin
+mappings in that file and preserve exactly one active board selection until the project adopts a
+generated or Kconfig-backed platform header.
 
 ## Organization Principles
 
@@ -204,14 +205,14 @@ Pod identity:
 #include "trace/traceApi.hpp"
 
 void processGameTick() {
-    TRACE_SCOPE(TRACE_ID("Game.Tick"), domes::trace::TraceCategory::kGame);
-    TRACE_INSTANT(TRACE_ID("Game.Hit"), domes::trace::TraceCategory::kGame);
-    TRACE_COUNTER(TRACE_ID("Game.Score"), score, domes::trace::TraceCategory::kGame);
+    TRACE_SCOPE(TRACE_ID("Game.Tick"), domes::trace::Category::kGame);
+    TRACE_INSTANT(TRACE_ID("Game.Hit"), domes::trace::Category::kGame);
+    TRACE_COUNTER(TRACE_ID("Game.Score"), score, domes::trace::Category::kGame);
 }
 ```
 
 Categories include `kKernel`, `kTransport`, `kOta`, `kWifi`, `kLed`, `kAudio`, `kTouch`, `kGame`,
-`kUser`, `kHaptic`, `kBle`, and `kNvs`.
+`kUser`, `kHaptic`, `kBle`, `kNvs`, `kEspNow`, and `kSync`.
 
 Dump traces with:
 

@@ -9,10 +9,11 @@ Usage (multi-device):
     python monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 10
 """
 
-import serial
 import sys
-import time
 import threading
+import time
+
+import serial
 
 
 # ANSI color codes for device labeling
@@ -31,28 +32,27 @@ def monitor_single(port: str, duration: int, baudrate: int = 115200,
                     label: str = "", color: str = ""):
     """Read serial output from one ESP32 device."""
     try:
-        ser = serial.Serial(port, baudrate, timeout=1)
-        prefix = f"{color}[{label}]{RESET} " if label else ""
+        with serial.Serial(port, baudrate, timeout=1) as ser:
+            prefix = f"{color}[{label}]{RESET} " if label else ""
 
-        start = time.time()
-        line_buffer = ""
-        while time.time() - start < duration:
-            if ser.in_waiting:
-                data = ser.read(ser.in_waiting).decode('utf-8', errors='ignore')
-                # Print with device prefix on each line
-                for ch in data:
-                    if ch == '\n':
-                        print(f"{prefix}{line_buffer}")
-                        line_buffer = ""
-                    else:
-                        line_buffer += ch
-            time.sleep(0.05)
+            start = time.time()
+            line_buffer = ""
+            while time.time() - start < duration:
+                if ser.in_waiting:
+                    data = ser.read(ser.in_waiting).decode('utf-8', errors='ignore')
+                    # Print with device prefix on each line
+                    for ch in data:
+                        if ch == '\n':
+                            print(f"{prefix}{line_buffer}")
+                            line_buffer = ""
+                        else:
+                            line_buffer += ch
+                time.sleep(0.05)
 
-        # Flush remaining buffer
-        if line_buffer:
-            print(f"{prefix}{line_buffer}")
+            # Flush remaining buffer
+            if line_buffer:
+                print(f"{prefix}{line_buffer}")
 
-        ser.close()
         return 0
     except serial.SerialException as e:
         print(f"Error on {port}: {e}", file=sys.stderr)
@@ -68,21 +68,10 @@ def monitor(ports_str: str = "/dev/ttyACM0", duration: int = 10, baudrate: int =
         port = ports[0]
         print(f"Monitoring {port} at {baudrate} baud for {duration}s...")
         print("-" * 50)
-        try:
-            ser = serial.Serial(port, baudrate, timeout=1)
-            start = time.time()
-            while time.time() - start < duration:
-                if ser.in_waiting:
-                    data = ser.read(ser.in_waiting)
-                    print(data.decode('utf-8', errors='ignore'), end='', flush=True)
-                time.sleep(0.05)
-            print("\n" + "-" * 50)
-            print("Monitoring complete.")
-            ser.close()
-            return 0
-        except serial.SerialException as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
+        result = monitor_single(port, duration, baudrate)
+        print("\n" + "-" * 50)
+        print("Monitoring complete." if result == 0 else "Monitoring failed.")
+        return result
     else:
         # Multi-device - threaded monitoring with colored labels
         print(f"Monitoring {len(ports)} devices at {baudrate} baud for {duration}s...")
@@ -91,13 +80,18 @@ def monitor(ports_str: str = "/dev/ttyACM0", duration: int = 10, baudrate: int =
             print(f"  {color}[dev{i}]{RESET} {port}")
         print("-" * 50)
 
+        results = [1] * len(ports)
+
+        def record_result(index: int, port: str, label: str, color: str):
+            results[index] = monitor_single(port, duration, baudrate, label, color)
+
         threads = []
         for i, port in enumerate(ports):
             label = f"dev{i}"
             color = COLORS[i % len(COLORS)]
             t = threading.Thread(
-                target=monitor_single,
-                args=(port, duration, baudrate, label, color),
+                target=record_result,
+                args=(i, port, label, color),
                 daemon=True,
             )
             threads.append(t)
@@ -107,6 +101,11 @@ def monitor(ports_str: str = "/dev/ttyACM0", duration: int = 10, baudrate: int =
             t.join(timeout=duration + 5)
 
         print("-" * 50)
+        failed = sum(result != 0 for result in results)
+        if failed:
+            print(f"Monitoring failed on {failed} of {len(ports)} devices.", file=sys.stderr)
+            return 1
+
         print("Monitoring complete.")
         return 0
 

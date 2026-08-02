@@ -52,34 +52,45 @@ for PORT in "${PORT_ARRAY[@]}"; do
     # Monitor and capture output
     echo ""
     echo "=== [$PORT] Monitoring serial output (${MONITOR_DURATION}s) ==="
-    RESULT=$(python3 -c "
+    if RESULT=$(PORT="$PORT" VERIFY_STRING="$VERIFY_STRING" \
+        MONITOR_DURATION="$MONITOR_DURATION" python3 - 2>&1 <<'PY'
+import os
 import serial
-import time
 import sys
+import time
 
-ser = serial.Serial('$PORT', 115200, timeout=1)
-output = []
-start = time.time()
-while time.time() - start < $MONITOR_DURATION:
-    if ser.in_waiting:
-        data = ser.read(ser.in_waiting).decode('utf-8', errors='ignore')
-        output.append(data)
-        print(data, end='', flush=True)
-    time.sleep(0.05)
-ser.close()
+port = os.environ["PORT"]
+verify_string = os.environ["VERIFY_STRING"]
+duration = int(os.environ["MONITOR_DURATION"])
 
-full_output = ''.join(output)
-if '$VERIFY_STRING' in full_output:
-    print('VERIFICATION_PASSED', file=sys.stderr)
-    sys.exit(0)
-else:
-    print('VERIFICATION_FAILED', file=sys.stderr)
+try:
+    with serial.Serial(port, 115200, timeout=1) as ser:
+        output = []
+        start = time.time()
+        while time.time() - start < duration:
+            if ser.in_waiting:
+                data = ser.read(ser.in_waiting).decode("utf-8", errors="ignore")
+                output.append(data)
+                print(data, end="", flush=True)
+            time.sleep(0.05)
+except serial.SerialException as error:
+    print(f"Serial error on {port}: {error}", file=sys.stderr)
     sys.exit(1)
-" 2>&1) || true
+
+if verify_string in "".join(output):
+    sys.exit(0)
+
+sys.exit(1)
+PY
+    ); then
+        VERIFIED=1
+    else
+        VERIFIED=0
+    fi
 
     echo "$RESULT"
 
-    if echo "$RESULT" | grep -q "VERIFICATION_PASSED"; then
+    if [ "$VERIFIED" -eq 1 ]; then
         echo ""
         echo "=== [$PORT] SUCCESS: Found '$VERIFY_STRING' in output ==="
         PASSED=$((PASSED + 1))

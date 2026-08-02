@@ -172,9 +172,9 @@ Use the firmware trace macros and dump traces through `domes-cli`.
 #include "trace/traceApi.hpp"
 
 void myFunction() {
-    TRACE_SCOPE(TRACE_ID("MyModule.Function"), domes::trace::TraceCategory::kGame);
-    TRACE_INSTANT(TRACE_ID("MyModule.Event"), domes::trace::TraceCategory::kGame);
-    TRACE_COUNTER(TRACE_ID("MyModule.Value"), someValue, domes::trace::TraceCategory::kGame);
+    TRACE_SCOPE(TRACE_ID("MyModule.Function"), domes::trace::Category::kGame);
+    TRACE_INSTANT(TRACE_ID("MyModule.Event"), domes::trace::Category::kGame);
+    TRACE_COUNTER(TRACE_ID("MyModule.Value"), someValue, domes::trace::Category::kGame);
 }
 ```
 

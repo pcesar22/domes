@@ -34,8 +34,8 @@ Message ranges:
 | Range | Protocol |
 | --- | --- |
 | 0x01-0x05 | OTA |
-| 0x10-0x17 | Trace |
-| 0x20-0x29 | Config and feature commands |
+| 0x10-0x1B | Trace |
+| 0x20-0x4F | Config, feature, and system commands (with reserved gaps) |
 
 ## Adding Commands
 
