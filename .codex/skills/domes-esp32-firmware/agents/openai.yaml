@@ -1,0 +1,4 @@
+interface:
+  display_name: "DOMES ESP32 Firmware"
+  short_description: "Build, flash, test DOMES ESP32-S3 firmware"
+  default_prompt: "Use $domes-esp32-firmware to build and verify the DOMES firmware."
