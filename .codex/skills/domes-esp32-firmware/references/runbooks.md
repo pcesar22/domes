@@ -55,8 +55,9 @@ After flashing, run the feature list over the relevant transport:
 tools/domes-cli/target/debug/domes-cli --port "$PORT1" feature list
 ```
 
-The helper builds and flashes each CP2102N port and verifies framed UART operation with `system
-info`. Boot text is not expected on the protocol UART.
+The helper builds and flashes each CP2102N port and verifies the exact embedded version, system
+health, and the complete on-device self-test over framed UART. Boot text is not expected on the
+protocol UART.
 
 If flashing fails, check USB cable, BOOT button, serial permissions, and whether ESP-IDF was
 sourced.

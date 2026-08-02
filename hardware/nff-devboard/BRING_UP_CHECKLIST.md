@@ -32,8 +32,9 @@ tools/firmware/flash_and_verify.sh \
 ```
 
 The CP2102N port is the DevKit programming, framed UART, and serial OTA interface. The helper builds,
-flashes, and verifies `system info` over that UART. Native USB Serial/JTAG is a separate optional
-console/JTAG connection. Continue from the repository root:
+flashes, and verifies the exact embedded version, system health, and the complete on-device
+self-test over that UART. Native USB Serial/JTAG is a separate optional console/JTAG connection.
+Continue from the repository root:
 
 ```bash
 tools/domes-cli/target/debug/domes-cli --port "$PORT" system info

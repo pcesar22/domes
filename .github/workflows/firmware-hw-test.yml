@@ -1375,6 +1375,8 @@ jobs:
           BLE_OTA_OUTCOME: ${{ steps.ble_ota.outcome }}
           SELF_TEST_OUTCOME: ${{ steps.self_test.outcome }}
           SUMMARY_BRANCH: ${{ github.head_ref || github.ref_name }}
+          SUMMARY_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SUMMARY_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
           SYSTEM_HEALTH_OUTCOME: ${{ steps.system_health.outcome }}
           TRACE_OUTCOME: ${{ steps.traces.outcome }}
           TRACE_DIR: ${{ steps.traces.outputs.trace_dir }}
@@ -1386,7 +1388,9 @@ jobs:
           echo "|----------|-------|"
           echo "| Devices | $DEVICE_COUNT ($PORT_LIST) |"
           echo "| Multi-device | $IS_MULTI |"
-          echo "| Commit | \`$GITHUB_SHA\` |"
+          echo "| Tested merge/dispatch commit | \`$GITHUB_SHA\` |"
+          echo "| Source commit | \`$SUMMARY_HEAD_SHA\` |"
+          echo "| Pull request base commit | \`${SUMMARY_BASE_SHA:-n/a}\` |"
           echo "| Branch | $SUMMARY_BRANCH |"
           echo ""
           echo "### Test Results"

@@ -207,6 +207,17 @@ class ReleaseContractTest(unittest.TestCase):
         self.assertIn('line.startswith("App version: ")', self.hardware_workflow)
         self.assertNotIn("v0.0.0-rollback-g", self.hardware_workflow)
 
+    def test_hardware_summary_records_tested_head_and_base_commits(self) -> None:
+        required_fragments = (
+            "SUMMARY_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}",
+            "SUMMARY_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}",
+            "| Tested merge/dispatch commit |",
+            "| Source commit |",
+            "| Pull request base commit |",
+        )
+        for fragment in required_fragments:
+            self.assertIn(fragment, self.hardware_workflow)
+
     def test_hardware_ota_proves_version_partition_and_boot_transitions(self) -> None:
         self.assertIn("timeout-minutes: 120", self.hardware_workflow)
         self.assertIn("Factory image version does not match", self.hardware_workflow)
