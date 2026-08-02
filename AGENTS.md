@@ -18,6 +18,7 @@ Use progressive disclosure:
 | Platform, BLE, USB, or multi-device setup | `.codex/PLATFORM.md` |
 | Host capability discovery | `scripts/doctor.sh` (use `--json` for automation) |
 | Codex defaults and specialist agents | `.codex/README.md` |
+| Substantial cross-component or long-running work | `PLANS.md` |
 | Detailed verification commands | `docs/TESTING.md` |
 
 Reusable procedures live in `.codex/skills/`; do not copy their runbooks into always-loaded
@@ -101,6 +102,7 @@ paths.
 | --- | --- |
 | `docs/README.md` | Documentation index |
 | `docs/TESTING.md` | Software and hardware verification procedures |
+| `PLANS.md` | Living execution-plan contract for substantial work |
 | `firmware/MILESTONES.md` | Development phases and current status |
 | `research/SYSTEM_ARCHITECTURE.md` | Product target, not as-built status |
 | `research/architecture/README.md` | Historical/proposed record lifecycle |
