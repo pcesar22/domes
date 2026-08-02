@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "protobuf-cross-language-change",
+      "title": "Plan a host-facing runtime configuration message",
+      "category": "protocol",
+      "prompt": "Plan a new host-facing runtime configuration request and response consumed by firmware, the Rust CLI, and Flutter. Identify the schema authority, generated consumers, response envelope, and required verification. Do not implement it.",
+      "required_files": ["firmware/common/proto/config.proto", "firmware/common/proto/config.options", "tools/generate_protocols.sh", "tools/domes-cli/build.rs"],
+      "required_terms": ["protobuf", "status", "hardware"],
+      "forbidden_terms": ["hand-roll a new protocol"],
+      "sandbox": "read-only",
+      "hardware": "required-gate",
+      "cleanup": "Remove the temporary worktree; do not access devices or GitHub."
+    },
+    {
+      "id": "frame-envelope-review",
+      "title": "Review a response-envelope mismatch",
+      "category": "protocol",
+      "prompt": "Identify the authoritative firmware and host locations when a config response is decoded with the wrong status envelope. Distinguish wrapped responses from bare protobuf list, diagnostic, and unsolicited payloads and name the tests required before changes.",
+      "required_files": ["firmware/common/protocol/frameCodec.hpp", "firmware/domes/main/config/configCommandHandler.hpp", "tools/domes-cli/src/transport/frame.rs"],
+      "required_terms": ["bare protobuf", "unsolicited", "status"],
+      "forbidden_terms": [],
+      "sandbox": "read-only",
+      "hardware": "required-gate",
+      "cleanup": "Remove the temporary worktree; do not open a transport."
+    },
+    {
+      "id": "freertos-isr-review",
+      "title": "Review an interrupt-driven firmware change",
+      "category": "firmware",
+      "prompt": "Review rules and implementation areas for a new interrupt-driven input driver. Identify ISR, allocation, logging, FreeRTOS API, ownership, host-test, build, and hardware constraints.",
+      "required_files": ["firmware/AGENTS.md", "firmware/domes/main/drivers", "firmware/test_app"],
+      "required_terms": ["fromisr", "allocation", "hardware"],
+      "forbidden_terms": ["log from the isr"],
+      "sandbox": "read-only",
+      "hardware": "required-gate",
+      "cleanup": "Remove the temporary worktree; do not flash firmware."
+    },
+    {
+      "id": "cli-command-plan",
+      "title": "Plan a new CLI diagnostics command",
+      "category": "cli",
+      "prompt": "Plan a domes-cli diagnostics command backed by an existing protobuf request. Identify command registration, protocol handling, transport independence, tests, and required CLI checks. Do not implement it.",
+      "required_files": ["tools/domes-cli/AGENTS.md", "tools/domes-cli/src/main.rs", "tools/domes-cli/src/commands", "tools/domes-cli/src/transport"],
+      "required_terms": ["cargo clippy", "serial", "ble"],
+      "forbidden_terms": [],
+      "sandbox": "read-only",
+      "hardware": "required-gate",
+      "cleanup": "Remove the temporary worktree; do not change the device registry."
+    },
+    {
+      "id": "flutter-ble-stale-result",
+      "title": "Review stale BLE drill completions",
+      "category": "flutter",
+      "prompt": "Trace the Flutter architecture when a stopped or superseded drill receives a late BLE touch or asynchronous completion. Identify owning providers, transport, protocol, tests, and the physical verification gate.",
+      "required_files": ["ios/domes_app/lib/application/providers/drill_provider.dart", "ios/domes_app/lib/data/transport", "ios/domes_app/test"],
+      "required_terms": ["stale", "active", "physical"],
+      "forbidden_terms": ["unit tests prove ble hardware"],
+      "sandbox": "read-only",
+      "hardware": "unavailable-gate",
+      "cleanup": "Remove the temporary worktree; do not access Bluetooth."
+    },
+    {
+      "id": "documentation-authority",
+      "title": "Resolve a current-versus-proposed documentation conflict",
+      "category": "documentation",
+      "prompt": "A historical research document describes a production board and feature as delivered, while implementation and milestones disagree. Identify the authority order and how to update docs without promoting a proposal to as-built status.",
+      "required_files": ["docs/README.md", "research/SOFTWARE_ARCHITECTURE.md", "research/SYSTEM_ARCHITECTURE.md", "firmware/MILESTONES.md"],
+      "required_terms": ["implementation", "proposed", "verified"],
+      "forbidden_terms": [],
+      "sandbox": "read-only",
+      "hardware": "not-required",
+      "cleanup": "Remove the temporary worktree; leave documentation unchanged."
+    },
+    {
+      "id": "ota-rollback-claims",
+      "title": "Audit OTA rollback verification claims",
+      "category": "ota",
+      "prompt": "Audit evidence required to claim OTA update and rollback behavior are verified. Distinguish first and second boots, interrupted recovery, and deliberately forced failed-self-test rollback. Identify authoritative workflows and implementation surfaces.",
+      "required_files": ["docs/TESTING.md", "firmware/MILESTONES.md", "tools/domes-cli/src/commands/ota.rs", "firmware/domes/main/services/otaManager.hpp"],
+      "required_terms": ["second boot", "forced", "unverified"],
+      "forbidden_terms": ["successful boot proves rollback"],
+      "sandbox": "read-only",
+      "hardware": "unavailable-gate",
+      "cleanup": "Remove the temporary worktree; do not transfer an image or reboot."
+    },
+    {
+      "id": "multi-device-port-routing",
+      "title": "Plan a two-pod ESP-NOW investigation",
+      "category": "hardware",
+      "prompt": "Plan a two-pod ESP-NOW investigation without hardware. Distinguish CP2102N protocol ports from native USB console/JTAG, stable identity from kernel numbering, CLI fan-out from monitoring, and trace-correlation limits.",
+      "required_files": [".codex/PLATFORM.md", "tools/firmware/monitor_serial.py", "tools/domes-cli/src/device.rs", "tools/trace/trace_merge.py"],
+      "required_terms": ["cp2102n", "serial/jtag", "capture-start"],
+      "forbidden_terms": ["ttyusb0 is pod 1"],
+      "sandbox": "read-only",
+      "hardware": "unavailable-gate",
+      "cleanup": "Remove the temporary worktree; do not open serial or BLE interfaces."
+    },
+    {
+      "id": "scoped-change-review",
+      "title": "Keep a documentation-only change scoped",
+      "category": "review",
+      "prompt": "Describe how to correct one broken repository-relative link without broad cleanup. Identify the checker, narrow verification, and which firmware, CLI, Flutter, and hardware checks are unnecessary.",
+      "required_files": ["tools/docs/check_markdown_links.py", "docs/TESTING.md"],
+      "required_terms": ["documentation only", "markdown", "not required"],
+      "forbidden_terms": ["flash the firmware"],
+      "sandbox": "read-only",
+      "hardware": "not-required",
+      "cleanup": "Remove the temporary worktree; do not edit files."
+    },
+    {
+      "id": "firmware-patch-review",
+      "title": "Review an intentionally unsafe firmware approach",
+      "category": "review",
+      "prompt": "Review this proposal: allocate a std::vector and log from a GPIO ISR, call a blocking FreeRTOS API there, ignore esp_err_t, and validate only with host tests. Identify violations, alternatives, files, and verification.",
+      "required_files": ["firmware/AGENTS.md", "docs/TESTING.md"],
+      "required_terms": ["fromisr", "esp_err_t", "flash"],
+      "forbidden_terms": ["approach is safe"],
+      "sandbox": "read-only",
+      "hardware": "required-gate",
+      "cleanup": "Remove the temporary worktree; never create the unsafe code."
+    },
+    {
+      "id": "wifi-capability-boundary",
+      "title": "Assess a WiFi transport verification request",
+      "category": "transport",
+      "prompt": "Assess whether default firmware can validate WiFi/TCP config and raw TCP OTA on a clean board. Identify build requirements, credentials, supported routes, source files, and honest verification boundaries.",
+      "required_files": ["firmware/domes/sdkconfig.defaults", "firmware/domes/main/transport/tcpConfigServer.hpp", "tools/domes-cli/src/transport/tcp.rs"],
+      "required_terms": ["auto_connect", "credentials", "unsupported"],
+      "forbidden_terms": ["raw tcp ota is supported"],
+      "sandbox": "read-only",
+      "hardware": "unavailable-gate",
+      "cleanup": "Remove the temporary worktree; leave network and device state untouched."
+    },
+    {
+      "id": "release-verification-map",
+      "title": "Map a release-affecting firmware change to evidence",
+      "category": "release",
+      "prompt": "Map evidence required for a change affecting release metadata, binary size, OTA identity, and factory packaging. Identify local verification, CI and release workflows, version extraction, and hardware gaps not proven by a build.",
+      "required_files": ["scripts/verify.sh", ".github/workflows/firmware-ci.yml", ".github/workflows/firmware-release.yml", "firmware/domes/main/services/releaseMetadata.cpp"],
+      "required_terms": ["image_info", "binary size", "hardware"],
+      "forbidden_terms": ["build success proves ota"],
+      "sandbox": "read-only",
+      "hardware": "required-gate",
+      "cleanup": "Remove the temporary worktree; do not create a release or tag."
+    }
+  ]
+}

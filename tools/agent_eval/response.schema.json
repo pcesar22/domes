@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "files", "invariants", "verification", "hardware_status", "claims"],
+  "properties": {
+    "summary": { "type": "string" },
+    "files": { "type": "array", "items": { "type": "string" } },
+    "invariants": { "type": "array", "items": { "type": "string" } },
+    "verification": { "type": "array", "items": { "type": "string" } },
+    "hardware_status": {
+      "type": "string",
+      "enum": ["not_required", "automated_only", "unavailable", "required"]
+    },
+    "claims": { "type": "array", "items": { "type": "string" } }
+  }
+}

@@ -33,6 +33,10 @@ When the pinned IDF is installed outside the default path, set
 `IDF_EXPORT_SCRIPT=/path/to/esp-idf/export.sh` for `scripts/verify.sh` and
 `tools/firmware/flash_and_verify.sh`.
 
+The coding-agent evaluation harness is under `tools/agent_eval/`. Its unit tests run as host tooling
+in the aggregate check. Live model evaluations are opt-in because they consume model usage; follow
+its README, retain model and effort metadata, and compare one variable at a time.
+
 ## Verification Matrix
 
 | Change type | Required checks | Hardware expectation |
