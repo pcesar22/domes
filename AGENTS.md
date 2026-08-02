@@ -1,332 +1,104 @@
 # DOMES Project - Codex Instructions
 
-## Verification
+## Start Here
 
-After any code implementation, verify the change end to end. Unit tests alone are not sufficient
-for firmware, protocol, transport, or hardware-facing behavior.
+Inspect the worktree before editing and preserve user changes. Search the repository before asking
+for project facts. Apply the nearest nested `AGENTS.md` in addition to this file.
 
-Use the strongest feasible verification for the files touched, and state clearly when hardware,
-ESP-IDF, BLE, or device access prevents a check.
+Use progressive disclosure:
 
-### Level 1: Unit Tests
-
-```bash
-cmake -S firmware/test_app -B firmware/test_app/build
-cmake --build firmware/test_app/build
-ctest --test-dir firmware/test_app/build --output-on-failure
-```
-
-### Level 2: Build Affected Components
-
-Firmware builds must use ESP-IDF v5.4.4, matching CI and `firmware/domes/dependencies.lock`.
-
-```bash
-# Firmware-only clean build (run from the repository root)
-VERIFY_ROOT="$(mktemp -d)"
-(cd firmware/domes && . ~/esp/esp-idf/export.sh && \
-  idf.py -B "$VERIFY_ROOT/build" -D "IDF_TARGET=esp32s3" \
-    -D "SDKCONFIG=$VERIFY_ROOT/sdkconfig" build)
-FIRMWARE_BIN="$VERIFY_ROOT/build/domes.bin"
-EXPECTED_VERSION=$(
-  . ~/esp/esp-idf/export.sh >/dev/null 2>&1
-  python -m esptool image_info --version 2 "$FIRMWARE_BIN" |
-    sed -n 's/^App version: //p'
-)
-test -n "$EXPECTED_VERSION"
-
-# Host CLI, when modified
-(cd tools/domes-cli && cargo fmt --check)
-(cd tools/domes-cli && cargo clippy --locked --all-targets --all-features -- -D warnings)
-(cd tools/domes-cli && cargo build --locked)
-(cd tools/domes-cli && cargo test --locked --all-targets --all-features)
-
-# Flutter app, when modified
-(cd ios/domes_app && flutter pub get --enforce-lockfile)
-(cd ios/domes_app && flutter analyze --fatal-infos --fatal-warnings)
-(cd ios/domes_app && flutter test)
-```
-
-### Level 3: Hardware or End-to-End Verification
-
-For firmware changes, build, flash, and then verify the actual behavior with `domes-cli`,
-serial logs, BLE/WiFi/serial transport, or visual confirmation.
-
-```bash
-PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
-  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
-tools/firmware/flash_and_verify.sh firmware/domes "$PORT"
-```
-
-Feature-specific verification:
-
-| Feature type | Verification method |
+| Work area | Scoped instructions or workflow |
 | --- | --- |
-| Protocol/transport | Flash, run host CLI, verify communication |
-| Config/runtime | Flash, use CLI to change settings, verify applied |
-| LED/display | Flash, run LED commands, ask for visual confirmation |
-| Sensors/input | Flash, trigger input, verify logs or CLI response |
-| WiFi transport | `domes-cli --wifi <IP>:5000 feature list` |
-| Serial transport | `domes-cli --port <PORT> feature list` |
-| BLE transport | `domes-cli --ble "DOMES-Pod-XX" feature list` |
-| Multi-device | `domes-cli --all feature list` |
-| ESP-NOW | Flash both, enable ESP-NOW, monitor peer discovery |
-| OTA updates | Transfer, verify version/health/self-test, reboot again, and repeat; test forced rollback separately |
-| Hardware CI | Add the `hw-test` label to the PR after asking the user |
+| `firmware/` | `firmware/AGENTS.md`; use `$domes-esp32-firmware` for build, flash, monitor, runtime, or hardware work |
+| ESP32 crashes or stepping | `$domes-debug-esp32` |
+| `tools/domes-cli/` | `tools/domes-cli/AGENTS.md` |
+| `hardware/` | `hardware/AGENTS.md` |
+| GitHub, commits, reviews, or releases | `$domes-github-workflow` |
+| Platform, BLE, USB, or multi-device setup | `.codex/PLATFORM.md` |
+| Detailed verification commands | `docs/TESTING.md` |
 
-Do not claim a task is complete when build fails, tests fail, firmware does not flash, or required
-hardware behavior was not verified. If hardware is unavailable, say exactly what remains unverified.
-An accepted peripheral command is not physical confirmation, and a successful OTA boot is not proof
-of the forced failed-self-test rollback path.
+Reusable procedures live in `.codex/skills/`; do not copy their runbooks into always-loaded
+instructions.
 
-The WiFi/TCP check requires a `CONFIG_DOMES_WIFI_AUTO_CONNECT` build and stored credentials; the
-default build omits that runtime feature, and the CLI does not provision a clean board. Raw TCP OTA
-and generic trace commands are unsupported.
+## Truth And Authority
 
-For a repository-wide final check, prefer `scripts/verify.sh`. An ignored project-local
-`firmware/domes/sdkconfig` can preserve stale options and is not release evidence; final firmware
-verification must use a fresh build directory and `SDKCONFIG`, as above or through the verification
-and flash helpers.
+Current code, generated artifacts, tests, and current-status documents describe the as-built
+system. `research/SYSTEM_ARCHITECTURE.md` is the product target, not proof of current behavior.
+`research/architecture/` contains historical and proposed records whose lifecycle is indexed in
+`research/architecture/README.md`.
 
-## Codex Workflows
+When sources disagree, inspect the implementation and tests, identify the conflict, and avoid
+silently treating a proposal as shipped behavior. Useful authority routes:
 
-Use `AGENTS.md` files as Codex-facing project instructions:
-
-- Root guidance lives in this file.
-- Firmware-specific rules live in `firmware/AGENTS.md`.
-- Hardware sourcing rules live in `hardware/AGENTS.md`.
-- CLI rules live in `tools/domes-cli/AGENTS.md`.
-
-Use project-local skills under `.codex/skills/` for reusable workflows:
-
-| Skill | Purpose |
+| Topic | Authority |
 | --- | --- |
-| `$domes-esp32-firmware` | Build, flash, monitor, validate, and run hardware test runbooks |
-| `$domes-debug-esp32` | ESP32-S3 GDB/OpenOCD debugging workflows |
-| `$domes-github-workflow` | DOMES branch, commit, PR, and review standards |
+| Firmware coding and architecture | `firmware/AGENTS.md` |
+| Current delivery status | `firmware/MILESTONES.md` |
+| Verification | `docs/TESTING.md` |
+| GPIO mappings | `docs/PIN_REFERENCE.md` and active `firmware/domes/main/config.hpp` |
+| Host protocol schemas | `firmware/common/proto/*.proto` |
+| Platform and device access | `.codex/PLATFORM.md` |
 
-The old Claude slash commands map to Codex runbooks in
-`.codex/skills/domes-esp32-firmware/references/runbooks.md`.
+## Verification Contract
 
-## Git Workflow
+After implementation, use the strongest feasible verification for the affected components. Unit
+tests alone are insufficient for firmware, protocol, transport, or hardware-facing behavior. Use
+`scripts/verify.sh` for a repository-wide software check and `docs/TESTING.md` for the component and
+hardware matrix.
 
-Before editing, inspect the worktree and avoid overwriting user changes.
+Firmware builds must use ESP-IDF v5.4.4 and a fresh build directory with an isolated `SDKCONFIG`.
+An ignored `firmware/domes/sdkconfig` can contain stale options and is not release evidence.
 
-For substantial features or fixes started from `main`, prefer a dedicated worktree or branch. Use
-`.worktrees/<name>` and `codex/<type>/<description>` for Codex-created worktrees when practical.
-Documentation or agent-instruction conversions can stay in the current workspace when requested.
+Do not claim completion when required builds or tests fail. If hardware, ESP-IDF, BLE, or device
+access is unavailable, state exactly what remains unverified. In particular:
 
-```bash
-mkdir -p .worktrees
-WORKTREE_NAME=transport-fix
-BRANCH=codex/fix/transport-fix
-git worktree add ".worktrees/$WORKTREE_NAME" -b "$BRANCH"
-```
+- An accepted command is not physical confirmation of LEDs, haptics, touch, sensors, or audio.
+- A successful OTA boot is not proof of the separately forced failed-self-test rollback path.
+- Multi-device and ESP-NOW behavior requires the required number of physical pods.
+- Hardware CI requires the `hw-test` label; ask the user before adding it.
 
-Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`.
+## Git And GitHub Boundaries
 
-Always ask before creating or publishing a PR. Never use `.claude/worktrees/` for new Codex work.
+Before editing, inspect status and do not overwrite unrelated or user-authored changes. For
+substantial work started from `main`, prefer `.worktrees/<name>` on a
+`codex/<type>/<description>` branch, where type is `feat`, `fix`, `refactor`, `docs`, `test`, or
+`chore`. Never create new worktrees under `.claude/worktrees/`.
 
-## Protocol Buffers
+Keep commits intentional and scoped. Always ask before creating or publishing a pull request. Do
+not publish issues, labels, releases, or other GitHub state unless the user authorized that action.
 
-New host-facing config and trace messages must use Protocol Buffers.
+## Host Protocol Contract
 
-- Never hand-roll a new host protocol definition.
-- Never duplicate protobuf enums or message types in C++, Rust, or Dart.
-- All config and trace message definitions come from `firmware/common/proto/*.proto`.
-- If creating a message, add it to the relevant `.proto` file first.
+New host-facing config and trace messages must use Protocol Buffers. Define them first in
+`firmware/common/proto/*.proto`; never hand-roll or duplicate protobuf enums or messages in C++,
+Rust, or Dart. Run `tools/generate_protocols.sh` after schema changes because a firmware build does
+not refresh all committed generated outputs.
 
-Bounded existing exceptions are the OTA chunk-transfer structs, trace recorder's compact internal
-event records, and the internal ESP-NOW peer packets mirrored by the host simulator. Keep every
-consumer of each exception wire-compatible until migrated; do not extend these exceptions to new
-protocol families.
+The bounded fixed-binary exceptions are OTA chunk-transfer structs, compact internal trace events,
+and internal ESP-NOW peer packets mirrored by the host simulator. Keep every consumer wire
+compatible until migration and do not extend those exceptions to a new protocol family.
 
-Source of truth:
+The shared frame is `[0xAA][0x55][LenLE16][Type][Payload][CRC32LE]`. Most config responses carry
+`[Status:u8][protobuf]`; list/diagnostic responses without command status and unsolicited
+notifications carry a bare protobuf. Firmware and every host decoder must agree on the envelope.
 
-| File | Purpose |
-| --- | --- |
-| `firmware/common/proto/config.proto` | Runtime config, feature, system, LED, touch messages |
-| `firmware/common/proto/config.options` | nanopb size constraints |
-| `firmware/common/proto/trace.proto` | Trace protocol messages |
-| `tools/domes-cli/build.rs` | prost generation for the Rust CLI |
-| `tools/generate_protocols.sh` | Committed nanopb and Dart generation/checking |
+UART0 framed config and OTA use the NFF DevKit CP2102N bridge (`/dev/ttyUSB*`, preferably its
+`/dev/serial/by-id/usb-Silicon_Labs_CP2102N_*` link). Native ESP32-S3 USB Serial/JTAG
+(`/dev/ttyACM*`) is for console logs and JTAG; keep logs off UART0 so they cannot corrupt frames.
 
-Generation paths:
-
-- Firmware: nanopb generates `*.pb.h` and `*.pb.c`.
-- CLI: prost generates Rust types at build time.
-- Flutter app: generated Dart types live under `ios/domes_app/lib/data/proto/generated/`.
-
-Run `tools/generate_protocols.sh` after schema changes; a firmware build alone does not regenerate
-committed nanopb files.
-
-## Runtime Config Protocol
-
-Binary protocol over UART serial, WiFi TCP, or BLE GATT:
-
-```text
-[0xAA][0x55][LenLE16][Type][Payload][CRC32LE]
-```
-
-OTA occupies message types `0x01-0x05`, trace occupies `0x10-0x1B`, and config command
-requests/responses occupy `0x20-0x4F` with reserved gaps. Type `0x50` is the unsolicited,
-device-originated touch notification; it is not a request and carries a bare protobuf payload.
-
-Request payloads are protobuf-encoded. Most config responses use a one-byte status envelope before
-the response protobuf: `[Status:u8][Protobuf payload]`. List and diagnostic responses that do not
-report a command status, plus unsolicited notifications, contain the protobuf directly. The owning
-firmware handler and host decoder must agree on the envelope for each message.
-
-The active NFF DevKit routes framed serial config and OTA over UART0 through its CP2102N bridge
-(`/dev/ttyUSB*`; prefer `/dev/serial/by-id/usb-Silicon_Labs_CP2102N_*`). Native ESP32-S3 USB
-Serial/JTAG is reserved for console logs and JTAG and commonly enumerates as `/dev/ttyACM*`. TCP
-config uses port 5000; BLE responses use GATT notifications.
-
-Key files:
-
-| File | Purpose |
-| --- | --- |
-| `firmware/domes/main/config/configCommandHandler.hpp` | Config command handler |
-| `firmware/domes/main/config/featureManager.hpp` | Feature state management |
-| `firmware/domes/main/transport/bleOtaService.hpp` | BLE GATT service |
-| `tools/domes-cli/src/transport/ble.rs` | CLI BLE transport |
-| `tools/domes-cli/src/transport/frame.rs` | CLI frame codec |
-
-## OTA Updates
-
-`domes-cli` supports serial and BLE OTA. Raw WiFi/TCP image transfer is currently not routed by the
-firmware TCP config server and must not be presented as verified.
-
-```bash
-domes-cli --port "$PORT" ota flash "$FIRMWARE_BIN" --version "$EXPECTED_VERSION"
-domes-cli --all ota flash "$FIRMWARE_BIN" --version "$EXPECTED_VERSION"
-```
-
-Use `--all` for OTA only when every selected registry target is serial or BLE. WiFi targets reject
-raw image transfer.
-
-The OTA version is part of the integrity contract: it must be parser-valid, at most 31 ASCII bytes,
-and byte-for-byte equal to the application version embedded in the selected image. Extract it from
-that exact image; do not substitute a release example or an independently typed label.
-
-After serial or BLE OTA, reconnect and verify the expected version, `system health`, and
-`system self-test`; reboot once more and repeat those checks. Test invalid/interrupted recovery and
-forced failed-self-test rollback as separate failure paths. A normal successful update does not
-verify rollback.
-
-Key files:
-
-| File | Purpose |
-| --- | --- |
-| `firmware/common/protocol/otaProtocol.hpp` | OTA frame payload definitions |
-| `tools/domes-cli/src/commands/ota.rs` | Rust CLI OTA implementation |
-| `ios/domes_app/lib/data/protocol/ota_protocol.dart` | Flutter OTA implementation |
-| `firmware/domes/main/transport/serialOtaReceiver.hpp` | Device-side serial OTA |
-| `firmware/domes/main/services/otaManager.hpp` | HTTPS/GitHub OTA service |
-
-## Tracing
-
-Use the firmware trace macros and dump traces through `domes-cli`.
-
-```cpp
-#include "trace/traceApi.hpp"
-
-void myFunction() {
-    TRACE_SCOPE(TRACE_ID("MyModule.Function"), domes::trace::Category::kGame);
-    TRACE_INSTANT(TRACE_ID("MyModule.Event"), domes::trace::Category::kGame);
-    TRACE_COUNTER(TRACE_ID("MyModule.Value"), someValue, domes::trace::Category::kGame);
-}
-```
-
-```bash
-domes-cli --port "$PORT" trace start
-domes-cli --port "$PORT" system health
-domes-cli --port "$PORT" trace stop
-domes-cli --port "$PORT" trace dump -o trace.json --names tools/trace/trace_names.json
-```
-
-Open the resulting JSON in `https://ui.perfetto.dev`.
-
-For multi-pod inspection, dump one trace per pod and use
-`tools/trace/trace_merge.py --align zero` to group each local timeline by its capture start. The
-current firmware has no truthful cross-clock synchronization marker. The merge tool supports only
-capture-start grouping (`zero`) and unshifted local timestamps (`raw`); neither is timing correlation
-between pods.
-
-## Multi-Device Testing
-
-Two NFF DevKit CP2102N bridges usually appear as `/dev/ttyUSB0` and `/dev/ttyUSB1`. Kernel numbers
-can change; register the serial-number-based links under `/dev/serial/by-id/`, not `ttyUSB` numbers.
-`tools/udev/99-domes-pods.rules` supplies device access policy, not custom identity aliases.
-
-```bash
-PORT1="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
-  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
-PORT2="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
-  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '2p')"
-domes-cli devices add pod1 serial "$PORT1"
-domes-cli devices add pod2 serial "$PORT2"
-domes-cli devices list
-domes-cli devices scan
-domes-cli --all feature list
-domes-cli --all led solid --color ff0000
-```
-
-For ESP-NOW testing:
-
-```bash
-domes-cli --all feature enable esp-now
-mapfile -t CONSOLES < <(
-  find -L /dev/serial/by-id -maxdepth 1 -type c \
-    -name 'usb-Espressif_USB_JTAG_serial_debug_unit*' | sort
-)
-test "${#CONSOLES[@]}" -ge 2
-python3 tools/firmware/monitor_serial.py \
-  "${CONSOLES[0]},${CONSOLES[1]}" 30
-```
-
-The monitor command reads the separately connected native USB console ports. Use the CP2102N
-`/dev/serial/by-id/` paths for `domes-cli`, flashing, and serial OTA.
-
-## Platform Requirements
-
-Full details: `.codex/PLATFORM.md`.
-
-- Use native Linux for BLE and multi-device hardware testing.
-- Do not use WSL2 for BLE.
-- Do not use Raspberry Pi Bluetooth for validation-critical BLE work.
-- Recommended BLE adapters: Intel AX200/AX210 or Realtek RTL8761B.
-
-## Gotchas
-
-Initialization order in `main.cpp` matters:
-
-1. WiFi before TCP config server and BLE, for coexistence.
-2. BLE OTA service early, because advertising starts automatically.
-3. FeatureManager before TCP/Serial/BLE config handlers.
-4. TCP config server before the UART config/OTA receiver.
-5. UART config/OTA last, after the native USB console is available.
-
-UART0 carries only framed protocol traffic through the NFF CP2102N bridge. Keep ESP-IDF console
-output on native USB Serial/JTAG so logs cannot corrupt UART frames. If native USB is not connected,
-use BLE diagnostics or attach the second USB connection before relying on boot logs.
-
-Always search the codebase before asking for project facts:
-
-```bash
-rg "kWifiSsid|kWifiPassword" firmware/
-rg "CONFIG_DOMES" firmware/domes
-```
+WiFi/TCP verification requires a `CONFIG_DOMES_WIFI_AUTO_CONNECT` build and stored credentials; the
+default build omits that runtime feature and the CLI does not provision a clean board. Raw TCP OTA
+and generic trace commands are unsupported. Serial and BLE are the supported CLI image-transfer
+paths.
 
 ## Documentation Map
 
 | Document | Purpose |
 | --- | --- |
-| `firmware/AGENTS.md` | Firmware coding standards and architecture rules |
+| `docs/README.md` | Documentation index |
+| `docs/TESTING.md` | Software and hardware verification procedures |
 | `firmware/MILESTONES.md` | Development phases and current status |
-| `research/SYSTEM_ARCHITECTURE.md` | Product hardware and system target, not as-built status |
-| `research/architecture/` | Historical and proposed design records, indexed by lifecycle |
-| `docs/PIN_REFERENCE.md` | GPIO pin mappings |
-| `tools/domes-cli/AGENTS.md` | CLI guidance |
-| `hardware/AGENTS.md` | Hardware component sourcing guidance |
-| `.codex/PLATFORM.md` | Platform, BLE, udev, and multi-device setup |
-| `.codex/skills/` | Codex skills and reusable runbooks |
+| `research/SYSTEM_ARCHITECTURE.md` | Product target, not as-built status |
+| `research/architecture/README.md` | Historical/proposed record lifecycle |
+| `.codex/PLATFORM.md` | Host, BLE, USB, udev, and multi-device setup |
+| `.codex/skills/domes-esp32-firmware/references/runbooks.md` | Firmware operational runbooks |
