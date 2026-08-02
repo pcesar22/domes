@@ -113,6 +113,7 @@ Add mistakes and corrections as they occur. The CLAUDE.md should be a living doc
 ### Command Definitions
 
 #### `/build-firmware`
+
 ```markdown
 Build the ESP32-S3 firmware and report results:
 
@@ -125,6 +126,7 @@ If build succeeds, report the binary size and confirm it's under 4MB.
 ```
 
 #### `/flash`
+
 ```markdown
 Flash firmware to the connected DevKit and start monitoring:
 
@@ -136,6 +138,7 @@ Watch for boot errors, WiFi/BLE initialization, and any crash loops.
 ```
 
 #### `/verify-firmware`
+
 ```markdown
 Run the complete firmware verification checklist:
 
@@ -164,6 +167,7 @@ Report the verification results clearly.
 ```
 
 #### `/commit-push-pr`
+
 ```markdown
 Prepare and create a pull request:
 
@@ -181,6 +185,7 @@ Based on the changes:
 ```
 
 #### `/source-part`
+
 ```markdown
 Search for a component in JLCPCB/LCSC catalog.
 
@@ -196,6 +201,7 @@ I will:
 ```
 
 #### `/create-driver`
+
 ```markdown
 Create a new hardware driver following DOMES conventions.
 
@@ -258,6 +264,7 @@ The `hardware/CLAUDE.md` already defines the EE agent role for JLCPCB sourcing. 
 ### Installation
 
 Run in Claude Code:
+
 ```
 /install-github-action
 ```
@@ -265,6 +272,7 @@ Run in Claude Code:
 ### Usage
 
 Once installed, you can:
+
 - Tag `@.claude` in PR comments to request changes
 - Have Claude automatically update CLAUDE.md as part of PRs
 - Automate code review and suggestions
@@ -358,6 +366,7 @@ Add to `.claude/settings.json`:
 ### Prerequisites
 
 Ensure formatting tools are installed:
+
 ```bash
 # C/C++ formatting
 sudo apt install clang-format
@@ -395,6 +404,7 @@ The DEVELOPMENT_ROADMAP.md defines excellent milestones with clear pass criteria
 1. **Create `/verify-firmware`** command (see Section 2)
 
 2. **Add to root CLAUDE.md:**
+
 ```markdown
 ## Verification Requirements
 
@@ -442,6 +452,7 @@ Report pass/fail for each M1 criterion.
 ### Recommended Subagents for DOMES
 
 #### Code Simplifier
+
 ```markdown
 # .claude/agents/code-simplifier.md
 
@@ -457,6 +468,7 @@ Do not change functionality, only improve code quality.
 ```
 
 #### Hardware Reviewer
+
 ```markdown
 # .claude/agents/hardware-reviewer.md
 
@@ -490,6 +502,7 @@ Review hardware changes against design requirements:
 ### Session Handoff
 
 Use `&` to hand off sessions between terminal and web:
+
 ```
 /compact
 & "Continue this session on claude.ai/code"

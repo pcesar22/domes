@@ -11,8 +11,10 @@
  *        Any mode -> ERROR -> IDLE (recovery)
  */
 
-#include "featureManager.hpp"
 #include "config.pb.h"
+
+#include "featureManager.hpp"
+#include "utils/mutex.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -24,12 +26,12 @@ namespace domes::config {
  * @brief System operating modes (C++ wrapper for proto enum)
  */
 enum class SystemMode : uint8_t {
-    kBooting   = domes_config_SystemMode_SYSTEM_MODE_BOOTING,
-    kIdle      = domes_config_SystemMode_SYSTEM_MODE_IDLE,
-    kTriage    = domes_config_SystemMode_SYSTEM_MODE_TRIAGE,
+    kBooting = domes_config_SystemMode_SYSTEM_MODE_BOOTING,
+    kIdle = domes_config_SystemMode_SYSTEM_MODE_IDLE,
+    kTriage = domes_config_SystemMode_SYSTEM_MODE_TRIAGE,
     kConnected = domes_config_SystemMode_SYSTEM_MODE_CONNECTED,
-    kGame      = domes_config_SystemMode_SYSTEM_MODE_GAME,
-    kError     = domes_config_SystemMode_SYSTEM_MODE_ERROR,
+    kGame = domes_config_SystemMode_SYSTEM_MODE_GAME,
+    kError = domes_config_SystemMode_SYSTEM_MODE_ERROR,
 };
 
 /**
@@ -74,6 +76,16 @@ public:
     bool transitionTo(SystemMode newMode);
 
     /**
+     * @brief Enter a peer game through the CONNECTED state
+     *
+     * Normalizes BOOTING, ERROR, IDLE, and TRIAGE before entering GAME so a
+     * peer drill is never classified as a solo drill.
+     *
+     * @return true when the manager is in GAME, false if a transition failed
+     */
+    bool transitionToPeerGame();
+
+    /**
      * @brief Get time spent in current mode (milliseconds)
      */
     uint32_t timeInModeMs() const;
@@ -81,7 +93,7 @@ public:
     /**
      * @brief Reset the activity timer
      *
-     * Call this on every config command to prevent TRIAGE timeout.
+     * Call this for explicit user actions to prevent TRIAGE timeout.
      */
     void resetActivityTimer();
 
@@ -105,7 +117,9 @@ public:
      *
      * Returns kIdle for solo drill, kConnected for peer drill.
      */
-    SystemMode gameEnteredFrom() const { return gameEnteredFrom_; }
+    SystemMode gameEnteredFrom() const {
+        return static_cast<SystemMode>(gameEnteredFrom_.load(std::memory_order_acquire));
+    }
 
     /**
      * @brief Get the feature mask for a given mode
@@ -113,20 +127,28 @@ public:
     static uint32_t featureMaskForMode(SystemMode mode);
 
 private:
+    struct TransitionRecord {
+        SystemMode from;
+        SystemMode to;
+    };
+
+    bool transitionToLocked(SystemMode newMode, TransitionRecord& record, bool& changed);
+    static void logTransition(const TransitionRecord& record);
     bool isValidTransition(SystemMode from, SystemMode to) const;
     void applyFeatureMask(SystemMode mode);
 
     FeatureManager& features_;
-    std::atomic<uint8_t> currentMode_;    // Stored as uint8_t for atomic compatibility
-    std::atomic<int64_t> modeEnteredAt_;  // esp_timer_get_time() value
-    std::atomic<int64_t> lastActivityAt_; // esp_timer_get_time() value
-    SystemMode gameEnteredFrom_{SystemMode::kIdle};
+    std::atomic<uint8_t> currentMode_;     // Stored as uint8_t for atomic compatibility
+    std::atomic<int64_t> modeEnteredAt_;   // esp_timer_get_time() value
+    std::atomic<int64_t> lastActivityAt_;  // esp_timer_get_time() value
+    std::atomic<uint8_t> gameEnteredFrom_{static_cast<uint8_t>(SystemMode::kIdle)};
     ModeTransitionCallback transitionCb_;
+    utils::Mutex transitionMutex_;
 };
 
 // Timeout constants
-constexpr int64_t kTriageTimeoutUs  = 30'000'000;   // 30s inactivity -> IDLE
-constexpr int64_t kErrorRecoveryUs  = 10'000'000;   // 10s in ERROR -> IDLE
-constexpr int64_t kGameTimeoutUs    = 300'000'000;   // 5min game safety -> gameEnteredFrom_
+constexpr int64_t kTriageTimeoutUs = 30'000'000;  // 30s inactivity -> IDLE
+constexpr int64_t kErrorRecoveryUs = 10'000'000;  // 10s in ERROR -> IDLE
+constexpr int64_t kGameTimeoutUs = 300'000'000;   // 5min game safety -> gameEnteredFrom_
 
 }  // namespace domes::config

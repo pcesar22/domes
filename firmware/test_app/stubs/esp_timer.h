@@ -6,8 +6,8 @@
  */
 #pragma once
 
-#include <cstdint>
 #include <atomic>
+#include <cstdint>
 
 // Global mock time (microseconds) - tests can set this directly
 namespace test_stubs {

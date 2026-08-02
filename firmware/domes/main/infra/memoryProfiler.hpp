@@ -30,10 +30,10 @@ constexpr size_t kMaxHeapSamples = memory_profile::kMaxSamples;
  * @brief Single heap sample
  */
 struct HeapSample {
-    uint32_t timestampS = 0;     ///< Uptime when sampled (seconds)
-    uint32_t freeHeap = 0;       ///< Free heap bytes
-    uint32_t largestBlock = 0;   ///< Largest free contiguous block
-    uint32_t minFreeHeap = 0;    ///< Historical minimum free heap
+    uint32_t timestampS = 0;    ///< Uptime when sampled (seconds)
+    uint32_t freeHeap = 0;      ///< Free heap bytes
+    uint32_t largestBlock = 0;  ///< Largest free contiguous block
+    uint32_t minFreeHeap = 0;   ///< Historical minimum free heap
 };
 
 /**
@@ -54,8 +54,10 @@ public:
 
     /**
      * @brief Start the sampling task
+     *
+     * @return ESP_OK when the task was created
      */
-    static void startTask();
+    static esp_err_t startTask();
 
     /**
      * @brief Get the current number of samples stored

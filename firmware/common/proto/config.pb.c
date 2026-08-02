@@ -18,6 +18,9 @@ PB_BIND(domes_config_ListFeaturesRequest, domes_config_ListFeaturesRequest, AUTO
 PB_BIND(domes_config_SetFeatureRequest, domes_config_SetFeatureRequest, AUTO)
 
 
+PB_BIND(domes_config_GetFeatureRequest, domes_config_GetFeatureRequest, AUTO)
+
+
 PB_BIND(domes_config_LedPattern, domes_config_LedPattern, AUTO)
 
 
@@ -31,6 +34,9 @@ PB_BIND(domes_config_ListFeaturesResponse, domes_config_ListFeaturesResponse, AU
 
 
 PB_BIND(domes_config_SetFeatureResponse, domes_config_SetFeatureResponse, AUTO)
+
+
+PB_BIND(domes_config_GetFeatureResponse, domes_config_GetFeatureResponse, AUTO)
 
 
 PB_BIND(domes_config_SetLedPatternResponse, domes_config_SetLedPatternResponse, AUTO)
@@ -147,20 +153,4 @@ PB_BIND(domes_config_SetSimModeRequest, domes_config_SetSimModeRequest, AUTO)
 PB_BIND(domes_config_SetSimModeResponse, domes_config_SetSimModeResponse, AUTO)
 
 
-PB_BIND(domes_config_ConfigRequest, domes_config_ConfigRequest, AUTO)
-
-
-PB_BIND(domes_config_ConfigResponse, domes_config_ConfigResponse, AUTO)
-
-
-
-
-
-
-
-
-
-
-
-
-
+PB_BIND(domes_config_TouchEventNotification, domes_config_TouchEventNotification, AUTO)

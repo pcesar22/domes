@@ -27,30 +27,4 @@ PB_BIND(domes_trace_TraceStatusResponse, domes_trace_TraceStatusResponse, AUTO)
 PB_BIND(domes_trace_AckResponse, domes_trace_AckResponse, AUTO)
 
 
-PB_BIND(domes_trace_StreamConfig, domes_trace_StreamConfig, AUTO)
-
-
 PB_BIND(domes_trace_StreamBatch, domes_trace_StreamBatch, 2)
-
-
-PB_BIND(domes_trace_Metadata, domes_trace_Metadata, 2)
-
-
-PB_BIND(domes_trace_DataHeader, domes_trace_DataHeader, AUTO)
-
-
-PB_BIND(domes_trace_DumpEnd, domes_trace_DumpEnd, AUTO)
-
-
-PB_BIND(domes_trace_StatusResponse, domes_trace_StatusResponse, AUTO)
-
-
-
-
-
-
-
-
-
-
-

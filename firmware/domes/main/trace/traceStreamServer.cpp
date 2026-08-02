@@ -22,7 +22,7 @@
 namespace {
 constexpr const char* kTag = "trace_stream";
 constexpr size_t kMaxFrameSize = 512;
-}
+}  // namespace
 
 namespace domes::trace {
 
@@ -65,12 +65,13 @@ void TraceStreamServer::run() {
 
     while (!stopRequested_.load()) {
         // Set timeout on accept so we can check stopRequested
-        struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
+        struct timeval tv = {.tv_sec = 2, .tv_usec = 0};
         setsockopt(listenSock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
         struct sockaddr_in clientAddr;
         socklen_t clientLen = sizeof(clientAddr);
-        int clientSock = accept(listenSock, reinterpret_cast<struct sockaddr*>(&clientAddr), &clientLen);
+        int clientSock =
+            accept(listenSock, reinterpret_cast<struct sockaddr*>(&clientAddr), &clientLen);
 
         if (clientSock < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -107,14 +108,19 @@ void TraceStreamServer::handleClient(int clientSock) {
     dropped_.store(0, std::memory_order_relaxed);
     sequence_ = 0;
 
-    // Register streaming callback
+    // A stream connection is itself a request to record. Preserve the state
+    // that was active before the client connected and restore it on exit.
+    const bool wasEnabled = Recorder::isEnabled();
     streaming_.store(true);
     Recorder::setStreamCallback(streamCallback);
+    if (!wasEnabled) {
+        Recorder::setEnabled(true);
+    }
 
     ESP_LOGI(kTag, "Streaming started");
 
     // Set send timeout
-    struct timeval tv = { .tv_sec = 5, .tv_usec = 0 };
+    struct timeval tv = {.tv_sec = 5, .tv_usec = 0};
     setsockopt(clientSock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
     std::array<TraceEvent, kStreamBatchSize> batch;
@@ -143,8 +149,9 @@ void TraceStreamServer::handleClient(int clientSock) {
         msg.dropped = dropped_.exchange(0, std::memory_order_relaxed);
 
         size_t eventBytes = batchCount * sizeof(TraceEvent);
-        static_assert(kStreamBatchSize * sizeof(TraceEvent) <= sizeof(domes_trace_StreamBatch::events.bytes),
-                      "StreamBatch events field too small for max batch");
+        static_assert(
+            kStreamBatchSize * sizeof(TraceEvent) <= sizeof(domes_trace_StreamBatch::events.bytes),
+            "StreamBatch events field too small for max batch");
         msg.events.size = eventBytes;
         std::memcpy(msg.events.bytes, batch.data(), eventBytes);
 
@@ -159,10 +166,9 @@ void TraceStreamServer::handleClient(int clientSock) {
         // Encode as frame
         std::array<uint8_t, kMaxFrameSize> frameBuf;
         size_t frameLen = 0;
-        TransportError err = encodeFrame(
-            static_cast<uint8_t>(MsgType::kStreamData),
-            pbBuf.data(), stream.bytes_written,
-            frameBuf.data(), frameBuf.size(), &frameLen);
+        TransportError err =
+            encodeFrame(static_cast<uint8_t>(MsgType::kStreamData), pbBuf.data(),
+                        stream.bytes_written, frameBuf.data(), frameBuf.size(), &frameLen);
 
         if (!isOk(err)) {
             ESP_LOGE(kTag, "Failed to encode stream frame");
@@ -187,6 +193,9 @@ void TraceStreamServer::handleClient(int clientSock) {
     // Unregister callback
     Recorder::setStreamCallback(nullptr);
     streaming_.store(false);
+    if (!wasEnabled) {
+        Recorder::setEnabled(false);
+    }
 
     ESP_LOGI(kTag, "Streaming stopped");
 }

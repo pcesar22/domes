@@ -19,29 +19,49 @@ sudo apt-get install -y protobuf-compiler pkg-config libudev-dev libdbus-1-dev
 Build and verify:
 
 ```bash
-cd tools/domes-cli
-cargo fmt --check
-cargo clippy --all-targets --all-features
-cargo build
-cargo test
-cargo run -- --help
+(cd tools/domes-cli && cargo fmt --check)
+(cd tools/domes-cli && cargo clippy --locked --all-targets --all-features -- -D warnings)
+(cd tools/domes-cli && cargo build --locked)
+(cd tools/domes-cli && cargo test --locked --all-targets --all-features)
+(cd tools/domes-cli && cargo run -- --help)
 ```
 
-The debug binary is `target/debug/domes-cli`; use `cargo build --release` for
+The debug binary is `target/debug/domes-cli`; use `cargo build --locked --release` for
 `target/release/domes-cli`.
+
+The examples below run from the repository root:
+
+```bash
+CLI=tools/domes-cli/target/debug/domes-cli
+```
 
 ## Transports
 
 | Transport | Select with | Current workflow support |
 | --- | --- | --- |
-| USB CDC serial | `--port /dev/ttyACM0` | Config, diagnostics, trace, serial OTA |
-| WiFi TCP config server | `--wifi HOST:5000` | Config and diagnostics |
+| CP2102N-backed UART | `--port /dev/serial/by-id/...` | Config, diagnostics, trace, serial OTA |
+| Build-gated WiFi TCP config server | `--wifi HOST:5000` | Config and diagnostics in `CONFIG_DOMES_WIFI_AUTO_CONNECT` builds |
 | BLE GATT | `--ble NAME_OR_ADDRESS` | Config, diagnostics, BLE OTA |
 | Device registry | `--target NAME` or `--all` | Fan-out across registered serial, TCP, and BLE targets |
 
-Raw image transfer through `--wifi ... ota flash` is not currently supported by the firmware TCP
-server. GitHub update-check commands are config messages and are a separate workflow. Trace live
-streaming connects to its dedicated WiFi endpoint and accepts one target per process.
+`--port`, `--wifi`, `--ble`, and `--target` are repeatable and may be combined for explicit fan-out.
+`--all` is exclusive and rejects those selectors instead of contacting the same physical endpoint
+through an accidental mixture. `sniff` requires exactly one `--port`; `trace stream` accepts its one
+host through `trace stream --wifi HOST` and rejects every global transport or multi-device selector.
+
+Raw image transfer and trace control through a generic `--wifi ...` target are not routed by the
+firmware TCP config server. GitHub update-check commands are config messages and are a separate
+workflow. `trace stream --wifi HOST:5001` connects to the dedicated trace endpoint and accepts one
+target per process.
+
+The default firmware build omits the WiFi runtime feature and rejects attempts to set it. A
+`CONFIG_DOMES_WIFI_AUTO_CONNECT` build exposes the feature, prefers stored credentials, and uses
+compile-time secrets only to seed an unprovisioned first boot. Automatic GitHub/WiFi update is not a
+verified release path; configuring that service is not transfer and reboot validation.
+
+On the NFF DevKit, `/dev/ttyUSB*` is the CP2102N flash/config/OTA interface and `/dev/ttyACM*` is the
+separate native USB console/JTAG interface. Kernel numbers can change; use a CP2102N
+`/dev/serial/by-id/` link for registry entries and persistent commands.
 
 BLE validation requires native Linux or a supported mobile host. Do not use WSL2 or Raspberry Pi
 Bluetooth for validation-critical results.
@@ -49,77 +69,133 @@ Bluetooth for validation-critical results.
 ## Discover And Inspect
 
 ```bash
-domes-cli --list-ports
-domes-cli --scan-ble
-domes-cli --port /dev/ttyACM0 system info
-domes-cli --port /dev/ttyACM0 system health
-domes-cli --port /dev/ttyACM0 system self-test
-domes-cli --port /dev/ttyACM0 feature list
+PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+$CLI --list-ports
+$CLI --scan-ble
+$CLI --port "$PORT" system info
+$CLI --port "$PORT" system health
+$CLI --port "$PORT" system self-test
+$CLI --port "$PORT" feature list
 ```
 
 `system crash-dump` is a legacy command name. The current firmware returns a clean-restart snapshot
 saved before `esp_restart()`; it does not retrieve a panic backtrace or ESP-IDF core dump.
 
+Large BLE diagnostics are fragmented by current firmware and reassembled by the current CLI. A
+large response timeout against older firmware/CLI combinations is a compatibility failure, not a
+successful partial diagnostic.
+
 ## Control A Pod
 
 ```bash
-domes-cli --port /dev/ttyACM0 feature enable esp-now
-domes-cli --port /dev/ttyACM0 wifi status
-domes-cli --port /dev/ttyACM0 led solid --color ff0000 --brightness 128
-domes-cli --port /dev/ttyACM0 led breathing --color 0000ff --period 3000
-domes-cli --port /dev/ttyACM0 led cycle --period 2000
-domes-cli --port /dev/ttyACM0 led off
-domes-cli --port /dev/ttyACM0 imu triage --enable
-domes-cli --port /dev/ttyACM0 touch simulate --pad 1
+$CLI --port "$PORT" feature enable esp-now
+$CLI --port "$PORT" wifi status
+$CLI --port "$PORT" led solid --color ff0000 --brightness 128
+$CLI --port "$PORT" led breathing --color 0000ff --period 3000
+$CLI --port "$PORT" led cycle --period 2000
+$CLI --port "$PORT" led off
+$CLI --port "$PORT" imu triage --enable
+$CLI --port "$PORT" touch simulate --pad 1
 ```
+
+On a `CONFIG_DOMES_WIFI_AUTO_CONNECT` build, `wifi enable` and `wifi disable` connect and disconnect
+the station client with stored credentials, while `wifi status` reports its supported feature
+state. The default build omits that feature and returns an invalid-feature error. These commands do
+not provision credentials or prove the TCP server is reachable; use a successful
+`--wifi HOST:5000` command to verify the transport.
+
+`feature list` contains only features supported by the running build. Its LED, touch, audio,
+haptic, ESP-NOW, and BLE-advertising entries are enforced by the corresponding runtime paths; an
+accepted state change is still not physical proof of the peripheral output.
 
 Use subcommand help for accepted enum values and options:
 
 ```bash
-domes-cli system --help
-domes-cli ota --help
-domes-cli trace --help
-domes-cli espnow --help
+$CLI system --help
+$CLI ota --help
+$CLI trace --help
+$CLI espnow --help
 ```
 
 ## OTA
 
-Build the firmware first, then use a serial or BLE target:
+Build a retained application with a fresh configuration, then use the exact resulting image with a
+serial or BLE target:
 
 ```bash
-domes-cli --port /dev/ttyACM0 ota flash \
-  firmware/domes/build/domes.bin --version v1.0.0
+OTA_ROOT="$(mktemp -d)"
+(cd firmware/domes && . ~/esp/esp-idf/export.sh && \
+  idf.py -B "$OTA_ROOT/build" -D "IDF_TARGET=esp32s3" \
+    -D "SDKCONFIG=$OTA_ROOT/sdkconfig" build)
+FIRMWARE_BIN="$OTA_ROOT/build/domes.bin"
+EXPECTED_VERSION=$(
+  . ~/esp/esp-idf/export.sh >/dev/null 2>&1
+  python -m esptool image_info --version 2 "$FIRMWARE_BIN" |
+    sed -n 's/^App version: //p'
+)
+test -n "$EXPECTED_VERSION"
 
-domes-cli --ble "DOMES-Pod-01" ota flash \
-  firmware/domes/build/domes.bin --version v1.0.0
+$CLI --port "$PORT" ota flash \
+  "$FIRMWARE_BIN" --version "$EXPECTED_VERSION"
+
+$CLI --ble "DOMES-Pod-01" ota flash \
+  "$FIRMWARE_BIN" --version "$EXPECTED_VERSION"
 ```
 
-After transfer, reconnect and verify `system info` reports the expected version and that the pod
-completed a healthy boot. The serial receiver verifies the CLI-provided SHA-256 digest before it
-accepts the image and selects the new boot partition.
+The CLI requires a parser-valid ASCII version of at most 31 bytes, and the receiver verifies that it
+is byte-for-byte identical to the version embedded in the uploaded ESP image. Do not replace the
+extracted value with an example or a manually maintained release label.
+
+After transfer, reconnect and verify `system info` reports the expected version and that
+`system health` plus `system self-test` pass. Reboot once more by power cycling or resetting through
+the programming port, then repeat those checks; the second boot confirms that the new image was
+accepted rather than merely booted while pending rollback verification. The common serial/BLE
+receiver verifies the CLI-provided SHA-256 digest and embedded application version before it accepts
+the image and selects the new boot partition.
+
+A successful update does not verify forced rollback. That path needs a purpose-built image or fault
+injection that fails the post-OTA self-test, followed by evidence that the previous version booted.
 
 ## Tracing And Sniffing
 
 ```bash
-domes-cli --port /dev/ttyACM0 trace start
-domes-cli --port /dev/ttyACM0 trace status
-domes-cli --port /dev/ttyACM0 trace dump \
+$CLI --port "$PORT" trace start
+$CLI --port "$PORT" trace status
+$CLI --port "$PORT" system health
+$CLI --port "$PORT" trace stop
+$CLI --port "$PORT" trace dump \
   --output trace.json --names tools/trace/trace_names.json
-domes-cli --port /dev/ttyACM0 trace stop
 
-domes-cli trace stream --wifi 192.168.1.100:5001
-domes-cli --port /dev/ttyACM0 sniff --filter config,trace --json
+$CLI trace stream --wifi 192.168.1.100:5001
+$CLI --port "$PORT" sniff --filter config,trace --json
 ```
 
-Open dump output in [Perfetto](https://ui.perfetto.dev). Merge multiple pod dumps with
-`tools/trace/trace_merge.py`; see [`../README.md`](../README.md).
+Open dump output in [Perfetto](https://ui.perfetto.dev). The sniffer is a passive serial reader: it
+does not proxy commands and cannot share an exclusively opened UART with a command-producing CLI
+process. Use it only with traffic mirrored or produced on the port it opens.
+
+Trace merge is a separate Python tool, not a CLI subcommand. Export one file per pod, then run:
+
+```bash
+python3 tools/trace/trace_merge.py \
+  --pod /tmp/pod1.json --pod-name pod1 \
+  --pod /tmp/pod2.json --pod-name pod2 \
+  --names tools/trace/trace_names.json \
+  --align zero \
+  --output /tmp/domes-merged.json
+```
+
+Zero alignment groups each pod's local trace by its capture start; it does not correlate pod clocks.
+The only other mode, `raw`, retains original local timestamps. Neither mode creates cross-pod timing
+or synchronization evidence.
 
 ## ESP-NOW
 
 ```bash
-domes-cli --port /dev/ttyACM0 espnow status
-domes-cli --port /dev/ttyACM0 espnow bench --rounds 100
-domes-cli --port /dev/ttyACM0 espnow sim-mode on
+$CLI --port "$PORT" espnow status
+$CLI --port "$PORT" espnow bench --rounds 100
+$CLI --port "$PORT" espnow sim-mode on
 ```
 
 Status on one pod does not prove peer communication. A valid result requires at least two physical
@@ -127,19 +203,33 @@ pods, peer discovery, and packet or benchmark evidence.
 
 ## Device Registry And Fan-Out
 
-```bash
-domes-cli devices add pod1 serial /dev/ttyACM0
-domes-cli devices add pod2 serial /dev/ttyACM1
-domes-cli devices list
-domes-cli devices scan
+Sorted USB serial numbers do not encode firmware pod IDs. Query `system info` and assign registry
+names deliberately for boards that already contain identity.
 
-domes-cli --target pod1 --target pod2 feature list
-domes-cli --all led solid --color 00ff00
+```bash
+PORT1="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+PORT2="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '2p')"
+$CLI devices add pod1 serial "$PORT1"
+$CLI devices add pod2 serial "$PORT2"
+$CLI devices list
+$CLI devices scan
+
+$CLI --target pod1 --target pod2 feature list
+$CLI --all led solid --color 00ff00
 ```
 
 Registry entries are stored in `~/.domes/devices.toml`. Multi-device output is labeled by target.
 Long-running trace streaming is intentionally single-target; start one process per pod when multiple
 streams are needed.
+
+The registry rejects a second name for the same normalized serial, BLE, or TCP address. Prefer
+stable serial paths or BLE MACs for destructive fan-out: a BLE advertising name is not assumed to
+be identical to that device's MAC. Re-adding the same registry name updates that entry.
+
+`devices scan` reports local serial ports and BLE advertisements. It does not discover WiFi/mDNS
+targets; add TCP targets explicitly with `devices add`.
 
 ## Command Groups
 
@@ -162,13 +252,25 @@ generates Rust prost types whenever the CLI builds. The shared frame is:
 [0xAA][0x55][LenLE16][Type][Payload][CRC32LE]
 ```
 
+OTA occupies message types `0x01-0x05`, trace occupies `0x10-0x1B`, and config command
+requests/responses occupy `0x20-0x4F` with reserved gaps. `0x50` is the unsolicited,
+device-originated touch notification and is not a command request.
+
 The OTA chunk-transfer structs are a bounded fixed-binary exception mirrored from
-`firmware/common/protocol/otaProtocol.hpp`. Do not add a new handwritten host protocol. See
+`firmware/common/protocol/otaProtocol.hpp`; the Flutter app has a third implementation in
+`ios/domes_app/lib/data/protocol/ota_protocol.dart`. Keep the C++, Rust, and Dart implementations
+wire-compatible, and do not add a new handwritten host protocol. See
 [`../../firmware/common/proto/README.md`](../../firmware/common/proto/README.md) for cross-language
 generation rules.
 
+Most config command responses wrap the response protobuf as `[Status:u8][Protobuf payload]`. List
+and diagnostic responses without command status, plus the unsolicited touch notification, contain
+the protobuf directly. This per-message envelope must match the firmware sender.
+
 ## Verification Limits
 
-Unit tests cover framing, sniffer decoding, and selected command helpers. They do not replace a
-firmware build or device test. Protocol, transport, OTA, BLE, and multi-device changes require the
-corresponding end-to-end check in [`../../docs/TESTING.md`](../../docs/TESTING.md).
+Automated tests cover framing and strict response decoding, selector preflight, registry identity,
+sniffer output, OTA failure handling, trace integrity, multi-target JSON, and process exit status.
+They do not replace a firmware build or device test. Protocol, transport, OTA, BLE, and multi-device
+changes require the corresponding end-to-end check in
+[`../../docs/TESTING.md`](../../docs/TESTING.md).

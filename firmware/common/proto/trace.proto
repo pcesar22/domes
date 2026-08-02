@@ -14,6 +14,8 @@ package domes.trace;
 // Frame-level message types for trace protocol (0x10-0x1F range)
 // Used in the frame header [0xAA 0x55][Len][MsgType][Payload][CRC32]
 enum MsgType {
+    reserved 0x18;
+    reserved "MSG_TYPE_STREAM_CFG";
     MSG_TYPE_UNKNOWN = 0;
     MSG_TYPE_START = 0x10;        // Start trace recording (host -> device, empty payload)
     MSG_TYPE_STOP = 0x11;         // Stop trace recording (host -> device, empty payload)
@@ -23,7 +25,6 @@ enum MsgType {
     MSG_TYPE_CLEAR = 0x15;        // Clear trace buffer (host -> device, empty payload)
     MSG_TYPE_STATUS_REQ = 0x16;   // Query trace status (host -> device, empty payload)
     MSG_TYPE_STATUS_RESP = 0x17;  // Trace status response (device -> host, TraceStatusResponse)
-    MSG_TYPE_STREAM_CFG = 0x18;   // Configure streaming (host -> device, StreamConfig)
     MSG_TYPE_STREAM_DATA = 0x19;  // Streamed event batch (device -> host, StreamBatch)
     MSG_TYPE_SESSION_INFO = 0x1A; // Session metadata (device -> host, TraceSessionInfo)
     MSG_TYPE_ACK = 0x1B;          // Acknowledge command (device -> host, AckResponse)
@@ -41,8 +42,8 @@ enum Status {
 
 // Categories for trace events (used to filter and color-code in visualization)
 enum Category {
-    CATEGORY_KERNEL = 0;     // FreeRTOS kernel events (task switch, ISR)
-    CATEGORY_TRANSPORT = 1;  // USB/BLE transport operations
+    CATEGORY_KERNEL = 0;     // Legacy category value; no active kernel-hook producer
+    CATEGORY_TRANSPORT = 1;  // UART/TCP/BLE transport operations
     CATEGORY_OTA = 2;        // OTA update operations
     CATEGORY_WIFI = 3;       // WiFi/ESP-NOW operations
     CATEGORY_LED = 4;        // LED animations
@@ -59,16 +60,13 @@ enum Category {
 
 // Types of trace events
 enum EventType {
-    // FreeRTOS kernel events (0x01-0x0F)
+    // 0x01-0x08 were assigned to FreeRTOS hooks that were never active.
+    reserved 0x01 to 0x08;
+    reserved "EVENT_TYPE_TASK_SWITCH_IN", "EVENT_TYPE_TASK_SWITCH_OUT",
+             "EVENT_TYPE_TASK_CREATE", "EVENT_TYPE_TASK_DELETE",
+             "EVENT_TYPE_ISR_ENTER", "EVENT_TYPE_ISR_EXIT",
+             "EVENT_TYPE_QUEUE_SEND", "EVENT_TYPE_QUEUE_RECEIVE";
     EVENT_TYPE_UNKNOWN = 0;
-    EVENT_TYPE_TASK_SWITCH_IN = 0x01;   // Task switched in (began running)
-    EVENT_TYPE_TASK_SWITCH_OUT = 0x02;  // Task switched out (stopped running)
-    EVENT_TYPE_TASK_CREATE = 0x03;      // Task created
-    EVENT_TYPE_TASK_DELETE = 0x04;      // Task deleted
-    EVENT_TYPE_ISR_ENTER = 0x05;        // ISR entered
-    EVENT_TYPE_ISR_EXIT = 0x06;         // ISR exited
-    EVENT_TYPE_QUEUE_SEND = 0x07;       // Queue send operation
-    EVENT_TYPE_QUEUE_RECEIVE = 0x08;    // Queue receive operation
     EVENT_TYPE_MUTEX_LOCK = 0x09;       // Mutex acquired
     EVENT_TYPE_MUTEX_UNLOCK = 0x0A;     // Mutex released
 
@@ -97,7 +95,7 @@ message Event {
     uint32 task_id = 2;     // FreeRTOS task number
     EventType event_type = 3;
     Category category = 4;
-    uint32 arg1 = 5;        // Primary argument (span ID, counter ID, ISR number)
+    uint32 arg1 = 5;        // Primary argument (span, counter, or synchronization ID)
     uint32 arg2 = 6;        // Secondary argument (counter value, duration)
 }
 
@@ -114,6 +112,8 @@ message TaskEntry {
 // Session metadata sent at start of dump (MsgType: SESSION_INFO 0x1A)
 // Replaces the old binary TraceMetadata struct.
 message TraceSessionInfo {
+    reserved 8;
+    reserved "clock_offset_us";
     uint32 pod_id = 1;              // Pod identity (from NVS, 0 if unset)
     uint32 event_count = 2;         // Events in this dump
     uint32 dropped_count = 3;       // Events dropped (buffer full)
@@ -121,7 +121,6 @@ message TraceSessionInfo {
     uint32 end_timestamp_us = 5;    // Last event timestamp
     repeated TaskEntry tasks = 6;   // Registered task names
     uint32 buffer_size_bytes = 7;   // Ring buffer size
-    int64 clock_offset_us = 8;      // Offset from master clock (multi-pod sync)
 }
 
 // Chunk of binary trace events (MsgType: DATA 0x13)
@@ -158,51 +157,9 @@ message AckResponse {
 // Streaming messages (real-time trace)
 // ============================================================
 
-// Configure real-time streaming (MsgType: STREAM_CFG 0x18, host -> device)
-message StreamConfig {
-    bool enable = 1;          // true = start streaming, false = stop
-    uint32 category_mask = 2; // Bitmask of categories to stream (0 = all)
-    uint32 max_rate_hz = 3;   // Max events/sec (0 = unlimited)
-    bool include_kernel = 4;  // Include task switch/ISR events
-}
-
 // Streamed event batch (MsgType: STREAM_DATA 0x19, device -> host)
 message StreamBatch {
     uint32 sequence = 1;     // Monotonic sequence number (detect gaps)
     uint32 dropped = 2;      // Events dropped since last batch (overflow)
     bytes events = 3;        // Raw binary: N * 16 bytes of TraceEvent[]
-}
-
-// ============================================================
-// Deprecated messages (kept for reference, not used on wire)
-// ============================================================
-
-// DEPRECATED: Use TraceSessionInfo instead
-message Metadata {
-    uint32 event_count = 1;
-    uint32 dropped_count = 2;
-    uint32 start_timestamp = 3;
-    uint32 end_timestamp = 4;
-    repeated TaskEntry tasks = 5;
-}
-
-// DEPRECATED: Use TraceDataChunk instead
-message DataHeader {
-    uint32 offset = 1;
-    uint32 count = 2;
-}
-
-// DEPRECATED: Use TraceDumpComplete instead
-message DumpEnd {
-    uint32 total_events = 1;
-    uint32 checksum = 2;
-}
-
-// DEPRECATED: Use TraceStatusResponse instead
-message StatusResponse {
-    bool initialized = 1;
-    bool enabled = 2;
-    uint32 event_count = 3;
-    uint32 dropped_count = 4;
-    uint32 buffer_size = 5;
 }

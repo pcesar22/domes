@@ -14,10 +14,9 @@
  * - Real-time playback mode
  */
 
-#include "interfaces/iHapticDriver.hpp"
-
 #include "driver/i2c_master.h"
 #include "esp_log.h"
+#include "interfaces/iHapticDriver.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -42,11 +41,7 @@ public:
      * @param addr I2C address (typically 0x5A)
      */
     Drv2605lDriver(i2c_master_bus_handle_t i2cBus, uint8_t addr)
-        : i2cBus_(i2cBus),
-          addr_(addr),
-          devHandle_(nullptr),
-          intensity_(100),
-          initialized_(false) {}
+        : i2cBus_(i2cBus), addr_(addr), devHandle_(nullptr), intensity_(100), initialized_(false) {}
 
     ~Drv2605lDriver() override {
         if (devHandle_) {
@@ -174,24 +169,28 @@ public:
 
         // Set mode to internal trigger
         esp_err_t err = writeReg(Reg::kMode, Mode::kInternalTrigger);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         // Load effects into waveform registers
         for (size_t i = 0; i < count; ++i) {
             err = writeReg(static_cast<Reg>(static_cast<uint8_t>(Reg::kWaveformSeq0) + i),
-                          effectIds[i]);
-            if (err != ESP_OK) return err;
+                           effectIds[i]);
+            if (err != ESP_OK)
+                return err;
         }
 
         // End sequence marker (if room)
         if (count < kMaxSequenceLen) {
             err = writeReg(static_cast<Reg>(static_cast<uint8_t>(Reg::kWaveformSeq0) + count), 0);
-            if (err != ESP_OK) return err;
+            if (err != ESP_OK)
+                return err;
         }
 
         // Trigger playback
         err = writeReg(Reg::kGo, 1);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         ESP_LOGD(kTag, "Playing sequence of %zu effects", count);
         return ESP_OK;
@@ -218,10 +217,12 @@ public:
     bool isInitialized() const override { return initialized_; }
 
     bool isPlaying() const override {
-        if (!initialized_) return false;
+        if (!initialized_)
+            return false;
 
         uint8_t go = 0;
-        if (readReg(Reg::kGo, &go) != ESP_OK) return false;
+        if (readReg(Reg::kGo, &go) != ESP_OK)
+            return false;
         return (go & 0x01) != 0;
     }
 
@@ -310,22 +311,27 @@ private:
         // In LRA open-loop mode OD_CLAMP is the full-scale reference. This value follows
         // DRV2605L equation 7 for the actuator's 1.8 Vrms rating at 235 Hz.
         err = writeReg(Reg::kOverdriveClampVoltage, kLraOverdriveClamp1_8Vrms);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         // Select LRA mode while preserving the datasheet defaults for the feedback fields.
         err = writeReg(Reg::kFeedbackControl, 0xB6);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         // Half-period at 235 Hz is 2.13 ms. DRIVE_TIME=16 selects 2.1 ms.
         err = writeReg(Reg::kControl1, 0x90);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         err = writeReg(Reg::kLraOpenLoopPeriod, kLraOpenLoopPeriod235Hz);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         // Preserve the default noise gate and enable LRA open-loop mode (bit 0).
         err = writeReg(Reg::kControl3, 0xA1);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         ESP_LOGI(kTag, "Configured LD0832AA-0099F LRA (1.79 Vrms, 236.20 Hz open-loop)");
         return ESP_OK;
@@ -352,40 +358,40 @@ private:
 
 // Common DRV2605L effect IDs for convenience
 namespace HapticEffect {
-    constexpr uint8_t kStrongClick100 = 1;
-    constexpr uint8_t kStrongClick60 = 2;
-    constexpr uint8_t kStrongClick30 = 3;
-    constexpr uint8_t kSharpClick100 = 4;
-    constexpr uint8_t kSharpClick60 = 5;
-    constexpr uint8_t kSharpClick30 = 6;
-    constexpr uint8_t kSoftBump100 = 7;
-    constexpr uint8_t kSoftBump60 = 8;
-    constexpr uint8_t kSoftBump30 = 9;
-    constexpr uint8_t kDoubleClick100 = 10;
-    constexpr uint8_t kDoubleClick60 = 11;
-    constexpr uint8_t kTripleClick = 12;
-    constexpr uint8_t kSoftFuzz60 = 13;
-    constexpr uint8_t kStrongBuzz100 = 14;
-    constexpr uint8_t kAlert750ms = 15;
-    constexpr uint8_t kAlert1000ms = 16;
-    constexpr uint8_t kStrongClick1_100 = 17;
-    constexpr uint8_t kStrongClick2_80 = 18;
-    constexpr uint8_t kStrongClick3_60 = 19;
-    constexpr uint8_t kStrongClick4_30 = 20;
-    constexpr uint8_t kMediumClick1_100 = 21;
-    constexpr uint8_t kMediumClick2_80 = 22;
-    constexpr uint8_t kMediumClick3_60 = 23;
-    constexpr uint8_t kSharpTick1_100 = 24;
-    constexpr uint8_t kSharpTick2_80 = 25;
-    constexpr uint8_t kSharpTick3_60 = 26;
-    constexpr uint8_t kLongBuzz = 47;
-    constexpr uint8_t kBuzzShort = 49;
-    constexpr uint8_t kPulsing1 = 52;
-    constexpr uint8_t kPulsing2 = 58;
-    constexpr uint8_t kTransitionClick = 64;
-    constexpr uint8_t kTransitionHum = 70;
-    constexpr uint8_t kRampUp = 82;
-    constexpr uint8_t kRampDown = 86;
+constexpr uint8_t kStrongClick100 = 1;
+constexpr uint8_t kStrongClick60 = 2;
+constexpr uint8_t kStrongClick30 = 3;
+constexpr uint8_t kSharpClick100 = 4;
+constexpr uint8_t kSharpClick60 = 5;
+constexpr uint8_t kSharpClick30 = 6;
+constexpr uint8_t kSoftBump100 = 7;
+constexpr uint8_t kSoftBump60 = 8;
+constexpr uint8_t kSoftBump30 = 9;
+constexpr uint8_t kDoubleClick100 = 10;
+constexpr uint8_t kDoubleClick60 = 11;
+constexpr uint8_t kTripleClick = 12;
+constexpr uint8_t kSoftFuzz60 = 13;
+constexpr uint8_t kStrongBuzz100 = 14;
+constexpr uint8_t kAlert750ms = 15;
+constexpr uint8_t kAlert1000ms = 16;
+constexpr uint8_t kStrongClick1_100 = 17;
+constexpr uint8_t kStrongClick2_80 = 18;
+constexpr uint8_t kStrongClick3_60 = 19;
+constexpr uint8_t kStrongClick4_30 = 20;
+constexpr uint8_t kMediumClick1_100 = 21;
+constexpr uint8_t kMediumClick2_80 = 22;
+constexpr uint8_t kMediumClick3_60 = 23;
+constexpr uint8_t kSharpTick1_100 = 24;
+constexpr uint8_t kSharpTick2_80 = 25;
+constexpr uint8_t kSharpTick3_60 = 26;
+constexpr uint8_t kLongBuzz = 47;
+constexpr uint8_t kBuzzShort = 49;
+constexpr uint8_t kPulsing1 = 52;
+constexpr uint8_t kPulsing2 = 58;
+constexpr uint8_t kTransitionClick = 64;
+constexpr uint8_t kTransitionHum = 70;
+constexpr uint8_t kRampUp = 82;
+constexpr uint8_t kRampDown = 86;
 }  // namespace HapticEffect
 
 }  // namespace domes

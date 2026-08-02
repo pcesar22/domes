@@ -48,11 +48,6 @@ impl TcpTransport {
         })
     }
 
-    /// Get the peer address
-    pub fn peer_addr(&self) -> Result<String> {
-        Ok(self.stream.peer_addr()?.to_string())
-    }
-
     /// Send a frame to the device
     pub fn send_frame(&mut self, msg_type: u8, payload: &[u8]) -> Result<()> {
         let frame = encode_frame(msg_type, payload)?;

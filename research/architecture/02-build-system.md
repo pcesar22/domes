@@ -4,15 +4,16 @@
 > size limits below do not describe the current build. Use the checked-in CMake, Kconfig,
 > `sdkconfig.defaults`, `partitions.csv`, and [`../../docs/TESTING.md`](../../docs/TESTING.md).
 
-## AI Agent Instructions
+## Historical Scope
 
-Load this file when:
+This design record originally covered:
+
 - Configuring build options
 - Setting up different build targets (DevKit, PCB, Linux)
 - Troubleshooting build issues
 - Checking binary size
 
-Prerequisites: `00-getting-started.md` completed
+Original prerequisite: `00-getting-started.md`
 
 ---
 

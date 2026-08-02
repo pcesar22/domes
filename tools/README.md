@@ -9,11 +9,13 @@ serial, TCP, BLE, or OTA workflows.
 | Path | Purpose |
 | --- | --- |
 | [`domes-cli/`](domes-cli/) | Supported device CLI for discovery, configuration, diagnostics, OTA, tracing, and multi-device operations |
-| [`firmware/flash_and_verify.sh`](firmware/flash_and_verify.sh) | Build, flash, and verify one or more ESP32 devices from captured serial output |
+| [`firmware/flash_and_verify.sh`](firmware/flash_and_verify.sh) | Build, flash, and verify framed UART operation on one or more ESP32 devices |
 | [`firmware/monitor_serial.py`](firmware/monitor_serial.py) | Monitor and label serial output from one or more attached devices |
+| [`docs/check_markdown_links.py`](docs/check_markdown_links.py) | Check tracked Markdown files for broken repository-relative links |
 | [`trace/trace_merge.py`](trace/trace_merge.py) | Merge multiple CLI trace exports into one Perfetto-compatible timeline |
+| [`trace/generate_trace_names.py`](trace/generate_trace_names.py) | Generate and drift-check trace IDs from production `TRACE_ID` literals |
 | [`trace/trace_names.json`](trace/trace_names.json) | Map firmware trace identifiers to readable names |
-| [`udev/99-domes-pods.rules`](udev/99-domes-pods.rules) | Stable Linux device aliases for attached pods |
+| [`udev/99-domes-pods.rules`](udev/99-domes-pods.rules) | Linux access policy for CP2102N and native USB devices; identity remains under `/dev/serial/by-id/` |
 | [`gen_results_svg.py`](gen_results_svg.py) | Generate the deterministic drill-results research graphic |
 | [`gen_timeline_svg.py`](gen_timeline_svg.py) | Generate a timeline graphic from simulation trace JSON |
 
@@ -22,10 +24,9 @@ serial, TCP, BLE, or OTA workflows.
 Build and inspect the current command surface:
 
 ```bash
-cd tools/domes-cli
-cargo build
-cargo test
-cargo run -- --help
+(cd tools/domes-cli && cargo build --locked)
+(cd tools/domes-cli && cargo test --locked --all-targets --all-features)
+(cd tools/domes-cli && cargo run -- --help)
 ```
 
 Use [`domes-cli/README.md`](domes-cli/README.md) for connection and command examples. The executable's
@@ -38,9 +39,24 @@ README intentionally does not duplicate message IDs or payload layouts.
 The canonical flash and serial-monitor helpers live under `tools/firmware/`:
 
 ```bash
-tools/firmware/flash_and_verify.sh firmware/domes /dev/ttyACM0 "DOMES"
-python3 tools/firmware/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+PORT1="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+tools/firmware/flash_and_verify.sh firmware/domes "$PORT1"
+
+# Optional: two separately connected native USB console interfaces.
+mapfile -t CONSOLES < <(
+  find -L /dev/serial/by-id -maxdepth 1 -type c \
+    -name 'usb-Espressif_USB_JTAG_serial_debug_unit*' | sort
+)
+test "${#CONSOLES[@]}" -ge 2
+python3 tools/firmware/monitor_serial.py \
+  "${CONSOLES[0]},${CONSOLES[1]}" 30
 ```
+
+The flash helper and `domes-cli` use NFF CP2102N ports (`/dev/ttyUSB*`, preferably
+`/dev/serial/by-id/`). The monitor reads separately connected native USB console ports
+(`/dev/ttyACM*`). The helper verifies `system info` over the framed UART after flashing; it does not
+search console text on that protocol port.
 
 Compatibility wrappers under `.codex/` and `.claude/` forward to these files. Update only the
 canonical helpers when changing shared behavior.
@@ -54,12 +70,21 @@ python3 tools/trace/trace_merge.py \
   --pod /tmp/pod1.json --pod-name pod1 \
   --pod /tmp/pod2.json --pod-name pod2 \
   --names tools/trace/trace_names.json \
-  --align beacon \
+  --align zero \
   --output /tmp/domes-merged.json
 ```
 
-Open the result in [Perfetto](https://ui.perfetto.dev). Run
-`python3 tools/trace/trace_merge.py --help` for alignment options.
+Zero alignment groups each local timeline by its capture start. It is not cross-pod clock
+correlation. Use `--align raw` only to retain the original local timestamps; neither mode
+synchronizes pod clocks. Open the result in [Perfetto](https://ui.perfetto.dev). Run
+`python3 tools/trace/trace_merge.py --help` for the exact interface.
+
+Refresh the trace-name registry after adding, renaming, or removing a production `TRACE_ID`:
+
+```bash
+python3 tools/trace/generate_trace_names.py
+python3 tools/trace/generate_trace_names.py --check
+```
 
 ## Simulation Graphics
 
@@ -75,6 +100,6 @@ Generate the input trace with the host test application's `trace_generator`; see
 
 ## Platform Setup
 
-BLE, serial permissions, stable udev aliases, and multi-device host requirements are maintained in
-[`../.codex/PLATFORM.md`](../.codex/PLATFORM.md). Repository-wide verification requirements are in
-[`../docs/TESTING.md`](../docs/TESTING.md).
+BLE, serial permissions, stable `/dev/serial/by-id/` identities, and multi-device host requirements
+are maintained in [`.codex/PLATFORM.md`](../.codex/PLATFORM.md). Repository-wide verification
+requirements are in [`docs/TESTING.md`](../docs/TESTING.md).

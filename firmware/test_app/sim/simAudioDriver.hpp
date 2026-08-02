@@ -7,8 +7,7 @@ namespace sim {
 
 class SimAudioDriver : public domes::IAudioDriver {
 public:
-    SimAudioDriver(uint16_t podId, SimLog& log)
-        : podId_(podId), log_(log) {}
+    SimAudioDriver(uint16_t podId, SimLog& log) : podId_(podId), log_(log) {}
 
     esp_err_t init() override {
         initialized_ = true;
@@ -29,9 +28,10 @@ public:
         return ESP_OK;
     }
 
-    esp_err_t write(const int16_t* /*samples*/, size_t count,
-                    size_t* written, uint32_t /*timeoutMs*/) override {
-        if (written) *written = count;
+    esp_err_t write(const int16_t* /*samples*/, size_t count, size_t* written,
+                    uint32_t /*timeoutMs*/) override {
+        if (written)
+            *written = count;
         return ESP_OK;
     }
 

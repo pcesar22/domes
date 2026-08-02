@@ -88,6 +88,11 @@ enum class OtaStatus : uint8_t {
     kAborted = 8,         ///< Transfer aborted by receiver
 };
 
+/** Return true when a byte maps to a defined OTA status code. */
+constexpr bool isValidOtaStatus(OtaStatus status) {
+    return static_cast<uint8_t>(status) <= static_cast<uint8_t>(OtaStatus::kAborted);
+}
+
 /**
  * @brief Convert OtaStatus to human-readable string
  */

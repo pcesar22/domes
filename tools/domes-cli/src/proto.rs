@@ -9,7 +9,7 @@
 //! 3. Update code that uses the types
 
 /// Config protocol types (generated from config.proto)
-#[allow(dead_code)]
+#[allow(dead_code, clippy::enum_variant_names)]
 pub mod config {
     include!(concat!(env!("OUT_DIR"), "/domes.config.rs"));
 
@@ -87,6 +87,30 @@ pub mod config {
                 "game" => Some(SystemMode::Game),
                 "error" => Some(SystemMode::Error),
                 _ => None,
+            }
+        }
+    }
+
+    impl ResetReason {
+        /// Get a stable, user-facing reset reason.
+        pub fn cli_name(&self) -> &'static str {
+            match self {
+                ResetReason::Unknown => "unknown",
+                ResetReason::PowerOn => "power-on",
+                ResetReason::ExternalPin => "external pin",
+                ResetReason::Software => "software restart",
+                ResetReason::Panic => "panic",
+                ResetReason::InterruptWatchdog => "interrupt watchdog",
+                ResetReason::TaskWatchdog => "task watchdog",
+                ResetReason::Watchdog => "watchdog",
+                ResetReason::DeepSleep => "deep-sleep wake",
+                ResetReason::Brownout => "brownout",
+                ResetReason::Sdio => "SDIO",
+                ResetReason::Usb => "USB",
+                ResetReason::Jtag => "JTAG",
+                ResetReason::Efuse => "eFuse error",
+                ResetReason::PowerGlitch => "power glitch",
+                ResetReason::CpuLockup => "CPU lockup",
             }
         }
     }

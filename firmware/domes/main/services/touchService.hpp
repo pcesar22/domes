@@ -12,14 +12,14 @@
  * - Pad 4: Yellow
  */
 
-#include "trace/traceApi.hpp"
-
 #include "config/featureManager.hpp"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "interfaces/iTouchDriver.hpp"
 #include "services/ledService.hpp"
+#include "trace/traceApi.hpp"
 
 #include <atomic>
 
@@ -39,6 +39,8 @@ namespace domes {
  */
 class TouchService {
 public:
+    using TouchEventCallback = void (*)(void* context, uint8_t padIndex, uint64_t timestampUs);
+
     /**
      * @brief Construct touch service
      *
@@ -46,7 +48,8 @@ public:
      * @param ledService LED service reference (must outlive service)
      * @param features Feature manager for checking TOUCH feature enabled
      */
-    TouchService(ITouchDriver& touchDriver, LedService& ledService, config::FeatureManager& features)
+    TouchService(ITouchDriver& touchDriver, LedService& ledService,
+                 config::FeatureManager& features)
         : touchDriver_(touchDriver),
           ledService_(ledService),
           features_(features),
@@ -102,6 +105,12 @@ public:
      */
     int8_t getActivePad() const { return lastActivepad_; }
 
+    /** Set a non-owning callback for physical touch rising edges. */
+    void setEventCallback(TouchEventCallback callback, void* context) {
+        callbackContext_.store(context, std::memory_order_release);
+        eventCallback_.store(callback, std::memory_order_release);
+    }
+
 private:
     static constexpr const char* kTag = "TouchService";
 
@@ -134,8 +143,6 @@ private:
 
             // Update touch readings
             touchDriver_.update();
-            TRACE_SCOPE(TRACE_ID("Touch.Poll"), domes::trace::Category::kTouch);
-
             // Find which pad (if any) is being touched
             int8_t activePad = -1;
             for (uint8_t i = 0; i < touchDriver_.getPadCount() && i < 4; i++) {
@@ -151,9 +158,15 @@ private:
 
                 if (activePad >= 0) {
                     TRACE_INSTANT(TRACE_ID("Touch.PadTouched"), domes::trace::Category::kTouch);
+                    TouchEventCallback callback = eventCallback_.load(std::memory_order_acquire);
+                    if (callback) {
+                        callback(callbackContext_.load(std::memory_order_acquire),
+                                 static_cast<uint8_t>(activePad),
+                                 static_cast<uint64_t>(esp_timer_get_time()));
+                    }
                     // Pad touched - set all LEDs to the pad's color via LedService
-                    ESP_LOGI(kTag, "Pad %d touched - setting LEDs to %s",
-                             activePad, getColorName(activePad));
+                    ESP_LOGI(kTag, "Pad %d touched - setting LEDs to %s", activePad,
+                             getColorName(activePad));
                     ledService_.setSolidColor(kPadColors[activePad]);
                 } else {
                     TRACE_INSTANT(TRACE_ID("Touch.PadReleased"), domes::trace::Category::kTouch);
@@ -167,8 +180,8 @@ private:
             if (loopCount % 50 == 0) {  // Every 500ms
                 for (uint8_t i = 0; i < touchDriver_.getPadCount() && i < 4; i++) {
                     auto state = touchDriver_.getPadState(i);
-                    ESP_LOGI(kTag, "Pad %d: raw=%lu, thresh=%lu, touched=%d",
-                             i, state.rawValue, state.threshold, state.touched);
+                    ESP_LOGI(kTag, "Pad %d: raw=%lu, thresh=%lu, touched=%d", i, state.rawValue,
+                             state.threshold, state.touched);
                 }
             }
 
@@ -181,11 +194,16 @@ private:
 
     static const char* getColorName(int8_t padIndex) {
         switch (padIndex) {
-            case 0: return "RED";
-            case 1: return "GREEN";
-            case 2: return "BLUE";
-            case 3: return "YELLOW";
-            default: return "UNKNOWN";
+            case 0:
+                return "RED";
+            case 1:
+                return "GREEN";
+            case 2:
+                return "BLUE";
+            case 3:
+                return "YELLOW";
+            default:
+                return "UNKNOWN";
         }
     }
 
@@ -195,6 +213,8 @@ private:
     TaskHandle_t taskHandle_;
     std::atomic<bool> running_;
     std::atomic<int8_t> lastActivepad_;
+    std::atomic<TouchEventCallback> eventCallback_{nullptr};
+    std::atomic<void*> callbackContext_{nullptr};
 };
 
 }  // namespace domes

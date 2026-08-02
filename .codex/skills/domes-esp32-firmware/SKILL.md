@@ -13,9 +13,10 @@ the DOMES CLI workflows that exercise real pods.
 | Item | Value |
 | --- | --- |
 | Firmware project | `firmware/domes` |
+| ESP-IDF version | v5.4.4, matching CI and `dependencies.lock` |
 | ESP-IDF environment | `. ~/esp/esp-idf/export.sh` |
-| First serial device | `/dev/ttyACM0` |
-| Second serial device | `/dev/ttyACM1` |
+| Flash/config/OTA device | CP2102N `/dev/serial/by-id/...` link (`/dev/ttyUSB*`) |
+| Console/JTAG device | Native USB Serial/JTAG (`/dev/ttyACM*`) |
 | CLI project | `tools/domes-cli` |
 | Serial monitor script | `tools/firmware/monitor_serial.py` |
 | Flash helper | `tools/firmware/flash_and_verify.sh` |
@@ -24,11 +25,12 @@ Before running any `idf.py` command, source ESP-IDF:
 
 ```bash
 . ~/esp/esp-idf/export.sh
+idf.py --version  # Must report ESP-IDF v5.4.4
 ```
 
 ## Choose A Workflow
 
-- **Build only**: run `idf.py build` from `firmware/domes`.
+- **Build only**: use `scripts/verify.sh` for final evidence or the isolated command below.
 - **Flash and verify**: use `tools/firmware/flash_and_verify.sh` when a device is available.
 - **Monitor serial**: use `tools/firmware/monitor_serial.py`; do not read serial ports with `cat`, `dd`,
   `head`, or `tail`, and do not adjust serial devices with `stty` unless the user explicitly asks.
@@ -39,32 +41,50 @@ Before running any `idf.py` command, source ESP-IDF:
 ## Build And Flash
 
 ```bash
-cd firmware/domes
-. ~/esp/esp-idf/export.sh
-idf.py build
+VERIFY_ROOT="$(mktemp -d)"
+(cd firmware/domes && . ~/esp/esp-idf/export.sh && \
+  idf.py -B "$VERIFY_ROOT/build" -D "IDF_TARGET=esp32s3" \
+    -D "SDKCONFIG=$VERIFY_ROOT/sdkconfig" build)
 ```
+
+An ignored project-local `firmware/domes/sdkconfig` can override updated defaults. Do not use a
+build that reused it as final evidence.
 
 Single device:
 
 ```bash
-tools/firmware/flash_and_verify.sh firmware/domes /dev/ttyACM0 "DOMES"
+PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+tools/firmware/flash_and_verify.sh firmware/domes "$PORT"
 ```
 
 Two devices:
 
 ```bash
-tools/firmware/flash_and_verify.sh firmware/domes /dev/ttyACM0,/dev/ttyACM1 "DOMES"
+tools/firmware/flash_and_verify.sh firmware/domes "$PORT1,$PORT2"
 ```
+
+The helper builds and flashes over each CP2102N port, then verifies the framed runtime path with
+`domes-cli system info`. It does not look for console text on the protocol UART.
 
 ## Monitor Serial
 
 ```bash
-python3 tools/firmware/monitor_serial.py /dev/ttyACM0 15
-python3 tools/firmware/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+mapfile -t CONSOLES < <(
+  find -L /dev/serial/by-id -maxdepth 1 -type c \
+    -name 'usb-Espressif_USB_JTAG_serial_debug_unit*' | sort
+)
+test "${#CONSOLES[@]}" -ge 1
+python3 tools/firmware/monitor_serial.py "${CONSOLES[0]}" 15
+
+test "${#CONSOLES[@]}" -ge 2
+python3 tools/firmware/monitor_serial.py \
+  "${CONSOLES[0]},${CONSOLES[1]}" 30
 ```
 
-Look for boot messages, errors, warnings, feature init, mode transitions, IMU/touch readings,
-ESP-NOW discovery, and heap diagnostics.
+These monitor commands require the separate native USB connection. Look for boot messages, errors,
+warnings, feature init, mode transitions, IMU/touch readings, ESP-NOW discovery, and heap
+diagnostics. Use CP2102N ports for flashing and CLI commands, not console monitoring.
 
 ## Protocol Rules
 
@@ -80,6 +100,10 @@ When protocol messages change:
 3. Rebuild `tools/domes-cli` so prost output updates.
 4. Regenerate Flutter protobufs if the app consumes the changed message.
 5. Verify over at least one real transport when hardware is available.
+
+Most config command responses wrap the response protobuf as `[Status:u8][Protobuf payload]`.
+List and diagnostic responses without command status, plus unsolicited notifications, contain the
+protobuf directly. Preserve the paired firmware/host envelope when changing a message.
 
 ## Resources
 

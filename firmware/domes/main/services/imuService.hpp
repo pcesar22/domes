@@ -8,15 +8,15 @@
  * Used for hardware bring-up and debugging.
  */
 
+#include "config/featureManager.hpp"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "interfaces/iHapticDriver.hpp"
 #include "interfaces/iImuDriver.hpp"
 #include "services/audioService.hpp"
 #include "services/ledService.hpp"
 #include "trace/traceApi.hpp"
-
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 #include <atomic>
 #include <cmath>
@@ -30,7 +30,7 @@ namespace domes {
  * Useful for hardware bring-up and verifying IMU functionality.
  *
  * @code
- * ImuService imu(driver, ledDriver);
+ * ImuService imu(driver, ledService, features);
  * imu.start();
  * imu.setTriageMode(true);  // Flash on tap
  * @endcode
@@ -42,9 +42,16 @@ public:
      *
      * @param imu IMU driver reference (must outlive service)
      * @param led LED service reference (must outlive service)
+     * @param features Runtime feature state (must outlive service)
      */
-    ImuService(IImuDriver& imu, LedService& led)
-        : imu_(imu), led_(led), audio_(nullptr), haptic_(nullptr), taskHandle_(nullptr), running_(false) {}
+    ImuService(IImuDriver& imu, LedService& led, config::FeatureManager& features)
+        : imu_(imu),
+          led_(led),
+          features_(features),
+          audio_(nullptr),
+          haptic_(nullptr),
+          taskHandle_(nullptr),
+          running_(false) {}
 
     ~ImuService() { stop(); }
 
@@ -72,9 +79,9 @@ public:
         }
 
         running_ = true;
-        BaseType_t ret = xTaskCreatePinnedToCore(
-            taskEntry, "imu_svc", 3072, this, 5, &taskHandle_, 1  // Core 1
-        );
+        BaseType_t ret =
+            xTaskCreatePinnedToCore(taskEntry, "imu_svc", 3072, this, 5, &taskHandle_, 1  // Core 1
+            );
 
         if (ret != pdPASS) {
             running_ = false;
@@ -157,11 +164,13 @@ private:
             if (triageMode_.load()) {
                 AccelData accel;
                 if (imu_.readAccel(accel) == ESP_OK) {
-                    float magnitude = sqrtf(accel.x*accel.x + accel.y*accel.y + accel.z*accel.z);
+                    float magnitude =
+                        sqrtf(accel.x * accel.x + accel.y * accel.y + accel.z * accel.z);
 
                     // Log every 200ms (20 loops) to catch movement
                     if (loopCount % 20 == 0) {
-                        ESP_LOGI(kTag, "mag=%.2fg X=%.2f Y=%.2f Z=%.2f", magnitude, accel.x, accel.y, accel.z);
+                        ESP_LOGI(kTag, "mag=%.2fg X=%.2f Y=%.2f Z=%.2f", magnitude, accel.x,
+                                 accel.y, accel.z);
                     }
 
                     // Tap = magnitude deviates from 1g (more sensitive: ±0.15g)
@@ -197,17 +206,19 @@ private:
      * and haptic driver to buzz. All are executed by their respective tasks.
      */
     void flashWhite() {
-        TRACE_INSTANT(TRACE_ID("Imu.FlashRequested"), domes::trace::Category::kLed);
-        led_.requestFlash(100);
+        if (features_.isEnabled(config::Feature::kLedEffects)) {
+            TRACE_INSTANT(TRACE_ID("Imu.FlashRequested"), domes::trace::Category::kLed);
+            led_.requestFlash(100);
+        }
 
         // Play beep sound if audio service is available
-        if (audio_) {
+        if (audio_ && features_.isEnabled(config::Feature::kAudio)) {
             TRACE_INSTANT(TRACE_ID("Imu.BeepRequested"), domes::trace::Category::kAudio);
             audio_->playAsset("beep");
         }
 
         // Trigger haptic feedback if available
-        if (haptic_) {
+        if (haptic_ && features_.isEnabled(config::Feature::kHaptic)) {
             TRACE_INSTANT(TRACE_ID("Imu.HapticRequested"), domes::trace::Category::kHaptic);
             haptic_->playEffect(47);  // Long buzz - more noticeable
         }
@@ -215,6 +226,7 @@ private:
 
     IImuDriver& imu_;
     LedService& led_;
+    config::FeatureManager& features_;
     AudioService* audio_;
     IHapticDriver* haptic_;
     TaskHandle_t taskHandle_;

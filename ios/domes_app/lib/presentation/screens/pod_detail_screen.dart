@@ -103,25 +103,29 @@ class _PodDetailScreenState extends ConsumerState<PodDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('System Info',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text('System Info', style: Theme.of(context).textTheme.titleMedium),
             const Divider(),
             systemInfo.when(
               data: (info) => Column(
                 children: [
                   _infoRow('Firmware', info.firmwareVersion),
-                  _infoRow('Uptime',
-                      '${info.uptimeS ~/ 3600}h ${(info.uptimeS % 3600) ~/ 60}m ${info.uptimeS % 60}s'),
-                  _infoRow('Free Heap',
-                      '${(info.freeHeap / 1024).toStringAsFixed(1)} KB'),
+                  _infoRow(
+                    'Uptime',
+                    '${info.uptimeS ~/ 3600}h ${(info.uptimeS % 3600) ~/ 60}m ${info.uptimeS % 60}s',
+                  ),
+                  _infoRow(
+                    'Free Heap',
+                    '${(info.freeHeap / 1024).toStringAsFixed(1)} KB',
+                  ),
                   _infoRow('Boot Count', '${info.bootCount}'),
                   _infoRow('Mode', _modeName(info.mode)),
                 ],
               ),
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('Error: $e',
-                  style: const TextStyle(color: AppTheme.errorColor)),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text(
+                'Error: $e',
+                style: const TextStyle(color: AppTheme.errorColor),
+              ),
             ),
             // Mode selector
             systemMode.when(
@@ -133,28 +137,30 @@ class _PodDetailScreenState extends ConsumerState<PodDetailScreen> {
                     const SizedBox(width: 8),
                     DropdownButton<SystemMode>(
                       value: modeInfo.mode,
-                      items: [
-                        SystemMode.SYSTEM_MODE_IDLE,
-                        SystemMode.SYSTEM_MODE_TRIAGE,
-                        SystemMode.SYSTEM_MODE_CONNECTED,
-                        SystemMode.SYSTEM_MODE_GAME,
-                      ]
-                          .map((m) => DropdownMenuItem(
-                                value: m,
-                                child: Text(_modeName(m)),
-                              ))
-                          .toList(),
+                      items:
+                          [
+                                SystemMode.SYSTEM_MODE_IDLE,
+                                SystemMode.SYSTEM_MODE_TRIAGE,
+                                SystemMode.SYSTEM_MODE_CONNECTED,
+                                SystemMode.SYSTEM_MODE_GAME,
+                              ]
+                              .map(
+                                (m) => DropdownMenuItem(
+                                  value: m,
+                                  child: Text(_modeName(m)),
+                                ),
+                              )
+                              .toList(),
                       onChanged: (mode) {
                         if (mode != null) {
-                          ref
-                              .read(systemModeProvider.notifier)
-                              .setMode(mode);
+                          ref.read(systemModeProvider.notifier).setMode(mode);
                         }
                       },
                     ),
                     const SizedBox(width: 8),
                     Text(
-                        '(${(modeInfo.timeInModeMs / 1000).toStringAsFixed(1)}s)'),
+                      '(${(modeInfo.timeInModeMs / 1000).toStringAsFixed(1)}s)',
+                    ),
                   ],
                 ),
               ),
@@ -177,26 +183,28 @@ class _PodDetailScreenState extends ConsumerState<PodDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Features',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text('Features', style: Theme.of(context).textTheme.titleMedium),
             const Divider(),
             features.when(
               data: (featureList) => Column(
                 children: featureList
-                    .map((fs) => FeatureToggle(
-                          featureState: fs,
-                          onToggle: (enabled) {
-                            ref
-                                .read(featureProvider.notifier)
-                                .toggleFeature(fs.feature, enabled);
-                          },
-                        ))
+                    .map(
+                      (fs) => FeatureToggle(
+                        featureState: fs,
+                        onToggle: (enabled) {
+                          ref
+                              .read(featureProvider.notifier)
+                              .toggleFeature(fs.feature, enabled);
+                        },
+                      ),
+                    )
                     .toList(),
               ),
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('Error: $e',
-                  style: const TextStyle(color: AppTheme.errorColor)),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text(
+                'Error: $e',
+                style: const TextStyle(color: AppTheme.errorColor),
+              ),
             ),
           ],
         ),
@@ -214,8 +222,7 @@ class _PodDetailScreenState extends ConsumerState<PodDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('LED Control',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text('LED Control', style: Theme.of(context).textTheme.titleMedium),
             const Divider(),
             ledPattern.when(
               data: (pattern) => LedPatternPicker(
@@ -224,10 +231,11 @@ class _PodDetailScreenState extends ConsumerState<PodDetailScreen> {
                   ref.read(ledProvider.notifier).setPattern(newPattern);
                 },
               ),
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('Error: $e',
-                  style: const TextStyle(color: AppTheme.errorColor)),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text(
+                'Error: $e',
+                style: const TextStyle(color: AppTheme.errorColor),
+              ),
             ),
           ],
         ),

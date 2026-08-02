@@ -6,12 +6,15 @@
  * game FSM: Ready -> Armed -> Triggered -> Feedback -> Ready.
  */
 
-#include <gtest/gtest.h>
 #include "esp_timer.h"  // Stub - provides test_stubs::mock_time_us
 #include "game/gameEngine.hpp"
 
+#include <atomic>
 #include <string>
+#include <thread>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 using namespace domes::game;
 using namespace domes;
@@ -56,7 +59,8 @@ public:
     }
 
     void clearAll() {
-        for (auto& s : touchState_) s = false;
+        for (auto& s : touchState_)
+            s = false;
     }
 
     int updateCount() const { return updateCount_; }
@@ -88,32 +92,29 @@ protected:
         events_.clear();
 
         engine_->setFeedbackCallbacks({
-            .flashWhite = [this](uint32_t ms) {
-                flashWhiteCount_++;
-                lastFlashWhiteDurationMs_ = ms;
-            },
-            .flashColor = [this](Color c, uint32_t ms) {
-                flashColorCount_++;
-                lastFlashColor_ = c;
-            },
-            .playSound = [this](const char* name) {
-                playSoundCount_++;
-                lastSoundName_ = name;
-            },
+            .flashWhite =
+                [this](uint32_t ms) {
+                    flashWhiteCount_++;
+                    lastFlashWhiteDurationMs_ = ms;
+                },
+            .flashColor =
+                [this](Color c, uint32_t ms) {
+                    flashColorCount_++;
+                    lastFlashColor_ = c;
+                },
+            .playSound =
+                [this](const char* name) {
+                    playSoundCount_++;
+                    lastSoundName_ = name;
+                },
         });
 
-        engine_->setEventCallback([this](const GameEvent& e) {
-            events_.push_back(e);
-        });
+        engine_->setEventCallback([this](const GameEvent& e) { events_.push_back(e); });
     }
 
-    void advanceTimeUs(int64_t us) {
-        test_stubs::mock_time_us.fetch_add(us);
-    }
+    void advanceTimeUs(int64_t us) { test_stubs::mock_time_us.fetch_add(us); }
 
-    void advanceTimeMs(int64_t ms) {
-        advanceTimeUs(ms * 1000);
-    }
+    void advanceTimeMs(int64_t ms) { advanceTimeUs(ms * 1000); }
 
     std::unique_ptr<MockTouchDriver> touch_;
     std::unique_ptr<GameEngine> engine_;
@@ -444,6 +445,75 @@ TEST_F(GameEngineTest, TouchUpdateCalledInArmed) {
     engine_->tick();
 
     EXPECT_EQ(touch_->updateCount(), 3);
+}
+
+TEST_F(GameEngineTest, EventCallbackCanQueryAndDisarmEngine) {
+    GameState stateSeenByCallback = GameState::kReady;
+    engine_->setEventCallback([this, &stateSeenByCallback](const GameEvent&) {
+        stateSeenByCallback = engine_->currentState();
+        engine_->disarm();
+    });
+
+    ASSERT_TRUE(engine_->arm({.timeoutMs = 0}));
+    engine_->tick();
+
+    EXPECT_EQ(stateSeenByCallback, GameState::kFeedback);
+    EXPECT_EQ(engine_->currentState(), GameState::kReady);
+}
+
+TEST_F(GameEngineTest, ConcurrentControlTickStatsAndCallbackAccessIsSerialized) {
+    constexpr int kIterations = 2000;
+    std::atomic<bool> start{false};
+    std::atomic<uint32_t> eventCount{0};
+    std::atomic<bool> invalidStateSeen{false};
+
+    auto waitForStart = [&start]() {
+        while (!start.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+    };
+
+    std::thread control([&]() {
+        waitForStart();
+        for (int i = 0; i < kIterations; ++i) {
+            engine_->setEventCallback([&eventCount](const GameEvent&) {
+                eventCount.fetch_add(1, std::memory_order_relaxed);
+            });
+            engine_->disarm();
+            engine_->arm({.timeoutMs = 0, .feedbackMode = 0});
+            if ((i % 3) == 0) {
+                engine_->setEventCallback(nullptr);
+            }
+        }
+        engine_->disarm();
+    });
+
+    std::thread ticker([&]() {
+        waitForStart();
+        for (int i = 0; i < kIterations * 2; ++i) {
+            engine_->tick();
+        }
+    });
+
+    std::thread reader([&]() {
+        waitForStart();
+        for (int i = 0; i < kIterations * 2; ++i) {
+            const GameState state = engine_->currentState();
+            if (state != GameState::kReady && state != GameState::kArmed &&
+                state != GameState::kTriggered && state != GameState::kFeedback) {
+                invalidStateSeen.store(true, std::memory_order_relaxed);
+            }
+            static_cast<void>(engine_->lastReactionTimeUs());
+        }
+    });
+
+    start.store(true, std::memory_order_release);
+    control.join();
+    ticker.join();
+    reader.join();
+
+    EXPECT_FALSE(invalidStateSeen.load());
+    EXPECT_EQ(engine_->currentState(), GameState::kReady);
 }
 
 // =============================================================================

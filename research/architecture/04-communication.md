@@ -4,15 +4,16 @@
 > topology below are not current wire contracts. Use `firmware/common/proto/`, `frameCodec.hpp`,
 > transport source, and `espNowProtocol.hpp`; see [`README.md`](README.md) for lifecycle details.
 
-## AI Agent Instructions
+## Historical Scope
 
-Load this file when:
+This design record originally covered:
+
 - Implementing ESP-NOW communication
 - Implementing BLE services
 - Defining protocol messages
 - Handling RF coexistence
 
-Prerequisites: `03-driver-development.md`
+Original prerequisite: `03-driver-development.md`
 
 ---
 
@@ -38,6 +39,7 @@ Prerequisites: `03-driver-development.md`
 ```
 
 **Key Points:**
+
 - Phone connects to ONE pod via BLE (the "master")
 - Master relays commands to other pods via ESP-NOW
 - ESP-NOW provides <1ms latency between pods

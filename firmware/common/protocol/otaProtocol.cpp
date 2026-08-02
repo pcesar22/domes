@@ -5,7 +5,6 @@
 
 #include "otaProtocol.hpp"
 
-#include <algorithm>
 #include <cstring>
 
 namespace domes {
@@ -18,7 +17,8 @@ TransportError serializeOtaBegin(uint32_t firmwareSize, const uint8_t* sha256, c
                                  uint8_t* buf, size_t bufSize, size_t* outLen) {
     constexpr size_t payloadSize = sizeof(OtaBeginPayload);
 
-    if (sha256 == nullptr || buf == nullptr || outLen == nullptr) {
+    if (sha256 == nullptr || version == nullptr || version[0] == '\0' || buf == nullptr ||
+        outLen == nullptr) {
         return TransportError::kInvalidArg;
     }
     if (bufSize < payloadSize) {
@@ -35,11 +35,11 @@ TransportError serializeOtaBegin(uint32_t firmwareSize, const uint8_t* sha256, c
 
     // Version string
     payload->version.fill('\0');
-    if (version != nullptr) {
-        size_t versionLen = std::strlen(version);
-        size_t copyLen = std::min(versionLen, kOtaVersionMaxLen - 1);
-        std::memcpy(payload->version.data(), version, copyLen);
+    const size_t versionLen = std::strlen(version);
+    if (versionLen >= kOtaVersionMaxLen) {
+        return TransportError::kInvalidArg;
     }
+    std::memcpy(payload->version.data(), version, versionLen);
 
     *outLen = payloadSize;
     return TransportError::kOk;
@@ -52,7 +52,7 @@ TransportError serializeOtaData(uint32_t offset, const uint8_t* data, size_t dat
     if (buf == nullptr || outLen == nullptr) {
         return TransportError::kInvalidArg;
     }
-    if (dataLen > 0 && data == nullptr) {
+    if (dataLen == 0 || data == nullptr) {
         return TransportError::kInvalidArg;
     }
     if (bufSize < totalSize) {
@@ -90,7 +90,7 @@ TransportError serializeOtaAck(OtaStatus status, uint32_t nextOffset, uint8_t* b
                                size_t* outLen) {
     constexpr size_t payloadSize = sizeof(OtaAckPayload);
 
-    if (buf == nullptr || outLen == nullptr) {
+    if (buf == nullptr || outLen == nullptr || !isValidOtaStatus(status)) {
         return TransportError::kInvalidArg;
     }
     if (bufSize < payloadSize) {
@@ -108,7 +108,7 @@ TransportError serializeOtaAck(OtaStatus status, uint32_t nextOffset, uint8_t* b
 TransportError serializeOtaAbort(OtaStatus reason, uint8_t* buf, size_t bufSize, size_t* outLen) {
     constexpr size_t payloadSize = sizeof(OtaAbortPayload);
 
-    if (buf == nullptr || outLen == nullptr) {
+    if (buf == nullptr || outLen == nullptr || !isValidOtaStatus(reason)) {
         return TransportError::kInvalidArg;
     }
     if (bufSize < payloadSize) {
@@ -134,7 +134,7 @@ TransportError deserializeOtaBegin(const uint8_t* payload, size_t payloadLen,
     if (payload == nullptr || firmwareSize == nullptr) {
         return TransportError::kInvalidArg;
     }
-    if (payloadLen < expectedSize) {
+    if (payloadLen != expectedSize) {
         return TransportError::kProtocolError;
     }
 
@@ -146,10 +146,22 @@ TransportError deserializeOtaBegin(const uint8_t* payload, size_t payloadLen,
         std::memcpy(sha256, msg->sha256.data(), kSha256Size);
     }
 
-    if (version != nullptr && versionBufSize > 0) {
-        size_t copyLen = std::min(versionBufSize - 1, kOtaVersionMaxLen);
-        std::memcpy(version, msg->version.data(), copyLen);
-        version[copyLen] = '\0';
+    const void* terminator = std::memchr(msg->version.data(), '\0', msg->version.size());
+    if (terminator == nullptr) {
+        return TransportError::kProtocolError;
+    }
+    const size_t versionLen =
+        static_cast<const char*>(terminator) - static_cast<const char*>(msg->version.data());
+    if (versionLen == 0) {
+        return TransportError::kProtocolError;
+    }
+
+    if (version != nullptr) {
+        if (versionBufSize <= versionLen) {
+            return TransportError::kInvalidArg;
+        }
+        std::memcpy(version, msg->version.data(), versionLen);
+        version[versionLen] = '\0';
     }
 
     return TransportError::kOk;
@@ -171,13 +183,17 @@ TransportError deserializeOtaData(const uint8_t* payload, size_t payloadLen, uin
     *offset = header->offset;
     *dataLen = header->length;
 
-    // Validate that payload contains the advertised data
-    if (payloadLen < headerSize + header->length) {
+    if (header->length == 0 || header->length > kOtaChunkSize ||
+        payloadLen != headerSize + header->length) {
         return TransportError::kProtocolError;
     }
 
     *data = payload + headerSize;
     return TransportError::kOk;
+}
+
+TransportError deserializeOtaEnd(const uint8_t*, size_t payloadLen) {
+    return payloadLen == 0 ? TransportError::kOk : TransportError::kProtocolError;
 }
 
 TransportError deserializeOtaAck(const uint8_t* payload, size_t payloadLen, OtaStatus* status,
@@ -187,13 +203,16 @@ TransportError deserializeOtaAck(const uint8_t* payload, size_t payloadLen, OtaS
     if (payload == nullptr || status == nullptr || nextOffset == nullptr) {
         return TransportError::kInvalidArg;
     }
-    if (payloadLen < expectedSize) {
+    if (payloadLen != expectedSize) {
         return TransportError::kProtocolError;
     }
 
     const auto* msg = reinterpret_cast<const OtaAckPayload*>(payload);
 
     *status = static_cast<OtaStatus>(msg->status);
+    if (!isValidOtaStatus(*status)) {
+        return TransportError::kProtocolError;
+    }
     *nextOffset = msg->nextOffset;
 
     return TransportError::kOk;
@@ -205,12 +224,15 @@ TransportError deserializeOtaAbort(const uint8_t* payload, size_t payloadLen, Ot
     if (payload == nullptr || reason == nullptr) {
         return TransportError::kInvalidArg;
     }
-    if (payloadLen < expectedSize) {
+    if (payloadLen != expectedSize) {
         return TransportError::kProtocolError;
     }
 
     const auto* msg = reinterpret_cast<const OtaAbortPayload*>(payload);
     *reason = static_cast<OtaStatus>(msg->reason);
+    if (!isValidOtaStatus(*reason)) {
+        return TransportError::kProtocolError;
+    }
 
     return TransportError::kOk;
 }

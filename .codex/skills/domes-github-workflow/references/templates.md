@@ -45,7 +45,7 @@ docs(<scope>): <description>
 -
 
 ## Testing
-- [ ] Builds for ESP32-S3 (`idf.py build`)
+- [ ] Clean ESP-IDF v5.4.4 build passes with an isolated `SDKCONFIG`
 - [ ] Unit tests pass, if applicable
 - [ ] Tested on hardware, if applicable
 - [ ] No new compiler warnings

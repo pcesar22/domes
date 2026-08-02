@@ -5,10 +5,9 @@
 
 #include "tcpTransport.hpp"
 
-#include "trace/traceApi.hpp"
-
 #include "esp_log.h"
 #include "lwip/sockets.h"
+#include "trace/traceApi.hpp"
 
 #include <cerrno>
 
@@ -16,10 +15,7 @@ static const char* TAG = "tcp_transport";
 
 namespace domes {
 
-TcpTransport::TcpTransport()
-    : sockfd_(-1)
-    , initialized_(false) {
-}
+TcpTransport::TcpTransport() : sockfd_(-1), initialized_(false) {}
 
 TcpTransport::~TcpTransport() {
     disconnect();
@@ -100,7 +96,6 @@ TransportError TcpTransport::send(const uint8_t* data, size_t len) {
 }
 
 TransportError TcpTransport::receive(uint8_t* buf, size_t* len, uint32_t timeoutMs) {
-    TRACE_SCOPE(TRACE_ID("Tcp.Receive"), domes::trace::Category::kTransport);
     if (!initialized_.load()) {
         return TransportError::kNotInitialized;
     }

@@ -7,7 +7,7 @@
 repos:
   # General hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
     hooks:
       - id: trailing-whitespace
         exclude: '\.patch$'
@@ -23,7 +23,7 @@ repos:
 
   # C/C++ formatting with clang-format
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v17.0.6
+    rev: f4d7745e17a28aad7eed2f4874ca8d1568c11c4c  # frozen: v22.1.8
     hooks:
       - id: clang-format
         types_or: [c, c++]
@@ -32,37 +32,40 @@ repos:
 
   # Python formatting and linting
   - repo: https://github.com/psf/black
-    rev: 24.1.1
+    rev: 87928e6d6761a4a6d22250e1fee5601b3998086e  # frozen: 26.5.1
     hooks:
       - id: black
         language_version: python3
         files: ^tools/
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
+    rev: a333737ed43df02b18e6c95477ea1b285b3de15a  # frozen: 8.0.1
     hooks:
       - id: isort
         args: ["--profile", "black"]
         files: ^tools/
 
   # Rust formatting (for domes-cli)
-  - repo: https://github.com/doublify/pre-commit-rust
-    rev: v1.0
+  - repo: local
     hooks:
-      - id: fmt
-        args: ['--manifest-path', 'tools/domes-cli/Cargo.toml', '--']
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --manifest-path tools/domes-cli/Cargo.toml -- --check
+        language: system
+        pass_filenames: false
+        files: '^tools/domes-cli/.*\.rs$'
       - id: cargo-check
-        args: ['--manifest-path', 'tools/domes-cli/Cargo.toml']
+        name: cargo check
+        entry: cargo check --locked --manifest-path tools/domes-cli/Cargo.toml
+        language: system
+        pass_filenames: false
+        files: '^tools/domes-cli/(Cargo\.(toml|lock)|.*\.rs)$'
 
   # Markdown linting
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.39.0
+    rev: 5b5dddc4fb0f83c3ea1fc5616fa63e115dce83e0  # frozen: v0.49.1
     hooks:
       - id: markdownlint
-        args: ['--fix', '--disable', 'MD013', 'MD033', 'MD041', '--']
-        exclude: 'CHANGELOG\.md$'
-
-# CI configuration
-ci:
-  autofix_commit_msg: 'style: auto-fix from pre-commit hooks'
-  autoupdate_commit_msg: 'chore: update pre-commit hooks'
+        language_version: 24.18.1
+        args: ['--fix', '--disable', 'MD013', 'MD028', 'MD033', 'MD036', 'MD040', 'MD041', 'MD060', '--']
+        exclude: '(^|/)(CHANGELOG\.md|research/(AI_DEVELOPMENT_RECOMMENDATIONS\.md|architecture/.*|archive/.*))$'

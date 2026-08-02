@@ -1,5 +1,11 @@
 # DOMES Development Roadmap
+
 ## Dependency-Based Execution Plan
+
+> **Archived planning record.** This roadmap preserves early assumptions and completion claims; it
+> is not current status or an executable workflow. Use
+> [`../../firmware/MILESTONES.md`](../../firmware/MILESTONES.md) for status and
+> [`../../docs/TESTING.md`](../../docs/TESTING.md) for verification.
 
 ---
 
@@ -63,6 +69,7 @@
 ```
 
 **Rationale for Sequence:**
+
 1. Debug infrastructure is foundational - every future bug depends on it
 2. RF stack *init* is low-risk on ESP32-S3 - coexistence issues only manifest under sustained concurrent load
 3. Unit tests are more valuable when target is proven to work
@@ -736,6 +743,7 @@ C1-C4 (Unit Tests) ──► M5 ──► E1-E7 (Application) ──► F1 ◄�
 ```
 
 **Bottlenecks:**
+
 1. A1 (Dev boards) - blocks all hardware validation
 2. M4 (RF init) - gates unit test development (low risk, just needs hardware)
 3. A7 (PCB assembly) - blocks integration
@@ -790,22 +798,30 @@ A10: Assemble ─────────────────► F5-F6 ─�
 ## DECISION GATES
 
 ### Gate 1: After M4 (RF Init)
+
 **Question:** Do WiFi and BLE stacks initialize without errors?
+
 - ✅ Yes → Proceed with unit tests and drivers
 - ❌ No → Debug RF init issues (likely sdkconfig or partition table)
 
 ### Gate 2: After M6 (ESP-NOW Latency)
+
 **Question:** Is ESP-NOW latency acceptable (P95 < 2ms)?
+
 - ✅ Yes → Use ESP-NOW for pod-to-pod comms
 - ❌ No → Fallback to BLE mesh (higher latency but works)
 
 ### Gate 3: After M7 (Dev PCB Works)
+
 **Question:** Does custom PCB work end-to-end?
+
 - ✅ Yes → Proceed to multi-pod testing
 - ❌ No → Debug, potentially respin PCB
 
 ### Gate 4: After M8 (6-Pod Demo)
+
 **Question:** Do 6 pods work reliably together?
+
 - ✅ Yes → Proceed to form-factor design
 - ❌ No → Fix issues before form-factor investment
 

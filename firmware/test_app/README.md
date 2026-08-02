@@ -36,11 +36,13 @@ firmware/test_app/build/test_app --gtest_filter='GameEngineTest.*'
 
 | Area | Representative sources |
 | --- | --- |
-| Shared protocol support | CRC32, frame codec, OTA codec, version parsing, protobuf config messages |
+| Shared protocol support | CRC32, frame codec, OTA codec, version parsing, protobuf config messages and device notifications |
+| OTA and release state | Session coordination, transfer state machine, embedded version parsing, and release metadata |
 | Runtime state | `FeatureManager` and `ModeManager` |
 | Game behavior | Per-pod `GameEngine` state transitions and feedback behavior |
+| ESP-NOW contract | Exact packed-message sizes, discovery classification, authenticated sender matching, and per-round token matching |
 | Multi-pod behavior | In-memory ESP-NOW bus, pod command handlers, orchestration, hits, misses, and timeouts |
-| Observability | Host trace recorder, flow events, and Perfetto-compatible export |
+| Observability | Trace buffer/snapshot behavior, stream writer integrity, host trace recorder, flow events, and Perfetto-compatible export |
 
 Test cases live under [`main/`](main/). Simulation fakes and orchestration support live under
 [`sim/`](sim/). The executable source list is maintained in [`CMakeLists.txt`](CMakeLists.txt).

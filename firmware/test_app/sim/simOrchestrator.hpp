@@ -1,8 +1,8 @@
 #pragma once
 
-#include "sim/simLog.hpp"
-#include "sim/podInstance.hpp"
 #include "esp_timer.h"
+#include "sim/podInstance.hpp"
+#include "sim/simLog.hpp"
 
 #include <memory>
 #include <vector>
@@ -22,13 +22,9 @@ public:
         }
     }
 
-    void advanceTimeMs(int64_t ms) {
-        test_stubs::mock_time_us.fetch_add(ms * 1000);
-    }
+    void advanceTimeMs(int64_t ms) { test_stubs::mock_time_us.fetch_add(ms * 1000); }
 
-    void advanceTimeUs(int64_t us) {
-        test_stubs::mock_time_us.fetch_add(us);
-    }
+    void advanceTimeUs(int64_t us) { test_stubs::mock_time_us.fetch_add(us); }
 
     SimLog& log() { return log_; }
     PodInstance& pod(size_t index) { return *pods_[index]; }

@@ -1,11 +1,18 @@
 # DOMES: Distributed Open-source Motion & Exercise System
+
 ## Project Planning Document - BlazePod Alternative
+
+> **Archived planning record.** Product assumptions, costs, architecture, and schedules below are
+> retained for history and are not current requirements. Use
+> [`../SYSTEM_ARCHITECTURE.md`](../SYSTEM_ARCHITECTURE.md) for product targets and
+> [`../../firmware/MILESTONES.md`](../../firmware/MILESTONES.md) for delivery status.
 
 ---
 
 ## 1. MARKET RESEARCH SUMMARY
 
 ### 1.1 Market Size & Opportunity
+
 - **Global Sports Technology Market**: $21.6B (2024) → $86B+ by 2033 (CAGR ~16%)
 - **Physical Education Technology**: Growing segment with BlazePod as key player
 - **BlazePod Stats**: 1M+ pods sold, 120+ countries, 100M+ activities completed
@@ -64,6 +71,7 @@
 ## 2. COMPETITOR PAIN POINTS (Our Opportunities)
 
 ### 2.1 BlazePod Issues (from real user reviews)
+
 - ❌ **App Reliability**: Crashes, disconnections, pods stop responding
 - ❌ **Charging Failures**: Pins break, batteries not user-replaceable
 - ❌ **Expensive Subscription**: $15/mo ($180/yr) for full features
@@ -75,17 +83,20 @@
 - ❌ **No Audio Feedback**: Light-only, silent pods
 
 ### 2.2 FitLight Issues
+
 - ❌ **Extreme Cost**: $1,000-3,000+
 - ❌ **Tablet Required**: No smartphone app
 - ❌ **Short Battery**: Only 4 hours
 - ❌ **Compatibility**: 2024 systems incompatible with older versions
 
 ### 2.3 A-Champs Issues
+
 - ❌ Uses sound/vibration as triggers, not satisfying feedback
 - ❌ No real-time performance indication on pods
 - ❌ Still requires app for scoring/analytics
 
 ### 2.4 General Market Gaps
+
 - ❌ No truly open-source option exists
 - ❌ No modular/repairable designs
 - ❌ Limited offline functionality across all products
@@ -98,12 +109,15 @@
 ## 3. CORE DIFFERENTIATOR: PHONE-FREE EXPERIENCE
 
 ### 3.1 The Problem
+
 Every competitor requires constant phone/tablet interaction to understand performance. Athletes must interrupt training flow to check scores and stats.
 
 ### 3.2 Our Solution
+
 **The pods themselves communicate everything you need to know.**
 
 You should *feel* how you're doing through:
+
 - Sound that responds to your speed
 - Haptic feedback that rewards fast reactions
 - LED patterns that show streaks and performance
@@ -112,6 +126,7 @@ You should *feel* how you're doing through:
 ### 3.3 On-Pod Feedback Options (To Be Refined)
 
 #### During Drill
+
 - Audio pitch/tone indicates reaction speed (higher = faster)
 - Combo/streak sounds for consecutive fast hits
 - Haptic vibration intensity reflects performance
@@ -119,12 +134,14 @@ You should *feel* how you're doing through:
 - LED "breathing" or pulse patterns for streaks
 
 #### End of Drill
+
 - Victory jingle vs disappointment tone
 - Master pod announces score via speaker
 - LED sequence shows grade (pattern-based A/B/C)
 - Rainbow celebration animation for personal bests
 
 #### Intensity & Challenge Feel
+
 - Urgent countdown sounds before each target
 - Escalating tempo/intensity as drill progresses
 - Satisfying impact sound on every touch
@@ -135,6 +152,7 @@ You should *feel* how you're doing through:
 **NOT going for**: Arcade/8-bit, DJ announcer style
 
 **Exploring**:
+
 - **Modern Gaming**: Polished UI sounds, subtle but satisfying
 - **Minimal/Premium**: Elegant tones, not overwhelming
 - **Sci-fi**: Futuristic, synth-based feedback
@@ -146,11 +164,13 @@ You should *feel* how you're doing through:
 ## 4. PROPOSED FEATURE SET
 
 ### 4.1 Core Philosophy
+
 - **Open Source**: Hardware designs and software fully open
 - **No Subscription**: All features unlocked forever, free app
 - **Repairable**: User-serviceable, standard components
 
 ### 4.2 Business Model
+
 - Revenue from hardware sales
 - Free app with all features
 - Future monetization options (TBD later):
@@ -161,6 +181,7 @@ You should *feel* how you're doing through:
 ### 4.3 Feature Tiers
 
 #### Tier 1: Must-Have (Match Competition)
+
 - [ ] Touch-activated LED pods with 8+ colors
 - [ ] Smartphone app (iOS/Android) - FREE
 - [ ] Rechargeable batteries (8+ hour life)
@@ -169,6 +190,7 @@ You should *feel* how you're doing through:
 - [ ] Reaction time tracking & analytics
 
 #### Tier 2: Competitive Edge (Beat BlazePod)
+
 - [ ] **No Subscription** - All features unlocked forever
 - [ ] **User-Replaceable Battery** - Standard cells, user-serviceable
 - [ ] **Physical On/Off Switch** - Prevent battery drain
@@ -183,6 +205,7 @@ You should *feel* how you're doing through:
 - [ ] **Affordable Accessories** - Standard hardware, 3D-printable mounts
 
 #### Tier 3: Innovation (Leapfrog Competition)
+
 - [ ] **Multi-Modal Sensing**:
   - Touch (capacitive, pressure-sensitive)
   - Proximity (adjustable distance sensing)
@@ -223,15 +246,18 @@ You should *feel* how you're doing through:
 ## 5. OPEN QUESTIONS
 
 ### Feature Prioritization
+
 1. Which Tier 3 features are most compelling for v1?
 2. Should we focus on one vertical first (e.g., PT clinics vs athletes)?
 3. How important is the modular/upgrade path vs simpler single-SKU?
 
 ### Differentiation Strategy
+
 1. How much audio/haptic capability per pod? (cost vs experience tradeoff)
 2. What's the minimum viable "phone-free" experience for v1?
 
 ### Use Cases to Explore
+
 1. Are there underserved niches (elderly cognitive, special needs, gaming)?
 2. Should we partner with specific sports/PT organizations early?
 3. B2B (gyms, clinics) vs B2C (home users) focus?
@@ -241,6 +267,7 @@ You should *feel* how you're doing through:
 ## 6. COMPETITIVE MOAT STRATEGY
 
 ### Short-term Differentiation
+
 1. **Phone-Free Experience**: Feel your performance through the pods
 2. **Price**: Undercut BlazePod by 50-60%
 3. **No Subscription**: Major selling point
@@ -248,6 +275,7 @@ You should *feel* how you're doing through:
 5. **Repairability**: Stand out from disposable competitors
 
 ### Long-term Moat
+
 1. **Ecosystem**: Community-created drills, sound packs, accessories
 2. **API/SDK**: Third-party integrations
 3. **Data Network Effects**: Better AI with more users
@@ -258,25 +286,30 @@ You should *feel* how you're doing through:
 ## APPENDIX: RESEARCH SOURCES
 
 ### Product Information
+
 - [BlazePod Official](https://www.blazepod.com/)
 - [FitLight Training](https://www.fitlighttraining.com/)
 - [A-Champs ROXPro](https://a-champs.com/)
 - [A-Champs vs BlazePod](https://a-champs.com/pages/a-champs-vs-blazepod)
 
 ### Market Analysis
+
 - [Sports Technology Market - Fortune Business Insights](https://www.fortunebusinessinsights.com/sports-technology-market-112896)
 - [Sports Technology Market - Straits Research](https://straitsresearch.com/report/sports-technology-market)
 
 ### User Reviews & Pain Points
+
 - [BlazePod TrustPilot Reviews](https://www.trustpilot.com/review/blazepod.com)
 - [BlazePod vs FitLight Comparison](https://gadgetsandwearables.com/2020/12/06/blazepod-vs-fitlight/)
 
 ### Game Audio & Feedback Design
+
 - [Impact of Sound in Arcade Gaming](https://www.homegamesroom.co.uk/blogs/types-of-arcade-machines-and-their-features/the-impact-of-sound-and-music-in-arcade-gaming)
 - [Game Sound Design Principles](https://gamedesignskills.com/game-design/sound/)
 - [Sound Design Tips for Games](https://www.gameanalytics.com/blog/9-sound-design-tips-to-improve-your-games-audio/)
 
 ### Rehabilitation Research
+
 - [Reaction Training in Physical Therapy](https://motusspt.com/reaction-training-lights-what-you-need-to-know/)
 - [Cognitive Training for Elderly](https://pmc.ncbi.nlm.nih.gov/articles/PMC3881481/)
 

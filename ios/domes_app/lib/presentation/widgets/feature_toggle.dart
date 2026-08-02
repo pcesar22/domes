@@ -39,8 +39,12 @@ class FeatureToggle extends StatelessWidget {
   }
 
   String _featureDescription(Feature feature) {
-    if (feature == Feature.FEATURE_LED_EFFECTS) return 'LED animations and effects';
-    if (feature == Feature.FEATURE_BLE_ADVERTISING) return 'Bluetooth Low Energy advertising';
+    if (feature == Feature.FEATURE_LED_EFFECTS) {
+      return 'LED animations and effects';
+    }
+    if (feature == Feature.FEATURE_BLE_ADVERTISING) {
+      return 'Bluetooth Low Energy advertising';
+    }
     if (feature == Feature.FEATURE_WIFI) return 'WiFi connectivity';
     if (feature == Feature.FEATURE_ESP_NOW) return 'ESP-NOW peer-to-peer';
     if (feature == Feature.FEATURE_TOUCH) return 'Touch sensing';

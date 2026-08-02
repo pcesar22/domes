@@ -9,9 +9,10 @@
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "infra/logging.hpp"
+#include "services/releaseMetadata.hpp"
 
 #include <cctype>
-#include <cstdlib>
+#include <cstdio>
 #include <cstring>
 
 namespace domes {
@@ -21,65 +22,6 @@ constexpr const char* kTag = "github";
 constexpr const char* kApiUrl = "https://api.github.com/repos/%s/%s/releases/latest";
 constexpr const char* kUserAgent = "ESP32-OTA-Client/1.0";
 }  // namespace
-
-FirmwareVersion parseVersion(const char* versionStr) {
-    FirmwareVersion ver = {};
-
-    if (!versionStr) {
-        return ver;
-    }
-
-    const char* p = versionStr;
-
-    // Skip 'v' prefix if present
-    if (*p == 'v' || *p == 'V') {
-        p++;
-    }
-
-    // Parse major.minor.patch
-    char* endptr = nullptr;
-
-    long major = std::strtol(p, &endptr, 10);
-    if (endptr == p || *endptr != '.') {
-        return ver;
-    }
-    ver.major = static_cast<uint8_t>(major);
-    p = endptr + 1;
-
-    long minor = std::strtol(p, &endptr, 10);
-    if (endptr == p || (*endptr != '.' && *endptr != '-' && *endptr != '\0')) {
-        return ver;
-    }
-    ver.minor = static_cast<uint8_t>(minor);
-
-    if (*endptr == '.') {
-        p = endptr + 1;
-        long patch = std::strtol(p, &endptr, 10);
-        ver.patch = static_cast<uint8_t>(patch);
-        p = endptr;
-    }
-
-    // Check for -dirty suffix
-    ver.dirty = (std::strstr(versionStr, "-dirty") != nullptr);
-
-    // Look for git hash (format: -N-gXXXXXXX)
-    const char* gitHashStart = std::strstr(p, "-g");
-    if (gitHashStart) {
-        gitHashStart += 2;  // Skip "-g"
-        size_t hashLen = 0;
-        while (gitHashStart[hashLen] && gitHashStart[hashLen] != '-' &&
-               std::isxdigit(static_cast<unsigned char>(gitHashStart[hashLen])) &&
-               hashLen < sizeof(ver.gitHash) - 1) {
-            hashLen++;
-        }
-        if (hashLen > 0) {
-            std::strncpy(ver.gitHash, gitHashStart, hashLen);
-            ver.gitHash[hashLen] = '\0';
-        }
-    }
-
-    return ver;
-}
 
 GithubClient::GithubClient(const char* owner, const char* repo) : useCustomEndpoint_(false) {
     std::strncpy(owner_, owner, sizeof(owner_) - 1);
@@ -109,6 +51,7 @@ esp_err_t GithubClient::getLatestRelease(GithubRelease& release) {
     char url[256];
     if (useCustomEndpoint_) {
         std::strncpy(url, customEndpoint_, sizeof(url) - 1);
+        url[sizeof(url) - 1] = '\0';
     } else {
         snprintf(url, sizeof(url), kApiUrl, owner_, repo_);
     }
@@ -174,12 +117,14 @@ esp_err_t GithubClient::getLatestRelease(GithubRelease& release) {
         }
     }
 
-    responseBuffer[totalRead] = '\0';
-
-    ESP_LOGD(kTag, "Read %zu bytes", totalRead);
-
-    // Parse JSON response
-    err = parseRelease(responseBuffer, totalRead, release);
+    if (readLen < 0) {
+        ESP_LOGE(kTag, "Failed while reading release response");
+        err = ESP_FAIL;
+    } else {
+        responseBuffer[totalRead] = '\0';
+        ESP_LOGD(kTag, "Read %zu bytes", totalRead);
+        err = parseRelease(responseBuffer, totalRead, release);
+    }
 
     free(responseBuffer);
     esp_http_client_close(client);
@@ -198,8 +143,13 @@ esp_err_t GithubClient::parseRelease(const char* json, size_t len, GithubRelease
     // Extract tag_name
     cJSON* tagName = cJSON_GetObjectItem(root, "tag_name");
     if (cJSON_IsString(tagName) && tagName->valuestring) {
-        std::strncpy(release.tagName, tagName->valuestring, sizeof(release.tagName) - 1);
-        release.tagName[sizeof(release.tagName) - 1] = '\0';
+        const size_t tagLength = std::strlen(tagName->valuestring);
+        if (tagLength == 0 || tagLength >= sizeof(release.tagName)) {
+            ESP_LOGE(kTag, "Release tag exceeds the firmware version limit");
+            cJSON_Delete(root);
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+        std::memcpy(release.tagName, tagName->valuestring, tagLength + 1);
         ESP_LOGI(kTag, "Release tag: %s", release.tagName);
     } else {
         ESP_LOGE(kTag, "No tag_name in response");
@@ -207,13 +157,15 @@ esp_err_t GithubClient::parseRelease(const char* json, size_t len, GithubRelease
         return ESP_FAIL;
     }
 
-    // Extract SHA-256 from body
+    // Extract the application image digest from the release body.
     cJSON* body = cJSON_GetObjectItem(root, "body");
-    if (cJSON_IsString(body) && body->valuestring) {
-        if (extractSha256(body->valuestring, release.sha256)) {
-            ESP_LOGI(kTag, "Found SHA-256: %.16s...", release.sha256);
-        }
+    if (!cJSON_IsString(body) || !body->valuestring ||
+        !extractSha256(body->valuestring, release.sha256)) {
+        ESP_LOGE(kTag, "Release is missing the application SHA-256");
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_RESPONSE;
     }
+    ESP_LOGI(kTag, "Found SHA-256: %.16s...", release.sha256);
 
     // Find firmware asset in assets array
     cJSON* assets = cJSON_GetObjectItem(root, "assets");
@@ -227,6 +179,13 @@ esp_err_t GithubClient::parseRelease(const char* json, size_t len, GithubRelease
     int assetCount = cJSON_GetArraySize(assets);
     ESP_LOGI(kTag, "Found %d assets", assetCount);
 
+    char expectedAssetName[sizeof(release.firmware.name)];
+    if (!formatOtaAssetName(release.tagName, expectedAssetName, sizeof(expectedAssetName))) {
+        ESP_LOGE(kTag, "Release tag cannot identify an OTA asset");
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
     for (int i = 0; i < assetCount; i++) {
         cJSON* asset = cJSON_GetArrayItem(assets, i);
         cJSON* name = cJSON_GetObjectItem(asset, "name");
@@ -235,26 +194,43 @@ esp_err_t GithubClient::parseRelease(const char* json, size_t len, GithubRelease
             continue;
         }
 
-        // Look for domes.bin or domes-*.bin
         const char* assetName = name->valuestring;
-        if (std::strstr(assetName, "domes") && std::strstr(assetName, ".bin")) {
+        if (std::strcmp(assetName, expectedAssetName) == 0) {
             std::strncpy(release.firmware.name, assetName, sizeof(release.firmware.name) - 1);
+            release.firmware.name[sizeof(release.firmware.name) - 1] = '\0';
 
             cJSON* downloadUrl = cJSON_GetObjectItem(asset, "browser_download_url");
             if (cJSON_IsString(downloadUrl) && downloadUrl->valuestring) {
+                const size_t downloadUrlLength = std::strlen(downloadUrl->valuestring);
+                if (downloadUrlLength >= sizeof(release.firmware.downloadUrl)) {
+                    ESP_LOGE(kTag, "Firmware download URL exceeds the supported length");
+                    cJSON_Delete(root);
+                    return ESP_ERR_INVALID_RESPONSE;
+                }
                 std::strncpy(release.firmware.downloadUrl, downloadUrl->valuestring,
                              sizeof(release.firmware.downloadUrl) - 1);
+                release.firmware.downloadUrl[sizeof(release.firmware.downloadUrl) - 1] = '\0';
             }
 
             cJSON* size = cJSON_GetObjectItem(asset, "size");
-            if (cJSON_IsNumber(size)) {
-                release.firmware.size = static_cast<size_t>(size->valuedouble);
+            if (!cJSON_IsNumber(size) ||
+                !parseReleaseAssetSize(size->valuedouble, release.firmware.size)) {
+                ESP_LOGE(kTag, "Firmware asset size is not a positive representable integer");
+                cJSON_Delete(root);
+                return ESP_ERR_INVALID_RESPONSE;
             }
 
             ESP_LOGI(kTag, "Found firmware: %s (%zu bytes)", release.firmware.name,
                      release.firmware.size);
             break;
         }
+    }
+
+    if (release.firmware.name[0] == '\0' || release.firmware.downloadUrl[0] == '\0' ||
+        release.firmware.size == 0) {
+        ESP_LOGE(kTag, "Release is missing expected OTA asset: %s", expectedAssetName);
+        cJSON_Delete(root);
+        return ESP_ERR_INVALID_RESPONSE;
     }
 
     release.found = true;
@@ -288,7 +264,8 @@ bool GithubClient::extractSha256(const char* body, char* sha256Out) {
             hashLen++;
         }
 
-        if (hashLen == 64) {
+        if (hashLen == kSha256HexLength &&
+            !std::isxdigit(static_cast<unsigned char>(found[hashLen]))) {
             std::strncpy(sha256Out, found, 64);
             sha256Out[64] = '\0';
 
@@ -297,7 +274,7 @@ bool GithubClient::extractSha256(const char* body, char* sha256Out) {
                 sha256Out[i] = std::tolower(static_cast<unsigned char>(sha256Out[i]));
             }
 
-            return true;
+            return isSha256Hex(sha256Out);
         }
     }
 

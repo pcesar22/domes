@@ -9,19 +9,20 @@ namespace sim {
 
 class SimLedDriver : public domes::ILedDriver {
 public:
-    SimLedDriver(uint16_t podId, SimLog& log)
-        : podId_(podId), log_(log) {}
+    SimLedDriver(uint16_t podId, SimLog& log) : podId_(podId), log_(log) {}
 
     esp_err_t init() override { return ESP_OK; }
 
     esp_err_t setPixel(uint8_t index, domes::Color color) override {
-        if (index >= kLedCount) return ESP_ERR_INVALID_ARG;
+        if (index >= kLedCount)
+            return ESP_ERR_INVALID_ARG;
         pixels_[index] = color;
         return ESP_OK;
     }
 
     esp_err_t setAll(domes::Color color) override {
-        for (auto& p : pixels_) p = color;
+        for (auto& p : pixels_)
+            p = color;
         lastColor_ = color;
         std::ostringstream oss;
         oss << "setAll rgb(" << (int)color.r << "," << (int)color.g << "," << (int)color.b << ")";
@@ -30,7 +31,8 @@ public:
     }
 
     esp_err_t clear() override {
-        for (auto& p : pixels_) p = domes::Color::off();
+        for (auto& p : pixels_)
+            p = domes::Color::off();
         log_.log(podId_, "led", "clear");
         return ESP_OK;
     }
@@ -41,9 +43,7 @@ public:
         return ESP_OK;
     }
 
-    void setBrightness(uint8_t brightness) override {
-        brightness_ = brightness;
-    }
+    void setBrightness(uint8_t brightness) override { brightness_ = brightness; }
 
     uint8_t getLedCount() const override { return kLedCount; }
 
@@ -51,7 +51,8 @@ public:
     domes::Color lastColor() const { return lastColor_; }
     int refreshCount() const { return refreshCount_; }
     domes::Color pixel(uint8_t index) const {
-        if (index < kLedCount) return pixels_[index];
+        if (index < kLedCount)
+            return pixels_[index];
         return domes::Color::off();
     }
 

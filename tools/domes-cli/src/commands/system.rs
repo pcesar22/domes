@@ -32,6 +32,10 @@ pub fn system_set_mode(
     transport: &mut dyn Transport,
     mode: SystemMode,
 ) -> Result<(SystemMode, bool)> {
+    if mode == SystemMode::Booting {
+        anyhow::bail!("The booting mode is device-managed and cannot be requested");
+    }
+
     let payload = serialize_set_mode(mode);
     let frame = transport
         .send_command(ConfigMsgType::SetModeReq as u8, &payload)
@@ -68,6 +72,10 @@ pub fn system_info(transport: &mut dyn Transport) -> Result<CliSystemInfo> {
 
 /// Set the pod ID (persisted to NVS, takes effect on next reboot for BLE name)
 pub fn system_set_pod_id(transport: &mut dyn Transport, pod_id: u32) -> Result<u32> {
+    if !(1..=255).contains(&pod_id) {
+        anyhow::bail!("Pod ID must be between 1 and 255");
+    }
+
     let payload = serialize_set_pod_id(pod_id);
     let frame = transport
         .send_command(ConfigMsgType::SetPodIdReq as u8, &payload)
@@ -81,7 +89,17 @@ pub fn system_set_pod_id(transport: &mut dyn Transport, pod_id: u32) -> Result<u
         );
     }
 
-    parse_set_pod_id_response(&frame.payload).context("Failed to parse set pod id response")
+    let reported_id =
+        parse_set_pod_id_response(&frame.payload).context("Failed to parse set pod id response")?;
+    if reported_id != pod_id {
+        anyhow::bail!(
+            "Set pod ID response did not match request: expected {}, got {}",
+            pod_id,
+            reported_id
+        );
+    }
+
+    Ok(reported_id)
 }
 
 /// Get crash dump from device

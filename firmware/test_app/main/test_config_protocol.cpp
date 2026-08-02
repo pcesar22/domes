@@ -25,75 +25,79 @@ using namespace domes::config;
 // ConfigMsgType Tests
 // =============================================================================
 
-TEST(ConfigMsgType, IsConfigMessageInRange) {
-    // All config message types should be recognized
-    EXPECT_TRUE(isConfigMessage(0x20));  // ListFeaturesReq
-    EXPECT_TRUE(isConfigMessage(0x21));  // ListFeaturesRsp
-    EXPECT_TRUE(isConfigMessage(0x22));  // SetFeatureReq
-    EXPECT_TRUE(isConfigMessage(0x23));  // SetFeatureRsp
-    EXPECT_TRUE(isConfigMessage(0x24));  // GetFeatureReq
-    EXPECT_TRUE(isConfigMessage(0x25));  // GetFeatureRsp
+TEST(ConfigMsgType, RecognizesEveryRequestId) {
+    constexpr std::array<uint8_t, 21> requestIds = {
+        0x20, 0x22, 0x24, 0x26, 0x28, 0x2A, 0x30, 0x32, 0x34, 0x36, 0x38,
+        0x3A, 0x3C, 0x3E, 0x40, 0x42, 0x44, 0x46, 0x48, 0x4C, 0x4E,
+    };
+    for (uint8_t id : requestIds) {
+        EXPECT_TRUE(isConfigRequest(id)) << "request id " << unsigned(id);
+    }
 }
 
-TEST(ConfigMsgType, IsConfigMessageSystemModeRange) {
-    // System mode commands (0x30-0x35) should be config messages
-    EXPECT_TRUE(isConfigMessage(0x30));  // GetModeReq
-    EXPECT_TRUE(isConfigMessage(0x31));  // GetModeRsp
-    EXPECT_TRUE(isConfigMessage(0x32));  // SetModeReq
-    EXPECT_TRUE(isConfigMessage(0x33));  // SetModeRsp
-    EXPECT_TRUE(isConfigMessage(0x34));  // GetSystemInfoReq
-    EXPECT_TRUE(isConfigMessage(0x35));  // GetSystemInfoRsp
+TEST(ConfigMsgType, RejectsResponsesReservedAndOtherProtocolIds) {
+    constexpr std::array<uint8_t, 21> responseIds = {
+        0x21, 0x23, 0x25, 0x27, 0x29, 0x2B, 0x31, 0x33, 0x35, 0x37, 0x39,
+        0x3B, 0x3D, 0x3F, 0x41, 0x43, 0x45, 0x47, 0x49, 0x4D, 0x4F,
+    };
+    for (uint8_t id : responseIds) {
+        EXPECT_FALSE(isConfigRequest(id)) << "response id " << unsigned(id);
+    }
+
+    constexpr std::array<uint8_t, 12> rejectedIds = {
+        0x00, 0x01, 0x05, 0x10, 0x17, 0x1F, 0x2C, 0x2F, 0x4A, 0x4B, 0x50, 0xFF,
+    };
+    for (uint8_t id : rejectedIds) {
+        EXPECT_FALSE(isConfigRequest(id)) << "reserved/foreign id " << unsigned(id);
+    }
 }
 
-TEST(ConfigMsgType, IsConfigMessagePodIdRange) {
-    // Pod ID commands (0x36-0x37) should be config messages
-    EXPECT_TRUE(isConfigMessage(0x36));  // SetPodIdReq
-    EXPECT_TRUE(isConfigMessage(0x37));  // SetPodIdRsp
+TEST(ConfigMsgType, PassiveRequestsDoNotRecordActivity) {
+    EXPECT_FALSE(commandRecordsActivity(MsgType::kListFeaturesReq));
+    EXPECT_FALSE(commandRecordsActivity(MsgType::kGetFeatureReq));
+    EXPECT_FALSE(commandRecordsActivity(MsgType::kGetLedPatternReq));
+    EXPECT_FALSE(commandRecordsActivity(MsgType::kGetModeReq));
+    EXPECT_FALSE(commandRecordsActivity(MsgType::kGetSystemInfoReq));
+    EXPECT_FALSE(commandRecordsActivity(MsgType::kGetHealthReq));
+    EXPECT_FALSE(commandRecordsActivity(MsgType::kGetEspNowStatusReq));
+    EXPECT_FALSE(commandRecordsActivity(MsgType::kGetCrashDumpReq));
+    EXPECT_FALSE(commandRecordsActivity(MsgType::kGetMemoryProfileReq));
 }
 
-TEST(ConfigMsgType, IsConfigMessageOutOfRange) {
-    // OTA and trace ranges should not be config messages
-    EXPECT_FALSE(isConfigMessage(0x01));  // OTA_BEGIN
-    EXPECT_FALSE(isConfigMessage(0x05));  // OTA_ABORT
-    EXPECT_FALSE(isConfigMessage(0x10));  // TRACE_START
-    EXPECT_FALSE(isConfigMessage(0x17));  // TRACE_ACK
-    EXPECT_FALSE(isConfigMessage(0x00));  // Unknown
-    EXPECT_FALSE(isConfigMessage(0xFF));  // Unknown
-    EXPECT_FALSE(isConfigMessage(0x1F));  // Just before config range
-    EXPECT_FALSE(isConfigMessage(0x50));  // Just past sim mode range
+TEST(ConfigMsgType, ActiveRequestsRecordActivity) {
+    EXPECT_TRUE(commandRecordsActivity(MsgType::kSetFeatureReq));
+    EXPECT_TRUE(commandRecordsActivity(MsgType::kSetModeReq));
+    EXPECT_TRUE(commandRecordsActivity(MsgType::kEspNowBenchReq));
+    EXPECT_TRUE(commandRecordsActivity(MsgType::kClearCrashDumpReq));
+    EXPECT_TRUE(commandRecordsActivity(MsgType::kSelfTestReq));
+    EXPECT_TRUE(commandRecordsActivity(MsgType::kCheckUpdateReq));
+    EXPECT_TRUE(commandRecordsActivity(MsgType::kSetAutoUpdateReq));
+    EXPECT_TRUE(commandRecordsActivity(MsgType::kSimulateTouchReq));
 }
 
-TEST(ConfigMsgType, IsConfigMessageObservabilityRange) {
-    // Observability commands (0x38-0x3D) should be config messages
-    EXPECT_TRUE(isConfigMessage(0x38));  // GetHealthReq
-    EXPECT_TRUE(isConfigMessage(0x39));  // GetHealthRsp
-    EXPECT_TRUE(isConfigMessage(0x3A));  // GetEspNowStatusReq
-    EXPECT_TRUE(isConfigMessage(0x3B));  // GetEspNowStatusRsp
-    EXPECT_TRUE(isConfigMessage(0x3C));  // EspNowBenchReq
-    EXPECT_TRUE(isConfigMessage(0x3D));  // EspNowBenchRsp
-}
+TEST(ConfigProtocol, ValidatesLedPatternWithoutNarrowing) {
+    domes_config_LedPattern pattern = domes_config_LedPattern_init_zero;
+    pattern.type = domes_config_LedPatternType_LED_PATTERN_BREATHING;
+    pattern.has_color = true;
+    pattern.color.r = 255;
+    pattern.period_ms = 1000;
+    pattern.brightness = 0;
+    EXPECT_TRUE(isValidLedPattern(pattern));
 
-TEST(ConfigMsgType, IsConfigMessageCrashDumpMemoryRange) {
-    // Crash dump and memory profiler commands (0x3E-0x43) should be config messages
-    EXPECT_TRUE(isConfigMessage(0x3E));  // GetCrashDumpReq
-    EXPECT_TRUE(isConfigMessage(0x3F));  // GetCrashDumpRsp
-    EXPECT_TRUE(isConfigMessage(0x40));  // ClearCrashDumpReq
-    EXPECT_TRUE(isConfigMessage(0x41));  // ClearCrashDumpRsp
-    EXPECT_TRUE(isConfigMessage(0x42));  // GetMemoryProfileReq
-    EXPECT_TRUE(isConfigMessage(0x43));  // GetMemoryProfileRsp
-}
+    pattern.period_ms = 0;
+    EXPECT_FALSE(isValidLedPattern(pattern));
+    pattern.period_ms = 1000;
+    pattern.brightness = 256;
+    EXPECT_FALSE(isValidLedPattern(pattern));
+    pattern.brightness = 128;
+    pattern.color.r = 256;
+    EXPECT_FALSE(isValidLedPattern(pattern));
+    pattern.color.r = 255;
+    pattern.has_color = false;
+    EXPECT_FALSE(isValidLedPattern(pattern));
 
-TEST(ConfigMsgType, IsConfigMessageSelfTestRange) {
-    // Self-test commands (0x44-0x45) should be config messages
-    EXPECT_TRUE(isConfigMessage(0x44));  // SelfTestReq
-    EXPECT_TRUE(isConfigMessage(0x45));  // SelfTestRsp
-}
-
-TEST(ConfigMsgType, GapValuesAreInRange) {
-    // Gap values 0x2C-0x2F fall within the simple range check.
-    // They're routed to the config handler but safely ignored by the switch.
-    EXPECT_TRUE(isConfigMessage(0x2C));
-    EXPECT_TRUE(isConfigMessage(0x2F));
+    pattern.type = static_cast<domes_config_LedPatternType>(99);
+    EXPECT_FALSE(isValidLedPattern(pattern));
 }
 
 // =============================================================================
@@ -187,6 +191,39 @@ TEST(Protobuf, SetFeatureResponseEncodeDecode) {
     EXPECT_TRUE(decoded.has_feature);
     EXPECT_EQ(decoded.feature.feature, domes_config_Feature_FEATURE_WIFI);
     EXPECT_FALSE(decoded.feature.enabled);
+}
+
+TEST(Protobuf, GetFeatureRequestAndResponseEncodeDecode) {
+    domes_config_GetFeatureRequest req = domes_config_GetFeatureRequest_init_zero;
+    req.feature = domes_config_Feature_FEATURE_ESP_NOW;
+
+    std::array<uint8_t, 64> requestBuffer{};
+    pb_ostream_t requestStream = pb_ostream_from_buffer(requestBuffer.data(), requestBuffer.size());
+    ASSERT_TRUE(pb_encode(&requestStream, domes_config_GetFeatureRequest_fields, &req));
+
+    domes_config_GetFeatureRequest decodedReq = domes_config_GetFeatureRequest_init_zero;
+    pb_istream_t requestInput =
+        pb_istream_from_buffer(requestBuffer.data(), requestStream.bytes_written);
+    ASSERT_TRUE(pb_decode(&requestInput, domes_config_GetFeatureRequest_fields, &decodedReq));
+    EXPECT_EQ(decodedReq.feature, domes_config_Feature_FEATURE_ESP_NOW);
+
+    domes_config_GetFeatureResponse resp = domes_config_GetFeatureResponse_init_zero;
+    resp.has_feature = true;
+    resp.feature.feature = domes_config_Feature_FEATURE_ESP_NOW;
+    resp.feature.enabled = true;
+
+    std::array<uint8_t, 64> responseBuffer{};
+    pb_ostream_t responseStream =
+        pb_ostream_from_buffer(responseBuffer.data(), responseBuffer.size());
+    ASSERT_TRUE(pb_encode(&responseStream, domes_config_GetFeatureResponse_fields, &resp));
+
+    domes_config_GetFeatureResponse decodedResp = domes_config_GetFeatureResponse_init_zero;
+    pb_istream_t responseInput =
+        pb_istream_from_buffer(responseBuffer.data(), responseStream.bytes_written);
+    ASSERT_TRUE(pb_decode(&responseInput, domes_config_GetFeatureResponse_fields, &decodedResp));
+    EXPECT_TRUE(decodedResp.has_feature);
+    EXPECT_EQ(decodedResp.feature.feature, domes_config_Feature_FEATURE_ESP_NOW);
+    EXPECT_TRUE(decodedResp.feature.enabled);
 }
 
 TEST(Protobuf, ListFeaturesResponseEncodeDecode) {
@@ -350,6 +387,8 @@ TEST(Protobuf, GetSystemInfoResponseEncodeDecode) {
     resp.boot_count = 42;
     resp.mode = domes_config_SystemMode_SYSTEM_MODE_IDLE;
     resp.feature_mask = 0x000000EE;
+    resp.pod_id = 7;
+    resp.reset_reason = domes_config_ResetReason_RESET_REASON_SOFTWARE;
 
     std::array<uint8_t, 128> buffer{};
     pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
@@ -366,6 +405,8 @@ TEST(Protobuf, GetSystemInfoResponseEncodeDecode) {
     EXPECT_EQ(decoded.boot_count, 42u);
     EXPECT_EQ(decoded.mode, domes_config_SystemMode_SYSTEM_MODE_IDLE);
     EXPECT_EQ(decoded.feature_mask, 0x000000EEu);
+    EXPECT_EQ(decoded.pod_id, 7u);
+    EXPECT_EQ(decoded.reset_reason, domes_config_ResetReason_RESET_REASON_SOFTWARE);
 }
 
 // =============================================================================
@@ -388,7 +429,8 @@ TEST(Protobuf, SelfTestResponseEncodeDecode) {
 
     strncpy(resp.results[2].name, "WiFi", sizeof(resp.results[2].name) - 1);
     resp.results[2].passed = false;
-    strncpy(resp.results[2].message, "scan failed (not init?)", sizeof(resp.results[2].message) - 1);
+    strncpy(resp.results[2].message, "scan failed (not init?)",
+            sizeof(resp.results[2].message) - 1);
 
     // Encode
     std::array<uint8_t, domes_config_SelfTestResponse_size + 10> buffer{};
@@ -421,12 +463,11 @@ TEST(Protobuf, SelfTestResponseEncodeDecode) {
 // GitHub OTA Protobuf Tests
 // =============================================================================
 
-TEST(ConfigMsgType, IsConfigMessageGitHubOtaRange) {
-    // GitHub OTA commands (0x46-0x49) should be config messages
-    EXPECT_TRUE(isConfigMessage(0x46));  // CheckUpdateReq
-    EXPECT_TRUE(isConfigMessage(0x47));  // CheckUpdateRsp
-    EXPECT_TRUE(isConfigMessage(0x48));  // SetAutoUpdateReq
-    EXPECT_TRUE(isConfigMessage(0x49));  // SetAutoUpdateRsp
+TEST(ConfigMsgType, IsConfigRequestGitHubOtaRange) {
+    EXPECT_TRUE(isConfigRequest(0x46));   // CheckUpdateReq
+    EXPECT_FALSE(isConfigRequest(0x47));  // CheckUpdateRsp
+    EXPECT_TRUE(isConfigRequest(0x48));   // SetAutoUpdateReq
+    EXPECT_FALSE(isConfigRequest(0x49));  // SetAutoUpdateRsp
 }
 
 TEST(Protobuf, CheckUpdateResponseEncodeDecode) {
@@ -510,19 +551,13 @@ TEST(Protobuf, SetAutoUpdateResponseEncodeDecode) {
 // Touch Injection Protobuf Tests
 // =============================================================================
 
-TEST(ConfigMsgType, IsConfigMessageTouchInjectionRange) {
-    // Touch injection commands (0x4C-0x4F) should be config messages
-    EXPECT_TRUE(isConfigMessage(0x4C));  // SimulateTouchReq
-    EXPECT_TRUE(isConfigMessage(0x4D));  // SimulateTouchRsp
-    EXPECT_TRUE(isConfigMessage(0x4E));  // SetSimModeReq
-    EXPECT_TRUE(isConfigMessage(0x4F));  // SetSimModeRsp
-}
-
-TEST(ConfigMsgType, GapValues0x4A0x4BAreInRange) {
-    // Gap values 0x4A-0x4B fall within the simple range check (0x20-0x4F).
-    // They're routed to the config handler but safely ignored by the switch.
-    EXPECT_TRUE(isConfigMessage(0x4A));
-    EXPECT_TRUE(isConfigMessage(0x4B));
+TEST(ConfigMsgType, IsConfigRequestTouchInjectionRange) {
+    EXPECT_TRUE(isConfigRequest(0x4C));   // SimulateTouchReq
+    EXPECT_FALSE(isConfigRequest(0x4D));  // SimulateTouchRsp
+    EXPECT_TRUE(isConfigRequest(0x4E));   // SetSimModeReq
+    EXPECT_FALSE(isConfigRequest(0x4F));  // SetSimModeRsp
+    EXPECT_FALSE(isConfigRequest(0x50));  // TouchEventNtf
+    EXPECT_EQ(static_cast<uint8_t>(MsgType::kTouchEventNtf), 0x50);
 }
 
 TEST(Protobuf, SimulateTouchRequestEncodeDecode) {
@@ -563,7 +598,6 @@ TEST(Protobuf, SetSimModeRequestEncodeDecode) {
 
 TEST(Protobuf, SetSimModeResponseEncodeDecode) {
     domes_config_SetSimModeResponse resp = domes_config_SetSimModeResponse_init_zero;
-    resp.status = domes_config_Status_STATUS_OK;
     resp.enabled = true;
     resp.delay_ms = 250;
     resp.pad_index = 3;
@@ -577,10 +611,28 @@ TEST(Protobuf, SetSimModeResponseEncodeDecode) {
     pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
     ASSERT_TRUE(pb_decode(&istream, domes_config_SetSimModeResponse_fields, &decoded));
 
-    EXPECT_EQ(decoded.status, domes_config_Status_STATUS_OK);
     EXPECT_TRUE(decoded.enabled);
     EXPECT_EQ(decoded.delay_ms, 250u);
     EXPECT_EQ(decoded.pad_index, 3u);
+}
+
+TEST(Protobuf, TouchEventNotificationEncodeDecode) {
+    domes_config_TouchEventNotification event = domes_config_TouchEventNotification_init_zero;
+    event.pod_id = 2;
+    event.pad_index = 3;
+    event.timestamp_us = 1234567;
+
+    std::array<uint8_t, domes_config_TouchEventNotification_size> buffer{};
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    ASSERT_TRUE(pb_encode(&ostream, domes_config_TouchEventNotification_fields, &event));
+
+    domes_config_TouchEventNotification decoded = domes_config_TouchEventNotification_init_zero;
+    pb_istream_t istream = pb_istream_from_buffer(buffer.data(), ostream.bytes_written);
+    ASSERT_TRUE(pb_decode(&istream, domes_config_TouchEventNotification_fields, &decoded));
+
+    EXPECT_EQ(decoded.pod_id, 2u);
+    EXPECT_EQ(decoded.pad_index, 3u);
+    EXPECT_EQ(decoded.timestamp_us, 1234567u);
 }
 
 TEST(Protobuf, SelfTestResponseEmpty) {

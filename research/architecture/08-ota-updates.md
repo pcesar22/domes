@@ -5,15 +5,22 @@
 > `firmware/domes/partitions.csv`, OTA firmware/CLI source, and
 > [`../../docs/TESTING.md`](../../docs/TESTING.md).
 
-## AI Agent Instructions
+> **Current limits:** CLI image transfer is supported over CP2102N-backed UART and BLE, not raw
+> WiFi/TCP. The default build omits the WiFi client; enabled builds use stored-first credentials,
+> and automatic GitHub/WiFi updates are not a verified release flow. The active 8 MB layout has no
+> factory app partition, reserves an unmounted SPIFFS region, and includes a coredump partition.
+> `domes.bin` is an OTA app image, not a complete blank-device installation.
 
-Load this file when:
+## Historical Scope
+
+This design record originally covered:
+
 - Implementing OTA update functionality
 - Configuring partition table for OTA
 - Implementing rollback protection
 - Testing firmware updates
 
-Prerequisites: `02-build-system.md`, `04-communication.md`
+Original prerequisites: `02-build-system.md`, `04-communication.md`
 
 ---
 
@@ -65,6 +72,7 @@ coredump,  data, coredump, 0xE20000, 0x10000,
 ```
 
 **Key Points:**
+
 - OTA partitions must be same size (4MB each)
 - Binary must be < 4MB to fit
 - `otadata` tracks which partition to boot
@@ -510,7 +518,15 @@ domes-cli --all ota flash firmware/domes/build/domes.bin --version v1.0.0
 
 ```bash
 # Explicit multi-port OTA (no registry needed)
-domes-cli --port /dev/ttyACM0 --port /dev/ttyACM1 ota flash firmware/domes/build/domes.bin
+mapfile -t POD_PORTS < <(
+  find -L /dev/serial/by-id -maxdepth 1 -type c \
+    -name 'usb-Silicon_Labs_CP2102N*' | sort
+)
+test "${#POD_PORTS[@]}" -ge 2
+
+# Confirm the physical mapping before starting an update.
+domes-cli --port "${POD_PORTS[0]}" --port "${POD_PORTS[1]}" \
+  ota flash firmware/domes/build/domes.bin
 ```
 
 ### Verification After Multi-Device OTA

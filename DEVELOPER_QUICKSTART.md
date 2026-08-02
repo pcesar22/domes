@@ -17,9 +17,10 @@ references only when the task needs that context.
 ## Prerequisites
 
 - Native Linux for BLE and validation-critical multi-device work
-- ESP-IDF v5.x with the ESP32-S3 tools installed
+- ESP-IDF v5.4.4 with the ESP32-S3 tools installed; this must match CI for reproducible builds
 - CMake and a C++20 host compiler
-- Rust stable and Cargo
+- Rust 1.92.0 and Cargo, matching CLI CI
+- Flutter 3.44.8 with Dart `protoc_plugin` 25.0.0 for app and binding checks
 - Python 3; install `pyserial` for serial helper scripts
 - Protobuf compiler, pkg-config, libudev, and D-Bus development headers for the CLI
 
@@ -42,24 +43,31 @@ git submodule update --init --recursive
 
 ## Build Firmware
 
+Confirm the active environment before building:
+
 ```bash
-cd firmware/domes
 . ~/esp/esp-idf/export.sh
-idf.py build
+idf.py --version  # ESP-IDF v5.4.4
+```
+
+```bash
+VERIFY_ROOT="$(mktemp -d)"
+(cd firmware/domes && . ~/esp/esp-idf/export.sh && \
+  idf.py -B "$VERIFY_ROOT/build" -D "IDF_TARGET=esp32s3" \
+    -D "SDKCONFIG=$VERIFY_ROOT/sdkconfig" build)
 ```
 
 The checked-in partition table currently targets the 8 MB development layout. A successful build
 must fit the smallest `0x1E0000` OTA app partition in `firmware/domes/partitions.csv`.
+An ignored project-local `firmware/domes/sdkconfig` can override changed defaults; use the isolated
+command above or `scripts/verify.sh` for final evidence.
 
 ## Run Host Tests
 
 ```bash
-cd firmware/test_app
-mkdir -p build
-cd build
-cmake ..
-cmake --build .
-ctest --output-on-failure
+cmake -S firmware/test_app -B firmware/test_app/build
+cmake --build firmware/test_app/build
+ctest --test-dir firmware/test_app/build --output-on-failure
 ```
 
 Use `ctest -N` for the current discovered count. See [`docs/TESTING.md`](docs/TESTING.md) for suite
@@ -68,12 +76,11 @@ scope and when host tests are insufficient.
 ## Build The CLI
 
 ```bash
-cd tools/domes-cli
-cargo fmt --check
-cargo clippy --all-targets --all-features
-cargo build
-cargo test
-cargo run -- --help
+(cd tools/domes-cli && cargo fmt --check)
+(cd tools/domes-cli && cargo clippy --locked --all-targets --all-features -- -D warnings)
+(cd tools/domes-cli && cargo build --locked)
+(cd tools/domes-cli && cargo test --locked --all-targets --all-features)
+(cd tools/domes-cli && cargo run -- --help)
 ```
 
 The CLI is the supported host interface for serial, TCP, BLE, OTA, tracing, diagnostics, and
@@ -85,22 +92,32 @@ List attached serial devices:
 
 ```bash
 tools/domes-cli/target/debug/domes-cli --list-ports
+find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' -print | sort
+PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
 ```
 
-Build, flash, and check boot output:
+The NFF DevKit CP2102N interface (`/dev/ttyUSB*`) is used for flashing, framed UART commands, and
+serial OTA. Native ESP32-S3 USB Serial/JTAG (`/dev/ttyACM*`) is a separate console/JTAG connection.
+Use `/dev/serial/by-id/` for persistent targets because kernel numbers can change.
+
+Build, flash, and verify the framed runtime UART:
 
 ```bash
-. ~/esp/esp-idf/export.sh
 tools/firmware/flash_and_verify.sh \
-  firmware/domes /dev/ttyACM0 "DOMES"
+  firmware/domes "$PORT"
 ```
+
+The helper verifies `domes-cli system info` after flashing. Attach native USB separately and use
+`tools/firmware/monitor_serial.py` when console boot logs are required.
 
 Exercise the runtime protocol:
 
 ```bash
-tools/domes-cli/target/debug/domes-cli --port /dev/ttyACM0 system self-test
-tools/domes-cli/target/debug/domes-cli --port /dev/ttyACM0 system info
-tools/domes-cli/target/debug/domes-cli --port /dev/ttyACM0 feature list
+tools/domes-cli/target/debug/domes-cli --port "$PORT" system self-test
+tools/domes-cli/target/debug/domes-cli --port "$PORT" system info
+tools/domes-cli/target/debug/domes-cli --port "$PORT" feature list
 ```
 
 No device result may be inferred from a successful host build. Record unavailable hardware and the
@@ -115,7 +132,7 @@ specific behavior that remains unverified.
 | Firmware entry/composition | `firmware/domes/main/main.cpp` | Initialization and dependency wiring |
 | Drivers/interfaces | `firmware/domes/main/{drivers,interfaces}/` | Hardware access and test seams |
 | Services/state | `firmware/domes/main/{services,config,game}/` | Pod behavior and state machines |
-| Transports | `firmware/domes/main/transport/` | USB, TCP, BLE, and ESP-NOW transport paths |
+| Transports | `firmware/domes/main/transport/` | UART, TCP, BLE, and ESP-NOW transport paths |
 | CLI | `tools/domes-cli/src/` | Host transports, commands, and multi-device fan-out |
 | Host simulation | `firmware/test_app/sim/` | Deterministic pod and drill simulation |
 
@@ -133,28 +150,43 @@ The serial/TCP/BLE frame is:
 
 `length` covers the type byte plus payload, and CRC32 covers the same bytes. The existing OTA data
 transfer codec under `firmware/common/protocol/otaProtocol.hpp` predates the protobuf rule and is a
-documented exception. Keep the firmware and Rust implementations compatible until it is migrated.
+documented exception. Keep the C++ firmware, Rust CLI, and Dart app implementations compatible
+until it is migrated.
+
+Most config command responses place `[Status:u8]` before the response protobuf. List and diagnostic
+responses that do not return a command status contain only the protobuf. Check the paired handler and
+decoder before changing either envelope.
 
 ## Hardware Configuration
 
-The active board and compiled pin mapping live in `firmware/domes/main/config.hpp`. The current
-default is `BOARD_NFF_DEVBOARD`. [`docs/PIN_REFERENCE.md`](docs/PIN_REFERENCE.md) explains the active
+The sole supported NFF board profile and compiled pin mapping live directly in
+`firmware/domes/main/config.hpp`. [`docs/PIN_REFERENCE.md`](docs/PIN_REFERENCE.md) explains that
 mapping and planned production values; the schematic remains authoritative for physical nets.
+There is no board selector or production profile. The checked-in partition table is the 8 MB NFF
+development layout.
 
 Do not copy pin tables into new documents.
 
 ## Multi-Pod Workflow
 
+The sorted port order is not a firmware pod ID. Query `system info` and choose registry names or pod
+IDs deliberately when boards already contain identity.
+
 ```bash
-domes-cli devices add pod1 serial /dev/ttyACM0
-domes-cli devices add pod2 serial /dev/ttyACM1
-domes-cli devices list
-domes-cli --target pod1 --target pod2 feature list
-domes-cli --all feature enable esp-now
-domes-cli --all espnow status
+PORT1="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+PORT2="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '2p')"
+CLI=tools/domes-cli/target/debug/domes-cli
+$CLI devices add pod1 serial "$PORT1"
+$CLI devices add pod2 serial "$PORT2"
+$CLI devices list
+$CLI --target pod1 --target pod2 feature list
+$CLI --all feature enable esp-now
+$CLI --all espnow status
 ```
 
-Multi-device ESP-NOW validation needs at least two pods. Stable Linux symlinks and BLE platform
+Multi-device ESP-NOW validation needs at least two pods. Serial-number device links and BLE platform
 requirements are documented in [`.codex/PLATFORM.md`](.codex/PLATFORM.md).
 
 ## Before Submitting A Change

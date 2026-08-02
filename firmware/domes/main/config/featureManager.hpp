@@ -8,11 +8,14 @@
  * Uses an atomic bitmask for thread-safe access from multiple tasks.
  */
 
-#include "configProtocol.hpp"
 #include "config.pb.h"
+
+#include "configProtocol.hpp"
+#include "utils/mutex.hpp"
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 
 namespace domes::config {
 
@@ -32,10 +35,22 @@ namespace domes::config {
  */
 class FeatureManager {
 public:
+    using FeatureChangeCallback = std::function<void(Feature feature, bool enabled)>;
+    using BeforeRuntimeApplyCallback = std::function<void()>;
+
+    static constexpr uint32_t kAllFeaturesMask =
+        ((1U << static_cast<uint8_t>(Feature::kCount)) - 1U) & ~1U;
+
     /**
      * @brief Construct feature manager with all features enabled
      */
-    FeatureManager();
+    explicit FeatureManager(uint32_t supportedMask = kAllFeaturesMask);
+
+    /** Return whether this firmware build implements a feature. */
+    bool isSupported(Feature feature) const;
+
+    /** Register the runtime hook used to apply feature state changes. */
+    void onChange(FeatureChangeCallback callback);
 
     /**
      * @brief Check if a feature is enabled
@@ -57,6 +72,15 @@ public:
      * @return true if set successfully, false if invalid feature
      */
     bool setEnabled(Feature feature, bool enabled);
+
+    /**
+     * Commit a feature state, run a caller barrier, then apply the runtime hook.
+     *
+     * The barrier runs while feature mutations remain serialized. This is used
+     * when a response must be sent before a runtime side effect removes the
+     * transport carrying that response.
+     */
+    bool setEnabled(Feature feature, bool enabled, BeforeRuntimeApplyCallback beforeRuntimeApply);
 
     /**
      * @brief Get all feature states
@@ -104,6 +128,9 @@ private:
 
     /// Bitmask of enabled features (bit N = Feature(N))
     std::atomic<uint32_t> enabledMask_;
+    const uint32_t supportedMask_;
+    FeatureChangeCallback changeCallback_;
+    utils::Mutex mutationMutex_;
 };
 
 }  // namespace domes::config

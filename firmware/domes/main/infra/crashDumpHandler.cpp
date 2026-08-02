@@ -35,11 +35,11 @@ esp_err_t ShutdownDumpHandler::init() {
         return err;
     }
 
-    // Log if we have a crash dump from a previous run
+    // Log the clean-restart snapshot from the previous run, if present.
     if (hasDump()) {
         CrashDumpData dump;
         if (loadDump(dump) == ESP_OK) {
-            ESP_LOGW(kTag, "*** Previous crash dump found ***");
+            ESP_LOGW(kTag, "*** Previous restart snapshot found ***");
             ESP_LOGW(kTag, "  Reason: %s", dump.reason);
             ESP_LOGW(kTag, "  Task: %s", dump.taskName);
             ESP_LOGW(kTag, "  Uptime: %lu s", static_cast<unsigned long>(dump.uptimeS));
@@ -53,7 +53,7 @@ esp_err_t ShutdownDumpHandler::init() {
     }
 
     initialized_ = true;
-    ESP_LOGI(kTag, "Crash dump handler initialized");
+    ESP_LOGI(kTag, "Restart snapshot handler initialized");
     return ESP_OK;
 }
 
@@ -127,7 +127,7 @@ esp_err_t ShutdownDumpHandler::clearDump() {
     err = nvs_commit(handle);
     nvs_close(handle);
 
-    ESP_LOGI(kTag, "Crash dump cleared");
+    ESP_LOGI(kTag, "Restart snapshot cleared");
     return err;
 }
 
@@ -186,8 +186,7 @@ void ShutdownDumpHandler::shutdownHandler() {
         backtrace[depth++] = frame.pc;
     }
 
-    nvs_set_blob(handle, crash_key::kBacktrace, backtrace,
-                 depth * sizeof(uint32_t));
+    nvs_set_blob(handle, crash_key::kBacktrace, backtrace, depth * sizeof(uint32_t));
 
     nvs_set_u32(handle, crash_key::kBootCount, 0);  // Will be updated on next boot
 

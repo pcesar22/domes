@@ -1,13 +1,13 @@
 #pragma once
 
-#include "sim/simProtocol.hpp"
-#include "sim/simLog.hpp"
 #include "esp_timer.h"
+#include "sim/simLog.hpp"
+#include "sim/simProtocol.hpp"
 
 #include <functional>
 #include <map>
-#include <vector>
 #include <sstream>
+#include <vector>
 
 namespace sim {
 
@@ -36,10 +36,11 @@ public:
 
         // Log the send
         std::ostringstream oss;
-        oss << "espnow.send " << messageTypeName(hdr.type)
-            << " pod" << hdr.srcPodId << "->";
-        if (hdr.dstPodId == kBroadcastPodId) oss << "ALL";
-        else oss << "pod" << hdr.dstPodId;
+        oss << "espnow.send " << messageTypeName(hdr.type) << " pod" << hdr.srcPodId << "->";
+        if (hdr.dstPodId == kBroadcastPodId)
+            oss << "ALL";
+        else
+            oss << "pod" << hdr.dstPodId;
         log_.log(hdr.srcPodId, "espnow", oss.str());
 
         pending_.push_back(std::move(msg));
@@ -56,8 +57,8 @@ public:
                 // Broadcast: deliver to all except sender
                 for (auto& [podId, handler] : handlers_) {
                     if (podId != header.srcPodId) {
-                        flowEvents_.push_back({header.timestampUs, header.srcPodId,
-                                               podId, header.type, header.sequence});
+                        flowEvents_.push_back({header.timestampUs, header.srcPodId, podId,
+                                               header.type, header.sequence});
                         handler(msg);
                     }
                 }
@@ -65,8 +66,8 @@ public:
                 // Unicast: deliver to specific pod
                 auto it = handlers_.find(header.dstPodId);
                 if (it != handlers_.end()) {
-                    flowEvents_.push_back({header.timestampUs, header.srcPodId,
-                                           header.dstPodId, header.type, header.sequence});
+                    flowEvents_.push_back({header.timestampUs, header.srcPodId, header.dstPodId,
+                                           header.type, header.sequence});
                     it->second(msg);
                 }
             }

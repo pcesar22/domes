@@ -49,8 +49,10 @@ public:
 
     esp_err_t getBlob(const char* key, void* out, size_t& len) const override {
         auto it = store_.find(key);
-        if (it == store_.end()) return ESP_ERR_NVS_NOT_FOUND;
-        if (len < it->second.size()) return ESP_ERR_NVS_INVALID_LENGTH;
+        if (it == store_.end())
+            return ESP_ERR_NVS_NOT_FOUND;
+        if (len < it->second.size())
+            return ESP_ERR_NVS_INVALID_LENGTH;
         len = it->second.size();
         std::memcpy(out, it->second.data(), len);
         return ESP_OK;
@@ -71,7 +73,8 @@ public:
 
     esp_err_t eraseKey(const char* key) override {
         auto it = store_.find(key);
-        if (it == store_.end()) return ESP_ERR_NVS_NOT_FOUND;
+        if (it == store_.end())
+            return ESP_ERR_NVS_NOT_FOUND;
         store_.erase(it);
         return ESP_OK;
     }
@@ -79,8 +82,10 @@ public:
 private:
     esp_err_t getVal(const char* key, void* out, size_t size) const {
         auto it = store_.find(key);
-        if (it == store_.end()) return ESP_ERR_NVS_NOT_FOUND;
-        if (it->second.size() != size) return ESP_ERR_NVS_INVALID_LENGTH;
+        if (it == store_.end())
+            return ESP_ERR_NVS_NOT_FOUND;
+        if (it->second.size() != size)
+            return ESP_ERR_NVS_INVALID_LENGTH;
         std::memcpy(out, it->second.data(), size);
         return ESP_OK;
     }

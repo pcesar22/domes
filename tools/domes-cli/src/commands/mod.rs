@@ -13,7 +13,7 @@ pub mod trace;
 pub mod wifi;
 
 pub use espnow::{espnow_bench, espnow_sim_mode, espnow_status};
-pub use feature::{feature_disable, feature_enable, feature_list};
+pub use feature::{feature_disable, feature_enable, feature_list, feature_status};
 pub use health::system_health;
 pub use imu::imu_triage_set;
 pub use led::{led_get, led_off, led_set};

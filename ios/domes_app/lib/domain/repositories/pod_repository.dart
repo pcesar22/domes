@@ -5,6 +5,9 @@ import 'package:domes_app/data/proto/generated/config.pb.dart';
 import 'package:domes_app/data/protocol/config_protocol.dart';
 
 abstract class PodRepository {
+  /// Physical touch edges reported by the connected pod.
+  Stream<AppTouchEvent> get touchEvents;
+
   /// List all features and their states.
   Future<List<AppFeatureState>> listFeatures();
 

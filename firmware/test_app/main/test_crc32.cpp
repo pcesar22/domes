@@ -6,10 +6,11 @@
  * IEEE 802.3 / ZIP specification (polynomial 0xEDB88320, reflected).
  */
 
-#include <gtest/gtest.h>
 #include "utils/crc32.hpp"
 
 #include <cstring>
+
+#include <gtest/gtest.h>
 
 using namespace domes;
 

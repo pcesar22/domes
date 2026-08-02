@@ -9,13 +9,12 @@
  */
 
 #include "config/featureManager.hpp"
-#include "interfaces/iAudioDriver.hpp"
-#include "trace/traceApi.hpp"
-
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "interfaces/iAudioDriver.hpp"
+#include "trace/traceApi.hpp"
 
 #include <atomic>
 #include <cmath>
@@ -181,32 +180,24 @@ public:
     /**
      * @brief Request playback stop (thread-safe)
      */
-    void stopPlayback() {
-        stopRequested_ = true;
-    }
+    void stopPlayback() { stopRequested_ = true; }
 
     /**
      * @brief Set playback volume (thread-safe)
      * @param volume Volume 0-100
      */
-    void setVolume(uint8_t volume) {
-        driver_.setVolume(volume);
-    }
+    void setVolume(uint8_t volume) { driver_.setVolume(volume); }
 
     /**
      * @brief Get current volume
      * @return Volume 0-100
      */
-    uint8_t getVolume() const {
-        return driver_.getVolume();
-    }
+    uint8_t getVolume() const { return driver_.getVolume(); }
 
     /**
      * @brief Check if audio is currently playing
      */
-    bool isPlaying() const {
-        return state_.load() == State::kPlaying;
-    }
+    bool isPlaying() const { return state_.load() == State::kPlaying; }
 
 private:
     static constexpr const char* kTag = "audio_svc";
@@ -215,17 +206,9 @@ private:
     static constexpr uint32_t kSampleRate = 16000;
     static constexpr size_t kMaxToneSamples = 16000;  // 1 second max
 
-    enum class State : uint8_t {
-        kIdle,
-        kPlaying,
-        kError
-    };
+    enum class State : uint8_t { kIdle, kPlaying, kError };
 
-    enum class RequestType : uint8_t {
-        kNone,
-        kAsset,
-        kTone
-    };
+    enum class RequestType : uint8_t { kNone, kAsset, kTone };
 
     struct PlayRequest {
         RequestType type;
@@ -234,17 +217,14 @@ private:
         uint16_t toneDuration;
     };
 
-    static void taskEntry(void* arg) {
-        static_cast<AudioService*>(arg)->taskLoop();
-    }
+    static void taskEntry(void* arg) { static_cast<AudioService*>(arg)->taskLoop(); }
 
     void taskLoop() {
         ESP_LOGI(kTag, "Audio task starting");
 
         // Allocate tone buffer (heap, not stack)
         int16_t* toneBuffer = static_cast<int16_t*>(
-            heap_caps_malloc(kMaxToneSamples * sizeof(int16_t), MALLOC_CAP_INTERNAL)
-        );
+            heap_caps_malloc(kMaxToneSamples * sizeof(int16_t), MALLOC_CAP_INTERNAL));
         if (!toneBuffer) {
             ESP_LOGE(kTag, "Failed to allocate tone buffer");
             running_ = false;
@@ -337,8 +317,8 @@ private:
             sampleCount = kMaxToneSamples;
         }
 
-        ESP_LOGI(kTag, "Playing tone: %uHz for %ums (%zu samples)",
-                 frequencyHz, durationMs, sampleCount);
+        ESP_LOGI(kTag, "Playing tone: %uHz for %ums (%zu samples)", frequencyHz, durationMs,
+                 sampleCount);
 
         generateSineWave(buffer, sampleCount, frequencyHz);
 
@@ -390,9 +370,8 @@ private:
             // Fade out
             for (size_t i = 0; i < fadeSamples; ++i) {
                 float gain = static_cast<float>(fadeSamples - i) / fadeSamples;
-                buffer[sampleCount - 1 - i] = static_cast<int16_t>(
-                    buffer[sampleCount - 1 - i] * gain
-                );
+                buffer[sampleCount - 1 - i] =
+                    static_cast<int16_t>(buffer[sampleCount - 1 - i] * gain);
             }
         }
     }
@@ -407,7 +386,7 @@ private:
         // Hardcoded beep for initial bringup
         // 330Hz (E4) for 200ms - a low beep
         static const int16_t kBeepSamples[] = {
-            #include "audio/beep_data.inc"
+#include "audio/beep_data.inc"
         };
         static constexpr size_t kBeepSampleCount = sizeof(kBeepSamples) / sizeof(kBeepSamples[0]);
 

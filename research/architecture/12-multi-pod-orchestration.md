@@ -3,18 +3,23 @@
 > **Document status: Target design, partially implemented.** Current firmware supports ESP-NOW
 > discovery, MAC-based role assignment, and a fixed drill. Phone-selected masters, general drill
 > interpretation, and several packet types below remain proposed; use `espNowService.*` and
-> `espNowProtocol.hpp` for current behavior.
+> `espNowProtocol.hpp` for current behavior. The proposed shared-clock synchronization service is not
+> implemented.
 
-## AI Agent Instructions
+> The current TCP server routes config messages only. Raw image OTA is supported over serial and
+> BLE, and the CLI registry's `devices scan` discovers serial and BLE rather than WiFi/mDNS pods.
 
-Load this file when:
+## Historical Scope
+
+This design record originally covered:
+
 - Implementing ESP-NOW CommService discovery and peer management
 - Building the DrillInterpreter or PodCommandHandler
 - Designing phone app <-> pod communication
 - Working on pod discovery, pairing, or role assignment
 - Implementing drill execution, result collection, or reporting
 
-Prerequisites: `04-communication.md`, `05-game-engine.md`, `11-system-modes.md`
+Original prerequisites: `04-communication.md`, `05-game-engine.md`, `11-system-modes.md`
 Companions: `05-game-engine.md` (per-pod game logic), `11-system-modes.md` (per-pod lifecycle)
 
 ---
@@ -88,6 +93,7 @@ These terms are used consistently across docs 05, 11, and 12:
 ### Role Assignment
 
 When a phone connects to a pod via BLE:
+
 - That pod becomes the **master** for this session
 - It starts ESP-NOW and broadcasts discovery beacons
 - Other pods that respond become **slaves**
@@ -178,10 +184,12 @@ Phone App                    Pod 1 (becomes Master)         Pods 2,3,4
 ```
 
 **SystemMode transitions (doc 11):**
+
 - Master: IDLE -> CONNECTED (triggered by BLE connect, see doc 11, §Integration Point: BLE Connection)
 - Slaves: remain in IDLE until Phase 2
 
 **What's exchanged:**
+
 - Phone -> Master (BLE write): implicit -- BLE connection makes this pod the master
 - Master -> All (ESP-NOW broadcast): discovery beacon with master MAC, channel
 - Slaves -> Master (ESP-NOW unicast): identity response (MAC, battery %, RSSI, firmware version)
@@ -230,6 +238,7 @@ Phone App                    Master Pod                    Slave Pods
 ```
 
 **SystemMode transitions (doc 11):**
+
 - Master: CONNECTED -> GAME (on START_DRILL from phone)
 - Slaves: IDLE -> CONNECTED -> GAME (on JOIN_GAME from master; see doc 11, §Integration Point: ESP-NOW JOIN_GAME)
 
@@ -541,11 +550,15 @@ If the **master** enters ERROR, the drill is aborted. Slaves detect master loss 
 
 ---
 
-## Clock Synchronization
+## Proposed Clock Synchronization
 
-Clock sync is needed for **sequence drills** (doc 05, §Drill Types) where multiple pods must activate at precise relative times. For single-pod reaction drills, clock sync is not required because timing is measured locally (doc 05, §Local Reaction Timing).
+The target sequence-drill design needs a shared timing model when multiple pods activate at precise
+relative times. The current fixed drill and trace merge do not implement or establish that shared
+clock. Single-pod reaction timing remains local (doc 05, section Local Reaction Timing).
 
-The master periodically broadcasts `SYNC_CLOCK` messages containing its `esp_timer_get_time()`. Each slave's `TimingService` (doc 05, §Clock Synchronization) estimates its offset using a low-pass filter. Target accuracy: < 1ms between any two pods.
+The proposed master periodically broadcasts `SYNC_CLOCK` messages containing its
+`esp_timer_get_time()`. Each proposed slave `TimingService` estimates its offset using a low-pass
+filter. Target accuracy: < 1ms between any two pods.
 
 Clock sync is **NOT** used for reaction time measurement. Reaction time = `touch_at - armed_at`, both from the same local clock on the same pod (doc 05).
 
@@ -574,6 +587,7 @@ Both phases use the **same pod primitives** (doc 05), the **same GameEngine** (d
 Pods ship with a small **drill interpreter** that understands the fixed set of primitives from doc 05. Drills are encoded as programs (instruction sequences) that compose these primitives with flow control (loops, delays, conditionals on touch/timeout events, scoring instructions).
 
 A drill program is:
+
 - **Authored** on a server or in the app (drill designer tool)
 - **Downloaded** to the phone app (from a drill store or shared by a coach)
 - **Transferred** to the master pod via BLE before execution (compact, ~200-500 bytes)
@@ -589,7 +603,7 @@ A drill program is:
 5. **Extensible primitives** -- New pod capabilities (e.g., new sensor types) can be added as new primitive opcodes without breaking existing drill programs (forward compatibility via version field).
 6. **Scoring on phone** -- The interpreter records raw events (reaction times, hits, misses). Advanced scoring and analytics are computed on the phone app, not on the pod.
 
-### Detailed design of the drill encoding format, instruction set, and interpreter is deferred to a future document.
+### Detailed design of the drill encoding format, instruction set, and interpreter is deferred to a future document
 
 ---
 

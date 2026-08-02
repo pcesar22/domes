@@ -20,48 +20,39 @@ namespace domes::trace {
  * @brief Categories for trace events (sourced from trace.proto)
  */
 enum class Category : uint8_t {
-    kKernel    = domes_trace_Category_CATEGORY_KERNEL,
+    kKernel = domes_trace_Category_CATEGORY_KERNEL,
     kTransport = domes_trace_Category_CATEGORY_TRANSPORT,
-    kOta       = domes_trace_Category_CATEGORY_OTA,
-    kWifi      = domes_trace_Category_CATEGORY_WIFI,
-    kLed       = domes_trace_Category_CATEGORY_LED,
-    kAudio     = domes_trace_Category_CATEGORY_AUDIO,
-    kTouch     = domes_trace_Category_CATEGORY_TOUCH,
-    kGame      = domes_trace_Category_CATEGORY_GAME,
-    kUser      = domes_trace_Category_CATEGORY_USER,
-    kHaptic    = domes_trace_Category_CATEGORY_HAPTIC,
-    kBle       = domes_trace_Category_CATEGORY_BLE,
-    kNvs       = domes_trace_Category_CATEGORY_NVS,
-    kEspNow    = domes_trace_Category_CATEGORY_ESPNOW,
-    kSync      = domes_trace_Category_CATEGORY_SYNC,
+    kOta = domes_trace_Category_CATEGORY_OTA,
+    kWifi = domes_trace_Category_CATEGORY_WIFI,
+    kLed = domes_trace_Category_CATEGORY_LED,
+    kAudio = domes_trace_Category_CATEGORY_AUDIO,
+    kTouch = domes_trace_Category_CATEGORY_TOUCH,
+    kGame = domes_trace_Category_CATEGORY_GAME,
+    kUser = domes_trace_Category_CATEGORY_USER,
+    kHaptic = domes_trace_Category_CATEGORY_HAPTIC,
+    kBle = domes_trace_Category_CATEGORY_BLE,
+    kNvs = domes_trace_Category_CATEGORY_NVS,
+    kEspNow = domes_trace_Category_CATEGORY_ESPNOW,
+    kSync = domes_trace_Category_CATEGORY_SYNC,
 };
 
 /**
  * @brief Types of trace events (sourced from trace.proto)
  */
 enum class EventType : uint8_t {
-    // FreeRTOS kernel events (0x01-0x0F)
-    kUnknown       = domes_trace_EventType_EVENT_TYPE_UNKNOWN,
-    kTaskSwitchIn  = domes_trace_EventType_EVENT_TYPE_TASK_SWITCH_IN,
-    kTaskSwitchOut = domes_trace_EventType_EVENT_TYPE_TASK_SWITCH_OUT,
-    kTaskCreate    = domes_trace_EventType_EVENT_TYPE_TASK_CREATE,
-    kTaskDelete    = domes_trace_EventType_EVENT_TYPE_TASK_DELETE,
-    kIsrEnter      = domes_trace_EventType_EVENT_TYPE_ISR_ENTER,
-    kIsrExit       = domes_trace_EventType_EVENT_TYPE_ISR_EXIT,
-    kQueueSend     = domes_trace_EventType_EVENT_TYPE_QUEUE_SEND,
-    kQueueReceive  = domes_trace_EventType_EVENT_TYPE_QUEUE_RECEIVE,
-    kMutexLock     = domes_trace_EventType_EVENT_TYPE_MUTEX_LOCK,
-    kMutexUnlock   = domes_trace_EventType_EVENT_TYPE_MUTEX_UNLOCK,
+    kUnknown = domes_trace_EventType_EVENT_TYPE_UNKNOWN,
+    kMutexLock = domes_trace_EventType_EVENT_TYPE_MUTEX_LOCK,
+    kMutexUnlock = domes_trace_EventType_EVENT_TYPE_MUTEX_UNLOCK,
     kMutexContention = domes_trace_EventType_EVENT_TYPE_MUTEX_CONTENTION,
-    kSemTake       = domes_trace_EventType_EVENT_TYPE_SEM_TAKE,
-    kSemGive       = domes_trace_EventType_EVENT_TYPE_SEM_GIVE,
+    kSemTake = domes_trace_EventType_EVENT_TYPE_SEM_TAKE,
+    kSemGive = domes_trace_EventType_EVENT_TYPE_SEM_GIVE,
 
     // Application events (0x20-0x2F)
     kSpanBegin = domes_trace_EventType_EVENT_TYPE_SPAN_BEGIN,
-    kSpanEnd   = domes_trace_EventType_EVENT_TYPE_SPAN_END,
-    kInstant   = domes_trace_EventType_EVENT_TYPE_INSTANT,
-    kCounter   = domes_trace_EventType_EVENT_TYPE_COUNTER,
-    kComplete  = domes_trace_EventType_EVENT_TYPE_COMPLETE,
+    kSpanEnd = domes_trace_EventType_EVENT_TYPE_SPAN_END,
+    kInstant = domes_trace_EventType_EVENT_TYPE_INSTANT,
+    kCounter = domes_trace_EventType_EVENT_TYPE_COUNTER,
+    kComplete = domes_trace_EventType_EVENT_TYPE_COMPLETE,
 };
 
 /**
@@ -85,9 +76,7 @@ struct TraceEvent {
     Category category() const { return static_cast<Category>((flags >> 4) & 0x0F); }
 
     /// Set category in flags
-    void setCategory(Category cat) {
-        flags = (flags & 0x0F) | (static_cast<uint8_t>(cat) << 4);
-    }
+    void setCategory(Category cat) { flags = (flags & 0x0F) | (static_cast<uint8_t>(cat) << 4); }
 
     /// Get event type as enum
     EventType type() const { return static_cast<EventType>(eventType); }

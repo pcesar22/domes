@@ -71,8 +71,8 @@ public:
      * @return ESP_ERR_INVALID_STATE if not started
      * @return ESP_ERR_TIMEOUT if DMA buffers full
      */
-    virtual esp_err_t write(const int16_t* samples, size_t count,
-                            size_t* written, uint32_t timeoutMs = 1000) = 0;
+    virtual esp_err_t write(const int16_t* samples, size_t count, size_t* written,
+                            uint32_t timeoutMs = 1000) = 0;
 
     /**
      * @brief Set output volume (software scaling)

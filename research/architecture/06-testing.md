@@ -4,15 +4,16 @@
 > Host firmware tests use GoogleTest and CTest under `firmware/test_app/`; use
 > [`../../docs/TESTING.md`](../../docs/TESTING.md) for current verification requirements.
 
-## AI Agent Instructions
+## Historical Scope
 
-Load this file when:
+This design record originally covered:
+
 - Setting up unit testing framework
 - Writing mock implementations
 - Creating test cases
 - Setting up CI pipeline
 
-Prerequisites: `03-driver-development.md`
+Original prerequisite: `03-driver-development.md`
 
 ---
 
@@ -586,17 +587,28 @@ void runAll() {
 
 ## Multi-Device Testing
 
-When testing multi-pod features (ESP-NOW, coordinated drills, orchestration), two ESP32 pods must be connected via USB simultaneously. They appear as `/dev/ttyACM0` and `/dev/ttyACM1`.
+When testing multi-pod features (ESP-NOW, coordinated drills, orchestration), connect each pod's
+CP2102N USB port. Those command/flash ports appear as `/dev/ttyUSB*`; prefer their stable
+`/dev/serial/by-id/usb-Silicon_Labs_CP2102N*` paths. Native `/dev/ttyACM*` ports are optional
+console/JTAG channels and are not runtime CLI transports.
 
 ### Device Discovery and Registry
 
 ```bash
+# Discover command/flash ports. Array order is temporary, not pod identity.
+mapfile -t POD_PORTS < <(
+  find -L /dev/serial/by-id -maxdepth 1 -type c \
+    -name 'usb-Silicon_Labs_CP2102N*' | sort
+)
+test "${#POD_PORTS[@]}" -ge 2
+
 # Scan for all connected pods (serial + BLE)
 domes-cli devices scan
 
-# Register pods by name for easier targeting
-domes-cli devices add pod1 serial /dev/ttyACM0
-domes-cli devices add pod2 serial /dev/ttyACM1
+# Identify each physical pod, then register its stable path by name.
+domes-cli --port "${POD_PORTS[0]}" led solid --color ff0000
+domes-cli devices add pod1 serial "${POD_PORTS[0]}"
+domes-cli devices add pod2 serial "${POD_PORTS[1]}"
 ```
 
 ### Multi-Device CLI Commands
@@ -609,7 +621,7 @@ domes-cli --all feature list
 domes-cli --target pod1 --target pod2 feature list
 
 # Direct multi-port (no registry needed)
-domes-cli --port /dev/ttyACM0 --port /dev/ttyACM1 system info
+domes-cli --port "${POD_PORTS[0]}" --port "${POD_PORTS[1]}" system info
 ```
 
 ### ESP-NOW Testing
@@ -618,7 +630,15 @@ ESP-NOW peer-to-peer communication requires two physical pods. Enable ESP-NOW on
 
 ```bash
 domes-cli --all feature enable esp-now
-python3 tools/firmware/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+
+# Optional: attach each board's native USB connector for separate console logs.
+mapfile -t CONSOLE_PORTS < <(
+  find -L /dev/serial/by-id -maxdepth 1 -type c \
+    -name 'usb-Espressif_USB_JTAG_serial_debug_unit*' | sort
+)
+test "${#CONSOLE_PORTS[@]}" -ge 2
+python3 tools/firmware/monitor_serial.py \
+  "${CONSOLE_PORTS[0]},${CONSOLE_PORTS[1]}" 30
 ```
 
 ---

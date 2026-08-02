@@ -11,17 +11,24 @@ The application has substantial domain, protocol, provider, and UI implementatio
 behavior is not established by widget tests. Generated platform runners also do not imply that every
 target has completed Bluetooth permission, packaging, or hardware validation.
 
+Physical drill input is implemented as the unsolicited `0x50` `TouchEventNotification`. The BLE
+transport separates that bare-protobuf notification from command responses, the repository maps it
+to its connected pod, and the drill accepts it only while that pod is the active target. Touch
+simulation is restricted to explicit `sim-pod-*` targets. This path still requires an on-device app
+drill before it is hardware verified.
+
 See [`../../firmware/MILESTONES.md`](../../firmware/MILESTONES.md) for current delivery status and
 [`../../docs/TESTING.md`](../../docs/TESTING.md) for verification requirements.
 
 ## Setup
 
-Install Flutter with a Dart SDK compatible with [`pubspec.yaml`](pubspec.yaml), then run:
+Install Flutter 3.44.8, matching CI and `scripts/verify.sh`, then activate the protobuf generator
+with `dart pub global activate protoc_plugin 25.0.0`. Run:
 
 ```bash
 cd ios/domes_app
 flutter doctor
-flutter pub get
+flutter pub get --enforce-lockfile
 ```
 
 List available targets and start the app on a selected device:
@@ -38,12 +45,13 @@ validation-critical desktop BLE work; see [`../../.codex/PLATFORM.md`](../../.co
 ## Checks
 
 ```bash
-flutter analyze
+flutter analyze --fatal-infos --fatal-warnings
 flutter test
 ```
 
-These checks cover models, providers, framing compatibility, and widgets. They do not replace a real
-BLE scan, connect, command, disconnect, and OTA exercise.
+These checks cover models, providers, command/notification demultiplexing, touch-event routing,
+drill lifecycle and race handling, framing compatibility, OTA contracts, and widgets. They do not
+replace a real BLE scan, connect, physical-touch drill, command, disconnect, and OTA exercise.
 
 ## Architecture
 
@@ -53,13 +61,16 @@ lib/
   data/proto/generated/    Generated Dart protobuf bindings
   data/protocol/           Frame payload and command helpers
   data/transport/          BLE and transport abstractions
-  domain/models/           Pods, drills, events, and results
+  domain/models/           Pods, drill configuration, and results
   domain/repositories/     Pod operations and transport-backed implementation
   presentation/            Screens, widgets, and theme
 ```
 
 Tests mirror these boundaries under [`test/`](test/). Keep Bluetooth APIs in the transport layer and
 keep screens dependent on providers rather than direct GATT operations.
+
+The device-originated touch notification is a bare protobuf, not a status-wrapped response. Its
+message ID and payload come from `config.proto`; do not consume it through a command-response waiter.
 
 ## Protocol Generation
 
@@ -74,8 +85,16 @@ export PATH="$PATH:$HOME/.pub-cache/bin"
 ../../tools/generate_protocols.sh dart
 ```
 
-Review the generated diff, then run `flutter analyze` and `flutter test`. A protocol change also
-requires the firmware and CLI checks documented in the repository verification matrix.
+Review the generated diff, then run `flutter analyze --fatal-infos --fatal-warnings` and
+`flutter test`. A protocol change also requires the firmware and CLI checks documented in the
+repository verification matrix.
+
+OTA chunk transfer is a bounded fixed-binary exception implemented in
+`lib/data/protocol/ota_protocol.dart` and mirrored by the firmware C++ and Rust CLI implementations.
+Changes to that wire format require compatibility updates and tests in all three consumers.
+The OTA screen deliberately has no example version default: the operator must enter the parser-valid,
+at-most-31-byte version embedded in the selected image, and firmware rejects a byte mismatch before
+selecting the image for boot.
 
 ## Platform Notes
 

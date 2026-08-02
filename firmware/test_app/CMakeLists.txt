@@ -1,11 +1,9 @@
 # DOMES Unit Test Application
 #
-# Build and run:
-#   cd firmware/test_app
-#   mkdir -p build && cd build
-#   cmake ..
-#   make
-#   ./test_app
+# Build and run from the repository root:
+#   cmake -S firmware/test_app -B firmware/test_app/build
+#   cmake --build firmware/test_app/build
+#   ctest --test-dir firmware/test_app/build --output-on-failure
 
 cmake_minimum_required(VERSION 3.16)
 project(domes_test_app CXX C)
@@ -18,7 +16,7 @@ include(FetchContent)
 FetchContent_Declare(
     googletest
     GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG v1.14.0
+    GIT_TAG f8d7d77c06936315286eb55f8de22cd23c188571
 )
 # Prevent GoogleTest from overriding compiler/linker options
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -33,6 +31,11 @@ set(CONFIG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/config/modeManager.cpp
 )
 
+set(OTA_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/services/firmwareVersion.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/services/releaseMetadata.cpp
+)
+
 # Game module sources (from main firmware)
 set(GAME_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/game/gameEngine.cpp
@@ -41,6 +44,8 @@ set(GAME_SOURCES
 # Trace module sources (HOST version, NOT firmware traceBuffer.cpp)
 set(TRACE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/sim/hostTraceBuffer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/trace/traceDumpSnapshot.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/trace/traceCommandHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/trace/traceRecorder.cpp
 )
 
@@ -50,15 +55,22 @@ add_executable(test_app
     main/test_crc32.cpp
     main/test_frame_codec.cpp
     main/test_ota_protocol.cpp
+    main/test_ota_session_coordinator.cpp
+    main/test_ota_state_machine.cpp
+    main/test_esp_now_protocol.cpp
     main/test_version_parser.cpp
+    main/test_release_metadata.cpp
     main/test_config_protocol.cpp
     main/test_feature_manager.cpp
     main/test_mode_manager.cpp
     main/test_game_engine.cpp
+    main/test_trace_buffer.cpp
+    main/test_trace_command_handler.cpp
     main/test_trace_stream_writer.cpp
     main/test_multi_pod_sim.cpp
     main/test_sim_drill.cpp
     ${CONFIG_SOURCES}
+    ${OTA_SOURCES}
     ${GAME_SOURCES}
     ${TRACE_SOURCES}
 )

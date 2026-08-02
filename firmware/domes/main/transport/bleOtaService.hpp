@@ -44,8 +44,8 @@ extern const uint8_t kOtaStatusCharUuid[16];
  */
 class BleOtaService : public ITransport {
 public:
-    /// Maximum BLE MTU (negotiated, typically 512 for BLE 5.0)
-    static constexpr size_t kMaxMtu = 512;
+    /// Maximum ATT MTU supported by the configured NimBLE host.
+    static constexpr size_t kMaxMtu = 517;
 
     /// Receive buffer size (must hold at least one full frame)
     static constexpr size_t kRxBufferSize = 2048;
@@ -100,10 +100,13 @@ public:
      */
     void stopAdvertising();
 
+    /** Apply the runtime BLE-advertising feature state. */
+    void setAdvertisingEnabled(bool enabled);
+
     /**
      * @brief Get current negotiated MTU
      */
-    uint16_t getMtu() const { return currentMtu_; }
+    uint16_t getMtu() const { return currentMtu_.load(); }
 
     /**
      * @brief Set device name for advertising
@@ -123,9 +126,17 @@ public:
     /// Called when MTU is negotiated
     void onMtuChanged(uint16_t mtu);
 
+    /// Called when NimBLE reports notification transmission completion.
+    void onNotificationComplete(uint16_t connHandle, uint16_t attrHandle, int status);
+
 private:
+    static constexpr uint16_t kInvalidConnHandle = 0xFFFF;
+
     /// Initialize GATT services
     void initGattServices();
+
+    /// Send while holding the TX mutex.
+    TransportError sendLocked(const uint8_t* data, size_t len);
 
     /// NimBLE task sync
     void* syncSemaphore_ = nullptr;
@@ -136,12 +147,18 @@ private:
     size_t rxTail_ = 0;
     void* rxMutex_ = nullptr;
     void* rxSemaphore_ = nullptr;
+    void* txMutex_ = nullptr;
+    void* txSemaphore_ = nullptr;
 
     /// Connection state
     std::atomic<bool> initialized_{false};
     std::atomic<bool> connected_{false};
-    uint16_t connHandle_ = 0;
-    uint16_t currentMtu_ = 23;  // Default BLE MTU
+    std::atomic<uint16_t> connHandle_{kInvalidConnHandle};
+    std::atomic<uint16_t> currentMtu_{23};  // Default BLE MTU
+    std::atomic<bool> advertisingEnabled_{true};
+    std::atomic<int> lastTxStatus_{0};
+    std::atomic<bool> txPoisoned_{false};
+    std::atomic<uint32_t> connectionEpoch_{0};
 
     /// Characteristic value handles (for notifications)
     uint16_t statusCharHandle_ = 0;

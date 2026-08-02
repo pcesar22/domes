@@ -10,9 +10,9 @@ namespace domes {
  * @brief Touch pad state for a single pad
  */
 struct TouchPadState {
-    bool touched = false;      ///< True if pad is currently being touched
-    uint32_t rawValue = 0;     ///< Raw capacitance reading
-    uint32_t threshold = 0;    ///< Touch detection threshold
+    bool touched = false;    ///< True if pad is currently being touched
+    uint32_t rawValue = 0;   ///< Raw capacitance reading
+    uint32_t threshold = 0;  ///< Touch detection threshold
 };
 
 /**

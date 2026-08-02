@@ -5,7 +5,7 @@
  * @brief Ring buffer for storing trace events
  *
  * Provides a thread-safe, ISR-safe ring buffer for trace event storage.
- * Uses FreeRTOS ring buffer primitives with static allocation.
+ * Uses a FreeRTOS ring buffer with bounded capacity allocated during initialization.
  */
 
 #include "esp_err.h"
@@ -13,8 +13,10 @@
 #include "freertos/ringbuf.h"
 #include "traceEvent.hpp"
 
+#include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 
 namespace domes::trace {
 
@@ -25,12 +27,12 @@ namespace domes::trace {
  * new events are silently dropped (no blocking). The buffer can
  * be paused during dump operations to ensure consistency.
  *
- * @note This class uses static allocation. Only one instance should
- *       be created, typically as a static member of TraceRecorder.
+ * @note Backing storage is allocated once during init(). Only one instance should be created,
+ *       typically under TraceRecorder ownership.
  */
 class TraceBuffer {
 public:
-    /// Default buffer size: 32KB = 2048 events at 16 bytes each
+    /// Default requested capacity: 32 KiB (FreeRTOS item overhead reduces the usable event count)
     static constexpr size_t kDefaultBufferSize = 32 * 1024;
 
     /// Size of each trace event
@@ -42,7 +44,7 @@ public:
     /**
      * @brief Construct trace buffer
      *
-     * @param bufferSize Size of the ring buffer in bytes (default 32KB)
+     * @param bufferSize Requested ring buffer capacity in bytes (default 32 KiB)
      */
     explicit TraceBuffer(size_t bufferSize = kDefaultBufferSize);
 
@@ -95,9 +97,44 @@ public:
     bool read(TraceEvent* event, uint32_t timeoutMs = 0);
 
     /**
-     * @brief Get approximate number of events in buffer
+     * @brief Acquire the next event without removing it from buffer storage
      *
-     * @return Estimated event count (may be slightly inaccurate)
+     * Acquired events must be released in acquisition order. This lets trace
+     * dumps keep their source events intact until every response frame has
+     * been delivered successfully.
+     *
+     * @param timeoutMs Maximum time to wait (0 for non-blocking)
+     * @return Pointer to an event owned by the buffer, or nullptr
+     */
+    const TraceEvent* acquire(uint32_t timeoutMs = 0);
+
+    /**
+     * @brief Release a previously acquired event and remove it from the buffer
+     *
+     * @param event Pointer returned by acquire()
+     */
+    void release(const TraceEvent* event);
+
+    /** Claim the single retained dump snapshot for a transport handler. */
+    bool tryClaimDumpSnapshot(const void* owner);
+
+    /** Acquire all currently queued events into the claimed dump snapshot. */
+    size_t captureDumpSnapshot(const void* owner);
+
+    /** Return the number of retained events for the owning handler. */
+    size_t dumpSnapshotCount(const void* owner) const;
+
+    /** Return one retained event for the owning handler. */
+    const TraceEvent* dumpSnapshotEvent(const void* owner, size_t index) const;
+
+    /** Release a successfully delivered snapshot and its ownership claim. */
+    bool completeDumpSnapshot(const void* owner);
+
+    /** Clear a retained snapshot and all subsequently recorded events. */
+    bool clearDumpSnapshot(const void* owner);
+
+    /**
+     * @brief Get the number of events currently in the buffer
      */
     size_t count() const;
 
@@ -116,12 +153,12 @@ public:
      *
      * While paused, new events are silently dropped.
      */
-    void pause() { paused_.store(true); }
+    void pause();
 
     /**
      * @brief Resume recording after pause
      */
-    void resume() { paused_.store(false); }
+    void resume() { paused_.store(false, std::memory_order_release); }
 
     /**
      * @brief Check if recording is paused
@@ -144,6 +181,13 @@ private:
     std::atomic<bool> initialized_;
     std::atomic<bool> paused_;
     std::atomic<uint32_t> droppedCount_;
+    std::atomic<size_t> eventCount_;
+    std::atomic<uint32_t> activeWriters_{0};
+    std::array<const TraceEvent*, kMaxEvents> dumpSnapshot_{};
+    size_t dumpSnapshotCount_ = 0;
+    std::atomic<uintptr_t> dumpOwner_{0};
+
+    void releaseDumpSnapshotEvents(const void* owner);
 };
 
 }  // namespace domes::trace

@@ -7,6 +7,7 @@
 
 #include "configCommandHandler.hpp"
 
+#include "config.hpp"
 #include "config.pb.h"
 
 #include "drivers/injectableTouchDriver.hpp"
@@ -17,6 +18,7 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "infra/appMetadata.hpp"
 #include "infra/crashDumpHandler.hpp"
 #include "infra/memoryProfiler.hpp"
 #include "infra/nvsConfig.hpp"
@@ -32,45 +34,95 @@
 #include "trace/traceApi.hpp"
 #include "transport/espNowTransport.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
-
-// Version string from CMake
-#ifndef DOMES_VERSION_STRING
-#define DOMES_VERSION_STRING "v0.0.0-unknown"
-#endif
+#include <memory>
+#include <new>
 
 namespace {
 constexpr const char* kTag = "config_cmd";
+#if defined(CONFIG_DOMES_WIFI_AUTO_CONNECT) && defined(CONFIG_DOMES_OTA_AUTO_CHECK)
+constexpr uint8_t kAutoUpdateDefault = 1;
+#elif defined(CONFIG_DOMES_WIFI_AUTO_CONNECT)
+constexpr uint8_t kAutoUpdateDefault = 0;
+#endif
 
 /// Read pod_id from NVS (0 if not set)
 uint8_t readPodIdFromNvs() {
     domes::infra::NvsConfig config;
-    if (config.open(domes::infra::nvs_ns::kConfig) != ESP_OK) return 0;
+    if (config.open(domes::infra::nvs_ns::kConfig) != ESP_OK)
+        return 0;
     uint8_t id = config.getOrDefault<uint8_t>(domes::infra::config_key::kPodId, 0);
     config.close();
     return id;
 }
+
+uint32_t readBootCountFromNvs() {
+    domes::infra::NvsConfig stats;
+    if (stats.open(domes::infra::nvs_ns::kStats) != ESP_OK)
+        return 0;
+    const uint32_t count = stats.getOrDefault<uint32_t>(domes::infra::stats_key::kBootCount, 0);
+    stats.close();
+    return count;
 }
+
+domes_config_ResetReason resetReasonToProto(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_POWERON:
+            return domes_config_ResetReason_RESET_REASON_POWER_ON;
+        case ESP_RST_EXT:
+            return domes_config_ResetReason_RESET_REASON_EXTERNAL_PIN;
+        case ESP_RST_SW:
+            return domes_config_ResetReason_RESET_REASON_SOFTWARE;
+        case ESP_RST_PANIC:
+            return domes_config_ResetReason_RESET_REASON_PANIC;
+        case ESP_RST_INT_WDT:
+            return domes_config_ResetReason_RESET_REASON_INTERRUPT_WATCHDOG;
+        case ESP_RST_TASK_WDT:
+            return domes_config_ResetReason_RESET_REASON_TASK_WATCHDOG;
+        case ESP_RST_WDT:
+            return domes_config_ResetReason_RESET_REASON_WATCHDOG;
+        case ESP_RST_DEEPSLEEP:
+            return domes_config_ResetReason_RESET_REASON_DEEP_SLEEP;
+        case ESP_RST_BROWNOUT:
+            return domes_config_ResetReason_RESET_REASON_BROWNOUT;
+        case ESP_RST_SDIO:
+            return domes_config_ResetReason_RESET_REASON_SDIO;
+        case ESP_RST_USB:
+            return domes_config_ResetReason_RESET_REASON_USB;
+        case ESP_RST_JTAG:
+            return domes_config_ResetReason_RESET_REASON_JTAG;
+        case ESP_RST_EFUSE:
+            return domes_config_ResetReason_RESET_REASON_EFUSE;
+        case ESP_RST_PWR_GLITCH:
+            return domes_config_ResetReason_RESET_REASON_POWER_GLITCH;
+        case ESP_RST_CPU_LOCKUP:
+            return domes_config_ResetReason_RESET_REASON_CPU_LOCKUP;
+        case ESP_RST_UNKNOWN:
+        default:
+            return domes_config_ResetReason_RESET_REASON_UNKNOWN;
+    }
+}
+}  // namespace
 
 namespace domes::config {
 
 ConfigCommandHandler::ConfigCommandHandler(ITransport& transport, FeatureManager& features)
-    : transport_(transport)
-    , features_(features) {
-}
+    : transport_(transport), features_(features) {}
 
 bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, size_t len) {
     TRACE_SCOPE(TRACE_ID("Config.HandleCommand"), domes::trace::Category::kTransport);
-    // Reset activity timer and auto-enter TRIAGE on any config/system command
-    if (modeManager_) {
+    auto msgType = static_cast<MsgType>(type);
+
+    // Only explicit actions count as activity. Observability polling must not
+    // mutate IDLE into TRIAGE or keep TRIAGE alive indefinitely.
+    if (modeManager_ && commandRecordsActivity(msgType)) {
         modeManager_->resetActivityTimer();
         if (modeManager_->currentMode() == SystemMode::kIdle) {
             modeManager_->transitionTo(SystemMode::kTriage);
         }
     }
-
-    auto msgType = static_cast<MsgType>(type);
 
     switch (msgType) {
         case MsgType::kListFeaturesReq:
@@ -184,6 +236,22 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
     }
 }
 
+bool ConfigCommandHandler::sendTouchEvent(uint8_t podId, uint8_t padIndex, uint64_t timestampUs) {
+    domes_config_TouchEventNotification event = domes_config_TouchEventNotification_init_zero;
+    event.pod_id = podId;
+    event.pad_index = padIndex;
+    event.timestamp_us = timestampUs;
+
+    std::array<uint8_t, domes_config_TouchEventNotification_size> payload{};
+    pb_ostream_t stream = pb_ostream_from_buffer(payload.data(), payload.size());
+    if (!pb_encode(&stream, domes_config_TouchEventNotification_fields, &event)) {
+        ESP_LOGE(kTag, "Failed to encode TouchEventNotification: %s", PB_GET_ERROR(&stream));
+        return false;
+    }
+
+    return sendFrame(MsgType::kTouchEventNtf, payload.data(), stream.bytes_written);
+}
+
 void ConfigCommandHandler::handleListFeatures() {
     sendListFeaturesResponse();
 }
@@ -202,34 +270,47 @@ void ConfigCommandHandler::handleSetFeature(const uint8_t* payload, size_t len) 
     auto feature = static_cast<Feature>(req.feature);
     bool enabled = req.enabled;
 
-    ESP_LOGI(kTag, "Setting feature %s (%d) to %s",
-             featureToString(feature),
-             static_cast<int>(req.feature),
-             enabled ? "enabled" : "disabled");
+    ESP_LOGI(kTag, "Setting feature %s (%d) to %s", featureToString(feature),
+             static_cast<int>(req.feature), enabled ? "enabled" : "disabled");
 
-    if (!features_.setEnabled(feature, enabled)) {
-        ESP_LOGW(kTag, "Invalid feature ID: %d", static_cast<int>(req.feature));
+    if (!features_.isSupported(feature)) {
+        ESP_LOGW(kTag, "Invalid or unsupported feature ID: %d", static_cast<int>(req.feature));
         sendSetFeatureResponse(Status::kInvalidFeature, feature, false);
         return;
     }
 
-    // Notify ESP-NOW service directly so it can pause/resume.
-    // The mode manager's feature mask transitions (GAME→IDLE) would otherwise
-    // overwrite user-set feature bits, so we bypass FeatureManager for this.
-    if (feature == Feature::kEspNow && espNowService_) {
-        espNowService_->setFeatureEnabled(enabled);
+    // A WiFi/TCP request must put its response on the wire before disabling
+    // the station tears down the connection carrying that response. The
+    // FeatureManager barrier preserves command ordering across transports.
+    if (feature == Feature::kWifi && !enabled) {
+        const bool updated = features_.setEnabled(feature, false, [this, feature] {
+            sendSetFeatureResponse(Status::kOk, feature, false);
+            const TransportError err = transport_.flush();
+            if (!isOk(err)) {
+                ESP_LOGW(kTag, "Failed to flush WiFi-disable response: %s",
+                         transportErrorToString(err));
+            }
+        });
+        if (!updated) {
+            sendSetFeatureResponse(Status::kInvalidFeature, feature, false);
+        }
+        return;
+    }
+
+    if (!features_.setEnabled(feature, enabled)) {
+        ESP_LOGW(kTag, "Failed to update feature ID: %d", static_cast<int>(req.feature));
+        sendSetFeatureResponse(Status::kInvalidFeature, feature, false);
+        return;
     }
 
     sendSetFeatureResponse(Status::kOk, feature, enabled);
 }
 
 void ConfigCommandHandler::handleGetFeature(const uint8_t* payload, size_t len) {
-    // Decode using SetFeatureRequest (ignore enabled field for get)
-    // TODO: Add GetFeatureRequest to proto if distinct message needed
-    domes_config_SetFeatureRequest req = domes_config_SetFeatureRequest_init_zero;
+    domes_config_GetFeatureRequest req = domes_config_GetFeatureRequest_init_zero;
     pb_istream_t stream = pb_istream_from_buffer(payload, len);
 
-    if (!pb_decode(&stream, domes_config_SetFeatureRequest_fields, &req)) {
+    if (!pb_decode(&stream, domes_config_GetFeatureRequest_fields, &req)) {
         ESP_LOGW(kTag, "Failed to decode GET_FEATURE: %s", PB_GET_ERROR(&stream));
         sendGetFeatureResponse(Status::kError, Feature::kUnknown, false);
         return;
@@ -238,9 +319,8 @@ void ConfigCommandHandler::handleGetFeature(const uint8_t* payload, size_t len) 
     auto feature = static_cast<Feature>(req.feature);
 
     // Check if feature is valid
-    if (feature == Feature::kUnknown ||
-        static_cast<uint8_t>(feature) >= static_cast<uint8_t>(Feature::kCount)) {
-        ESP_LOGW(kTag, "Invalid feature ID: %d", static_cast<int>(req.feature));
+    if (!features_.isSupported(feature)) {
+        ESP_LOGW(kTag, "Invalid or unsupported feature ID: %d", static_cast<int>(req.feature));
         sendGetFeatureResponse(Status::kInvalidFeature, feature, false);
         return;
     }
@@ -256,13 +336,7 @@ void ConfigCommandHandler::sendListFeaturesResponse() {
     // Include pod identity
     resp.pod_id = readPodIdFromNvs();
 
-    // Get all feature states
-    for (uint8_t i = 1; i < static_cast<uint8_t>(Feature::kCount); ++i) {
-        auto feature = static_cast<Feature>(i);
-        resp.features[resp.features_count].feature = static_cast<domes_config_Feature>(i);
-        resp.features[resp.features_count].enabled = features_.isEnabled(feature);
-        resp.features_count++;
-    }
+    resp.features_count = static_cast<pb_size_t>(features_.getAll(resp.features));
 
     // Encode to buffer
     std::array<uint8_t, domes_config_ListFeaturesResponse_size + 10> payload;
@@ -276,11 +350,7 @@ void ConfigCommandHandler::sendListFeaturesResponse() {
     sendFrame(MsgType::kListFeaturesRsp, payload.data(), stream.bytes_written);
 }
 
-void ConfigCommandHandler::sendSetFeatureResponse(
-    Status status,
-    Feature feature,
-    bool enabled
-) {
+void ConfigCommandHandler::sendSetFeatureResponse(Status status, Feature feature, bool enabled) {
     // Build protobuf response
     domes_config_SetFeatureResponse resp = domes_config_SetFeatureResponse_init_zero;
     resp.has_feature = true;
@@ -300,22 +370,17 @@ void ConfigCommandHandler::sendSetFeatureResponse(
     sendFrame(MsgType::kSetFeatureRsp, payload.data(), 1 + resp_stream.bytes_written);
 }
 
-void ConfigCommandHandler::sendGetFeatureResponse(
-    Status status,
-    Feature feature,
-    bool enabled
-) {
-    // Use same format as SetFeatureResponse: [status][SetFeatureResponse_proto]
-    domes_config_SetFeatureResponse resp = domes_config_SetFeatureResponse_init_zero;
+void ConfigCommandHandler::sendGetFeatureResponse(Status status, Feature feature, bool enabled) {
+    domes_config_GetFeatureResponse resp = domes_config_GetFeatureResponse_init_zero;
     resp.has_feature = true;
     resp.feature.feature = static_cast<domes_config_Feature>(feature);
     resp.feature.enabled = enabled;
 
-    std::array<uint8_t, domes_config_SetFeatureResponse_size + 10> payload;
+    std::array<uint8_t, domes_config_GetFeatureResponse_size + 10> payload;
     payload[0] = static_cast<uint8_t>(status);
 
     pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
-    if (!pb_encode(&stream, domes_config_SetFeatureResponse_fields, &resp)) {
+    if (!pb_encode(&stream, domes_config_GetFeatureResponse_fields, &resp)) {
         ESP_LOGE(kTag, "Failed to encode GetFeatureResponse: %s", PB_GET_ERROR(&stream));
         return;
     }
@@ -327,14 +392,8 @@ bool ConfigCommandHandler::sendFrame(MsgType type, const uint8_t* payload, size_
     std::array<uint8_t, kMaxFrameSize> frameBuf;
     size_t frameLen = 0;
 
-    TransportError err = encodeFrame(
-        static_cast<uint8_t>(type),
-        payload,
-        len,
-        frameBuf.data(),
-        frameBuf.size(),
-        &frameLen
-    );
+    TransportError err = encodeFrame(static_cast<uint8_t>(type), payload, len, frameBuf.data(),
+                                     frameBuf.size(), &frameLen);
 
     if (!isOk(err)) {
         ESP_LOGE(kTag, "Failed to encode frame");
@@ -366,9 +425,14 @@ void ConfigCommandHandler::handleSetLedPattern(const uint8_t* payload, size_t le
         sendLedPatternResponse(Status::kError);
         return;
     }
+    if (!isValidLedPattern(req.pattern)) {
+        ESP_LOGW(kTag, "Rejected invalid LED pattern fields");
+        sendLedPatternResponse(Status::kInvalidPattern);
+        return;
+    }
 
-    ESP_LOGI(kTag, "Setting LED pattern: type=%d, period=%lu, brightness=%lu",
-             req.pattern.type, req.pattern.period_ms, req.pattern.brightness);
+    ESP_LOGI(kTag, "Setting LED pattern: type=%d, period=%lu, brightness=%lu", req.pattern.type,
+             req.pattern.period_ms, req.pattern.brightness);
 
     esp_err_t err = ledService_->setPattern(req.pattern);
     if (err != ESP_OK) {
@@ -542,16 +606,17 @@ void ConfigCommandHandler::handleGetSystemInfo() {
     domes_config_GetSystemInfoResponse resp = domes_config_GetSystemInfoResponse_init_zero;
 
     // Firmware version
-    strncpy(resp.firmware_version, DOMES_VERSION_STRING, sizeof(resp.firmware_version) - 1);
+    strncpy(resp.firmware_version, infra::firmwareVersion(), sizeof(resp.firmware_version) - 1);
 
     // Uptime in seconds
     resp.uptime_s = static_cast<uint32_t>(esp_timer_get_time() / 1'000'000);
 
     // Free heap
-    resp.free_heap = static_cast<uint32_t>(esp_get_free_heap_size());
+    constexpr uint32_t kInternalHeapCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    resp.free_heap = static_cast<uint32_t>(heap_caps_get_free_size(kInternalHeapCaps));
 
-    // Boot count (0 if not available)
-    resp.boot_count = 0;  // TODO: Read from NVS stats
+    resp.boot_count = readBootCountFromNvs();
+    resp.reset_reason = resetReasonToProto(esp_reset_reason());
 
     // Mode and feature mask
     if (modeManager_) {
@@ -607,9 +672,19 @@ void ConfigCommandHandler::handleSetPodId(const uint8_t* payload, size_t len) {
         return;
     }
 
-    config.setU8(infra::config_key::kPodId, static_cast<uint8_t>(req.pod_id));
-    config.commit();
+    esp_err_t err = config.setU8(infra::config_key::kPodId, static_cast<uint8_t>(req.pod_id));
+    if (err == ESP_OK) {
+        err = config.commit();
+    }
     config.close();
+
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Failed to persist pod_id: %s", esp_err_to_name(err));
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetPodIdRsp, errPayload.data(), 1);
+        return;
+    }
 
     ESP_LOGI(kTag, "Pod ID set to %lu (reboot to apply BLE name change)", req.pod_id);
 
@@ -633,8 +708,9 @@ void ConfigCommandHandler::handleGetHealth() {
     domes_config_GetHealthResponse resp = domes_config_GetHealthResponse_init_zero;
 
     // Heap info
-    resp.free_heap = static_cast<uint32_t>(esp_get_free_heap_size());
-    resp.min_free_heap = static_cast<uint32_t>(esp_get_minimum_free_heap_size());
+    constexpr uint32_t kInternalHeapCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    resp.free_heap = static_cast<uint32_t>(heap_caps_get_free_size(kInternalHeapCaps));
+    resp.min_free_heap = static_cast<uint32_t>(heap_caps_get_minimum_free_size(kInternalHeapCaps));
 
     // Uptime
     resp.uptime_seconds = static_cast<uint32_t>(esp_timer_get_time() / 1'000'000);
@@ -648,12 +724,39 @@ void ConfigCommandHandler::handleGetHealth() {
     }
 
     // FreeRTOS task info
-    UBaseType_t taskCount = uxTaskGetNumberOfTasks();
-    // Cap to what we can fit
-    if (taskCount > 16) taskCount = 16;
+    static constexpr UBaseType_t kTaskSnapshotSlack = 8;
+    static constexpr uint8_t kTaskSnapshotAttempts = 3;
+    std::unique_ptr<TaskStatus_t[]> taskStatuses;
+    UBaseType_t capacity = 0;
+    UBaseType_t got = 0;
 
-    TaskStatus_t taskStatuses[16];
-    UBaseType_t got = uxTaskGetSystemState(taskStatuses, taskCount, nullptr);
+    for (uint8_t attempt = 0; attempt < kTaskSnapshotAttempts && got == 0; ++attempt) {
+        capacity = uxTaskGetNumberOfTasks() + kTaskSnapshotSlack;
+        taskStatuses.reset(new (std::nothrow) TaskStatus_t[capacity]);
+        if (!taskStatuses) {
+            ESP_LOGE(kTag, "Failed to allocate health task snapshot");
+            break;
+        }
+
+        got = uxTaskGetSystemState(taskStatuses.get(), capacity, nullptr);
+        if (got == 0) {
+            vTaskDelay(1);
+        }
+    }
+
+    if (got > 0) {
+        // Put the tasks closest to stack exhaustion first so the bounded
+        // response retains the most actionable entries.
+        std::sort(taskStatuses.get(), taskStatuses.get() + got,
+                  [](const TaskStatus_t& left, const TaskStatus_t& right) {
+                      if (left.usStackHighWaterMark != right.usStackHighWaterMark) {
+                          return left.usStackHighWaterMark < right.usStackHighWaterMark;
+                      }
+                      return left.uxCurrentPriority > right.uxCurrentPriority;
+                  });
+    } else if (taskStatuses) {
+        ESP_LOGW(kTag, "Unable to capture a stable FreeRTOS task snapshot");
+    }
 
     resp.tasks_count = 0;
     for (UBaseType_t i = 0; i < got && resp.tasks_count < 16; ++i) {
@@ -661,16 +764,24 @@ void ConfigCommandHandler::handleGetHealth() {
         strncpy(t.name, taskStatuses[i].pcTaskName, sizeof(t.name) - 1);
         t.stack_high_water = taskStatuses[i].usStackHighWaterMark;
         t.priority = taskStatuses[i].uxCurrentPriority;
-#if ( configUSE_CORE_AFFINITY == 1 ) && ( configNUMBER_OF_CORES > 1 )
+#if (configUSE_CORE_AFFINITY == 1) && (configNUMBER_OF_CORES > 1)
         // Convert affinity mask to core number (0=core0, 1=core1, 0xFF=any)
         auto mask = taskStatuses[i].uxCoreAffinityMask;
-        if (mask == 0x01) t.core = 0;
-        else if (mask == 0x02) t.core = 1;
-        else t.core = 0xFF;  // tskNO_AFFINITY or both cores
+        if (mask == 0x01)
+            t.core = 0;
+        else if (mask == 0x02)
+            t.core = 1;
+        else
+            t.core = 0xFF;  // tskNO_AFFINITY or both cores
 #else
         t.core = 0;
 #endif
         resp.tasks_count++;
+    }
+
+    if (got > resp.tasks_count) {
+        ESP_LOGW(kTag, "Health response retained %u of %u tasks by lowest stack headroom",
+                 static_cast<unsigned>(resp.tasks_count), static_cast<unsigned>(got));
     }
 
     // Encode: [status_byte][protobuf]
@@ -718,7 +829,7 @@ void ConfigCommandHandler::handleGetEspNowStatus() {
             auto& p = resp.peers[i];
             p.mac.size = 6;
             std::memcpy(p.mac.bytes, peers[i].mac, 6);
-            p.rssi = 0;  // RSSI not tracked per-peer in current impl
+            p.rssi = peers[i].hasRssi ? peers[i].rssi : 0;
             // Convert last seen from absolute us to relative ms
             if (peers[i].lastSeenUs > 0) {
                 p.last_seen_ms = static_cast<uint32_t>((nowUs - peers[i].lastSeenUs) / 1000);
@@ -771,7 +882,7 @@ void ConfigCommandHandler::handleEspNowBench(const uint8_t* payload, size_t len)
         return;
     }
 
-    // Poll for completion (max ~30s for 1000 rounds)
+    // Poll beyond the service's 45-second deadline so cancellation has time to settle.
     static constexpr uint32_t kBenchPollMs = 50;
     static constexpr uint32_t kBenchTimeoutMs = 60000;
     uint32_t waited = 0;
@@ -782,6 +893,7 @@ void ConfigCommandHandler::handleEspNowBench(const uint8_t* payload, size_t len)
 
     if (!espNowService_->isBenchmarkDone()) {
         ESP_LOGW(kTag, "Benchmark timed out after %lums", static_cast<unsigned long>(waited));
+        espNowService_->cancelBenchmark();
         std::array<uint8_t, 1> errPayload;
         errPayload[0] = static_cast<uint8_t>(Status::kError);
         sendFrame(MsgType::kEspNowBenchRsp, errPayload.data(), 1);
@@ -789,7 +901,14 @@ void ConfigCommandHandler::handleEspNowBench(const uint8_t* payload, size_t len)
     }
 
     // Get results
-    auto benchResult = espNowService_->getBenchmarkResult();
+    BenchmarkResult benchResult;
+    if (!espNowService_->takeBenchmarkResult(benchResult)) {
+        ESP_LOGW(kTag, "Benchmark result was not available");
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kEspNowBenchRsp, errPayload.data(), 1);
+        return;
+    }
 
     domes_config_EspNowBenchResponse resp = domes_config_EspNowBenchResponse_init_zero;
     resp.rounds_completed = benchResult.roundsCompleted;
@@ -874,8 +993,7 @@ void ConfigCommandHandler::handleClearCrashDump() {
 // ============================================================================
 
 void ConfigCommandHandler::handleGetMemoryProfile() {
-    domes_config_GetMemoryProfileResponse resp =
-        domes_config_GetMemoryProfileResponse_init_zero;
+    domes_config_GetMemoryProfileResponse resp = domes_config_GetMemoryProfileResponse_init_zero;
 
     // Current stats
     auto current = infra::MemoryProfiler::currentStats();
@@ -937,16 +1055,20 @@ void ConfigCommandHandler::handleCheckUpdate() {
 
     // Read auto-update NVS setting
     infra::NvsConfig config;
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
     if (config.open(infra::nvs_ns::kConfig) == ESP_OK) {
         resp.auto_update_enabled =
-            config.getOrDefault<uint8_t>(infra::config_key::kAutoUpdate, 0) != 0;
+            config.getOrDefault<uint8_t>(infra::config_key::kAutoUpdate, kAutoUpdateDefault) != 0;
         config.close();
     }
+#else
+    resp.auto_update_enabled = false;
+#endif
 
     if (!otaManager_) {
         ESP_LOGW(kTag, "OTA manager not available");
         // Still return current version info
-        strncpy(resp.current_version, DOMES_VERSION_STRING, sizeof(resp.current_version) - 1);
+        strncpy(resp.current_version, infra::firmwareVersion(), sizeof(resp.current_version) - 1);
 
         std::array<uint8_t, domes_config_CheckUpdateResponse_size + 10> payload;
         payload[0] = static_cast<uint8_t>(Status::kError);
@@ -964,7 +1086,7 @@ void ConfigCommandHandler::handleCheckUpdate() {
 
     if (err != ESP_OK) {
         ESP_LOGW(kTag, "Update check failed: %s", esp_err_to_name(err));
-        strncpy(resp.current_version, DOMES_VERSION_STRING, sizeof(resp.current_version) - 1);
+        strncpy(resp.current_version, infra::firmwareVersion(), sizeof(resp.current_version) - 1);
 
         std::array<uint8_t, domes_config_CheckUpdateResponse_size + 10> payload;
         payload[0] = static_cast<uint8_t>(Status::kError);
@@ -979,14 +1101,16 @@ void ConfigCommandHandler::handleCheckUpdate() {
     resp.update_available = result.updateAvailable;
 
     // Format version strings
-    snprintf(resp.current_version, sizeof(resp.current_version), "%d.%d.%d",
-             result.currentVersion.major, result.currentVersion.minor,
-             result.currentVersion.patch);
+    snprintf(resp.current_version, sizeof(resp.current_version), "%lu.%lu.%lu",
+             static_cast<unsigned long>(result.currentVersion.major),
+             static_cast<unsigned long>(result.currentVersion.minor),
+             static_cast<unsigned long>(result.currentVersion.patch));
 
     if (result.updateAvailable) {
-        snprintf(resp.available_version, sizeof(resp.available_version), "%d.%d.%d",
-                 result.availableVersion.major, result.availableVersion.minor,
-                 result.availableVersion.patch);
+        snprintf(resp.available_version, sizeof(resp.available_version), "%lu.%lu.%lu",
+                 static_cast<unsigned long>(result.availableVersion.major),
+                 static_cast<unsigned long>(result.availableVersion.minor),
+                 static_cast<unsigned long>(result.availableVersion.patch));
         resp.firmware_size = static_cast<uint32_t>(result.firmwareSize);
     }
 
@@ -1015,6 +1139,16 @@ void ConfigCommandHandler::handleSetAutoUpdate(const uint8_t* payload, size_t le
         return;
     }
 
+#ifndef CONFIG_DOMES_WIFI_AUTO_CONNECT
+    if (req.enabled) {
+        ESP_LOGW(kTag, "Auto-update requires a build with WiFi auto-connect support");
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetAutoUpdateRsp, errPayload.data(), 1);
+        return;
+    }
+#endif
+
     // Write to NVS
     infra::NvsConfig config;
     if (config.open(infra::nvs_ns::kConfig) != ESP_OK) {
@@ -1025,9 +1159,19 @@ void ConfigCommandHandler::handleSetAutoUpdate(const uint8_t* payload, size_t le
         return;
     }
 
-    config.setU8(infra::config_key::kAutoUpdate, req.enabled ? 1 : 0);
-    config.commit();
+    esp_err_t err = config.setU8(infra::config_key::kAutoUpdate, req.enabled ? 1 : 0);
+    if (err == ESP_OK) {
+        err = config.commit();
+    }
     config.close();
+
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Failed to persist auto_update: %s", esp_err_to_name(err));
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetAutoUpdateRsp, errPayload.data(), 1);
+        return;
+    }
 
     ESP_LOGI(kTag, "Auto-update %s", req.enabled ? "enabled" : "disabled");
 
@@ -1074,11 +1218,19 @@ void ConfigCommandHandler::handleSimulateTouch(const uint8_t* payload, size_t le
         return;
     }
 
+    if (req.pad_index >= injectableTouch_->getPadCount()) {
+        ESP_LOGW(kTag, "Invalid simulated touch pad: %lu",
+                 static_cast<unsigned long>(req.pad_index));
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSimulateTouchRsp, errPayload.data(), 1);
+        return;
+    }
+
     injectableTouch_->injectTouch(static_cast<uint8_t>(req.pad_index));
 
     // Send OK response
     domes_config_SimulateTouchResponse resp = domes_config_SimulateTouchResponse_init_zero;
-    resp.status = domes_config_Status_STATUS_OK;
 
     std::array<uint8_t, domes_config_SimulateTouchResponse_size + 10> respPayload;
     respPayload[0] = static_cast<uint8_t>(Status::kOk);
@@ -1105,12 +1257,21 @@ void ConfigCommandHandler::handleSetSimMode(const uint8_t* payload, size_t len) 
         }
     }
 
-    ESP_LOGI(kTag, "Set sim mode: enabled=%d delay_ms=%lu pad=%lu",
-             req.enabled, static_cast<unsigned long>(req.delay_ms),
-             static_cast<unsigned long>(req.pad_index));
+    ESP_LOGI(kTag, "Set sim mode: enabled=%d delay_ms=%lu pad=%lu", req.enabled,
+             static_cast<unsigned long>(req.delay_ms), static_cast<unsigned long>(req.pad_index));
 
     if (!espNowService_) {
         ESP_LOGW(kTag, "ESP-NOW service not available for sim mode");
+        std::array<uint8_t, 1> errPayload;
+        errPayload[0] = static_cast<uint8_t>(Status::kError);
+        sendFrame(MsgType::kSetSimModeRsp, errPayload.data(), 1);
+        return;
+    }
+
+    if (req.pad_index >= pins::kTouchPadCount || req.delay_ms > EspNowService::kMaxSimDelayMs) {
+        ESP_LOGW(kTag, "Invalid sim mode parameters: delay_ms=%lu pad=%lu",
+                 static_cast<unsigned long>(req.delay_ms),
+                 static_cast<unsigned long>(req.pad_index));
         std::array<uint8_t, 1> errPayload;
         errPayload[0] = static_cast<uint8_t>(Status::kError);
         sendFrame(MsgType::kSetSimModeRsp, errPayload.data(), 1);
@@ -1121,7 +1282,6 @@ void ConfigCommandHandler::handleSetSimMode(const uint8_t* payload, size_t len) 
 
     // Send response echoing current state
     domes_config_SetSimModeResponse resp = domes_config_SetSimModeResponse_init_zero;
-    resp.status = domes_config_Status_STATUS_OK;
     resp.enabled = espNowService_->isSimMode();
     resp.delay_ms = espNowService_->simDelayMs();
     resp.pad_index = espNowService_->simPadIndex();

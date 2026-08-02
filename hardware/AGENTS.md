@@ -43,7 +43,7 @@ Tier 2 parts should prefer JLCPCB but may have alternatives:
 
 | Component | Key requirements | Alternatives |
 | --- | --- | --- |
-| SK6812MINI-E | 3535 RGBW addressable LED | WS2812B-Mini, SK6812 5050 |
+| SK6812MINI-E | 3535 RGBW addressable LED | Only pin- and footprint-compatible 3535 parts after timing/color-order review; 5050 is not a drop-in footprint |
 | LD0832AA-0099F | 8 mm LRA, 1.8 Vrms, 235 Hz | Current NFF schematic part; JLCPCB `C2682305` |
 | USB-C connector | 16-pin, USB 2.0 Type-C receptacle | Equivalent footprint-compatible part |
 | DW01A + FS8205A | Battery protection | BQ29700 or integrated protection IC |
@@ -90,6 +90,10 @@ When updating `hardware/BOM.csv`, include:
 3. Stock status.
 4. Assembly type.
 5. Notes for concerns or alternatives.
+
+The repository BOM is a design-level component list, not an exported NFF assembly BOM. Do not mark
+cost, stock, JLCPCB classification, or footprint compatibility as verified without a current catalog
+and EDA-footprint check.
 
 Example:
 

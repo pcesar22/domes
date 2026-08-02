@@ -7,8 +7,10 @@ library;
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:domes_app/data/proto/generated/config.pbenum.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import 'ble_frame_channel.dart';
 import 'frame_codec.dart';
 import 'transport.dart';
 
@@ -31,18 +33,30 @@ class BleTransport extends Transport {
   BluetoothCharacteristic? _statusChar;
   StreamSubscription<List<int>>? _notificationSub;
   StreamSubscription<BluetoothConnectionState>? _connectionStateSub;
-  final FrameDecoder _decoder = FrameDecoder();
-  StreamController<Frame> _frameController =
+  final StreamController<Frame> _unsolicitedFrames =
       StreamController<Frame>.broadcast();
+  late final BleFrameChannel _frameChannel;
   bool _connected = false;
 
-  BleTransport._(this._device);
+  BleTransport._(this._device) {
+    _frameChannel = BleFrameChannel(
+      writeChunk: _writeChunk,
+      maximumWriteSize: _maximumWriteSize,
+      unsolicitedMessageTypes: {MsgType.MSG_TYPE_TOUCH_EVENT_NTF.value},
+      onUnsolicitedFrame: _unsolicitedFrames.add,
+    );
+  }
 
   /// Connect to a DOMES device.
   static Future<BleTransport> connect(BluetoothDevice device) async {
     final transport = BleTransport._(device);
-    await transport._connect();
-    return transport;
+    try {
+      await transport._connect();
+      return transport;
+    } catch (_) {
+      await transport._cleanupConnection(closeEvents: true);
+      rethrow;
+    }
   }
 
   Future<void> _connect() async {
@@ -70,73 +84,106 @@ class BleTransport extends Transport {
       orElse: () => throw Exception('Status characteristic not found'),
     );
 
-    // Subscribe to notifications on status characteristic
-    await _statusChar!.setNotifyValue(true);
-
-    // Listen for notification data, feed into frame decoder
+    // Install the listener before enabling notifications so no value can be
+    // emitted between the CCCD write and stream subscription.
     _notificationSub = _statusChar!.onValueReceived.listen((data) {
-      for (final byte in data) {
-        final result = _decoder.feedByte(byte);
-        switch (result) {
-          case DecodeSuccess(:final frame):
-            _frameController.add(frame);
-            _decoder.reset();
-          case DecodeError(:final error):
-            _frameController.addError(error);
-            _decoder.reset();
-          case DecodeNone():
-            break;
-        }
-      }
-    });
+      _frameChannel.addNotification(data);
+    }, onError: _frameChannel.addError);
+    await _statusChar!.setNotifyValue(true);
 
     // Listen for disconnection
     _connectionStateSub = _device.connectionState.listen((state) {
       if (state == BluetoothConnectionState.disconnected) {
         _connected = false;
+        final error = StateError('BLE disconnected');
+        _frameChannel.reset(error);
+        if (!_unsolicitedFrames.isClosed) {
+          _unsolicitedFrames.addError(error, StackTrace.current);
+        }
       }
     });
+  }
+
+  Future<void> _writeChunk(Uint8List chunk) async {
+    await _dataChar!.write(chunk.toList(), withoutResponse: true);
+  }
+
+  int _maximumWriteSize() {
+    final mtu = _device.mtuNow;
+    if (mtu <= 3) {
+      throw StateError('BLE negotiated an invalid MTU: $mtu');
+    }
+    return mtu - 3;
   }
 
   @override
   Future<void> sendFrame(int msgType, Uint8List payload) async {
     if (!_connected) throw Exception('BLE not connected');
-    final frame = encodeFrame(msgType, payload);
-    await _dataChar!.write(frame.toList(), withoutResponse: true);
+    await _frameChannel.sendFrame(msgType, payload);
   }
 
   @override
   Future<Frame> receiveFrame(Duration timeout) async {
-    return _frameController.stream.first.timeout(
+    return _frameChannel.receiveFrame(timeout);
+  }
+
+  @override
+  Future<Frame> transactFrame(
+    int msgType,
+    Uint8List payload,
+    Duration timeout, {
+    void Function()? onFrameSent,
+  }) async {
+    if (!_connected) throw Exception('BLE not connected');
+    return _frameChannel.transactFrame(
+      msgType,
+      payload,
       timeout,
-      onTimeout: () => throw TimeoutException('BLE response timeout', timeout),
+      onFrameSent: onFrameSent,
     );
   }
 
   @override
-  Future<Frame> sendCommand(int msgType, Uint8List payload) async {
-    await sendFrame(msgType, payload);
-    return receiveFrame(kDefaultTimeout);
+  Future<Frame> sendCommand(
+    int msgType,
+    Uint8List payload, {
+    required int expectedResponseType,
+  }) async {
+    if (!_connected) throw Exception('BLE not connected');
+    return _frameChannel.sendCommand(
+      msgType,
+      payload,
+      kDefaultTimeout,
+      expectedResponseType,
+    );
   }
+
+  @override
+  Stream<Frame> get unsolicitedFrames => _unsolicitedFrames.stream;
 
   @override
   int get maxOtaChunkSize => kOtaChunkSizeBle;
 
   @override
   Future<void> disconnect() async {
+    await _cleanupConnection(closeEvents: true);
+  }
+
+  Future<void> _cleanupConnection({required bool closeEvents}) async {
     await _notificationSub?.cancel();
     _notificationSub = null;
     await _connectionStateSub?.cancel();
     _connectionStateSub = null;
-    if (_connected) {
+    try {
       await _device.disconnect();
+    } catch (_) {
+      // Continue local teardown even when the platform link is already gone.
     }
     _connected = false;
-    _decoder.reset();
-    // Close old controller and create a fresh one so this transport
-    // can be reconnected without "stream already closed" errors.
-    await _frameController.close();
-    _frameController = StreamController<Frame>.broadcast();
+    _frameChannel.reset(StateError('BLE disconnected'));
+    if (closeEvents && !_unsolicitedFrames.isClosed) {
+      await _unsolicitedFrames.close();
+    }
   }
 
   @override

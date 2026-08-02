@@ -1,14 +1,14 @@
 #pragma once
 
-#include "trace/traceEvent.hpp"
-#include "sim/simLog.hpp"
 #include "sim/simEspNowBus.hpp"
+#include "sim/simLog.hpp"
 #include "sim/simProtocol.hpp"
+#include "trace/traceEvent.hpp"
 
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <sstream>
-#include <fstream>
 
 namespace sim {
 
@@ -17,17 +17,18 @@ std::vector<domes::trace::TraceEvent>& globalTraceEvents();
 
 class PerfettoExporter {
 public:
-    static std::string exportJson(
-        const std::vector<domes::trace::TraceEvent>& traceEvents,
-        const SimLog& simLog,
-        const std::vector<FlowEvent>& flowEvents,
-        size_t podCount) {
-
+    static std::string exportJson(const std::vector<domes::trace::TraceEvent>& traceEvents,
+                                  const SimLog& simLog, const std::vector<FlowEvent>& flowEvents,
+                                  size_t podCount) {
         std::ostringstream json;
         json << "{\"traceEvents\":[";
         bool first = true;
 
-        auto comma = [&]() { if (!first) json << ","; first = false; };
+        auto comma = [&]() {
+            if (!first)
+                json << ",";
+            first = false;
+        };
 
         // Process metadata: name each pod
         for (size_t i = 0; i < podCount; i++) {
@@ -42,17 +43,25 @@ public:
             char ph;
             auto type = event.type();
             switch (type) {
-                case domes::trace::EventType::kSpanBegin: ph = 'B'; break;
-                case domes::trace::EventType::kSpanEnd:   ph = 'E'; break;
-                case domes::trace::EventType::kInstant:   ph = 'i'; break;
-                case domes::trace::EventType::kCounter:   ph = 'C'; break;
-                default: continue;
+                case domes::trace::EventType::kSpanBegin:
+                    ph = 'B';
+                    break;
+                case domes::trace::EventType::kSpanEnd:
+                    ph = 'E';
+                    break;
+                case domes::trace::EventType::kInstant:
+                    ph = 'i';
+                    break;
+                case domes::trace::EventType::kCounter:
+                    ph = 'C';
+                    break;
+                default:
+                    continue;
             }
 
             json << "{\"ph\":\"" << ph << "\",\"pid\":" << event.taskId
                  << ",\"tid\":" << static_cast<int>(event.category())
-                 << ",\"ts\":" << event.timestamp
-                 << ",\"name\":\"trace_" << event.arg1 << "\"";
+                 << ",\"ts\":" << event.timestamp << ",\"name\":\"trace_" << event.arg1 << "\"";
 
             if (ph == 'C') {
                 json << ",\"args\":{\"value\":" << event.arg2 << "}";
@@ -67,10 +76,8 @@ public:
         for (const auto& entry : simLog.entries()) {
             comma();
             std::string escaped = escapeJson(entry.message);
-            json << "{\"ph\":\"i\",\"pid\":" << entry.podId
-                 << ",\"tid\":100"
-                 << ",\"ts\":" << entry.timestampUs
-                 << ",\"name\":\"" << entry.category << "\""
+            json << "{\"ph\":\"i\",\"pid\":" << entry.podId << ",\"tid\":100"
+                 << ",\"ts\":" << entry.timestampUs << ",\"name\":\"" << entry.category << "\""
                  << ",\"s\":\"t\""
                  << ",\"args\":{\"msg\":\"" << escaped << "\"}}";
         }
@@ -78,18 +85,15 @@ public:
         // Flow events (ESP-NOW messages) -> s/f arrows
         for (const auto& flow : flowEvents) {
             comma();
-            json << "{\"ph\":\"s\",\"pid\":" << flow.srcPod
-                 << ",\"tid\":200"
-                 << ",\"ts\":" << flow.timestampUs
-                 << ",\"name\":\"" << messageTypeName(flow.type) << "\""
+            json << "{\"ph\":\"s\",\"pid\":" << flow.srcPod << ",\"tid\":200"
+                 << ",\"ts\":" << flow.timestampUs << ",\"name\":\"" << messageTypeName(flow.type)
+                 << "\""
                  << ",\"id\":" << flow.sequence << "}";
             comma();
-            json << "{\"ph\":\"f\",\"pid\":" << flow.dstPod
-                 << ",\"tid\":200"
-                 << ",\"ts\":" << flow.timestampUs
-                 << ",\"name\":\"" << messageTypeName(flow.type) << "\""
-                 << ",\"id\":" << flow.sequence
-                 << ",\"bp\":\"e\"}";
+            json << "{\"ph\":\"f\",\"pid\":" << flow.dstPod << ",\"tid\":200"
+                 << ",\"ts\":" << flow.timestampUs << ",\"name\":\"" << messageTypeName(flow.type)
+                 << "\""
+                 << ",\"id\":" << flow.sequence << ",\"bp\":\"e\"}";
         }
 
         json << "]}";
@@ -97,13 +101,13 @@ public:
     }
 
     static bool exportToFile(const std::string& path,
-                              const std::vector<domes::trace::TraceEvent>& traceEvents,
-                              const SimLog& simLog,
-                              const std::vector<FlowEvent>& flowEvents,
-                              size_t podCount) {
+                             const std::vector<domes::trace::TraceEvent>& traceEvents,
+                             const SimLog& simLog, const std::vector<FlowEvent>& flowEvents,
+                             size_t podCount) {
         std::string content = exportJson(traceEvents, simLog, flowEvents, podCount);
         std::ofstream file(path);
-        if (!file.is_open()) return false;
+        if (!file.is_open())
+            return false;
         file << content;
         return true;
     }
@@ -113,10 +117,17 @@ private:
         std::string result;
         for (char c : s) {
             switch (c) {
-                case '"':  result += "\\\""; break;
-                case '\\': result += "\\\\"; break;
-                case '\n': result += "\\n"; break;
-                default:   result += c;
+                case '"':
+                    result += "\\\"";
+                    break;
+                case '\\':
+                    result += "\\\\";
+                    break;
+                case '\n':
+                    result += "\\n";
+                    break;
+                default:
+                    result += c;
             }
         }
         return result;

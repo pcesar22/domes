@@ -57,6 +57,19 @@ generate_nanopb() {
         python3 "$nanopb_generator" -I . -D "$output_dir" config.proto trace.proto
     )
 
+    # nanopb appends a schema-dependent number of blank lines. Normalize the
+    # committed artifacts so protocol changes do not create trailing-whitespace
+    # churn or fail `git diff --check`.
+    for generated in config.pb.c config.pb.h trace.pb.c trace.pb.h; do
+        python3 - "$output_dir/$generated" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+path.write_bytes(path.read_bytes().rstrip() + b"\n")
+PY
+    done
+
     if $check; then
         for generated in config.pb.c config.pb.h trace.pb.c trace.pb.h; do
             diff -u "$proto_dir/$generated" "$output_dir/$generated"

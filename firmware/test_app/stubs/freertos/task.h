@@ -15,3 +15,5 @@ inline TaskHandle_t xTaskGetCurrentTaskHandle() {
 inline uint32_t uxTaskGetTaskNumber(TaskHandle_t) {
     return sim_trace::currentPodId;
 }
+
+inline void vTaskDelay(uint32_t) {}

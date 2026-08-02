@@ -36,7 +36,7 @@ typedef enum _domes_config_MsgType {
     domes_config_MsgType_MSG_TYPE_GET_SYSTEM_INFO_RSP = 53,
     domes_config_MsgType_MSG_TYPE_SET_POD_ID_REQ = 54,
     domes_config_MsgType_MSG_TYPE_SET_POD_ID_RSP = 55,
-    /* Observability commands (0x38-0x4F range) */
+    /* Observability commands (0x38-0x49 range) */
     domes_config_MsgType_MSG_TYPE_GET_HEALTH_REQ = 56,
     domes_config_MsgType_MSG_TYPE_GET_HEALTH_RSP = 57,
     domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_REQ = 58,
@@ -64,7 +64,9 @@ typedef enum _domes_config_MsgType {
     domes_config_MsgType_MSG_TYPE_SIMULATE_TOUCH_RSP = 77,
     /* Sim drill mode commands (0x4E-0x4F) */
     domes_config_MsgType_MSG_TYPE_SET_SIM_MODE_REQ = 78,
-    domes_config_MsgType_MSG_TYPE_SET_SIM_MODE_RSP = 79
+    domes_config_MsgType_MSG_TYPE_SET_SIM_MODE_RSP = 79,
+    /* Device-originated touch notification (0x50) */
+    domes_config_MsgType_MSG_TYPE_TOUCH_EVENT_NTF = 80
 } domes_config_MsgType;
 
 /* Status codes for responses */
@@ -107,6 +109,27 @@ typedef enum _domes_config_SystemMode {
     domes_config_SystemMode_SYSTEM_MODE_ERROR = 5
 } domes_config_SystemMode;
 
+/* Normalized device reset cause. Firmware maps ESP-IDF reset reasons at the
+ platform boundary; host clients consume this enum without duplicating IDs. */
+typedef enum _domes_config_ResetReason {
+    domes_config_ResetReason_RESET_REASON_UNKNOWN = 0,
+    domes_config_ResetReason_RESET_REASON_POWER_ON = 1,
+    domes_config_ResetReason_RESET_REASON_EXTERNAL_PIN = 2,
+    domes_config_ResetReason_RESET_REASON_SOFTWARE = 3,
+    domes_config_ResetReason_RESET_REASON_PANIC = 4,
+    domes_config_ResetReason_RESET_REASON_INTERRUPT_WATCHDOG = 5,
+    domes_config_ResetReason_RESET_REASON_TASK_WATCHDOG = 6,
+    domes_config_ResetReason_RESET_REASON_WATCHDOG = 7,
+    domes_config_ResetReason_RESET_REASON_DEEP_SLEEP = 8,
+    domes_config_ResetReason_RESET_REASON_BROWNOUT = 9,
+    domes_config_ResetReason_RESET_REASON_SDIO = 10,
+    domes_config_ResetReason_RESET_REASON_USB = 11,
+    domes_config_ResetReason_RESET_REASON_JTAG = 12,
+    domes_config_ResetReason_RESET_REASON_EFUSE = 13,
+    domes_config_ResetReason_RESET_REASON_POWER_GLITCH = 14,
+    domes_config_ResetReason_RESET_REASON_CPU_LOCKUP = 15
+} domes_config_ResetReason;
+
 /* Struct definitions */
 /* RGBW color (0-255 per channel) */
 typedef struct _domes_config_Color {
@@ -131,6 +154,10 @@ typedef struct _domes_config_SetFeatureRequest {
     domes_config_Feature feature;
     bool enabled;
 } domes_config_SetFeatureRequest;
+
+typedef struct _domes_config_GetFeatureRequest {
+    domes_config_Feature feature;
+} domes_config_GetFeatureRequest;
 
 /* LED pattern with parameters */
 typedef struct _domes_config_LedPattern {
@@ -163,6 +190,11 @@ typedef struct _domes_config_SetFeatureResponse {
     bool has_feature;
     domes_config_FeatureState feature;
 } domes_config_SetFeatureResponse;
+
+typedef struct _domes_config_GetFeatureResponse {
+    bool has_feature;
+    domes_config_FeatureState feature;
+} domes_config_GetFeatureResponse;
 
 typedef struct _domes_config_SetLedPatternResponse {
     bool has_pattern;
@@ -214,6 +246,7 @@ typedef struct _domes_config_GetSystemInfoResponse {
     domes_config_SystemMode mode;
     uint32_t feature_mask;
     uint32_t pod_id; /* Pod identity (0 = not set) */
+    domes_config_ResetReason reset_reason;
 } domes_config_GetSystemInfoResponse;
 
 /* Set pod ID (persisted to NVS) */
@@ -288,28 +321,29 @@ typedef struct _domes_config_EspNowBenchResponse {
     uint32_t p99_rtt_us;
 } domes_config_EspNowBenchResponse;
 
-/* Crash dump stored in NVS after a panic */
-typedef struct _domes_config_GetCrashDumpRequest { /* Empty - returns last crash dump if present */
+/* Diagnostic snapshot stored in NVS by the clean-restart shutdown handler.
+ Hard faults and watchdog resets require ESP-IDF's flash coredump facility. */
+typedef struct _domes_config_GetCrashDumpRequest { /* Empty - returns the last clean-restart snapshot if present */
     char dummy_field;
 } domes_config_GetCrashDumpRequest;
 
 typedef struct _domes_config_CrashDumpResponse {
-    bool has_dump; /* true if a crash dump exists */
-    char reason[64]; /* Panic reason string */
-    char task_name[16]; /* Task that crashed */
-    uint32_t uptime_s; /* Uptime at crash (seconds) */
-    uint32_t free_heap; /* Free heap at crash */
+    bool has_dump; /* true if a clean-restart snapshot exists */
+    char reason[64]; /* Shutdown/restart reason string */
+    char task_name[16]; /* Task that initiated the restart */
+    uint32_t uptime_s; /* Uptime at restart (seconds) */
+    uint32_t free_heap; /* Free heap at restart */
     pb_size_t backtrace_count;
     uint32_t backtrace[16]; /* Program counter values (up to 16) */
-    uint32_t timestamp; /* Boot count when crash occurred */
+    uint32_t timestamp; /* Boot count associated with the snapshot */
 } domes_config_CrashDumpResponse;
 
-typedef struct _domes_config_ClearCrashDumpRequest { /* Empty - clears stored crash dump */
+typedef struct _domes_config_ClearCrashDumpRequest { /* Empty - clears the stored clean-restart snapshot */
     char dummy_field;
 } domes_config_ClearCrashDumpRequest;
 
 typedef struct _domes_config_ClearCrashDumpResponse {
-    bool cleared; /* true if dump was cleared */
+    bool cleared; /* true if the snapshot was cleared */
 } domes_config_ClearCrashDumpResponse;
 
 /* Single heap sample */
@@ -360,8 +394,8 @@ typedef struct _domes_config_CheckUpdateRequest { /* Empty - checks GitHub relea
 
 typedef struct _domes_config_CheckUpdateResponse {
     bool update_available; /* True if newer version found */
-    char current_version[16]; /* Running firmware version (e.g., "1.2.3") */
-    char available_version[16]; /* Latest release version (e.g., "1.3.0") */
+    char current_version[32]; /* Running firmware version (e.g., "1.2.3") */
+    char available_version[32]; /* Latest release version (e.g., "1.3.0") */
     uint32_t firmware_size; /* Size of new firmware in bytes */
     bool auto_update_enabled; /* Current auto-update setting */
 } domes_config_CheckUpdateResponse;
@@ -381,7 +415,7 @@ typedef struct _domes_config_SimulateTouchRequest {
 } domes_config_SimulateTouchRequest;
 
 typedef struct _domes_config_SimulateTouchResponse {
-    domes_config_Status status;
+    char dummy_field;
 } domes_config_SimulateTouchResponse;
 
 /* Enable/disable sim drill mode (auto-inject during ESP-NOW drills) */
@@ -392,30 +426,18 @@ typedef struct _domes_config_SetSimModeRequest {
 } domes_config_SetSimModeRequest;
 
 typedef struct _domes_config_SetSimModeResponse {
-    domes_config_Status status;
     bool enabled;
     uint32_t delay_ms;
     uint32_t pad_index;
 } domes_config_SetSimModeResponse;
 
-/* Top-level request envelope */
-typedef struct _domes_config_ConfigRequest {
-    pb_size_t which_request;
-    union _domes_config_ConfigRequest_request {
-        domes_config_ListFeaturesRequest list_features;
-        domes_config_SetFeatureRequest set_feature;
-    } request;
-} domes_config_ConfigRequest;
-
-/* Top-level response envelope */
-typedef struct _domes_config_ConfigResponse {
-    domes_config_Status status;
-    pb_size_t which_response;
-    union _domes_config_ConfigResponse_response {
-        domes_config_ListFeaturesResponse list_features;
-        domes_config_SetFeatureResponse set_feature;
-    } response;
-} domes_config_ConfigResponse;
+/* Emitted by a connected pod on the rising edge of a physical touch.
+ The payload is protobuf-only and does not carry a command status byte. */
+typedef struct _domes_config_TouchEventNotification {
+    uint32_t pod_id; /* Source pod identity (0 when unset) */
+    uint32_t pad_index; /* Touched pad (0-3) */
+    uint64_t timestamp_us; /* Source esp_timer timestamp */
+} domes_config_TouchEventNotification;
 
 
 #ifdef __cplusplus
@@ -424,8 +446,8 @@ extern "C" {
 
 /* Helper constants for enums */
 #define _domes_config_MsgType_MIN domes_config_MsgType_MSG_TYPE_UNKNOWN
-#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_SET_SIM_MODE_RSP
-#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_SET_SIM_MODE_RSP+1))
+#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_TOUCH_EVENT_NTF
+#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_TOUCH_EVENT_NTF+1))
 
 #define _domes_config_Status_MIN domes_config_Status_STATUS_OK
 #define _domes_config_Status_MAX domes_config_Status_STATUS_NO_DATA
@@ -443,13 +465,20 @@ extern "C" {
 #define _domes_config_SystemMode_MAX domes_config_SystemMode_SYSTEM_MODE_ERROR
 #define _domes_config_SystemMode_ARRAYSIZE ((domes_config_SystemMode)(domes_config_SystemMode_SYSTEM_MODE_ERROR+1))
 
+#define _domes_config_ResetReason_MIN domes_config_ResetReason_RESET_REASON_UNKNOWN
+#define _domes_config_ResetReason_MAX domes_config_ResetReason_RESET_REASON_CPU_LOCKUP
+#define _domes_config_ResetReason_ARRAYSIZE ((domes_config_ResetReason)(domes_config_ResetReason_RESET_REASON_CPU_LOCKUP+1))
+
 
 #define domes_config_FeatureState_feature_ENUMTYPE domes_config_Feature
 
 
 #define domes_config_SetFeatureRequest_feature_ENUMTYPE domes_config_Feature
 
+#define domes_config_GetFeatureRequest_feature_ENUMTYPE domes_config_Feature
+
 #define domes_config_LedPattern_type_ENUMTYPE domes_config_LedPatternType
+
 
 
 
@@ -468,6 +497,7 @@ extern "C" {
 
 
 #define domes_config_GetSystemInfoResponse_mode_ENUMTYPE domes_config_SystemMode
+#define domes_config_GetSystemInfoResponse_reset_reason_ENUMTYPE domes_config_ResetReason
 
 
 
@@ -494,13 +524,9 @@ extern "C" {
 
 
 
-#define domes_config_SimulateTouchResponse_status_ENUMTYPE domes_config_Status
 
 
-#define domes_config_SetSimModeResponse_status_ENUMTYPE domes_config_Status
 
-
-#define domes_config_ConfigResponse_status_ENUMTYPE domes_config_Status
 
 
 /* Initializer values for message structs */
@@ -508,11 +534,13 @@ extern "C" {
 #define domes_config_FeatureState_init_default   {_domes_config_Feature_MIN, 0}
 #define domes_config_ListFeaturesRequest_init_default {0}
 #define domes_config_SetFeatureRequest_init_default {_domes_config_Feature_MIN, 0}
+#define domes_config_GetFeatureRequest_init_default {_domes_config_Feature_MIN}
 #define domes_config_LedPattern_init_default     {_domes_config_LedPatternType_MIN, false, domes_config_Color_init_default, 0, {domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default}, 0, 0}
 #define domes_config_SetLedPatternRequest_init_default {false, domes_config_LedPattern_init_default}
 #define domes_config_GetLedPatternRequest_init_default {0}
 #define domes_config_ListFeaturesResponse_init_default {0, {domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default}, 0}
 #define domes_config_SetFeatureResponse_init_default {false, domes_config_FeatureState_init_default}
+#define domes_config_GetFeatureResponse_init_default {false, domes_config_FeatureState_init_default}
 #define domes_config_SetLedPatternResponse_init_default {false, domes_config_LedPattern_init_default}
 #define domes_config_GetLedPatternResponse_init_default {false, domes_config_LedPattern_init_default}
 #define domes_config_SetImuTriageRequest_init_default {0}
@@ -522,7 +550,7 @@ extern "C" {
 #define domes_config_SetModeRequest_init_default {_domes_config_SystemMode_MIN}
 #define domes_config_SetModeResponse_init_default {_domes_config_SystemMode_MIN, 0}
 #define domes_config_GetSystemInfoRequest_init_default {0}
-#define domes_config_GetSystemInfoResponse_init_default {"", 0, 0, 0, _domes_config_SystemMode_MIN, 0, 0}
+#define domes_config_GetSystemInfoResponse_init_default {"", 0, 0, 0, _domes_config_SystemMode_MIN, 0, 0, _domes_config_ResetReason_MIN}
 #define domes_config_SetPodIdRequest_init_default {0}
 #define domes_config_SetPodIdResponse_init_default {0}
 #define domes_config_TaskHealth_init_default     {"", 0, 0, 0}
@@ -548,20 +576,21 @@ extern "C" {
 #define domes_config_SetAutoUpdateRequest_init_default {0}
 #define domes_config_SetAutoUpdateResponse_init_default {0}
 #define domes_config_SimulateTouchRequest_init_default {0}
-#define domes_config_SimulateTouchResponse_init_default {_domes_config_Status_MIN}
+#define domes_config_SimulateTouchResponse_init_default {0}
 #define domes_config_SetSimModeRequest_init_default {0, 0, 0}
-#define domes_config_SetSimModeResponse_init_default {_domes_config_Status_MIN, 0, 0, 0}
-#define domes_config_ConfigRequest_init_default  {0, {domes_config_ListFeaturesRequest_init_default}}
-#define domes_config_ConfigResponse_init_default {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_default}}
+#define domes_config_SetSimModeResponse_init_default {0, 0, 0}
+#define domes_config_TouchEventNotification_init_default {0, 0, 0}
 #define domes_config_Color_init_zero             {0, 0, 0, 0}
 #define domes_config_FeatureState_init_zero      {_domes_config_Feature_MIN, 0}
 #define domes_config_ListFeaturesRequest_init_zero {0}
 #define domes_config_SetFeatureRequest_init_zero {_domes_config_Feature_MIN, 0}
+#define domes_config_GetFeatureRequest_init_zero {_domes_config_Feature_MIN}
 #define domes_config_LedPattern_init_zero        {_domes_config_LedPatternType_MIN, false, domes_config_Color_init_zero, 0, {domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero}, 0, 0}
 #define domes_config_SetLedPatternRequest_init_zero {false, domes_config_LedPattern_init_zero}
 #define domes_config_GetLedPatternRequest_init_zero {0}
 #define domes_config_ListFeaturesResponse_init_zero {0, {domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero}, 0}
 #define domes_config_SetFeatureResponse_init_zero {false, domes_config_FeatureState_init_zero}
+#define domes_config_GetFeatureResponse_init_zero {false, domes_config_FeatureState_init_zero}
 #define domes_config_SetLedPatternResponse_init_zero {false, domes_config_LedPattern_init_zero}
 #define domes_config_GetLedPatternResponse_init_zero {false, domes_config_LedPattern_init_zero}
 #define domes_config_SetImuTriageRequest_init_zero {0}
@@ -571,7 +600,7 @@ extern "C" {
 #define domes_config_SetModeRequest_init_zero    {_domes_config_SystemMode_MIN}
 #define domes_config_SetModeResponse_init_zero   {_domes_config_SystemMode_MIN, 0}
 #define domes_config_GetSystemInfoRequest_init_zero {0}
-#define domes_config_GetSystemInfoResponse_init_zero {"", 0, 0, 0, _domes_config_SystemMode_MIN, 0, 0}
+#define domes_config_GetSystemInfoResponse_init_zero {"", 0, 0, 0, _domes_config_SystemMode_MIN, 0, 0, _domes_config_ResetReason_MIN}
 #define domes_config_SetPodIdRequest_init_zero   {0}
 #define domes_config_SetPodIdResponse_init_zero  {0}
 #define domes_config_TaskHealth_init_zero        {"", 0, 0, 0}
@@ -597,11 +626,10 @@ extern "C" {
 #define domes_config_SetAutoUpdateRequest_init_zero {0}
 #define domes_config_SetAutoUpdateResponse_init_zero {0}
 #define domes_config_SimulateTouchRequest_init_zero {0}
-#define domes_config_SimulateTouchResponse_init_zero {_domes_config_Status_MIN}
+#define domes_config_SimulateTouchResponse_init_zero {0}
 #define domes_config_SetSimModeRequest_init_zero {0, 0, 0}
-#define domes_config_SetSimModeResponse_init_zero {_domes_config_Status_MIN, 0, 0, 0}
-#define domes_config_ConfigRequest_init_zero     {0, {domes_config_ListFeaturesRequest_init_zero}}
-#define domes_config_ConfigResponse_init_zero    {_domes_config_Status_MIN, 0, {domes_config_ListFeaturesResponse_init_zero}}
+#define domes_config_SetSimModeResponse_init_zero {0, 0, 0}
+#define domes_config_TouchEventNotification_init_zero {0, 0, 0}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define domes_config_Color_r_tag                 1
@@ -612,6 +640,7 @@ extern "C" {
 #define domes_config_FeatureState_enabled_tag    2
 #define domes_config_SetFeatureRequest_feature_tag 1
 #define domes_config_SetFeatureRequest_enabled_tag 2
+#define domes_config_GetFeatureRequest_feature_tag 1
 #define domes_config_LedPattern_type_tag         1
 #define domes_config_LedPattern_color_tag        2
 #define domes_config_LedPattern_colors_tag       3
@@ -621,6 +650,7 @@ extern "C" {
 #define domes_config_ListFeaturesResponse_features_tag 1
 #define domes_config_ListFeaturesResponse_pod_id_tag 2
 #define domes_config_SetFeatureResponse_feature_tag 1
+#define domes_config_GetFeatureResponse_feature_tag 1
 #define domes_config_SetLedPatternResponse_pattern_tag 1
 #define domes_config_GetLedPatternResponse_pattern_tag 1
 #define domes_config_SetImuTriageRequest_enabled_tag 1
@@ -637,6 +667,7 @@ extern "C" {
 #define domes_config_GetSystemInfoResponse_mode_tag 5
 #define domes_config_GetSystemInfoResponse_feature_mask_tag 6
 #define domes_config_GetSystemInfoResponse_pod_id_tag 7
+#define domes_config_GetSystemInfoResponse_reset_reason_tag 8
 #define domes_config_SetPodIdRequest_pod_id_tag  1
 #define domes_config_SetPodIdResponse_pod_id_tag 1
 #define domes_config_TaskHealth_name_tag         1
@@ -699,19 +730,15 @@ extern "C" {
 #define domes_config_SetAutoUpdateRequest_enabled_tag 1
 #define domes_config_SetAutoUpdateResponse_enabled_tag 1
 #define domes_config_SimulateTouchRequest_pad_index_tag 1
-#define domes_config_SimulateTouchResponse_status_tag 1
 #define domes_config_SetSimModeRequest_enabled_tag 1
 #define domes_config_SetSimModeRequest_delay_ms_tag 2
 #define domes_config_SetSimModeRequest_pad_index_tag 3
-#define domes_config_SetSimModeResponse_status_tag 1
 #define domes_config_SetSimModeResponse_enabled_tag 2
 #define domes_config_SetSimModeResponse_delay_ms_tag 3
 #define domes_config_SetSimModeResponse_pad_index_tag 4
-#define domes_config_ConfigRequest_list_features_tag 1
-#define domes_config_ConfigRequest_set_feature_tag 2
-#define domes_config_ConfigResponse_status_tag   1
-#define domes_config_ConfigResponse_list_features_tag 2
-#define domes_config_ConfigResponse_set_feature_tag 3
+#define domes_config_TouchEventNotification_pod_id_tag 1
+#define domes_config_TouchEventNotification_pad_index_tag 2
+#define domes_config_TouchEventNotification_timestamp_us_tag 3
 
 /* Struct field encoding specification for nanopb */
 #define domes_config_Color_FIELDLIST(X, a) \
@@ -738,6 +765,11 @@ X(a, STATIC,   SINGULAR, UENUM,    feature,           1) \
 X(a, STATIC,   SINGULAR, BOOL,     enabled,           2)
 #define domes_config_SetFeatureRequest_CALLBACK NULL
 #define domes_config_SetFeatureRequest_DEFAULT NULL
+
+#define domes_config_GetFeatureRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UENUM,    feature,           1)
+#define domes_config_GetFeatureRequest_CALLBACK NULL
+#define domes_config_GetFeatureRequest_DEFAULT NULL
 
 #define domes_config_LedPattern_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UENUM,    type,              1) \
@@ -773,6 +805,12 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  feature,           1)
 #define domes_config_SetFeatureResponse_CALLBACK NULL
 #define domes_config_SetFeatureResponse_DEFAULT NULL
 #define domes_config_SetFeatureResponse_feature_MSGTYPE domes_config_FeatureState
+
+#define domes_config_GetFeatureResponse_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  feature,           1)
+#define domes_config_GetFeatureResponse_CALLBACK NULL
+#define domes_config_GetFeatureResponse_DEFAULT NULL
+#define domes_config_GetFeatureResponse_feature_MSGTYPE domes_config_FeatureState
 
 #define domes_config_SetLedPatternResponse_FIELDLIST(X, a) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  pattern,           1)
@@ -830,7 +868,8 @@ X(a, STATIC,   SINGULAR, UINT32,   free_heap,         3) \
 X(a, STATIC,   SINGULAR, UINT32,   boot_count,        4) \
 X(a, STATIC,   SINGULAR, UENUM,    mode,              5) \
 X(a, STATIC,   SINGULAR, UINT32,   feature_mask,      6) \
-X(a, STATIC,   SINGULAR, UINT32,   pod_id,            7)
+X(a, STATIC,   SINGULAR, UINT32,   pod_id,            7) \
+X(a, STATIC,   SINGULAR, UENUM,    reset_reason,      8)
 #define domes_config_GetSystemInfoResponse_CALLBACK NULL
 #define domes_config_GetSystemInfoResponse_DEFAULT NULL
 
@@ -1008,7 +1047,7 @@ X(a, STATIC,   SINGULAR, UINT32,   pad_index,         1)
 #define domes_config_SimulateTouchRequest_DEFAULT NULL
 
 #define domes_config_SimulateTouchResponse_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, UENUM,    status,            1)
+
 #define domes_config_SimulateTouchResponse_CALLBACK NULL
 #define domes_config_SimulateTouchResponse_DEFAULT NULL
 
@@ -1020,39 +1059,30 @@ X(a, STATIC,   SINGULAR, UINT32,   pad_index,         3)
 #define domes_config_SetSimModeRequest_DEFAULT NULL
 
 #define domes_config_SetSimModeResponse_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, UENUM,    status,            1) \
 X(a, STATIC,   SINGULAR, BOOL,     enabled,           2) \
 X(a, STATIC,   SINGULAR, UINT32,   delay_ms,          3) \
 X(a, STATIC,   SINGULAR, UINT32,   pad_index,         4)
 #define domes_config_SetSimModeResponse_CALLBACK NULL
 #define domes_config_SetSimModeResponse_DEFAULT NULL
 
-#define domes_config_ConfigRequest_FIELDLIST(X, a) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (request,list_features,request.list_features),   1) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (request,set_feature,request.set_feature),   2)
-#define domes_config_ConfigRequest_CALLBACK NULL
-#define domes_config_ConfigRequest_DEFAULT NULL
-#define domes_config_ConfigRequest_request_list_features_MSGTYPE domes_config_ListFeaturesRequest
-#define domes_config_ConfigRequest_request_set_feature_MSGTYPE domes_config_SetFeatureRequest
-
-#define domes_config_ConfigResponse_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, UENUM,    status,            1) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (response,list_features,response.list_features),   2) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (response,set_feature,response.set_feature),   3)
-#define domes_config_ConfigResponse_CALLBACK NULL
-#define domes_config_ConfigResponse_DEFAULT NULL
-#define domes_config_ConfigResponse_response_list_features_MSGTYPE domes_config_ListFeaturesResponse
-#define domes_config_ConfigResponse_response_set_feature_MSGTYPE domes_config_SetFeatureResponse
+#define domes_config_TouchEventNotification_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   pod_id,            1) \
+X(a, STATIC,   SINGULAR, UINT32,   pad_index,         2) \
+X(a, STATIC,   SINGULAR, UINT64,   timestamp_us,      3)
+#define domes_config_TouchEventNotification_CALLBACK NULL
+#define domes_config_TouchEventNotification_DEFAULT NULL
 
 extern const pb_msgdesc_t domes_config_Color_msg;
 extern const pb_msgdesc_t domes_config_FeatureState_msg;
 extern const pb_msgdesc_t domes_config_ListFeaturesRequest_msg;
 extern const pb_msgdesc_t domes_config_SetFeatureRequest_msg;
+extern const pb_msgdesc_t domes_config_GetFeatureRequest_msg;
 extern const pb_msgdesc_t domes_config_LedPattern_msg;
 extern const pb_msgdesc_t domes_config_SetLedPatternRequest_msg;
 extern const pb_msgdesc_t domes_config_GetLedPatternRequest_msg;
 extern const pb_msgdesc_t domes_config_ListFeaturesResponse_msg;
 extern const pb_msgdesc_t domes_config_SetFeatureResponse_msg;
+extern const pb_msgdesc_t domes_config_GetFeatureResponse_msg;
 extern const pb_msgdesc_t domes_config_SetLedPatternResponse_msg;
 extern const pb_msgdesc_t domes_config_GetLedPatternResponse_msg;
 extern const pb_msgdesc_t domes_config_SetImuTriageRequest_msg;
@@ -1091,19 +1121,20 @@ extern const pb_msgdesc_t domes_config_SimulateTouchRequest_msg;
 extern const pb_msgdesc_t domes_config_SimulateTouchResponse_msg;
 extern const pb_msgdesc_t domes_config_SetSimModeRequest_msg;
 extern const pb_msgdesc_t domes_config_SetSimModeResponse_msg;
-extern const pb_msgdesc_t domes_config_ConfigRequest_msg;
-extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
+extern const pb_msgdesc_t domes_config_TouchEventNotification_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
 #define domes_config_Color_fields &domes_config_Color_msg
 #define domes_config_FeatureState_fields &domes_config_FeatureState_msg
 #define domes_config_ListFeaturesRequest_fields &domes_config_ListFeaturesRequest_msg
 #define domes_config_SetFeatureRequest_fields &domes_config_SetFeatureRequest_msg
+#define domes_config_GetFeatureRequest_fields &domes_config_GetFeatureRequest_msg
 #define domes_config_LedPattern_fields &domes_config_LedPattern_msg
 #define domes_config_SetLedPatternRequest_fields &domes_config_SetLedPatternRequest_msg
 #define domes_config_GetLedPatternRequest_fields &domes_config_GetLedPatternRequest_msg
 #define domes_config_ListFeaturesResponse_fields &domes_config_ListFeaturesResponse_msg
 #define domes_config_SetFeatureResponse_fields &domes_config_SetFeatureResponse_msg
+#define domes_config_GetFeatureResponse_fields &domes_config_GetFeatureResponse_msg
 #define domes_config_SetLedPatternResponse_fields &domes_config_SetLedPatternResponse_msg
 #define domes_config_GetLedPatternResponse_fields &domes_config_GetLedPatternResponse_msg
 #define domes_config_SetImuTriageRequest_fields &domes_config_SetImuTriageRequest_msg
@@ -1142,18 +1173,15 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_SimulateTouchResponse_fields &domes_config_SimulateTouchResponse_msg
 #define domes_config_SetSimModeRequest_fields &domes_config_SetSimModeRequest_msg
 #define domes_config_SetSimModeResponse_fields &domes_config_SetSimModeResponse_msg
-#define domes_config_ConfigRequest_fields &domes_config_ConfigRequest_msg
-#define domes_config_ConfigResponse_fields &domes_config_ConfigResponse_msg
+#define domes_config_TouchEventNotification_fields &domes_config_TouchEventNotification_msg
 
 /* Maximum encoded size of messages (where known) */
 #define DOMES_CONFIG_CONFIG_PB_H_MAX_SIZE        domes_config_GetMemoryProfileResponse_size
 #define domes_config_CheckUpdateRequest_size     0
-#define domes_config_CheckUpdateResponse_size    44
+#define domes_config_CheckUpdateResponse_size    76
 #define domes_config_ClearCrashDumpRequest_size  0
 #define domes_config_ClearCrashDumpResponse_size 2
 #define domes_config_Color_size                  24
-#define domes_config_ConfigRequest_size          6
-#define domes_config_ConfigResponse_size         106
 #define domes_config_CrashDumpResponse_size      198
 #define domes_config_EspNowBenchRequest_size     6
 #define domes_config_EspNowBenchResponse_size    48
@@ -1162,6 +1190,8 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_GetCrashDumpRequest_size    0
 #define domes_config_GetEspNowStatusRequest_size 0
 #define domes_config_GetEspNowStatusResponse_size 269
+#define domes_config_GetFeatureRequest_size      2
+#define domes_config_GetFeatureResponse_size     6
 #define domes_config_GetHealthRequest_size       0
 #define domes_config_GetHealthResponse_size      621
 #define domes_config_GetLedPatternRequest_size   0
@@ -1171,7 +1201,7 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_GetModeRequest_size         0
 #define domes_config_GetModeResponse_size        8
 #define domes_config_GetSystemInfoRequest_size   0
-#define domes_config_GetSystemInfoResponse_size  65
+#define domes_config_GetSystemInfoResponse_size  67
 #define domes_config_HeapSample_size             24
 #define domes_config_LedPattern_size             248
 #define domes_config_ListFeaturesRequest_size    0
@@ -1192,10 +1222,11 @@ extern const pb_msgdesc_t domes_config_ConfigResponse_msg;
 #define domes_config_SetPodIdRequest_size        6
 #define domes_config_SetPodIdResponse_size       6
 #define domes_config_SetSimModeRequest_size      14
-#define domes_config_SetSimModeResponse_size     16
+#define domes_config_SetSimModeResponse_size     14
 #define domes_config_SimulateTouchRequest_size   6
-#define domes_config_SimulateTouchResponse_size  2
+#define domes_config_SimulateTouchResponse_size  0
 #define domes_config_TaskHealth_size             35
+#define domes_config_TouchEventNotification_size 23
 
 #ifdef __cplusplus
 } /* extern "C" */

@@ -6,9 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Widget _wrap(Widget child) {
-  return ProviderScope(
-    child: MaterialApp(home: child),
-  );
+  return ProviderScope(child: MaterialApp(home: child));
 }
 
 DrillResult _makeResult({
@@ -22,31 +20,36 @@ DrillResult _makeResult({
       roundCount: 5,
       podAddresses: ['pod-1', 'pod-2'],
     ),
-    rounds: rounds ??
+    rounds:
+        rounds ??
         [
           RoundResult(
-              roundIndex: 0,
-              podAddress: 'pod-1',
-              hit: true,
-              reactionTime: const Duration(milliseconds: 250),
-              timestamp: now),
+            roundIndex: 0,
+            podAddress: 'pod-1',
+            hit: true,
+            reactionTime: const Duration(milliseconds: 250),
+            timestamp: now,
+          ),
           RoundResult(
-              roundIndex: 1,
-              podAddress: 'pod-2',
-              hit: true,
-              reactionTime: const Duration(milliseconds: 400),
-              timestamp: now),
+            roundIndex: 1,
+            podAddress: 'pod-2',
+            hit: true,
+            reactionTime: const Duration(milliseconds: 400),
+            timestamp: now,
+          ),
           RoundResult(
-              roundIndex: 2,
-              podAddress: 'pod-1',
-              hit: false,
-              timestamp: now),
+            roundIndex: 2,
+            podAddress: 'pod-1',
+            hit: false,
+            timestamp: now,
+          ),
           RoundResult(
-              roundIndex: 3,
-              podAddress: 'pod-2',
-              hit: true,
-              reactionTime: const Duration(milliseconds: 180),
-              timestamp: now),
+            roundIndex: 3,
+            podAddress: 'pod-2',
+            hit: true,
+            reactionTime: const Duration(milliseconds: 180),
+            timestamp: now,
+          ),
         ],
     startTime: now,
     endTime: now.add(const Duration(seconds: 30)),
@@ -112,8 +115,10 @@ void main() {
 
       // Scroll down to find Round Details
       await tester.scrollUntilVisible(
-          find.text('Round Details'), 200,
-          scrollable: find.byType(Scrollable).first);
+        find.text('Round Details'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Round Details'), findsOneWidget);
     });
 
@@ -124,20 +129,23 @@ void main() {
 
       // Scroll down to find the miss text
       await tester.scrollUntilVisible(
-          find.text('miss'), 200,
-          scrollable: find.byType(Scrollable).first);
+        find.text('miss'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('miss'), findsOneWidget);
     });
 
-    testWidgets('shows per-pod breakdown for multi-pod drills',
-        (tester) async {
+    testWidgets('shows per-pod breakdown for multi-pod drills', (tester) async {
       final result = _makeResult();
       await tester.pumpWidget(_wrap(DrillResultsScreen(result: result)));
       await tester.pumpAndSettle();
 
       await tester.scrollUntilVisible(
-          find.text('Per-Pod Breakdown'), 200,
-          scrollable: find.byType(Scrollable).first);
+        find.text('Per-Pod Breakdown'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Per-Pod Breakdown'), findsOneWidget);
     });
 
@@ -155,8 +163,10 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.scrollUntilVisible(
-          find.text('Done'), 200,
-          scrollable: find.byType(Scrollable).first);
+        find.text('Done'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Done'), findsOneWidget);
     });
 

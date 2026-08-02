@@ -5,17 +5,15 @@
 
 #include "tcpConfigServer.hpp"
 
-#include "infra/diagnostics.hpp"
-#include "trace/traceApi.hpp"
-
-#include "protocol/frameCodec.hpp"
 #include "config/configProtocol.hpp"
-#include "services/imuService.hpp"
-
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "infra/diagnostics.hpp"
 #include "lwip/sockets.h"
+#include "protocol/frameCodec.hpp"
+#include "services/imuService.hpp"
+#include "trace/traceApi.hpp"
 
 #include <array>
 #include <cerrno>
@@ -25,12 +23,7 @@ static const char* TAG = "tcp_config";
 namespace domes {
 
 TcpConfigServer::TcpConfigServer(config::FeatureManager& features, uint16_t port)
-    : features_(features)
-    , port_(port)
-    , stopRequested_(false)
-    , listenSocket_(-1)
-    , clientCount_(0) {
-}
+    : features_(features), port_(port), stopRequested_(false), listenSocket_(-1), clientCount_(0) {}
 
 TcpConfigServer::~TcpConfigServer() {
     requestStop();
@@ -56,8 +49,7 @@ void TcpConfigServer::run() {
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     serverAddr.sin_port = htons(port_);
 
-    if (bind(listenSock, reinterpret_cast<struct sockaddr*>(&serverAddr),
-             sizeof(serverAddr)) < 0) {
+    if (bind(listenSock, reinterpret_cast<struct sockaddr*>(&serverAddr), sizeof(serverAddr)) < 0) {
         ESP_LOGE(TAG, "Failed to bind socket: %d", errno);
         close(listenSock);
         return;
@@ -90,7 +82,8 @@ void TcpConfigServer::run() {
         int ret = select(listenSock + 1, &readfds, nullptr, nullptr, &tv);
 
         if (ret < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR)
+                continue;
             ESP_LOGE(TAG, "select failed: %d", errno);
             break;
         }
@@ -104,9 +97,8 @@ void TcpConfigServer::run() {
         struct sockaddr_in clientAddr;
         socklen_t clientAddrLen = sizeof(clientAddr);
 
-        int clientSock = accept(listenSock,
-                                 reinterpret_cast<struct sockaddr*>(&clientAddr),
-                                 &clientAddrLen);
+        int clientSock =
+            accept(listenSock, reinterpret_cast<struct sockaddr*>(&clientAddr), &clientAddrLen);
 
         if (clientSock < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -119,8 +111,7 @@ void TcpConfigServer::run() {
         // Log client connection
         char addrStr[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &clientAddr.sin_addr, addrStr, sizeof(addrStr));
-        ESP_LOGI(TAG, "Client connected from %s:%u",
-                 addrStr, ntohs(clientAddr.sin_port));
+        ESP_LOGI(TAG, "Client connected from %s:%u", addrStr, ntohs(clientAddr.sin_port));
 
         // Check client limit
         if (clientCount_.load() >= kMaxTcpClients) {
@@ -217,7 +208,7 @@ void TcpConfigServer::handleClient(int clientSock) {
                 size_t payloadLen = decoder.getPayloadLen();
 
                 // Only handle config messages over TCP
-                if (config::isConfigMessage(msgType)) {
+                if (config::isConfigRequest(msgType)) {
                     handler.handleCommand(msgType, payload, payloadLen);
                 } else {
                     ESP_LOGW(TAG, "Ignoring non-config message: 0x%02X", msgType);

@@ -2,8 +2,9 @@
 ///
 /// Port of tools/domes-cli/src/protocol/mod.rs
 ///
-/// IMPORTANT: LIST_FEATURES_RSP (0x21) payload is pure protobuf.
-/// All other responses have [status_byte][protobuf_body] format.
+/// LIST_FEATURES_RSP (0x21) and device-originated notifications are pure
+/// protobuf. Command responses parsed here use [status_byte][protobuf_body],
+/// matching their owning firmware handlers.
 library;
 
 import 'dart:typed_data';
@@ -82,9 +83,9 @@ class AppLedPattern {
 
   /// Create a solid color pattern.
   factory AppLedPattern.solid(int r, int g, int b) => AppLedPattern(
-        patternType: LedPatternType.LED_PATTERN_SOLID,
-        color: (r, g, b, 0),
-      );
+    patternType: LedPatternType.LED_PATTERN_SOLID,
+    color: (r, g, b, 0),
+  );
 
   /// Create a breathing pattern.
   factory AppLedPattern.breathing(int r, int g, int b, int periodMs) =>
@@ -96,15 +97,56 @@ class AppLedPattern {
 
   /// Create a color cycle pattern.
   factory AppLedPattern.colorCycle(
-          List<(int, int, int, int)> colors, int periodMs) =>
-      AppLedPattern(
-        patternType: LedPatternType.LED_PATTERN_COLOR_CYCLE,
-        colors: colors,
-        periodMs: periodMs,
-      );
+    List<(int, int, int, int)> colors,
+    int periodMs,
+  ) => AppLedPattern(
+    patternType: LedPatternType.LED_PATTERN_COLOR_CYCLE,
+    colors: colors,
+    periodMs: periodMs,
+  );
 
   /// Turn LEDs off.
   factory AppLedPattern.off() => const AppLedPattern();
+
+  /// Whether a firmware-reported pattern represents this requested state.
+  bool matchesApplied(AppLedPattern applied) {
+    if (patternType != applied.patternType ||
+        periodMs != applied.periodMs ||
+        brightness != applied.brightness) {
+      return false;
+    }
+
+    return switch (patternType) {
+      LedPatternType.LED_PATTERN_OFF => true,
+      LedPatternType.LED_PATTERN_SOLID ||
+      LedPatternType.LED_PATTERN_BREATHING => color == applied.color,
+      LedPatternType.LED_PATTERN_COLOR_CYCLE => _colorsEqual(
+        colors.isEmpty ? _defaultCycleColors : colors,
+        applied.colors,
+      ),
+      _ => false,
+    };
+  }
+
+  static const List<(int, int, int, int)> _defaultCycleColors = [
+    (255, 0, 0, 0),
+    (0, 255, 0, 0),
+    (0, 0, 255, 0),
+    (255, 255, 0, 0),
+    (0, 255, 255, 0),
+    (255, 0, 255, 0),
+  ];
+
+  static bool _colorsEqual(
+    List<(int, int, int, int)> requested,
+    List<(int, int, int, int)> applied,
+  ) {
+    if (requested.length != applied.length) return false;
+    for (var index = 0; index < requested.length; index++) {
+      if (requested[index] != applied[index]) return false;
+    }
+    return true;
+  }
 }
 
 /// Mode info for app use.
@@ -131,6 +173,19 @@ class AppSystemInfo {
     required this.bootCount,
     required this.mode,
     required this.featureMask,
+  });
+}
+
+/// Physical touch edge reported by a pod.
+class AppTouchEvent {
+  final int podId;
+  final int padIndex;
+  final int timestampUs;
+
+  const AppTouchEvent({
+    required this.podId,
+    required this.padIndex,
+    required this.timestampUs,
   });
 }
 
@@ -180,11 +235,13 @@ Uint8List serializeSetLedPattern(AppLedPattern pattern) {
   }
 
   for (final (r, g, b, w) in pattern.colors) {
-    proto.colors.add(Color()
-      ..r = r
-      ..g = g
-      ..b = b
-      ..w = w);
+    proto.colors.add(
+      Color()
+        ..r = r
+        ..g = g
+        ..b = b
+        ..w = w,
+    );
   }
 
   final req = SetLedPatternRequest()..pattern = proto;
@@ -244,16 +301,9 @@ AppLedPattern parseLedPatternResponse(Uint8List payload) {
   return AppLedPattern(
     patternType: pattern.type,
     color: pattern.hasColor()
-        ? (
-            pattern.color.r,
-            pattern.color.g,
-            pattern.color.b,
-            pattern.color.w,
-          )
+        ? (pattern.color.r, pattern.color.g, pattern.color.b, pattern.color.w)
         : null,
-    colors: pattern.colors
-        .map((c) => (c.r, c.g, c.b, c.w))
-        .toList(),
+    colors: pattern.colors.map((c) => (c.r, c.g, c.b, c.w)).toList(),
     periodMs: pattern.periodMs,
     brightness: pattern.brightness,
   );
@@ -265,10 +315,7 @@ AppModeInfo parseGetModeResponse(Uint8List payload) {
   final protoBytes = _checkStatus(payload);
   try {
     final resp = GetModeResponse.fromBuffer(protoBytes);
-    return AppModeInfo(
-      mode: resp.mode,
-      timeInModeMs: resp.timeInModeMs,
-    );
+    return AppModeInfo(mode: resp.mode, timeInModeMs: resp.timeInModeMs);
   } catch (e) {
     throw DecodeFailure('Failed to decode GetModeResponse: $e');
   }
@@ -302,5 +349,26 @@ AppSystemInfo parseGetSystemInfoResponse(Uint8List payload) {
     );
   } catch (e) {
     throw DecodeFailure('Failed to decode GetSystemInfoResponse: $e');
+  }
+}
+
+/// Parse a device-originated TouchEventNotification (pure protobuf).
+AppTouchEvent parseTouchEventNotification(Uint8List payload) {
+  try {
+    final notification = TouchEventNotification.fromBuffer(payload);
+    if (notification.padIndex > 3) {
+      throw DecodeFailure(
+        'TouchEventNotification pad index ${notification.padIndex} is out of range',
+      );
+    }
+    return AppTouchEvent(
+      podId: notification.podId,
+      padIndex: notification.padIndex,
+      timestampUs: notification.timestampUs.toInt(),
+    );
+  } on DecodeFailure {
+    rethrow;
+  } catch (e) {
+    throw DecodeFailure('Failed to decode TouchEventNotification: $e');
   }
 }

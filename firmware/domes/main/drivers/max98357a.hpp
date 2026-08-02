@@ -14,11 +14,10 @@
  * - SD: Shutdown (HIGH=enabled, LOW=shutdown)
  */
 
-#include "interfaces/iAudioDriver.hpp"
-
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
 #include "esp_log.h"
+#include "interfaces/iAudioDriver.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -143,8 +142,8 @@ public:
         }
 
         initialized_ = true;
-        ESP_LOGI(kTag, "MAX98357A initialized (BCLK=%d, LRCLK=%d, DOUT=%d, SD=%d)",
-                 bclkPin_, lrclkPin_, doutPin_, sdPin_);
+        ESP_LOGI(kTag, "MAX98357A initialized (BCLK=%d, LRCLK=%d, DOUT=%d, SD=%d)", bclkPin_,
+                 lrclkPin_, doutPin_, sdPin_);
         return ESP_OK;
     }
 
@@ -190,13 +189,14 @@ public:
         return ESP_OK;
     }
 
-    esp_err_t write(const int16_t* samples, size_t count,
-                    size_t* written, uint32_t timeoutMs = 1000) override {
+    esp_err_t write(const int16_t* samples, size_t count, size_t* written,
+                    uint32_t timeoutMs = 1000) override {
         if (!started_) {
             return ESP_ERR_INVALID_STATE;
         }
         if (!samples || count == 0) {
-            if (written) *written = 0;
+            if (written)
+                *written = 0;
             return ESP_OK;
         }
 
@@ -217,16 +217,14 @@ public:
             for (size_t i = 0; i < chunkSamples; ++i) {
                 int32_t scaled = (static_cast<int32_t>(src[i]) * volume_) / 100;
                 scaledBuffer[i] = static_cast<int16_t>(
-                    std::clamp(scaled, static_cast<int32_t>(-32768), static_cast<int32_t>(32767))
-                );
+                    std::clamp(scaled, static_cast<int32_t>(-32768), static_cast<int32_t>(32767)));
             }
 
             // Write to I2S
             size_t bytesWritten = 0;
-            esp_err_t err = i2s_channel_write(txHandle_, scaledBuffer,
-                                              chunkSamples * sizeof(int16_t),
-                                              &bytesWritten,
-                                              pdMS_TO_TICKS(timeoutMs));
+            esp_err_t err =
+                i2s_channel_write(txHandle_, scaledBuffer, chunkSamples * sizeof(int16_t),
+                                  &bytesWritten, pdMS_TO_TICKS(timeoutMs));
 
             size_t samplesWritten = bytesWritten / sizeof(int16_t);
             totalWritten += samplesWritten;
@@ -239,12 +237,14 @@ public:
             }
             if (err != ESP_OK) {
                 ESP_LOGE(kTag, "I2S write failed: %s", esp_err_to_name(err));
-                if (written) *written = totalWritten;
+                if (written)
+                    *written = totalWritten;
                 return err;
             }
         }
 
-        if (written) *written = totalWritten;
+        if (written)
+            *written = totalWritten;
         return ESP_OK;
     }
 

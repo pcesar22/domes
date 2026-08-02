@@ -4,6 +4,7 @@
 //! Uses btleplug for BLE Central role (connecting to the device as peripheral).
 
 use super::frame::{encode_frame, Frame, FrameDecoder};
+use crate::proto::config::{MsgType as ConfigMsgType, TouchEventNotification};
 use anyhow::{bail, Context, Result};
 use btleplug::api::{
     Central, Characteristic, Manager as _, Peripheral as _, ScanFilter, WriteType,
@@ -11,6 +12,7 @@ use btleplug::api::{
 use btleplug::platform::{Adapter, Manager, Peripheral};
 use crossbeam_channel::{Receiver, Sender};
 use futures::stream::StreamExt;
+use prost::Message;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 use uuid::Uuid;
@@ -26,6 +28,15 @@ const OTA_STATUS_CHAR_UUID: Uuid = Uuid::from_u128(0x12345678_1234_5678_1234_567
 
 /// Default BLE operation timeout
 const DEFAULT_TIMEOUT_MS: u64 = 5000;
+
+/// ATT payload guaranteed by the minimum BLE MTU (23 bytes minus 3 bytes overhead).
+const SAFE_WRITE_CHUNK_SIZE: usize = 20;
+
+/// Allow a short discovery window after the first name match so an exact or
+/// second matching advertisement can arrive before selecting a device.
+const NAME_MATCH_SETTLE_TIME: Duration = Duration::from_millis(750);
+
+const TOUCH_EVENT_NOTIFICATION_MSG_TYPE: u8 = ConfigMsgType::TouchEventNtf as u8;
 
 /// Target device identifier for BLE connection
 #[derive(Clone, Debug)]
@@ -210,16 +221,6 @@ impl BleTransport {
         })
     }
 
-    /// Get the connected device name
-    pub fn device_name(&self) -> &str {
-        &self.device_name
-    }
-
-    /// Get the connected device address
-    pub fn device_address(&self) -> String {
-        self.peripheral.address().to_string()
-    }
-
     /// Check if still connected
     pub fn is_connected(&self) -> bool {
         self.runtime
@@ -234,10 +235,31 @@ impl BleTransport {
         let frame = encode_frame(msg_type, payload)?;
 
         self.runtime.block_on(async {
-            self.peripheral
+            // A characteristic write is atomic: backends reject values larger
+            // than the negotiated ATT payload before delivery. Try the complete
+            // frame for normal high-MTU links, then retry from byte zero at the
+            // minimum guaranteed payload when the backend rejects it.
+            match self
+                .peripheral
                 .write(&self.data_char, &frame, WriteType::WithoutResponse)
                 .await
-                .context("Failed to write to BLE characteristic")
+            {
+                Ok(()) => Ok::<(), anyhow::Error>(()),
+                Err(full_write_error) if frame.len() > SAFE_WRITE_CHUNK_SIZE => {
+                    for chunk in frame.chunks(SAFE_WRITE_CHUNK_SIZE) {
+                        self.peripheral
+                            .write(&self.data_char, chunk, WriteType::WithoutResponse)
+                            .await
+                            .with_context(|| {
+                                format!(
+                                    "Failed to write BLE frame fragment after full write was rejected: {full_write_error}"
+                                )
+                            })?;
+                    }
+                    Ok(())
+                }
+                Err(error) => Err(error).context("Failed to write BLE characteristic"),
+            }
         })?;
 
         Ok(())
@@ -260,8 +282,12 @@ impl BleTransport {
                 Ok(data) => {
                     for byte in data {
                         if let Some(result) = self.decoder.feed_byte(byte) {
-                            return result
-                                .map_err(|e| anyhow::anyhow!("Frame decode error: {}", e));
+                            let frame =
+                                result.map_err(|e| anyhow::anyhow!("Frame decode error: {}", e))?;
+                            if let Some(response) = route_received_frame(frame) {
+                                return Ok(response);
+                            }
+                            self.decoder.reset();
                         }
                     }
                 }
@@ -318,10 +344,26 @@ impl BleTransport {
 
         // Set up new notification listener
         self.rx_receiver = setup_notification_listener(&self.runtime, &self.peripheral)?;
+        self.decoder.reset();
 
         eprintln!("Reconnected to {}", self.device_name);
         Ok(())
     }
+}
+
+fn route_received_frame(frame: Frame) -> Option<Frame> {
+    if frame.msg_type != TOUCH_EVENT_NOTIFICATION_MSG_TYPE {
+        return Some(frame);
+    }
+
+    match TouchEventNotification::decode(frame.payload.as_slice()) {
+        Ok(event) => eprintln!(
+            "BLE touch event: pod={} pad={} timestamp_us={}",
+            event.pod_id, event.pad_index, event.timestamp_us
+        ),
+        Err(error) => eprintln!("Malformed BLE touch event notification: {error}"),
+    }
+    None
 }
 
 /// Find a device by name or address
@@ -331,6 +373,7 @@ async fn find_device(
     timeout: Duration,
 ) -> Result<(Peripheral, String)> {
     let start = Instant::now();
+    let mut pending_name_match: Option<(Peripheral, String, String, Instant)> = None;
 
     while start.elapsed() < timeout {
         let peripherals = adapter
@@ -338,31 +381,94 @@ async fn find_device(
             .await
             .context("Failed to get peripherals")?;
 
+        let mut named_candidates = Vec::new();
+
         for p in peripherals {
             if let Ok(Some(props)) = p.properties().await {
                 let name = props.local_name.clone().unwrap_or_default();
                 let addr = p.address().to_string();
 
-                let matches = match target {
-                    BleTarget::Name(target_name) => {
-                        name.contains(target_name) || name == *target_name
+                match target {
+                    BleTarget::Address(target_addr) if addr.eq_ignore_ascii_case(target_addr) => {
+                        return Ok((p, name));
                     }
-                    BleTarget::Address(target_addr) => addr.eq_ignore_ascii_case(target_addr),
-                };
-
-                if matches {
-                    return Ok((p, name));
+                    BleTarget::Name(_) => named_candidates.push((p, name, addr)),
+                    BleTarget::Address(_) => {}
                 }
+            }
+        }
+
+        if let BleTarget::Name(target_name) = target {
+            let summaries: Vec<_> = named_candidates
+                .iter()
+                .map(|(_, name, address)| (name.clone(), address.clone()))
+                .collect();
+            if let Some(index) = select_name_match(&summaries, target_name)? {
+                let (peripheral, name, address) = named_candidates.swap_remove(index);
+                let first_seen = pending_name_match
+                    .as_ref()
+                    .filter(|(_, _, pending_address, _)| pending_address == &address)
+                    .map(|(_, _, _, first_seen)| *first_seen)
+                    .unwrap_or_else(Instant::now);
+
+                if first_seen.elapsed() >= NAME_MATCH_SETTLE_TIME {
+                    return Ok((peripheral, name));
+                }
+                pending_name_match = Some((peripheral, name, address, first_seen));
+            } else {
+                pending_name_match = None;
             }
         }
 
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
+    if let Some((peripheral, name, _, _)) = pending_name_match {
+        return Ok((peripheral, name));
+    }
+
     match target {
         BleTarget::Name(name) => bail!("Device '{}' not found after {}s", name, timeout.as_secs()),
         BleTarget::Address(addr) => {
             bail!("Device {} not found after {}s", addr, timeout.as_secs())
+        }
+    }
+}
+
+fn select_name_match(candidates: &[(String, String)], target_name: &str) -> Result<Option<usize>> {
+    if target_name.is_empty() {
+        anyhow::bail!("BLE device name must not be empty");
+    }
+
+    let exact: Vec<_> = candidates
+        .iter()
+        .enumerate()
+        .filter(|(_, (name, _))| name == target_name)
+        .collect();
+    let matches: Vec<_> = if exact.is_empty() {
+        candidates
+            .iter()
+            .enumerate()
+            .filter(|(_, (name, _))| name.contains(target_name))
+            .collect()
+    } else {
+        exact
+    };
+
+    match matches.as_slice() {
+        [] => Ok(None),
+        [(index, _)] => Ok(Some(*index)),
+        _ => {
+            let descriptions = matches
+                .iter()
+                .map(|(_, (name, address))| format!("{} ({})", name, address))
+                .collect::<Vec<_>>()
+                .join(", ");
+            anyhow::bail!(
+                "BLE name '{}' is ambiguous; matched {}. Use --ble with a device address.",
+                target_name,
+                descriptions
+            )
         }
     }
 }
@@ -408,11 +514,9 @@ fn setup_notification_listener(
 
     runtime.spawn(async move {
         while let Some(notification) = notification_stream.next().await {
-            if notification.uuid == OTA_STATUS_CHAR_UUID {
-                if tx.send(notification.value).is_err() {
-                    // Receiver dropped, exit
-                    break;
-                }
+            if notification.uuid == OTA_STATUS_CHAR_UUID && tx.send(notification.value).is_err() {
+                // Receiver dropped, exit
+                break;
             }
         }
     });
@@ -423,9 +527,65 @@ fn setup_notification_listener(
 impl Drop for BleTransport {
     fn drop(&mut self) {
         // Disconnect cleanly
-        let _ = self.runtime.block_on(async {
+        self.runtime.block_on(async {
             let _ = self.peripheral.unsubscribe(&self.status_char).await;
             let _ = self.peripheral.disconnect().await;
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_ble_name_wins_over_partial_matches() {
+        let candidates = vec![
+            ("DOMES-Pod-01".to_string(), "AA:00".to_string()),
+            ("DOMES-Pod".to_string(), "BB:00".to_string()),
+        ];
+
+        assert_eq!(
+            select_name_match(&candidates, "DOMES-Pod").unwrap(),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn ambiguous_ble_name_requires_an_address() {
+        let candidates = vec![
+            ("DOMES-Pod-01".to_string(), "AA:00".to_string()),
+            ("DOMES-Pod-02".to_string(), "BB:00".to_string()),
+        ];
+
+        let error = select_name_match(&candidates, "DOMES-Pod")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("ambiguous"));
+        assert!(error.contains("AA:00"));
+        assert!(error.contains("BB:00"));
+    }
+
+    #[test]
+    fn empty_ble_name_is_rejected() {
+        let error = select_name_match(&[], "").unwrap_err().to_string();
+        assert!(error.contains("must not be empty"));
+    }
+
+    #[test]
+    fn touch_notifications_are_observed_instead_of_returned_as_responses() {
+        assert_eq!(TOUCH_EVENT_NOTIFICATION_MSG_TYPE, 0x50);
+        let touch = Frame {
+            msg_type: TOUCH_EVENT_NOTIFICATION_MSG_TYPE,
+            payload: vec![0x08, 0x01, 0x10, 0x02],
+        };
+
+        assert!(route_received_frame(touch).is_none());
+
+        let response = Frame {
+            msg_type: 0x21,
+            payload: vec![],
+        };
+        assert_eq!(route_received_frame(response).unwrap().msg_type, 0x21);
     }
 }

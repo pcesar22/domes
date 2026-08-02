@@ -9,14 +9,7 @@ import '../../data/protocol/ota_protocol.dart' as ota;
 import 'pod_connection_provider.dart';
 
 /// OTA transfer phase.
-enum OtaPhase {
-  idle,
-  preparing,
-  transferring,
-  verifying,
-  completed,
-  error,
-}
+enum OtaPhase { idle, preparing, transferring, verifying, completed, error }
 
 /// OTA update state.
 class OtaUpdateState {
@@ -40,12 +33,13 @@ class OtaUpdateState {
 /// OTA update notifier.
 class OtaNotifier extends StateNotifier<OtaUpdateState> {
   final Ref _ref;
+  bool _active = false;
 
   OtaNotifier(this._ref) : super(const OtaUpdateState());
 
   /// Start OTA update with firmware bytes.
-  Future<void> startOta(Uint8List firmware,
-      {String version = 'unknown'}) async {
+  Future<void> startOta(Uint8List firmware, {required String version}) async {
+    if (_active) return;
     final connection = _ref.read(podConnectionProvider);
     if (!connection.isConnected || connection.transport == null) {
       state = const OtaUpdateState(
@@ -54,6 +48,8 @@ class OtaNotifier extends StateNotifier<OtaUpdateState> {
       );
       return;
     }
+
+    _active = true;
 
     state = OtaUpdateState(
       phase: OtaPhase.preparing,
@@ -88,6 +84,8 @@ class OtaNotifier extends StateNotifier<OtaUpdateState> {
         error: '$e',
         message: 'OTA failed',
       );
+    } finally {
+      _active = false;
     }
   }
 
@@ -107,7 +105,6 @@ class OtaNotifier extends StateNotifier<OtaUpdateState> {
   }
 }
 
-final otaProvider =
-    StateNotifierProvider<OtaNotifier, OtaUpdateState>((ref) {
+final otaProvider = StateNotifierProvider<OtaNotifier, OtaUpdateState>((ref) {
   return OtaNotifier(ref);
 });

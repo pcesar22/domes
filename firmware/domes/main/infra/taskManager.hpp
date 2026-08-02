@@ -15,13 +15,15 @@
 #include "interfaces/iTaskRunner.hpp"
 
 #include <array>
+#include <atomic>
 
 namespace domes::infra {
 
 /**
  * @brief Maximum number of managed tasks
  *
- * Uses static allocation to avoid runtime heap usage.
+ * The tracking slots are statically bounded. FreeRTOS task stacks are allocated
+ * by xTaskCreate() during initialization.
  */
 constexpr size_t kMaxManagedTasks = 8;
 
@@ -33,14 +35,15 @@ struct TaskSlot {
     ITaskRunner* runner = nullptr;
     const char* name = nullptr;
     bool watchdogSubscribed = false;
-    bool active = false;
+    std::atomic<bool> active{false};
+    class TaskManager* owner = nullptr;
 };
 
 /**
  * @brief Manages FreeRTOS task lifecycle with core pinning
  *
  * Provides:
- * - Static task creation with core affinity
+ * - Bounded task tracking with core affinity
  * - Optional watchdog subscription
  * - Task handle management
  * - Graceful shutdown support
@@ -52,10 +55,10 @@ struct TaskSlot {
  * // Define task runner
  * class MyTask : public ITaskRunner {
  *     void run() override { ... }
- *     esp_err_t requestStop() override { running_ = false; return ESP_OK; }
- *     bool shouldRun() const override { return running_; }
+ *     esp_err_t requestStop() override { running_.store(false); return ESP_OK; }
+ *     bool shouldRun() const override { return running_.load(); }
  * private:
- *     volatile bool running_ = true;
+ *     std::atomic<bool> running_{true};
  * };
  *
  * // In app_main:
@@ -118,7 +121,9 @@ public:
     /**
      * @brief Check if task manager has room for more tasks
      */
-    bool hasCapacity() const { return activeCount_ < kMaxManagedTasks; }
+    bool hasCapacity() const {
+        return activeCount_.load(std::memory_order_acquire) < kMaxManagedTasks;
+    }
 
 private:
     /**
@@ -135,7 +140,7 @@ private:
     size_t findFreeSlot() const;
 
     std::array<TaskSlot, kMaxManagedTasks> slots_;
-    size_t activeCount_ = 0;
+    std::atomic<size_t> activeCount_{0};
 };
 
 }  // namespace domes::infra

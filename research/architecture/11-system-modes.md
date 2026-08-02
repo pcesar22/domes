@@ -4,9 +4,17 @@
 > power management and several transition triggers below remain future work. Current behavior lives
 > in `modeManager.*`, `config.proto`, and `main.cpp`.
 
-## AI Agent Instructions
+> **Current implementation note:** Passive inspection commands do not enter or extend TRIAGE; only
+> explicit actions count as activity. `feature list` reports build-supported features, BLE and
+> haptic state are enforced, and the default build omits the WiFi client feature. A
+> `CONFIG_DOMES_WIFI_AUTO_CONNECT` build preserves WiFi client state across mode transitions. The
+> copied masks and expected output later in this proposal are historical unless they match those
+> sources.
 
-Load this file when:
+## Historical Scope
+
+This design record originally covered:
+
 - Implementing system mode transitions
 - Adding power management or sleep states
 - Mapping features to operating modes
@@ -14,14 +22,14 @@ Load this file when:
 - Adding battery monitoring
 - Modifying service task polling rates
 
-Prerequisites: `03-driver-development.md`, `04-communication.md`, `05-game-engine.md`
+Original prerequisites: `03-driver-development.md`, `04-communication.md`, `05-game-engine.md`
 Companions: `05-game-engine.md` (game logic within GAME mode), `12-multi-pod-orchestration.md` (multi-pod coordination)
 
 ---
 
 ## How This Document Fits
 
-Three documents define the DOMES runtime architecture. Each operates at a different scope:
+This proposal set originally described the intended DOMES runtime at three scopes:
 
 ```
 +---------------------------------------------------------------+
@@ -47,7 +55,10 @@ Three documents define the DOMES runtime architecture. Each operates at a differ
 | **11 - System Modes (this doc)** | Single pod, full lifecycle | SystemMode FSM, feature masks, power management |
 | **12 - Multi-Pod Orchestration** | Multiple pods, full session | Roles, discovery, drill programs, result collection |
 
-**This document** defines the **lifecycle of a single pod** from power-on to shutdown. The `SystemMode` FSM determines which hardware features are active at any given time. When the pod enters `SystemMode::GAME`, the GameState FSM (see doc 05) takes over game-specific logic. Mode transitions are driven by external events: BLE connections, ESP-NOW messages (see doc 12), CLI commands, and timeouts.
+**This document** proposed the **lifecycle of a single pod** from power-on to shutdown. Some of its
+`SystemMode` FSM and CLI behavior is implemented, while the transition triggers and power behavior
+described below remain mixed current and target material. Follow the source files named in the
+banner for the live state machine.
 
 Every pod — master or slave — runs its own `ModeManager` independently. The orchestration layer (doc 12) coordinates mode transitions across pods by sending commands that each pod's `ModeManager` processes locally.
 
@@ -71,14 +82,18 @@ These terms are used consistently across docs 05, 11, and 12:
 
 ## Problem Statement
 
-After boot, the firmware currently enters a **flat, always-on state** where every service runs at full speed indefinitely. There is no concept of operating modes, no power management, and no lifecycle beyond "everything is on." This design is fine for bench testing but insufficient for production use:
+When this proposal was written, the firmware entered a **flat, always-on state** where every service
+ran at full speed indefinitely. `ModeManager` has since landed, so this is the historical baseline,
+not the current runtime:
 
 - **No power awareness** -- All services poll at their maximum rate regardless of what the device is doing
 - **No modal behavior** -- The device cannot distinguish between "waiting to be configured" and "running a drill"
 - **No structured triage workflow** -- There is ad-hoc IMU triage but no system-level coordination of what triage means
 - **No sleep or idle optimization** -- Battery-powered pods will drain quickly
 
-This document defines a **System Mode Manager** that layers on top of the existing `FeatureManager` to provide modal behavior, power-aware polling, and structured triage.
+The proposal introduced a **System Mode Manager** layered on `FeatureManager`. Modal feature masks
+and structured triage are implemented; the proposed power-management and polling-rate work is not
+complete.
 
 ---
 
@@ -105,7 +120,7 @@ This document defines a **System Mode Manager** that layers on top of the existi
 |    +-----+-----+                                                        |
 |          | init complete                                                |
 |          v                                                              |
-|    +-----------+  CLI message    +-----------+                          |
+|    +-----------+  CLI action     +-----------+                          |
 |    |   IDLE    |<-------------->|  TRIAGE   |                          |
 |    +-----+-----+  idle timeout  +-----------+                          |
 |          |                                                              |
@@ -137,8 +152,8 @@ This document defines a **System Mode Manager** that layers on top of the existi
 | Mode | Purpose | Entry Trigger | Exit Trigger |
 |------|---------|---------------|--------------|
 | **BOOTING** | Hardware init, self-test, OTA verify | Power-on / reset | Init complete |
-| **IDLE** | Minimum-power standby, BLE advertising only | Init complete, peer disconnect, drill stop, triage timeout | CLI message, BLE connect, ESP-NOW join, long-press |
-| **TRIAGE** | Hardware validation via CLI (any transport) | CLI config message received | CLI idle timeout (30s) or explicit exit |
+| **IDLE** | Minimum-power standby, BLE advertising only | Init complete, peer disconnect, drill stop, triage timeout | Mutating/action command, BLE connect, ESP-NOW join, long-press |
+| **TRIAGE** | Hardware validation via CLI (any transport) | Mutating/action command received | Action idle timeout (30s) or explicit exit |
 | **CONNECTED** | Paired with master/phone, ready for drills | BLE peer established (master), ESP-NOW JOIN_GAME (slave) | Peer lost, drill starts |
 | **GAME** | Active drill execution (latency-critical). GameState FSM (doc 05) is active. | START_DRILL command, or long-press solo drill | Drill complete, STOP_ALL, game timeout |
 | **ERROR** | Fault recovery, red LED, limited function | Critical fault (watchdog, alloc, driver failure) | Recovery timeout (10s) -> IDLE |
@@ -184,14 +199,16 @@ bool isValidTransition(SystemMode from, SystemMode to) {
 **Note on IDLE -> GAME (solo drill):** A pod can enter GAME mode directly from IDLE via long-press, without a phone or master. In this case the pod acts as both master and sole target -- it runs a built-in drill (see doc 05, §Drill Types) against itself. When the drill completes, it returns to IDLE (not CONNECTED, since there is no peer).
 
 **Note on GAME exit destination:** The exit destination depends on how GAME was entered:
+
 - Entered from CONNECTED (peer drill) -> exits to CONNECTED
 - Entered from IDLE (solo drill) -> exits to IDLE
 
 ---
 
-## Mode -> Feature Mapping
+## Proposed Mode -> Feature Mapping
 
-Each mode defines which features are **active** (enabled in `FeatureManager`) and at what polling rates services should operate.
+The table below records the proposal. The live masks are in `modeManager.cpp`; build-supported
+features and runtime state come from `FeatureManager`.
 
 | Feature | BOOTING | IDLE | TRIAGE | CONNECTED | GAME | ERROR |
 |---------|---------|------|--------|-----------|------|-------|
@@ -205,7 +222,8 @@ Each mode defines which features are **active** (enabled in `FeatureManager`) an
 
 ### Polling Rate Profiles
 
-Services currently poll at fixed rates. The ModeManager introduces **rate profiles** that adjust polling frequency per mode to save power when responsiveness is not needed.
+At proposal time, services polled at fixed rates. The rate profiles below remain target behavior
+unless the owning service source implements them.
 
 | Service | IDLE | TRIAGE | CONNECTED | GAME |
 |---------|------|--------|-----------|------|
@@ -240,7 +258,8 @@ The default resting state. The pod consumes minimum power while remaining discov
 6. **Transport receivers**: Still polling for incoming frames (serial OTA, BLE OTA)
 
 **Exit triggers:**
-- CLI message received (any transport) -> TRIAGE
+
+- Mutating/action command received (any transport) -> TRIAGE
 - BLE peer connects (phone app) -> CONNECTED (this pod becomes master, see doc 12)
 - ESP-NOW JOIN_GAME from master -> CONNECTED then GAME (this pod is a slave, see doc 12)
 - Long-press on touch pad -> GAME (solo drill, see §Solo Drills below)
@@ -258,54 +277,62 @@ Phase 2 with `CONFIG_PM_ENABLE` and automatic light sleep could reduce this to ~
 
 ### TRIAGE
 
-The primary hardware validation flow. Activates when a CLI tool connects (via any transport: USB serial, BLE, or WiFi) and enables all sensors for systematic testing.
+The primary hardware validation flow. It activates when an explicit CLI action arrives over serial,
+BLE, or an enabled WiFi/TCP transport and enables the mode-owned sensors for systematic testing.
 
-**Entry:** Any CLI config message received while in IDLE or CONNECTED. The `ConfigCommandHandler` detects this and calls `modeManager.transitionTo(SystemMode::kTriage)`.
+**Entry:** A mutating/action config message received while in IDLE. Passive reads such as feature,
+health, memory, and system-info polling do not change mode.
 
-**Timeout:** If no CLI message is received for 30 seconds, the ModeManager auto-transitions back to IDLE. Each incoming message resets the timer.
+**Timeout:** If no action message is received for 30 seconds, the ModeManager auto-transitions back
+to IDLE. Each subsequent action resets the timer; passive polling does not.
 
 #### Triage on Slave Pods
 
 Doc 12 defines that only the master pod has BLE from the phone. However, **any pod can be triaged individually** via:
-- **USB serial**: `domes-cli --port <PORT> feature list` -- always available, no BLE needed
-- **WiFi TCP**: `domes-cli --wifi <IP>:5000 feature list` -- if WiFi is enabled
-- **BLE direct**: `domes-cli --ble "DOMES-Pod-3"` -- when the pod is not in a game session
+
+- **USB serial**: `domes-cli --port <PORT> system self-test` -- always available, no BLE needed
+- **WiFi TCP**: `domes-cli --wifi <IP>:5000 system self-test` -- only in a
+  `CONFIG_DOMES_WIFI_AUTO_CONNECT` build with a connected client
+- **BLE direct**: `domes-cli --ble "DOMES-Pod-3" system self-test` -- when the pod is not in a game session
+
+The default build omits and rejects the WiFi runtime feature. WiFi-enabled builds prefer stored
+credentials and use compile-time secrets only to seed an unprovisioned first boot; the clean-board
+CLI cannot set credentials over an unavailable network connection.
 
 Triage is a per-pod operation. It does not require or interact with the multi-pod orchestration layer.
 
 #### Triage CLI Sequence
 
 ```bash
-# Step 1: Connect to device
-domes-cli --port <PORT>             # Serial
-domes-cli --ble "DOMES-Pod"         # BLE
-domes-cli --wifi 192.168.1.x:5000   # WiFi
+# Step 1: Select the stable CP2102N serial transport.
+PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+test -n "$PORT"
+CLI=(domes-cli --port "$PORT")
+
+# Alternatives are complete invocations, not persistent connection setup:
+# domes-cli --ble "DOMES-Pod-01" feature list
+# domes-cli --wifi 192.168.1.100:5000 feature list
 
 # Step 2: Identify -- list all features and their states
-domes-cli feature list
-# Output:
-#   led-effects: enabled
-#   ble: enabled
-#   wifi: disabled
-#   esp-now: disabled
-#   touch: enabled
-#   haptic: disabled (no driver)
-#   audio: enabled
+"${CLI[@]}" feature list
+# Output contains only features supported by the running build.
+# The default profile omits WiFi; do not assume copied states across modes.
 
 # Step 3: Per-feature validation
-domes-cli led set solid --color ff0000   # Red -- visually verify
-domes-cli led set solid --color 00ff00   # Green
-domes-cli led set solid --color 0000ff   # Blue
-domes-cli led set breathing              # Breathing animation
-domes-cli led set off                    # LEDs off
+"${CLI[@]}" led solid --color ff0000   # Red -- visually verify
+"${CLI[@]}" led solid --color 00ff00   # Green
+"${CLI[@]}" led solid --color 0000ff   # Blue
+"${CLI[@]}" led breathing              # Breathing animation
+"${CLI[@]}" led off                    # LEDs off
 
-domes-cli imu triage on                  # Enable tap detection
+"${CLI[@]}" imu triage --enable         # Enable tap detection
 # Tap pod -- expect white flash + beep per tap
-domes-cli imu triage off                 # Disable
+"${CLI[@]}" imu triage --disable        # Disable
 
 # Step 4: System info
-domes-cli system mode                    # Show current SystemMode
-domes-cli system info                    # Firmware version, uptime, heap, boot count
+"${CLI[@]}" system mode                 # Show current SystemMode
+"${CLI[@]}" system info                 # Firmware version, uptime, heap, boot count
 
 # Step 5: Done -- disconnect
 # Device auto-returns to IDLE after 30s with no CLI traffic
@@ -331,6 +358,7 @@ The pod is paired with a peer and ready for drills. How the pod reaches CONNECTE
 In CONNECTED mode, ESP-NOW is active for inter-pod communication. The pod waits for a START_DRILL command (from phone via BLE on master, or from master via ESP-NOW on slave) to enter GAME.
 
 **Exit triggers:**
+
 - START_DRILL received -> GAME
 - Peer lost (BLE disconnect on master, ESP-NOW timeout on slave) -> IDLE
 - CLI message received -> TRIAGE
@@ -367,6 +395,7 @@ The **ModeManager** controls which services are powered on (touch, audio, haptic
 Critical fault recovery mode. Only BLE advertising and a red pulsing LED are active. After 10 seconds, auto-recovers to IDLE.
 
 **Entry triggers:**
+
 - Task watchdog timeout
 - Memory allocation failure
 - Driver initialization failure
@@ -390,6 +419,7 @@ User long-press  -->  IDLE -> GAME  -->  GameState cycles (Ready/Armed/Triggered
 ```
 
 In this mode:
+
 - No ESP-NOW is needed (single pod)
 - No phone is needed (built-in drill config)
 - No clock sync is needed (local timing only)
@@ -605,14 +635,13 @@ ESP_LOGI(kTag, "System mode: IDLE");
 
 ### Integration Point: ConfigCommandHandler
 
-When any config message arrives, the handler notifies the ModeManager to reset the activity timer and auto-transition to TRIAGE if in IDLE:
+The implemented handler updates activity only for requests selected by `commandRecordsActivity()`.
+Passive inspection does not reset the timer or transition IDLE to TRIAGE:
 
 ```cpp
 void ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, size_t len) {
-    // Existing dispatch logic...
-
-    // Notify mode manager of CLI activity
-    if (modeManager_) {
+    auto msgType = static_cast<MsgType>(type);
+    if (modeManager_ && commandRecordsActivity(msgType)) {
         modeManager_->resetActivityTimer();
         if (modeManager_->currentMode() == SystemMode::kIdle) {
             modeManager_->transitionTo(SystemMode::kTriage);
@@ -742,16 +771,21 @@ message GetSystemInfoResponse {
 ### CLI Commands (New)
 
 ```bash
+PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+test -n "$PORT"
+CLI=(domes-cli --port "$PORT")
+
 # Query current mode
-domes-cli system mode
+"${CLI[@]}" system mode
 # Output: IDLE (12.3s)
 
 # Force mode transition (for testing)
-domes-cli system mode set triage
+"${CLI[@]}" system set-mode triage
 # Output: Mode: IDLE -> TRIAGE (ok)
 
 # System info
-domes-cli system info
+"${CLI[@]}" system info
 # Output:
 #   Firmware: v0.3.0
 #   Uptime: 142s
@@ -773,13 +807,15 @@ After OTA completes, the device reboots and goes through BOOTING -> IDLE as norm
 
 ---
 
-## Battery Monitoring (Phase 2, DOMES_V1 Board Only)
+## Battery Monitoring (Phase 2, Future Production Board Only)
 
 The DOMES Pod v1 PCB has:
+
 - Battery voltage ADC on `GPIO_NUM_5` (`ADC_CHANNEL_4`)
 - Charge status input on `GPIO_NUM_8` (not available on NFF devboard)
 
-**Note**: The NFF devboard uses GPIO5 for `kImuInt1` (IMU interrupt). Battery monitoring is only applicable to `BOARD_DOMES_V1`.
+**Note**: The NFF devboard uses GPIO5 for `kImuInt1` (IMU interrupt). Battery monitoring requires a
+separate, future production board profile that does not exist in the current firmware.
 
 ### Low Battery Behavior
 
@@ -877,10 +913,12 @@ On boot, the ModeManager reads `last_mode` from NVS. If the last mode was ERROR,
 ### Phase 1: Core Mode Manager (Immediate)
 
 **Files to create:**
+
 - `firmware/domes/main/config/modeManager.hpp`
 - `firmware/domes/main/config/modeManager.cpp`
 
 **Files to modify:**
+
 - `firmware/common/proto/config.proto` -- Add SystemMode enum, Get/SetMode messages
 - `firmware/common/proto/config.options` -- Add size constraints for new messages
 - `firmware/domes/main/config/configProtocol.hpp` -- Add MsgType wrappers for 0x30-0x35
@@ -889,6 +927,7 @@ On boot, the ModeManager reads `last_mode` from NVS. If the last mode was ERROR,
 - `tools/domes-cli/src/commands/` -- Add `system` subcommand (mode, info)
 
 **Scope:**
+
 - SystemMode enum and ModeManager class
 - Feature mask application on transitions
 - Triage auto-entry on CLI message
@@ -901,15 +940,18 @@ On boot, the ModeManager reads `last_mode` from NVS. If the last mode was ERROR,
 ### Phase 2: Power Optimization (After V1 PCB)
 
 **Files to create:**
+
 - `firmware/domes/main/services/batteryService.hpp`
 - `firmware/domes/main/services/batteryService.cpp`
 
 **Files to modify:**
+
 - `firmware/domes/sdkconfig.defaults` -- Enable `CONFIG_PM_ENABLE`, `CONFIG_FREERTOS_USE_TICKLESS_IDLE`
-- `firmware/domes/main/config.hpp` -- Add battery pin config for BOARD_DOMES_V1
+- `firmware/domes/main/config.hpp` -- Add a complete production profile with battery pins
 - Service files -- Add mode-aware polling rate adjustment
 
 **Scope:**
+
 - Battery ADC reading and filtering
 - Low-battery mode enforcement
 - ESP-IDF power management configuration
@@ -920,11 +962,13 @@ On boot, the ModeManager reads `last_mode` from NVS. If the last mode was ERROR,
 ### Phase 3: Game Integration (With Game Engine and Multi-Pod)
 
 **Files to modify:**
+
 - `firmware/domes/main/config/modeManager.hpp` -- Add GameEngine hooks
 - `firmware/domes/main/game/` -- GameEngine implementation (see doc 05)
 - Integration with DrillInterpreter (see doc 12)
 
 **Scope:**
+
 - CONNECTED -> GAME transition on START_DRILL
 - GAME -> CONNECTED on drill complete
 - GameState FSM (doc 05) operating within GAME mode
@@ -1023,31 +1067,43 @@ TEST(ModeManager, PeerDrillExitsToConnected) {
 ### Hardware Verification (Phase 1)
 
 ```bash
-# Flash firmware with mode manager
-/flash
+PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+test -n "$PORT"
+
+# Flash firmware with mode manager and verify framed UART communication.
+tools/firmware/flash_and_verify.sh firmware/domes "$PORT"
 
 # Verify IDLE mode on boot
 # Expected: slow breathing LED, BLE advertising visible
 
-# Connect via CLI -- should auto-transition to TRIAGE
-domes-cli --port <PORT> system mode
+# A passive query leaves IDLE unchanged.
+domes-cli --port "$PORT" system mode
+# Expected: IDLE
+
+# An explicit action enters TRIAGE.
+domes-cli --port "$PORT" system self-test
+domes-cli --port "$PORT" system mode
 # Expected: TRIAGE
 
-# Verify all sensors active in TRIAGE
-domes-cli --port <PORT> feature list
+# Verify all mode-owned sensors active in TRIAGE.
+domes-cli --port "$PORT" feature list
 # Expected: led, ble, touch, haptic, audio all enabled
 
 # Wait 30s without sending commands
 # Expected: device returns to IDLE (breathing LED)
 
 # Query mode again
-domes-cli --port <PORT> system mode
-# Expected: TRIAGE (because the query itself resets the timer)
+domes-cli --port "$PORT" system mode
+# Expected: IDLE (the passive query does not reset the timer)
 ```
 
 ---
 
-## Summary
+## Historical Phase Summary
+
+The following table records the proposal's before/after framing. It is not current delivery status;
+use `firmware/MILESTONES.md` and the implementation for that.
 
 | Aspect | Current State | After Phase 1 |
 |--------|--------------|---------------|
@@ -1072,11 +1128,11 @@ Each pod manages its own `ModeManager` independently. When multiple pods are con
 # Check mode of all registered pods
 domes-cli --all system mode
 # Output:
-#   pod1 (/dev/ttyACM0): IDLE (5.2s)
-#   pod2 (/dev/ttyACM1): TRIAGE (1.8s)
+#   pod1 (/dev/serial/by-id/...): IDLE (5.2s)
+#   pod2 (/dev/serial/by-id/...): TRIAGE (1.8s)
 
 # Force both pods into a specific mode
-domes-cli --all system mode set triage
+domes-cli --all system set-mode triage
 ```
 
 Modes are not synchronized across pods. A master pod may be in CONNECTED while a slave pod is still in IDLE. Mode coordination is handled by the orchestration layer (see doc 12), not by the ModeManager itself.

@@ -62,6 +62,7 @@ const MsgType$json = {
     {'1': 'MSG_TYPE_SIMULATE_TOUCH_RSP', '2': 77},
     {'1': 'MSG_TYPE_SET_SIM_MODE_REQ', '2': 78},
     {'1': 'MSG_TYPE_SET_SIM_MODE_RSP', '2': 79},
+    {'1': 'MSG_TYPE_TOUCH_EVENT_NTF', '2': 80},
   ],
 };
 
@@ -91,7 +92,8 @@ final $typed_data.Uint8List msgTypeDescriptor = $convert.base64Decode(
     '9SU1AQRxIgChxNU0dfVFlQRV9TRVRfQVVUT19VUERBVEVfUkVREEgSIAocTVNHX1RZUEVfU0VU'
     'X0FVVE9fVVBEQVRFX1JTUBBJEh8KG01TR19UWVBFX1NJTVVMQVRFX1RPVUNIX1JFURBMEh8KG0'
     '1TR19UWVBFX1NJTVVMQVRFX1RPVUNIX1JTUBBNEh0KGU1TR19UWVBFX1NFVF9TSU1fTU9ERV9S'
-    'RVEQThIdChlNU0dfVFlQRV9TRVRfU0lNX01PREVfUlNQEE8=');
+    'RVEQThIdChlNU0dfVFlQRV9TRVRfU0lNX01PREVfUlNQEE8SHAoYTVNHX1RZUEVfVE9VQ0hfRV'
+    'ZFTlRfTlRGEFA=');
 
 @$core.Deprecated('Use statusDescriptor instead')
 const Status$json = {
@@ -170,6 +172,41 @@ final $typed_data.Uint8List systemModeDescriptor = $convert.base64Decode(
     'xFEAESFgoSU1lTVEVNX01PREVfVFJJQUdFEAISGQoVU1lTVEVNX01PREVfQ09OTkVDVEVEEAMS'
     'FAoQU1lTVEVNX01PREVfR0FNRRAEEhUKEVNZU1RFTV9NT0RFX0VSUk9SEAU=');
 
+@$core.Deprecated('Use resetReasonDescriptor instead')
+const ResetReason$json = {
+  '1': 'ResetReason',
+  '2': [
+    {'1': 'RESET_REASON_UNKNOWN', '2': 0},
+    {'1': 'RESET_REASON_POWER_ON', '2': 1},
+    {'1': 'RESET_REASON_EXTERNAL_PIN', '2': 2},
+    {'1': 'RESET_REASON_SOFTWARE', '2': 3},
+    {'1': 'RESET_REASON_PANIC', '2': 4},
+    {'1': 'RESET_REASON_INTERRUPT_WATCHDOG', '2': 5},
+    {'1': 'RESET_REASON_TASK_WATCHDOG', '2': 6},
+    {'1': 'RESET_REASON_WATCHDOG', '2': 7},
+    {'1': 'RESET_REASON_DEEP_SLEEP', '2': 8},
+    {'1': 'RESET_REASON_BROWNOUT', '2': 9},
+    {'1': 'RESET_REASON_SDIO', '2': 10},
+    {'1': 'RESET_REASON_USB', '2': 11},
+    {'1': 'RESET_REASON_JTAG', '2': 12},
+    {'1': 'RESET_REASON_EFUSE', '2': 13},
+    {'1': 'RESET_REASON_POWER_GLITCH', '2': 14},
+    {'1': 'RESET_REASON_CPU_LOCKUP', '2': 15},
+  ],
+};
+
+/// Descriptor for `ResetReason`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List resetReasonDescriptor = $convert.base64Decode(
+    'CgtSZXNldFJlYXNvbhIYChRSRVNFVF9SRUFTT05fVU5LTk9XThAAEhkKFVJFU0VUX1JFQVNPTl'
+    '9QT1dFUl9PThABEh0KGVJFU0VUX1JFQVNPTl9FWFRFUk5BTF9QSU4QAhIZChVSRVNFVF9SRUFT'
+    'T05fU09GVFdBUkUQAxIWChJSRVNFVF9SRUFTT05fUEFOSUMQBBIjCh9SRVNFVF9SRUFTT05fSU'
+    '5URVJSVVBUX1dBVENIRE9HEAUSHgoaUkVTRVRfUkVBU09OX1RBU0tfV0FUQ0hET0cQBhIZChVS'
+    'RVNFVF9SRUFTT05fV0FUQ0hET0cQBxIbChdSRVNFVF9SRUFTT05fREVFUF9TTEVFUBAIEhkKFV'
+    'JFU0VUX1JFQVNPTl9CUk9XTk9VVBAJEhUKEVJFU0VUX1JFQVNPTl9TRElPEAoSFAoQUkVTRVRf'
+    'UkVBU09OX1VTQhALEhUKEVJFU0VUX1JFQVNPTl9KVEFHEAwSFgoSUkVTRVRfUkVBU09OX0VGVV'
+    'NFEA0SHQoZUkVTRVRfUkVBU09OX1BPV0VSX0dMSVRDSBAOEhsKF1JFU0VUX1JFQVNPTl9DUFVf'
+    'TE9DS1VQEA8=');
+
 @$core.Deprecated('Use colorDescriptor instead')
 const Color$json = {
   '1': 'Color',
@@ -236,6 +273,26 @@ const SetFeatureRequest$json = {
 final $typed_data.Uint8List setFeatureRequestDescriptor = $convert.base64Decode(
     'ChFTZXRGZWF0dXJlUmVxdWVzdBIvCgdmZWF0dXJlGAEgASgOMhUuZG9tZXMuY29uZmlnLkZlYX'
     'R1cmVSB2ZlYXR1cmUSGAoHZW5hYmxlZBgCIAEoCFIHZW5hYmxlZA==');
+
+@$core.Deprecated('Use getFeatureRequestDescriptor instead')
+const GetFeatureRequest$json = {
+  '1': 'GetFeatureRequest',
+  '2': [
+    {
+      '1': 'feature',
+      '3': 1,
+      '4': 1,
+      '5': 14,
+      '6': '.domes.config.Feature',
+      '10': 'feature'
+    },
+  ],
+};
+
+/// Descriptor for `GetFeatureRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getFeatureRequestDescriptor = $convert.base64Decode(
+    'ChFHZXRGZWF0dXJlUmVxdWVzdBIvCgdmZWF0dXJlGAEgASgOMhUuZG9tZXMuY29uZmlnLkZlYX'
+    'R1cmVSB2ZlYXR1cmU=');
 
 @$core.Deprecated('Use ledPatternDescriptor instead')
 const LedPattern$json = {
@@ -345,6 +402,26 @@ const SetFeatureResponse$json = {
 /// Descriptor for `SetFeatureResponse`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List setFeatureResponseDescriptor = $convert.base64Decode(
     'ChJTZXRGZWF0dXJlUmVzcG9uc2USNAoHZmVhdHVyZRgBIAEoCzIaLmRvbWVzLmNvbmZpZy5GZW'
+    'F0dXJlU3RhdGVSB2ZlYXR1cmU=');
+
+@$core.Deprecated('Use getFeatureResponseDescriptor instead')
+const GetFeatureResponse$json = {
+  '1': 'GetFeatureResponse',
+  '2': [
+    {
+      '1': 'feature',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.domes.config.FeatureState',
+      '10': 'feature'
+    },
+  ],
+};
+
+/// Descriptor for `GetFeatureResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getFeatureResponseDescriptor = $convert.base64Decode(
+    'ChJHZXRGZWF0dXJlUmVzcG9uc2USNAoHZmVhdHVyZRgBIAEoCzIaLmRvbWVzLmNvbmZpZy5GZW'
     'F0dXJlU3RhdGVSB2ZlYXR1cmU=');
 
 @$core.Deprecated('Use setLedPatternResponseDescriptor instead')
@@ -511,6 +588,14 @@ const GetSystemInfoResponse$json = {
     },
     {'1': 'feature_mask', '3': 6, '4': 1, '5': 13, '10': 'featureMask'},
     {'1': 'pod_id', '3': 7, '4': 1, '5': 13, '10': 'podId'},
+    {
+      '1': 'reset_reason',
+      '3': 8,
+      '4': 1,
+      '5': 14,
+      '6': '.domes.config.ResetReason',
+      '10': 'resetReason'
+    },
   ],
 };
 
@@ -520,7 +605,8 @@ final $typed_data.Uint8List getSystemInfoResponseDescriptor = $convert.base64Dec
     'dhcmVWZXJzaW9uEhkKCHVwdGltZV9zGAIgASgNUgd1cHRpbWVTEhsKCWZyZWVfaGVhcBgDIAEo'
     'DVIIZnJlZUhlYXASHQoKYm9vdF9jb3VudBgEIAEoDVIJYm9vdENvdW50EiwKBG1vZGUYBSABKA'
     '4yGC5kb21lcy5jb25maWcuU3lzdGVtTW9kZVIEbW9kZRIhCgxmZWF0dXJlX21hc2sYBiABKA1S'
-    'C2ZlYXR1cmVNYXNrEhUKBnBvZF9pZBgHIAEoDVIFcG9kSWQ=');
+    'C2ZlYXR1cmVNYXNrEhUKBnBvZF9pZBgHIAEoDVIFcG9kSWQSPAoMcmVzZXRfcmVhc29uGAggAS'
+    'gOMhkuZG9tZXMuY29uZmlnLlJlc2V0UmVhc29uUgtyZXNldFJlYXNvbg==');
 
 @$core.Deprecated('Use setPodIdRequestDescriptor instead')
 const SetPodIdRequest$json = {
@@ -943,22 +1029,14 @@ final $typed_data.Uint8List simulateTouchRequestDescriptor =
 @$core.Deprecated('Use simulateTouchResponseDescriptor instead')
 const SimulateTouchResponse$json = {
   '1': 'SimulateTouchResponse',
-  '2': [
-    {
-      '1': 'status',
-      '3': 1,
-      '4': 1,
-      '5': 14,
-      '6': '.domes.config.Status',
-      '10': 'status'
-    },
+  '9': [
+    {'1': 1, '2': 2},
   ],
 };
 
 /// Descriptor for `SimulateTouchResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List simulateTouchResponseDescriptor = $convert.base64Decode(
-    'ChVTaW11bGF0ZVRvdWNoUmVzcG9uc2USLAoGc3RhdHVzGAEgASgOMhQuZG9tZXMuY29uZmlnLl'
-    'N0YXR1c1IGc3RhdHVz');
+final $typed_data.Uint8List simulateTouchResponseDescriptor =
+    $convert.base64Decode('ChVTaW11bGF0ZVRvdWNoUmVzcG9uc2VKBAgBEAI=');
 
 @$core.Deprecated('Use setSimModeRequestDescriptor instead')
 const SetSimModeRequest$json = {
@@ -979,100 +1057,31 @@ final $typed_data.Uint8List setSimModeRequestDescriptor = $convert.base64Decode(
 const SetSimModeResponse$json = {
   '1': 'SetSimModeResponse',
   '2': [
-    {
-      '1': 'status',
-      '3': 1,
-      '4': 1,
-      '5': 14,
-      '6': '.domes.config.Status',
-      '10': 'status'
-    },
     {'1': 'enabled', '3': 2, '4': 1, '5': 8, '10': 'enabled'},
     {'1': 'delay_ms', '3': 3, '4': 1, '5': 13, '10': 'delayMs'},
     {'1': 'pad_index', '3': 4, '4': 1, '5': 13, '10': 'padIndex'},
+  ],
+  '9': [
+    {'1': 1, '2': 2},
   ],
 };
 
 /// Descriptor for `SetSimModeResponse`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List setSimModeResponseDescriptor = $convert.base64Decode(
-    'ChJTZXRTaW1Nb2RlUmVzcG9uc2USLAoGc3RhdHVzGAEgASgOMhQuZG9tZXMuY29uZmlnLlN0YX'
-    'R1c1IGc3RhdHVzEhgKB2VuYWJsZWQYAiABKAhSB2VuYWJsZWQSGQoIZGVsYXlfbXMYAyABKA1S'
-    'B2RlbGF5TXMSGwoJcGFkX2luZGV4GAQgASgNUghwYWRJbmRleA==');
+    'ChJTZXRTaW1Nb2RlUmVzcG9uc2USGAoHZW5hYmxlZBgCIAEoCFIHZW5hYmxlZBIZCghkZWxheV'
+    '9tcxgDIAEoDVIHZGVsYXlNcxIbCglwYWRfaW5kZXgYBCABKA1SCHBhZEluZGV4SgQIARAC');
 
-@$core.Deprecated('Use configRequestDescriptor instead')
-const ConfigRequest$json = {
-  '1': 'ConfigRequest',
+@$core.Deprecated('Use touchEventNotificationDescriptor instead')
+const TouchEventNotification$json = {
+  '1': 'TouchEventNotification',
   '2': [
-    {
-      '1': 'list_features',
-      '3': 1,
-      '4': 1,
-      '5': 11,
-      '6': '.domes.config.ListFeaturesRequest',
-      '9': 0,
-      '10': 'listFeatures'
-    },
-    {
-      '1': 'set_feature',
-      '3': 2,
-      '4': 1,
-      '5': 11,
-      '6': '.domes.config.SetFeatureRequest',
-      '9': 0,
-      '10': 'setFeature'
-    },
-  ],
-  '8': [
-    {'1': 'request'},
+    {'1': 'pod_id', '3': 1, '4': 1, '5': 13, '10': 'podId'},
+    {'1': 'pad_index', '3': 2, '4': 1, '5': 13, '10': 'padIndex'},
+    {'1': 'timestamp_us', '3': 3, '4': 1, '5': 4, '10': 'timestampUs'},
   ],
 };
 
-/// Descriptor for `ConfigRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List configRequestDescriptor = $convert.base64Decode(
-    'Cg1Db25maWdSZXF1ZXN0EkgKDWxpc3RfZmVhdHVyZXMYASABKAsyIS5kb21lcy5jb25maWcuTG'
-    'lzdEZlYXR1cmVzUmVxdWVzdEgAUgxsaXN0RmVhdHVyZXMSQgoLc2V0X2ZlYXR1cmUYAiABKAsy'
-    'Hy5kb21lcy5jb25maWcuU2V0RmVhdHVyZVJlcXVlc3RIAFIKc2V0RmVhdHVyZUIJCgdyZXF1ZX'
-    'N0');
-
-@$core.Deprecated('Use configResponseDescriptor instead')
-const ConfigResponse$json = {
-  '1': 'ConfigResponse',
-  '2': [
-    {
-      '1': 'status',
-      '3': 1,
-      '4': 1,
-      '5': 14,
-      '6': '.domes.config.Status',
-      '10': 'status'
-    },
-    {
-      '1': 'list_features',
-      '3': 2,
-      '4': 1,
-      '5': 11,
-      '6': '.domes.config.ListFeaturesResponse',
-      '9': 0,
-      '10': 'listFeatures'
-    },
-    {
-      '1': 'set_feature',
-      '3': 3,
-      '4': 1,
-      '5': 11,
-      '6': '.domes.config.SetFeatureResponse',
-      '9': 0,
-      '10': 'setFeature'
-    },
-  ],
-  '8': [
-    {'1': 'response'},
-  ],
-};
-
-/// Descriptor for `ConfigResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List configResponseDescriptor = $convert.base64Decode(
-    'Cg5Db25maWdSZXNwb25zZRIsCgZzdGF0dXMYASABKA4yFC5kb21lcy5jb25maWcuU3RhdHVzUg'
-    'ZzdGF0dXMSSQoNbGlzdF9mZWF0dXJlcxgCIAEoCzIiLmRvbWVzLmNvbmZpZy5MaXN0RmVhdHVy'
-    'ZXNSZXNwb25zZUgAUgxsaXN0RmVhdHVyZXMSQwoLc2V0X2ZlYXR1cmUYAyABKAsyIC5kb21lcy'
-    '5jb25maWcuU2V0RmVhdHVyZVJlc3BvbnNlSABSCnNldEZlYXR1cmVCCgoIcmVzcG9uc2U=');
+/// Descriptor for `TouchEventNotification`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List touchEventNotificationDescriptor = $convert.base64Decode(
+    'ChZUb3VjaEV2ZW50Tm90aWZpY2F0aW9uEhUKBnBvZF9pZBgBIAEoDVIFcG9kSWQSGwoJcGFkX2'
+    'luZGV4GAIgASgNUghwYWRJbmRleBIhCgx0aW1lc3RhbXBfdXMYAyABKARSC3RpbWVzdGFtcFVz');

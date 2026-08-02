@@ -6,8 +6,8 @@
  *
  * Provides a platform-agnostic interface for bidirectional byte-stream
  * communication. Implementations include:
- * - ESP32: USB-CDC, UART, BLE, ESP-NOW
- * - Host: Serial port (termios), TCP socket, BlueZ BLE
+ * - ESP32: UART0, BLE GATT, TCP, ESP-NOW
+ * - Host tests: injected simulator transports
  *
  * This interface enables code reuse between ESP32 firmware and
  * Linux host simulator/tools.
@@ -32,16 +32,16 @@ namespace domes {
  *
  * Usage Pattern:
  * @code
- * auto transport = std::make_unique<SerialTransport>("/dev/ttyACM0");
- * if (!isOk(transport->init())) { return error; }
+ * ITransport& transport = transportForActivePlatform();
+ * if (!isOk(transport.init())) { return error; }
  *
  * uint8_t buf[256];
  * size_t len = sizeof(buf);
- * if (isOk(transport->receive(buf, &len, 1000))) {
+ * if (isOk(transport.receive(buf, &len, 1000))) {
  *     // Process received data
  * }
  *
- * transport->disconnect();
+ * transport.disconnect();
  * @endcode
  */
 class ITransport {

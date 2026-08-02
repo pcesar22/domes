@@ -5,17 +5,19 @@
 
 #include "serialOtaReceiver.hpp"
 
-#include "infra/diagnostics.hpp"
-#include "trace/traceApi.hpp"
-
 #include "config/configProtocol.hpp"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "infra/diagnostics.hpp"
 #include "protocol/frameCodec.hpp"
 #include "protocol/otaProtocol.hpp"
+#include "services/firmwareVersion.hpp"
+#include "services/otaSessionCoordinator.hpp"
+#include "trace/traceApi.hpp"
 #include "trace/traceProtocol.hpp"
 
 #include <array>
@@ -38,8 +40,10 @@ SerialOtaReceiver::SerialOtaReceiver(ITransport& transport, config::FeatureManag
       firmwareSize_(0),
       bytesReceived_(0),
       expectedOffset_(0),
+      lastOtaActivityUs_(0),
       sha256Active_(false) {
     std::memset(expectedSha256_, 0, sizeof(expectedSha256_));
+    std::memset(expectedVersion_, 0, sizeof(expectedVersion_));
     mbedtls_sha256_init(&sha256Context_);
 }
 
@@ -58,9 +62,15 @@ void SerialOtaReceiver::run() {
         TransportError err = transport_.receive(rxBuf.data(), &rxLen, 100);
 
         if (err == TransportError::kTimeout) {
+            if (cleanupInterruptedOta()) {
+                decoder.reset();
+            }
             continue;
         }
         if (!isOk(err)) {
+            if (cleanupInterruptedOta()) {
+                decoder.reset();
+            }
             ESP_LOGE(TAG, "Transport receive error: %s", transportErrorToString(err));
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
@@ -84,7 +94,7 @@ void SerialOtaReceiver::run() {
                 }
 
                 // Check if this is a config command
-                if (config::isConfigMessage(msgTypeByte) && configHandler_) {
+                if (config::isConfigRequest(msgTypeByte) && configHandler_) {
                     configHandler_->handleCommand(msgTypeByte, payload, payloadLen);
                     decoder.reset();
                     continue;
@@ -103,13 +113,21 @@ void SerialOtaReceiver::run() {
                         break;
 
                     case OtaMsgType::kEnd:
-                        handleOtaEnd();
+                        handleOtaEnd(payload, payloadLen);
                         break;
 
-                    case OtaMsgType::kAbort:
-                        ESP_LOGW(TAG, "Received OTA_ABORT from host");
+                    case OtaMsgType::kAbort: {
+                        OtaStatus reason = OtaStatus::kAborted;
+                        if (!isOk(deserializeOtaAbort(payload, payloadLen, &reason))) {
+                            ESP_LOGW(TAG, "Rejected malformed OTA_ABORT from host");
+                            sendAbortAndCleanup(OtaStatus::kAborted);
+                            break;
+                        }
+                        ESP_LOGW(TAG, "Received OTA_ABORT from host: %s",
+                                 otaStatusToString(reason));
                         cleanupOta();
                         break;
+                    }
 
                     default:
                         ESP_LOGW(TAG, "Unknown message type: 0x%02X", msgTypeByte);
@@ -123,6 +141,11 @@ void SerialOtaReceiver::run() {
                 domes::infra::Diagnostics::recordCrcError();
                 decoder.reset();
             }
+        }
+
+        // Non-OTA traffic must not keep a stalled flash session alive.
+        if (cleanupInterruptedOta()) {
+            decoder.reset();
         }
     }
 
@@ -152,10 +175,9 @@ void SerialOtaReceiver::handleOtaBegin(const uint8_t* payload, size_t len) {
     }
 
     // Deserialize
-    char version[32];
     uint32_t firmwareSize = 0;
-    TransportError err =
-        deserializeOtaBegin(payload, len, &firmwareSize, expectedSha256_, version, sizeof(version));
+    TransportError err = deserializeOtaBegin(payload, len, &firmwareSize, expectedSha256_,
+                                             expectedVersion_, sizeof(expectedVersion_));
 
     if (!isOk(err)) {
         ESP_LOGE(TAG, "Failed to deserialize OTA_BEGIN");
@@ -165,13 +187,19 @@ void SerialOtaReceiver::handleOtaBegin(const uint8_t* payload, size_t len) {
 
     firmwareSize_ = firmwareSize;
 
+    if (!parseVersion(expectedVersion_).valid) {
+        ESP_LOGE(TAG, "Rejected unsupported OTA version: %s", expectedVersion_);
+        sendAck(OtaStatus::kVersionError, 0);
+        return;
+    }
+
     if (firmwareSize_ == 0) {
         ESP_LOGE(TAG, "Firmware image is empty");
         sendAck(OtaStatus::kSizeMismatch, 0);
         return;
     }
 
-    ESP_LOGI(TAG, "Firmware size: %zu bytes, version: %s", firmwareSize_, version);
+    ESP_LOGI(TAG, "Firmware size: %zu bytes, version: %s", firmwareSize_, expectedVersion_);
 
     // Find update partition
     updatePartition_ = esp_ota_get_next_update_partition(nullptr);
@@ -192,9 +220,18 @@ void SerialOtaReceiver::handleOtaBegin(const uint8_t* payload, size_t len) {
     }
 
     // Begin OTA
+    if (!OtaSessionCoordinator::tryAcquire(this)) {
+        ESP_LOGW(TAG, "Another OTA transport owns the update partition");
+        sendAck(OtaStatus::kBusy, 0);
+        return;
+    }
+    ownsOtaSession_ = true;
+
     esp_err_t espErr = esp_ota_begin(updatePartition_, firmwareSize_, &otaHandle_);
     if (espErr != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(espErr));
+        OtaSessionCoordinator::release(this);
+        ownsOtaSession_ = false;
         sendAck(OtaStatus::kFlashError, 0);
         return;
     }
@@ -203,6 +240,8 @@ void SerialOtaReceiver::handleOtaBegin(const uint8_t* payload, size_t len) {
         ESP_LOGE(TAG, "Failed to initialize OTA SHA-256 context");
         esp_ota_abort(otaHandle_);
         otaHandle_ = 0;
+        OtaSessionCoordinator::release(this);
+        ownsOtaSession_ = false;
         sendAck(OtaStatus::kVerifyFailed, 0);
         return;
     }
@@ -211,6 +250,7 @@ void SerialOtaReceiver::handleOtaBegin(const uint8_t* payload, size_t len) {
     sha256Active_ = true;
     bytesReceived_ = 0;
     expectedOffset_ = 0;
+    lastOtaActivityUs_ = esp_timer_get_time();
 
     sendAck(OtaStatus::kOk, 0);
 }
@@ -263,6 +303,7 @@ void SerialOtaReceiver::handleOtaData(const uint8_t* payload, size_t len) {
 
     bytesReceived_ += dataLen;
     expectedOffset_ += static_cast<uint32_t>(dataLen);
+    lastOtaActivityUs_ = esp_timer_get_time();
 
     // Log progress periodically
     if (bytesReceived_ % (64 * 1024) == 0 || bytesReceived_ == firmwareSize_) {
@@ -273,8 +314,14 @@ void SerialOtaReceiver::handleOtaData(const uint8_t* payload, size_t len) {
     sendAck(OtaStatus::kOk, expectedOffset_);
 }
 
-void SerialOtaReceiver::handleOtaEnd() {
+void SerialOtaReceiver::handleOtaEnd(const uint8_t* payload, size_t len) {
     ESP_LOGI(TAG, "Received OTA_END");
+
+    if (!isOk(deserializeOtaEnd(payload, len))) {
+        ESP_LOGE(TAG, "Rejected OTA_END with nonempty payload");
+        sendAbortAndCleanup(OtaStatus::kAborted);
+        return;
+    }
 
     if (!otaInProgress_.load()) {
         ESP_LOGW(TAG, "Received OTA_END without OTA_BEGIN");
@@ -312,15 +359,34 @@ void SerialOtaReceiver::handleOtaEnd() {
     if (espErr != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(espErr));
         otaInProgress_.store(false);
+        OtaSessionCoordinator::release(this);
+        ownsOtaSession_ = false;
         sendAck(OtaStatus::kVerifyFailed, bytesReceived_);
         return;
     }
+
+    esp_app_desc_t appDescription = {};
+    espErr = esp_ota_get_partition_description(updatePartition_, &appDescription);
+    if (espErr != ESP_OK ||
+        !firmwareVersionsMatchExactly(expectedVersion_, appDescription.version)) {
+        ESP_LOGE(TAG, "OTA version mismatch: declared '%s', image '%s'", expectedVersion_,
+                 espErr == ESP_OK ? appDescription.version : "unavailable");
+        otaInProgress_.store(false);
+        OtaSessionCoordinator::release(this);
+        ownsOtaSession_ = false;
+        sendAck(OtaStatus::kVersionError, bytesReceived_);
+        return;
+    }
+
+    ESP_LOGI(TAG, "OTA image version verified: %s", expectedVersion_);
 
     // Set boot partition
     espErr = esp_ota_set_boot_partition(updatePartition_);
     if (espErr != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(espErr));
         otaInProgress_.store(false);
+        OtaSessionCoordinator::release(this);
+        ownsOtaSession_ = false;
         sendAck(OtaStatus::kPartitionError, bytesReceived_);
         return;
     }
@@ -394,11 +460,38 @@ void SerialOtaReceiver::cleanupOta() {
     firmwareSize_ = 0;
     bytesReceived_ = 0;
     expectedOffset_ = 0;
+    lastOtaActivityUs_ = 0;
+    std::memset(expectedVersion_, 0, sizeof(expectedVersion_));
     if (sha256Active_) {
         mbedtls_sha256_free(&sha256Context_);
         mbedtls_sha256_init(&sha256Context_);
         sha256Active_ = false;
     }
+    if (ownsOtaSession_) {
+        OtaSessionCoordinator::release(this);
+        ownsOtaSession_ = false;
+    }
+}
+
+bool SerialOtaReceiver::cleanupInterruptedOta() {
+    if (!otaInProgress_.load()) {
+        return false;
+    }
+
+    if (!transport_.isConnected()) {
+        ESP_LOGW(TAG, "OTA transport disconnected; aborting active session");
+        cleanupOta();
+        return true;
+    }
+
+    const int64_t nowUs = esp_timer_get_time();
+    if (OtaSessionCoordinator::hasTimedOut(lastOtaActivityUs_, nowUs)) {
+        ESP_LOGW(TAG, "OTA session inactive for 15 seconds; aborting");
+        sendAbortAndCleanup(OtaStatus::kAborted);
+        return true;
+    }
+
+    return false;
 }
 
 }  // namespace domes

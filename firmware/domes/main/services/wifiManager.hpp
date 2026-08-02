@@ -7,18 +7,25 @@
  * Provides WiFi station mode with:
  * - Credential storage in NVS
  * - Automatic reconnection with exponential backoff
- * - SmartConfig provisioning support
  */
 
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "interfaces/iConfigStorage.hpp"
-#include "interfaces/iWifiManager.hpp"
+#include "utils/mutex.hpp"
 
 #include <atomic>
 
 namespace domes {
+
+enum class WifiState : uint8_t {
+    kDisconnected,
+    kConnecting,
+    kConnected,
+    kGotIp,
+    kError,
+};
 
 /**
  * @brief NVS namespace and keys for WiFi credentials
@@ -41,14 +48,10 @@ constexpr const char* kPassword = "pass";
  * WifiManager wifi(configStorage);
  * wifi.init();
  *
- * if (wifi.hasStoredCredentials()) {
- *     wifi.connect();
- * } else {
- *     wifi.startSmartConfig();
- * }
+ * if (wifi.hasStoredCredentials()) wifi.connect();
  * @endcode
  */
-class WifiManager : public IWifiManager {
+class WifiManager {
 public:
     /**
      * @brief Construct WiFi manager
@@ -57,29 +60,21 @@ public:
      */
     explicit WifiManager(IConfigStorage& config);
 
-    ~WifiManager() override;
+    ~WifiManager();
 
     // Non-copyable
     WifiManager(const WifiManager&) = delete;
     WifiManager& operator=(const WifiManager&) = delete;
 
-    // IWifiManager implementation
-    esp_err_t init() override;
-    esp_err_t deinit() override;
-    esp_err_t connect() override;
-    esp_err_t connect(const char* ssid, const char* password, bool saveCredentials = true) override;
-    esp_err_t disconnect() override;
-    bool isConnected() const override;
-    WifiState getState() const override;
-    esp_err_t getIpAddress(char* ipOut, size_t len) const override;
-    int8_t getRssi() const override;
-    bool hasStoredCredentials() const override;
-    esp_err_t clearCredentials() override;
-    void onEvent(WifiEventCallback callback) override;
-    esp_err_t startSmartConfig(uint32_t timeoutMs = 60000) override;
-    void stopSmartConfig() override;
-    bool isSmartConfigActive() const override;
-    esp_err_t getConnectedSsid(char* ssidOut, size_t len) const override;
+    esp_err_t init();
+    esp_err_t deinit();
+    esp_err_t connect();
+    esp_err_t connect(const char* ssid, const char* password, bool saveCredentials = true);
+    esp_err_t disconnect();
+    bool isConnected() const;
+    esp_err_t getIpAddress(char* ipOut, size_t len) const;
+    int8_t getRssi() const;
+    bool hasStoredCredentials() const;
 
 private:
     /**
@@ -113,15 +108,12 @@ private:
                                void* eventData);
 
     /**
-     * @brief SmartConfig event handler
-     */
-    static void smartconfigEventHandler(void* arg, esp_event_base_t eventBase, int32_t eventId,
-                                        void* eventData);
-
-    /**
      * @brief Handle WiFi disconnection with retry logic
      */
     void handleDisconnect();
+
+    /** Connect while connectionMutex_ is held. */
+    esp_err_t connectLocked(const char* ssid, const char* password, bool saveCredentials);
 
     /**
      * @brief Reset reconnection backoff
@@ -139,17 +131,15 @@ private:
     esp_netif_t* staNetif_;
 
     std::atomic<WifiState> state_;
-    std::atomic<bool> smartConfigActive_;
     std::atomic<bool> initialized_;
-
-    WifiEventCallback eventCallback_;
+    std::atomic<bool> clientEnabled_;
 
     esp_event_handler_instance_t wifiEventInstance_;
     esp_event_handler_instance_t ipEventInstance_;
-    esp_event_handler_instance_t scEventInstance_;
-
     uint8_t retryCount_;
     uint32_t currentBackoffMs_;
+    uint32_t connectionGeneration_;
+    utils::Mutex connectionMutex_;
 
     esp_ip4_addr_t ipAddress_;
 

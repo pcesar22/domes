@@ -35,17 +35,20 @@ void main() {
       expect(find.text('Round 1/0'), findsOneWidget);
     });
 
-    testWidgets('shows waiting touch phase with correct indicator',
-        (tester) async {
+    testWidgets('shows waiting touch phase with correct indicator', (
+      tester,
+    ) async {
       // Create override with custom config
-      await tester.pumpWidget(_wrap(
-        const DrillActiveScreen(),
-        overrides: [
-          drillProvider.overrideWith((ref) {
-            return DrillNotifier(ref);
-          }),
-        ],
-      ));
+      await tester.pumpWidget(
+        _wrap(
+          const DrillActiveScreen(),
+          overrides: [
+            drillProvider.overrideWith((ref) {
+              return DrillNotifier(ref);
+            }),
+          ],
+        ),
+      );
       await tester.pumpAndSettle();
 
       // The active screen should render

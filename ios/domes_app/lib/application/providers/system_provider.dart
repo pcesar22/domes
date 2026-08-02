@@ -31,9 +31,12 @@ class SystemInfoNotifier extends StateNotifier<AsyncValue<AppSystemInfo>> {
 }
 
 final systemInfoProvider =
-    StateNotifierProvider.autoDispose<SystemInfoNotifier, AsyncValue<AppSystemInfo>>((ref) {
-  return SystemInfoNotifier(ref);
-});
+    StateNotifierProvider.autoDispose<
+      SystemInfoNotifier,
+      AsyncValue<AppSystemInfo>
+    >((ref) {
+      return SystemInfoNotifier(ref);
+    });
 
 /// Notifier for system mode.
 class SystemModeNotifier extends StateNotifier<AsyncValue<AppModeInfo>> {
@@ -71,6 +74,9 @@ class SystemModeNotifier extends StateNotifier<AsyncValue<AppModeInfo>> {
 }
 
 final systemModeProvider =
-    StateNotifierProvider.autoDispose<SystemModeNotifier, AsyncValue<AppModeInfo>>((ref) {
-  return SystemModeNotifier(ref);
-});
+    StateNotifierProvider.autoDispose<
+      SystemModeNotifier,
+      AsyncValue<AppModeInfo>
+    >((ref) {
+      return SystemModeNotifier(ref);
+    });

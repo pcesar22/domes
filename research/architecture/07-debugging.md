@@ -4,15 +4,22 @@
 > firmware trace source, and `domes-cli --help` as the executable authorities when an example here
 > diverges from the implementation.
 
-## AI Agent Instructions
+> **Current note:** The active partition table reserves a coredump partition and the checked-in
+> defaults enable ELF panic dumps. Decode them with the exact `build/domes.elf` that produced the
+> running image. `domes-cli system crash-dump` is a separate clean-restart snapshot, not a panic
+> dump. Flash/config uses the CP2102N port; native USB is console/JTAG. Prefer function or symbol
+> breakpoints from the current ELF instead of copied numeric source lines.
 
-Load this file when:
+## Historical Scope
+
+This design record originally covered:
+
 - Setting up debugging tools
 - Diagnosing crashes or hangs
 - Analyzing core dumps
 - Troubleshooting common issues
 
-Prerequisites: `00-getting-started.md`
+Original prerequisite: `00-getting-started.md`
 
 ---
 
@@ -179,6 +186,7 @@ mon reset run               # Reset and run
 ### Enable Core Dump
 
 In `sdkconfig.defaults`:
+
 ```ini
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
 CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
@@ -226,6 +234,7 @@ pc             0x42012abc
 **Symptoms:** `esptool.py` can't connect
 
 **Solutions:**
+
 1. Check USB cable is data-capable (not charge-only)
 2. Hold BOOT button while pressing RESET
 3. Check permissions: `sudo chmod 666 /dev/ttyUSB0`
@@ -237,6 +246,7 @@ pc             0x42012abc
 **Symptoms:** `ESP_ERR_WIFI_NOT_INIT` or crash during wifi_init
 
 **Checklist:**
+
 ```cpp
 // 1. NVS must be initialized first
 ESP_ERROR_CHECK(nvs_flash_init());
@@ -258,6 +268,7 @@ ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 **Symptoms:** `ESP_ERR_TIMEOUT` on I2C operations
 
 **Checklist:**
+
 1. Verify pull-ups on SDA/SCL (4.7kΩ to 3.3V)
 2. Check device address (7-bit vs 8-bit notation)
 3. Verify power to device
@@ -286,6 +297,7 @@ void i2cScan() {
 **Symptoms:** `Task stack overflow` panic, random crashes
 
 **Diagnosis:**
+
 ```cpp
 // Check stack high water mark
 void checkStack() {
@@ -300,6 +312,7 @@ void checkStack() {
 ```
 
 **Fix:** Increase stack size in `xTaskCreate()`:
+
 ```cpp
 // Increase from 4096 to 8192
 xTaskCreate(myTask, "name", 8192, nullptr, 5, nullptr);
@@ -310,11 +323,13 @@ xTaskCreate(myTask, "name", 8192, nullptr, 5, nullptr);
 **Symptoms:** `Task watchdog got triggered` in logs
 
 **Causes:**
+
 1. Blocking operation without feeding watchdog
 2. Infinite loop
 3. Long ISR
 
 **Solutions:**
+
 ```cpp
 // Feed watchdog in long operations
 esp_task_wdt_reset();
@@ -328,6 +343,7 @@ esp_task_wdt_delete(xTaskGetCurrentTaskHandle());
 **Symptoms:** `malloc failed` or `out of memory`
 
 **Diagnosis:**
+
 ```cpp
 // Check heap
 ESP_LOGI(kTag, "Free heap: %lu", esp_get_free_heap_size());
@@ -336,6 +352,7 @@ ESP_LOGI(kTag, "Largest block: %lu", heap_caps_get_largest_free_block(MALLOC_CAP
 ```
 
 **Common causes:**
+
 - WiFi + BLE use ~80KB
 - Memory leaks (allocate without free)
 - Large static buffers
@@ -345,13 +362,16 @@ ESP_LOGI(kTag, "Largest block: %lu", heap_caps_get_largest_free_block(MALLOC_CAP
 **Symptoms:** `esp_psram_get_size()` returns 0
 
 **Checklist:**
+
 1. Verify module is N16R8 (not N16 without R)
 2. Check `sdkconfig`:
+
 ```ini
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 ```
+
 3. Run `idf.py menuconfig` → Component config → ESP PSRAM
 
 ---
@@ -411,8 +431,8 @@ void processGameTick() {
 
 | Category | Usage |
 |----------|-------|
-| `kKernel` | FreeRTOS task switches, ISRs |
-| `kTransport` | Serial, USB communication |
+| `kKernel` | Explicit diagnostics and memory counters; scheduler/ISR hooks are not wired |
+| `kTransport` | Framed transport operations |
 | `kOta` | OTA updates |
 | `kWifi` | WiFi operations |
 | `kLed` | LED driver, animations |
@@ -427,21 +447,29 @@ void processGameTick() {
 #### Dumping Traces
 
 ```bash
-# Check status
-domes-cli --port /dev/ttyACM0 trace status
+# CP2102N is the runtime command/trace transport.
+PORT=$(
+  find -L /dev/serial/by-id -maxdepth 1 -type c \
+    -name 'usb-Silicon_Labs_CP2102N*' | sort | head -n1
+)
+test -n "$PORT"
+
+# Check status, record a workload, then stop before export.
+domes-cli --port "$PORT" trace status
+domes-cli --port "$PORT" trace start
+domes-cli --port "$PORT" system health
+domes-cli --port "$PORT" trace stop
 
 # Dump traces with human-readable names
-domes-cli --port /dev/ttyACM0 trace dump -o trace.json -n tools/trace/trace_names.json
+domes-cli --port "$PORT" trace dump -o trace.json -n tools/trace/trace_names.json
 
-# Control tracing
-domes-cli --port /dev/ttyACM0 trace start
-domes-cli --port /dev/ttyACM0 trace stop
-domes-cli --port /dev/ttyACM0 trace clear
+# Clear the retained buffer when it is no longer needed.
+domes-cli --port "$PORT" trace clear
 ```
 
 #### Visualizing in Perfetto
 
-1. Open https://ui.perfetto.dev
+1. Open <https://ui.perfetto.dev>
 2. Click "Open trace file" and select `trace.json`
 3. Navigate timeline with WASD keys
 4. Click events for details
@@ -472,6 +500,7 @@ print(fnv1a('YourSpan.Name'))
 ```
 
 Add the hash and name to `trace_names.json`:
+
 ```json
 {
   "3254304013": "LED.Update",
@@ -568,23 +597,45 @@ xtensa-esp32s3-elf-gdb -ex "target remote :3334" build/domes.elf
 Use the monitor script with comma-separated ports for color-coded, labeled output from both pods:
 
 ```bash
-python3 tools/firmware/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
+mapfile -t CONSOLES < <(
+  find -L /dev/serial/by-id -maxdepth 1 -type c \
+    -name 'usb-Espressif_USB_JTAG_serial_debug_unit*' | sort
+)
+test "${#CONSOLES[@]}" -ge 2
+python3 tools/firmware/monitor_serial.py \
+  "${CONSOLES[0]},${CONSOLES[1]}" 30
 ```
 
 ### Multi-Device Trace Dump
 
-Dump each pod independently, then merge the JSON files for correlated Perfetto visualization:
+Dump each pod independently, then group the local timelines for one Perfetto visualization:
 
 ```bash
-domes-cli --port /dev/ttyACM0 trace dump -o trace-pod0.json -n tools/trace/trace_names.json
-domes-cli --port /dev/ttyACM1 trace dump -o trace-pod1.json -n tools/trace/trace_names.json
+mapfile -t POD_PORTS < <(
+  find -L /dev/serial/by-id -maxdepth 1 -type c \
+    -name 'usb-Silicon_Labs_CP2102N*' | sort
+)
+test "${#POD_PORTS[@]}" -ge 2
+
+# Confirm the physical mapping before treating array positions as pod identities.
+domes-cli --port "${POD_PORTS[0]}" trace start
+domes-cli --port "${POD_PORTS[1]}" trace start
+domes-cli --port "${POD_PORTS[0]}" system health
+domes-cli --port "${POD_PORTS[1]}" system health
+domes-cli --port "${POD_PORTS[0]}" trace stop
+domes-cli --port "${POD_PORTS[1]}" trace stop
+domes-cli --port "${POD_PORTS[0]}" trace dump -o trace-pod0.json -n tools/trace/trace_names.json
+domes-cli --port "${POD_PORTS[1]}" trace dump -o trace-pod1.json -n tools/trace/trace_names.json
 python3 tools/trace/trace_merge.py \
   --pod trace-pod0.json --pod-name "Pod 0" \
   --pod trace-pod1.json --pod-name "Pod 1" \
   --names tools/trace/trace_names.json \
-  --align beacon \
+  --align zero \
   -o trace-merged.json
 ```
+
+This grouping does not correlate pod clocks. Use `--align raw` only to preserve the original local
+timestamps; neither supported mode is synchronized timing evidence.
 
 ---
 

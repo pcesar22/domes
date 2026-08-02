@@ -26,22 +26,22 @@ namespace domes::infra {
 /// Maximum backtrace depth
 constexpr size_t kMaxBacktraceDepth = 16;
 
-/// NVS namespace for crash dumps
+/// Legacy NVS namespace retained for restart-snapshot compatibility
 constexpr const char* kCrashDumpNs = "crashdump";
 
 /// NVS keys
 namespace crash_key {
-constexpr const char* kValid = "valid";          ///< uint8_t: 1 if dump exists
-constexpr const char* kReason = "reason";        ///< string: panic reason
-constexpr const char* kTaskName = "task_name";   ///< string: crashed task
-constexpr const char* kUptimeS = "uptime_s";     ///< uint32_t
-constexpr const char* kFreeHeap = "free_heap";   ///< uint32_t
-constexpr const char* kBacktrace = "backtrace";  ///< blob: PC values
-constexpr const char* kBootCount = "boot_count"; ///< uint32_t: which boot
+constexpr const char* kValid = "valid";           ///< uint8_t: 1 if snapshot exists
+constexpr const char* kReason = "reason";         ///< string: clean-restart reason
+constexpr const char* kTaskName = "task_name";    ///< string: task active at restart
+constexpr const char* kUptimeS = "uptime_s";      ///< uint32_t
+constexpr const char* kFreeHeap = "free_heap";    ///< uint32_t
+constexpr const char* kBacktrace = "backtrace";   ///< blob: PC values
+constexpr const char* kBootCount = "boot_count";  ///< uint32_t: which boot
 }  // namespace crash_key
 
 /**
- * @brief Stored crash dump data
+ * @brief Stored clean-restart snapshot data
  */
 struct CrashDumpData {
     bool valid = false;
@@ -74,12 +74,12 @@ public:
     static esp_err_t init();
 
     /**
-     * @brief Check if a crash dump exists in NVS
+     * @brief Check if a restart snapshot exists in NVS
      */
     static bool hasDump();
 
     /**
-     * @brief Load crash dump from NVS
+     * @brief Load a restart snapshot from NVS
      *
      * @param dump Output struct to fill
      * @return ESP_OK if dump exists, ESP_ERR_NOT_FOUND otherwise
@@ -87,7 +87,7 @@ public:
     static esp_err_t loadDump(CrashDumpData& dump);
 
     /**
-     * @brief Clear crash dump from NVS
+     * @brief Clear the restart snapshot from NVS
      *
      * @return ESP_OK on success
      */

@@ -2,17 +2,19 @@
 
 > **Document status: Design proposal, partially implemented.** The per-pod arm/touch/feedback FSM
 > exists, while general drill interpretation and several primitives remain proposed. Current behavior
-> lives in `gameEngine.*` and `espNowService.*`.
+> lives in `gameEngine.*` and `espNowService.*`. The clock-synchronization design later in this file
+> is unimplemented; current reaction timing is local to one pod.
 
-## AI Agent Instructions
+## Historical Scope
 
-Load this file when:
+This design record originally covered:
+
 - Implementing per-pod game logic (arm, touch detection, feedback cycle)
 - Adding or modifying pod primitives (LED, touch, audio, haptic control)
 - Handling touch detection and reaction time measurement
 - Working on clock synchronization between pods
 
-Prerequisites: `03-driver-development.md`, `04-communication.md`
+Original prerequisites: `03-driver-development.md`, `04-communication.md`
 Companions: `11-system-modes.md` (device lifecycle), `12-multi-pod-orchestration.md` (multi-pod coordination)
 
 ---
@@ -48,6 +50,7 @@ Three documents define the DOMES runtime architecture. Each operates at a differ
 **This document** defines what a pod does as a **game target**: receive an arm command, detect a touch (or timeout), play feedback, and report the result. This logic runs identically on every pod — master and slave alike. The GameState FSM defined here operates exclusively within `SystemMode::GAME` (see doc 11).
 
 Who triggers these actions depends on the pod's role (see doc 12):
+
 - On the **master pod**: the `DrillInterpreter` (see doc 12, §Drill Execution) calls `GameEngine.arm()` directly
 - On **slave pods**: a `PodCommandHandler` translates incoming ESP-NOW `ARM_TOUCH` messages into `GameEngine.arm()` calls
 
@@ -446,15 +449,17 @@ reaction_time = touch_at - armed_at
 
 Both `touch_at` and `armed_at` come from `esp_timer_get_time()` on the same ESP32. This means:
 
-- ESP-NOW transmission latency (~500us) does **not** affect the measurement
+- ESP-NOW transmission latency does **not** affect the local measurement
 - No clock synchronization is needed for reaction drills
 - Accuracy is limited only by the touch driver's sampling rate (~10ms = 100 Hz)
 
 This is true regardless of role. On the master targeting itself, the same local clock is used. On a slave pod, arm and touch timestamps are both local.
 
-### Clock Synchronization (for Sequence Drills)
+### Proposed Clock Synchronization (for Sequence Drills)
 
-Sequence drills (see doc 12, §Clock Synchronization) require multiple pods to activate at precise relative times. For this, the master periodically broadcasts `SYNC_CLOCK` messages and each slave estimates its offset using a low-pass filter.
+The proposal requires a shared timing model for sequence drills that activate multiple pods at
+precise relative times. The `TimingService` and `SYNC_CLOCK` design below are not present in the
+current firmware and must not be inferred from merged local traces.
 
 ```cpp
 // services/timing_service.hpp
@@ -525,7 +530,7 @@ void TimingService::onSyncMessage(uint32_t masterTimeUs) {
 }  // namespace domes
 ```
 
-**Target accuracy:** < 1ms between any two pods (see doc 09, §Timing Constants).
+**Proposed target accuracy:** < 1ms between any two pods (see doc 09, §Timing Constants).
 
 **When clock sync is NOT needed:** Single-pod reaction drills. Reaction time is always measured locally (see §Local Reaction Timing above).
 

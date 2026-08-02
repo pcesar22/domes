@@ -40,7 +40,8 @@ class DrillActiveScreen extends ConsumerWidget {
       child: Scaffold(
         appBar: AppBar(
           title: Text(
-              'Round ${drillState.currentRound + 1}/${drillState.config?.roundCount ?? 0}'),
+            'Round ${drillState.currentRound + 1}/${drillState.config?.roundCount ?? 0}',
+          ),
           leading: drillState.isRunning
               ? IconButton(
                   icon: const Icon(Icons.close),
@@ -60,10 +61,7 @@ class DrillActiveScreen extends ConsumerWidget {
                 child: Column(
                   children: [
                     // Active pod indicator
-                    Expanded(
-                      flex: 2,
-                      child: _PodGrid(drillState: drillState),
-                    ),
+                    Expanded(flex: 2, child: _PodGrid(drillState: drillState)),
 
                     // Live reaction time
                     if (drillState.lastReactionTime != null)
@@ -71,12 +69,11 @@ class DrillActiveScreen extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Text(
                           '${drillState.lastReactionTime!.inMilliseconds}ms',
-                          style: Theme.of(context)
-                              .textTheme
-                              .displayMedium
+                          style: Theme.of(context).textTheme.displayMedium
                               ?.copyWith(
                                 color: _reactionTimeColor(
-                                    drillState.lastReactionTime!),
+                                  drillState.lastReactionTime!,
+                                ),
                                 fontWeight: FontWeight.bold,
                               ),
                         ),
@@ -97,7 +94,8 @@ class DrillActiveScreen extends ConsumerWidget {
             ),
 
             // Simulate touch button (for testing)
-            if (drillState.phase == DrillPhase.waitingTouch)
+            if (drillState.phase == DrillPhase.waitingTouch &&
+                ref.read(drillProvider.notifier).supportsTouchSimulation)
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: OutlinedButton.icon(
@@ -172,11 +170,27 @@ class _PhaseBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color, icon) = switch (phase) {
       DrillPhase.idle => ('Idle', Colors.grey, Icons.pause),
-      DrillPhase.preparing => ('Preparing...', AppTheme.connectingColor, Icons.settings),
-      DrillPhase.waitingDelay => ('Get Ready...', AppTheme.connectingColor, Icons.timer),
+      DrillPhase.preparing => (
+        'Preparing...',
+        AppTheme.connectingColor,
+        Icons.settings,
+      ),
+      DrillPhase.waitingDelay => (
+        'Get Ready...',
+        AppTheme.connectingColor,
+        Icons.timer,
+      ),
       DrillPhase.armed => ('ARMED', AppTheme.errorColor, Icons.warning),
-      DrillPhase.waitingTouch => ('GO!', AppTheme.connectedColor, Icons.touch_app),
-      DrillPhase.roundComplete => ('Nice!', AppTheme.connectedColor, Icons.check),
+      DrillPhase.waitingTouch => (
+        'GO!',
+        AppTheme.connectedColor,
+        Icons.touch_app,
+      ),
+      DrillPhase.roundComplete => (
+        'Nice!',
+        AppTheme.connectedColor,
+        Icons.check,
+      ),
       DrillPhase.finished => ('Done!', AppTheme.connectedColor, Icons.flag),
       DrillPhase.error => ('Error', AppTheme.errorColor, Icons.error),
     };
@@ -192,10 +206,10 @@ class _PhaseBar extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             label,
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(color: color, fontWeight: FontWeight.bold),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: color,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
@@ -244,9 +258,7 @@ class _PodGrid extends StatelessWidget {
                 Icon(
                   Icons.sports_soccer,
                   size: 48,
-                  color: isActive && isWaiting
-                      ? AppTheme.connectedColor
-                      : null,
+                  color: isActive && isWaiting ? AppTheme.connectedColor : null,
                 ),
                 const SizedBox(height: 8),
                 Text(

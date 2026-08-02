@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "interfaces/iTouchDriver.hpp"
+#include "utils/mutex.hpp"
 
 #include <array>
 #include <cstdint>
@@ -80,7 +81,8 @@ public:
 
             err = touch_pad_config(channel);
             if (err != ESP_OK) {
-                ESP_LOGE(kTag, "touch_pad_config failed for channel %d: %s", channel, esp_err_to_name(err));
+                ESP_LOGE(kTag, "touch_pad_config failed for channel %d: %s", channel,
+                         esp_err_to_name(err));
                 return err;
             }
 
@@ -94,7 +96,8 @@ public:
         };
         err = touch_pad_denoise_set_config(&denoise);
         if (err != ESP_OK) {
-            ESP_LOGW(kTag, "touch_pad_denoise_set_config failed (non-fatal): %s", esp_err_to_name(err));
+            ESP_LOGW(kTag, "touch_pad_denoise_set_config failed (non-fatal): %s",
+                     esp_err_to_name(err));
         }
         touch_pad_denoise_enable();
 
@@ -122,6 +125,7 @@ public:
     }
 
     esp_err_t update() override {
+        utils::MutexGuard guard(stateMutex_);
         if (!initialized_) {
             return ESP_ERR_INVALID_STATE;
         }
@@ -159,7 +163,7 @@ public:
                 stuckCount_[i]++;
                 if (stuckCount_[i] > kStuckResetThreshold) {
                     ESP_LOGW(kTag, "Pad %d stuck at %lu, resetting FSM...", i, rawValue);
-                    resetFsm();
+                    resetFsmLocked();
                     stuckCount_[i] = 0;
                     return ESP_OK;  // Exit early, will re-read next cycle
                 }
@@ -174,6 +178,7 @@ public:
     }
 
     bool isTouched(uint8_t padIndex) const override {
+        utils::MutexGuard guard(stateMutex_);
         if (padIndex >= kNumPads) {
             return false;
         }
@@ -181,6 +186,7 @@ public:
     }
 
     TouchPadState getPadState(uint8_t padIndex) const override {
+        utils::MutexGuard guard(stateMutex_);
         if (padIndex >= kNumPads) {
             return {};
         }
@@ -190,6 +196,12 @@ public:
     uint8_t getPadCount() const override { return kNumPads; }
 
     esp_err_t calibrate() override {
+        utils::MutexGuard guard(stateMutex_);
+        return calibrateLocked();
+    }
+
+private:
+    esp_err_t calibrateLocked() {
         if (!initialized_) {
             return ESP_ERR_INVALID_STATE;
         }
@@ -221,8 +233,8 @@ public:
                 states_[i].threshold = baselines_[i] + (baselines_[i] / 20);  // 5% above baseline
                 states_[i].touched = false;
 
-                ESP_LOGI(kTag, "Pad %d: baseline=%lu, threshold=%lu (%d samples)",
-                         i, baselines_[i], states_[i].threshold, validSamples);
+                ESP_LOGI(kTag, "Pad %d: baseline=%lu, threshold=%lu (%d samples)", i, baselines_[i],
+                         states_[i].threshold, validSamples);
             } else {
                 // All readings were saturated - keep old baseline or set to 0
                 ESP_LOGW(kTag, "Pad %d: all readings saturated, keeping old baseline", i);
@@ -232,9 +244,9 @@ public:
         return ESP_OK;
     }
 
-private:
     static constexpr const char* kTag = "TouchDriver";
-    static constexpr uint32_t kStuckResetThreshold = 100;  // ~1 second of identical readings at 100Hz
+    static constexpr uint32_t kStuckResetThreshold =
+        100;  // ~1 second of identical readings at 100Hz
 
     /**
      * @brief Reset the touch FSM to recover from saturated state
@@ -242,7 +254,7 @@ private:
      * This performs a full deinit/reinit of the touch peripheral to
      * clear hardware saturation state.
      */
-    void resetFsm() {
+    void resetFsmLocked() {
         ESP_LOGI(kTag, "Full touch peripheral reset...");
 
         // Full deinit
@@ -278,7 +290,7 @@ private:
         lastRawValues_.fill(0);
 
         // Recalibrate baselines
-        calibrate();
+        calibrateLocked();
     }
 
     /**
@@ -289,21 +301,36 @@ private:
      */
     static touch_pad_t gpioToTouchChannel(gpio_num_t gpio) {
         switch (gpio) {
-            case GPIO_NUM_1:  return TOUCH_PAD_NUM1;
-            case GPIO_NUM_2:  return TOUCH_PAD_NUM2;
-            case GPIO_NUM_3:  return TOUCH_PAD_NUM3;
-            case GPIO_NUM_4:  return TOUCH_PAD_NUM4;
-            case GPIO_NUM_5:  return TOUCH_PAD_NUM5;
-            case GPIO_NUM_6:  return TOUCH_PAD_NUM6;
-            case GPIO_NUM_7:  return TOUCH_PAD_NUM7;
-            case GPIO_NUM_8:  return TOUCH_PAD_NUM8;
-            case GPIO_NUM_9:  return TOUCH_PAD_NUM9;
-            case GPIO_NUM_10: return TOUCH_PAD_NUM10;
-            case GPIO_NUM_11: return TOUCH_PAD_NUM11;
-            case GPIO_NUM_12: return TOUCH_PAD_NUM12;
-            case GPIO_NUM_13: return TOUCH_PAD_NUM13;
-            case GPIO_NUM_14: return TOUCH_PAD_NUM14;
-            default:          return TOUCH_PAD_MAX;  // Invalid
+            case GPIO_NUM_1:
+                return TOUCH_PAD_NUM1;
+            case GPIO_NUM_2:
+                return TOUCH_PAD_NUM2;
+            case GPIO_NUM_3:
+                return TOUCH_PAD_NUM3;
+            case GPIO_NUM_4:
+                return TOUCH_PAD_NUM4;
+            case GPIO_NUM_5:
+                return TOUCH_PAD_NUM5;
+            case GPIO_NUM_6:
+                return TOUCH_PAD_NUM6;
+            case GPIO_NUM_7:
+                return TOUCH_PAD_NUM7;
+            case GPIO_NUM_8:
+                return TOUCH_PAD_NUM8;
+            case GPIO_NUM_9:
+                return TOUCH_PAD_NUM9;
+            case GPIO_NUM_10:
+                return TOUCH_PAD_NUM10;
+            case GPIO_NUM_11:
+                return TOUCH_PAD_NUM11;
+            case GPIO_NUM_12:
+                return TOUCH_PAD_NUM12;
+            case GPIO_NUM_13:
+                return TOUCH_PAD_NUM13;
+            case GPIO_NUM_14:
+                return TOUCH_PAD_NUM14;
+            default:
+                return TOUCH_PAD_MAX;  // Invalid
         }
     }
 
@@ -314,6 +341,7 @@ private:
     std::array<uint32_t, kNumPads> lastRawValues_;  // For stuck detection
     std::array<uint32_t, kNumPads> stuckCount_;     // Per-pad stuck counter
     bool initialized_;
+    mutable utils::Mutex stateMutex_;
 };
 
 }  // namespace domes

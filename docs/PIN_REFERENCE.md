@@ -5,7 +5,7 @@ header positions and planned production assignments.
 
 ## Ownership And Validation
 
-- `firmware/domes/main/config.hpp` is authoritative for the board selected by a firmware build.
+- `firmware/domes/main/config.hpp` is authoritative for the sole supported NFF board profile.
 - `hardware/nff-devboard/source/*.epro` and `hardware/nff-devboard/docs/schematic.pdf` are
   authoritative for physical NFF carrier nets.
 - This document reconciles those sources for humans and must change with either source.
@@ -18,10 +18,13 @@ Last reconciled with `config.hpp`: 2026-08-02.
 
 ## Active Firmware Target
 
-`BOARD_NFF_DEVBOARD` is currently selected in `firmware/domes/main/config.hpp`.
+The NFF carrier with an ESP32-S3 N8R8 module is the only supported firmware target. Its pin map is
+compiled directly in `firmware/domes/main/config.hpp`.
 
 | Function | DevKit header | ESP32 GPIO | Firmware symbol | Notes |
 | --- | --- | --- | --- | --- |
+| CP2102N UART TX | DevKit onboard bridge | 43 | `pins::kUartTx` | UART0 protocol output; console remains on native USB |
+| CP2102N UART RX | DevKit onboard bridge | 44 | `pins::kUartRx` | UART0 protocol input; must be explicitly routed by firmware |
 | LED ring data | H1 pin 9 | 16 | `pins::kLedData` | 16 SK6812MINI-E devices through level shifter; firmware uses RGB mode |
 | I2C SDA | - | 8 | `pins::kI2cSda` | LIS2DW12 and DRV2605L bus |
 | I2C SCL | - | 9 | `pins::kI2cScl` | LIS2DW12 and DRV2605L bus |
@@ -54,35 +57,28 @@ Current I2C addresses:
 | Audio shutdown | Not fitted | Not fitted | GPIO7 | GPIO7 planned |
 | Touch | GPIO1, 2, 3, 4 test inputs | GPIO1, 2, 3, 4 test inputs | GPIO1, 2, 4, 6 | GPIO1, 2, 3, 4 planned |
 
-Production values are design targets from the `BOARD_DOMES_V1` block, not verified PCB routing.
+The standalone DevKit and production columns are historical or planned values, not profiles in the
+current firmware. Production values are targets only and are not verified PCB routing; the active
+8 MB partition/config profile also does not support the planned 16 MB production target.
 
-## Board Selection In Code
+## Board Profile In Code
 
-The current implementation uses one active compile-time board define near the top of
-`firmware/domes/main/config.hpp`:
-
-```cpp
-// #define BOARD_DEVKITC1
-#define BOARD_NFF_DEVBOARD
-// #define BOARD_DOMES_V1
-```
-
-There is no `CONFIG_DOMES_PLATFORM_*` Kconfig selector today. When changing boards, preserve exactly
-one active define, rebuild, and inspect the boot log line that reports LED GPIO, count, and RGBW
-mode.
+There is no board-selection define or `CONFIG_DOMES_PLATFORM_*` Kconfig selector. Adding another
+target requires a complete profile, an explicit selection mechanism, and build and hardware tests.
+Do not change isolated pin constants and treat the result as a supported board.
 
 ## LED Mode Note
 
 The NFF BOM identifies SK6812MINI-E parts as RGBW-capable, but current bring-up found that this board
 must be driven in RGB/WS2812 mode. `pins::kLedIsRgbw` is therefore `false` for
-`BOARD_NFF_DEVBOARD`. Do not describe the active firmware as using the white channel unless a
+the active NFF profile. Do not describe the firmware as using the white channel unless a
 hardware test changes that setting and validates all 16 devices.
 
 ## Troubleshooting
 
 ### LED Ring Does Not Respond
 
-1. Confirm `BOARD_NFF_DEVBOARD` is selected.
+1. Confirm the firmware was built from the NFF profile in `config.hpp`.
 2. Confirm the boot log reports GPIO16, 16 devices, and RGBW disabled.
 3. Check the `LED_DATA_3V3` to `LED_DATA_5V` level-shifter path on the carrier.
 4. Verify the LED supply and the first device in the chain.

@@ -5,15 +5,16 @@
 > `firmware/domes/main/interfaces/`, `firmware/domes/main/drivers/`, and
 > [`../../firmware/AGENTS.md`](../../firmware/AGENTS.md).
 
-## AI Agent Instructions
+## Historical Scope
 
-Load this file when:
+This design record originally covered:
+
 - Implementing any hardware driver (LED, audio, haptic, touch, IMU, power)
 - Creating service layer components
 - Setting up dependency injection
 - Writing driver tests
 
-Prerequisites: `00-getting-started.md`, `01-project-structure.md`
+Original prerequisites: `00-getting-started.md`, `01-project-structure.md`
 
 ---
 
@@ -764,27 +765,32 @@ esp_err_t FeedbackService::playTouchFeedback() {
 ## Driver Development Workflow
 
 ### Step 1: Create Interface
+
 1. Define in `interfaces/i_xxx_driver.hpp`
 2. All methods virtual, return `esp_err_t`
 3. Add `isInitialized()` method
 4. Document with Doxygen
 
 ### Step 2: Create Implementation
+
 1. Header in `drivers/xxx_driver.hpp`
 2. Source in `drivers/xxx_driver.cpp`
 3. Implement all interface methods
 4. Add private `kTag` for logging
 
 ### Step 3: Create Mock
+
 1. Create `test/mocks/mock_xxx_driver.hpp`
 2. Add test control variables
 3. Default to success returns
 
 ### Step 4: Add to Build
+
 1. Add `.cpp` to `main/CMakeLists.txt` SRCS
 2. Add any new REQUIRES components
 
 ### Step 5: Verify
+
 ```bash
 idf.py build  # Compiles without errors
 

@@ -1,53 +1,42 @@
-name: Firmware CI
+name: Software CI
 
 on:
-  push:
-    branches: [main, develop, 'feature/**']
-    paths:
-      - 'firmware/**'
-      - 'tools/domes-cli/**'
-      - 'tools/firmware/**'
-      - 'tools/trace/**'
-      - 'tools/generate_protocols.sh'
-      - 'scripts/verify.sh'
-      - '.codex/skills/domes-esp32-firmware/scripts/**'
-      - '.claude/skills/esp32-firmware/scripts/**'
-      - '.github/workflows/firmware-ci.yml'
+  workflow_call:
   pull_request:
-    branches: [main, develop]
-    paths:
-      - 'firmware/**'
-      - 'tools/domes-cli/**'
-      - 'tools/firmware/**'
-      - 'tools/trace/**'
-      - 'tools/generate_protocols.sh'
-      - 'scripts/verify.sh'
-      - '.codex/skills/domes-esp32-firmware/scripts/**'
-      - '.claude/skills/esp32-firmware/scripts/**'
-      - '.github/workflows/firmware-ci.yml'
+  merge_group:
+  push:
+    branches: [main]
 
-# Cancel stale runs when new commits are pushed to the same PR/branch
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
 concurrency:
-  group: firmware-ci-${{ github.ref }}
+  group: software-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  firmware-build:
     name: Build ESP32-S3 Firmware
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     container:
-      image: espressif/idf:v5.2.2
+      image: espressif/idf:v5.4.4@sha256:8d1846f61ff8db00ba6530501f90bf43604d923072a616c806fef8e85a88ed82
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0  # For git describe version
+          fetch-depth: 0
+          persist-credentials: false
           submodules: recursive
 
       - name: Check generated firmware bindings
         run: |
-          . $IDF_PATH/export.sh
+          . "$IDF_PATH/export.sh"
           GENERATOR_PYTHONPATH="${RUNNER_TEMP:-/tmp}/nanopb-generator"
           python -m pip install --disable-pip-version-check --require-hashes \
             --target "$GENERATOR_PYTHONPATH" \
@@ -58,84 +47,147 @@ jobs:
       - name: Build firmware
         working-directory: firmware/domes
         run: |
-          . $IDF_PATH/export.sh
-          idf.py build
+          . "$IDF_PATH/export.sh"
+          actual_idf_version=$(idf.py --version)
+          echo "$actual_idf_version"
+          if [[ "$actual_idf_version" != "ESP-IDF v5.4.4" ]]; then
+            echo "::error::Expected ESP-IDF v5.4.4, found $actual_idf_version"
+            exit 1
+          fi
+          sdkconfig_path="${RUNNER_TEMP:-/tmp}/domes-ci-sdkconfig"
+          rm -rf build
+          rm -f "$sdkconfig_path"
+          idf.py -B build \
+            -D "IDF_TARGET=esp32s3" \
+            -D "SDKCONFIG=$sdkconfig_path" \
+            build
+          python - <<'PY'
+          import json
+          from pathlib import Path
 
-      - name: Check binary size
-        run: |
-          SIZE=$(stat -c%s firmware/domes/build/domes.bin)
-          echo "Binary size: $SIZE bytes ($(numfmt --to=iec $SIZE))"
-
-          # DevKit OTA partition = 1.875MB = 1,966,080 bytes
-          MAX_SIZE=1966080
-
-          if [ $SIZE -gt $MAX_SIZE ]; then
-            echo "::error::Binary exceeds OTA partition size ($SIZE > $MAX_SIZE bytes)"
+          config = json.loads(Path("build/config/sdkconfig.json").read_text())
+          assert config["BOOTLOADER_APP_ROLLBACK_ENABLE"] is True
+          PY
+          if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+            echo "::error::ESP-IDF rewrote firmware/domes/dependencies.lock"
+            git diff -- dependencies.lock
             exit 1
           fi
 
-          echo "Size OK: $SIZE / $MAX_SIZE bytes ($(( SIZE * 100 / MAX_SIZE ))%)"
-
-      - name: Generate firmware info
+      - name: Check binary size
         run: |
-          cd firmware/domes/build
-          sha256sum domes.bin > domes.bin.sha256
-          echo "SHA-256: $(cat domes.bin.sha256)"
+          size=$(stat -c%s firmware/domes/build/domes.bin)
+          max_size=1966080
+          echo "Binary size: $size / $max_size bytes"
+          if ((size > max_size)); then
+            echo "::error::Binary exceeds OTA partition size ($size > $max_size bytes)"
+            exit 1
+          fi
 
-      - name: Upload firmware artifact
-        uses: actions/upload-artifact@v4
+      - name: Package and validate release images
+        working-directory: firmware/domes/build
+        run: |
+          . "$IDF_PATH/export.sh"
+          release_dir="$PWD/release"
+          mkdir -p "$release_dir"
+
+          python -m esptool --chip esp32s3 merge_bin \
+            -o "$release_dir/domes-factory.bin" @flash_args
+          python -m esptool --chip esp32s3 image_info domes.bin
+          python -m esptool --chip esp32s3 image_info "$release_dir/domes-factory.bin"
+
+          cp domes.bin "$release_dir/domes.bin"
+          cp bootloader/bootloader.bin "$release_dir/bootloader.bin"
+          cp partition_table/partition-table.bin "$release_dir/partition-table.bin"
+          cp ota_data_initial.bin "$release_dir/ota_data_initial.bin"
+          sed \
+            -e 's#bootloader/bootloader.bin#bootloader.bin#' \
+            -e 's#partition_table/partition-table.bin#partition-table.bin#' \
+            flash_args > "$release_dir/flash_args"
+
+          cd "$release_dir"
+          test -s domes.bin
+          test -s domes-factory.bin
+          test -s bootloader.bin
+          test -s partition-table.bin
+          test -s ota_data_initial.bin
+          sha256sum \
+            domes.bin \
+            domes-factory.bin \
+            bootloader.bin \
+            partition-table.bin \
+            ota_data_initial.bin \
+            flash_args > SHA256SUMS
+          sha256sum --check SHA256SUMS
+
+      - name: Upload firmware package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: domes-firmware-${{ github.sha }}
-          path: |
-            firmware/domes/build/domes.bin
-            firmware/domes/build/domes.bin.sha256
+          path: firmware/domes/build/release/
+          if-no-files-found: error
           retention-days: 30
 
-  # Standalone unit tests using Google Test (host-only, no ESP-IDF target)
   unit-tests:
     name: Run Unit Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: recursive
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential
+          sudo apt-get install -y --no-install-recommends build-essential cmake
 
       - name: Build and run tests
-        working-directory: firmware/test_app
         run: |
-          mkdir -p build
-          cd build
-          cmake ..
-          make -j$(nproc)
-          ctest --output-on-failure
+          cmake \
+            -S firmware/test_app \
+            -B firmware/test_app/build \
+            -DCMAKE_BUILD_TYPE=Debug
+          cmake --build firmware/test_app/build -j"$(nproc)"
+          ctest \
+            --test-dir firmware/test_app/build \
+            --output-on-failure \
+            --no-tests=error
 
-  # Rust CLI build and tests
   cli-build:
     name: Build CLI Tool
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: recursive
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libudev-dev libdbus-1-dev pkg-config protobuf-compiler
+          sudo apt-get install -y --no-install-recommends \
+            libdbus-1-dev \
+            libudev-dev \
+            pkg-config \
+            protobuf-compiler
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
+          toolchain: 1.92.0
           components: rustfmt, clippy
+
+      - name: Enforce repository policy hooks
+        run: |
+          python -m pip install --disable-pip-version-check pre-commit==4.6.1
+          pre-commit run --all-files --show-diff-on-failure --color=always
 
       - name: Check CLI formatting
         working-directory: tools/domes-cli
@@ -143,43 +195,85 @@ jobs:
 
       - name: Lint CLI
         working-directory: tools/domes-cli
-        run: cargo clippy --all-targets --all-features
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Build CLI
         working-directory: tools/domes-cli
-        run: cargo build --release
+        run: cargo build --locked --release
 
       - name: Run CLI tests
         working-directory: tools/domes-cli
-        run: cargo test
+        run: cargo test --locked --all-targets --all-features
 
   host-tooling:
     name: Test Host Tooling
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: recursive
 
-      - name: Test trace merge
-        run: python3 -m unittest tools.trace.test_trace_merge
-
-      - name: Check Python entry points
+      - name: Install workflow lint dependencies
         run: |
-          python3 -m py_compile \
-            tools/trace/trace_merge.py \
-            tools/trace/test_trace_merge.py \
-            tools/firmware/monitor_serial.py \
-            .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py \
-            .claude/skills/esp32-firmware/scripts/monitor_serial.py
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+
+      - name: Test Python tooling
+        run: |
+          python3 -m unittest discover -s tools/ci -p 'test_*.py' -v
+          python3 -m unittest discover -s tools/docs -p 'test_*.py' -v
+          python3 tools/docs/check_markdown_links.py
+          python3 -m unittest discover -s tools/trace -p 'test_*.py' -v
+          python3 tools/trace/generate_trace_names.py --check
+          mapfile -d '' python_files < <(git ls-files -z '*.py')
+          python3 -m py_compile "${python_files[@]}"
 
       - name: Check shell entry points
         run: |
-          bash -n \
-            scripts/verify.sh \
-            tools/generate_protocols.sh \
-            tools/firmware/flash_and_verify.sh \
-            .codex/skills/domes-esp32-firmware/scripts/flash_and_verify.sh \
-            .claude/skills/esp32-firmware/scripts/flash_and_verify.sh
+          git ls-files -z '*.sh' | xargs -0 -r -n1 bash -n
+          git ls-files -z '*.sh' | xargs -0 -r shellcheck
+
+      - name: Lint GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.10 -color
+
+  flutter:
+    name: Flutter
+    uses: ./.github/workflows/flutter-ci.yml
+
+  ci-gate:
+    name: CI Gate
+    if: ${{ always() }}
+    needs: [firmware-build, unit-tests, cli-build, host-tooling, flutter]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+
+    steps:
+      - name: Verify required jobs
+        env:
+          CLI_RESULT: ${{ needs.cli-build.result }}
+          FIRMWARE_RESULT: ${{ needs.firmware-build.result }}
+          FLUTTER_RESULT: ${{ needs.flutter.result }}
+          HOST_TOOLING_RESULT: ${{ needs.host-tooling.result }}
+          UNIT_TEST_RESULT: ${{ needs.unit-tests.result }}
+        run: |
+          failed=0
+          for result in \
+            "$FIRMWARE_RESULT" \
+            "$UNIT_TEST_RESULT" \
+            "$CLI_RESULT" \
+            "$HOST_TOOLING_RESULT" \
+            "$FLUTTER_RESULT"; do
+            if [[ "$result" != "success" ]]; then
+              failed=1
+            fi
+          done
+
+          if ((failed)); then
+            echo "::error::One or more required CI jobs did not succeed"
+            exit 1
+          fi

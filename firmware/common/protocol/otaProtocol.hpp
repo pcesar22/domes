@@ -200,6 +200,9 @@ TransportError deserializeOtaBegin(const uint8_t* payload, size_t payloadLen,
 TransportError deserializeOtaData(const uint8_t* payload, size_t payloadLen, uint32_t* offset,
                                   const uint8_t** data, size_t* dataLen);
 
+/** Validate the empty OTA_END payload. */
+TransportError deserializeOtaEnd(const uint8_t* payload, size_t payloadLen);
+
 /**
  * @brief Deserialize OTA_ACK payload
  *

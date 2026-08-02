@@ -64,7 +64,7 @@ class MsgType extends $pb.ProtobufEnum {
   static const MsgType MSG_TYPE_SET_POD_ID_RSP =
       MsgType._(55, _omitEnumNames ? '' : 'MSG_TYPE_SET_POD_ID_RSP');
 
-  /// Observability commands (0x38-0x4F range)
+  /// Observability commands (0x38-0x49 range)
   static const MsgType MSG_TYPE_GET_HEALTH_REQ =
       MsgType._(56, _omitEnumNames ? '' : 'MSG_TYPE_GET_HEALTH_REQ');
   static const MsgType MSG_TYPE_GET_HEALTH_RSP =
@@ -122,6 +122,10 @@ class MsgType extends $pb.ProtobufEnum {
   static const MsgType MSG_TYPE_SET_SIM_MODE_RSP =
       MsgType._(79, _omitEnumNames ? '' : 'MSG_TYPE_SET_SIM_MODE_RSP');
 
+  /// Device-originated touch notification (0x50)
+  static const MsgType MSG_TYPE_TOUCH_EVENT_NTF =
+      MsgType._(80, _omitEnumNames ? '' : 'MSG_TYPE_TOUCH_EVENT_NTF');
+
   static const $core.List<MsgType> values = <MsgType>[
     MSG_TYPE_UNKNOWN,
     MSG_TYPE_LIST_FEATURES_REQ,
@@ -166,6 +170,7 @@ class MsgType extends $pb.ProtobufEnum {
     MSG_TYPE_SIMULATE_TOUCH_RSP,
     MSG_TYPE_SET_SIM_MODE_REQ,
     MSG_TYPE_SET_SIM_MODE_RSP,
+    MSG_TYPE_TOUCH_EVENT_NTF,
   ];
 
   static final $core.Map<$core.int, MsgType> _byValue =
@@ -301,6 +306,69 @@ class SystemMode extends $pb.ProtobufEnum {
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
   const SystemMode._(super.value, super.name);
+}
+
+/// Normalized device reset cause. Firmware maps ESP-IDF reset reasons at the
+/// platform boundary; host clients consume this enum without duplicating IDs.
+class ResetReason extends $pb.ProtobufEnum {
+  static const ResetReason RESET_REASON_UNKNOWN =
+      ResetReason._(0, _omitEnumNames ? '' : 'RESET_REASON_UNKNOWN');
+  static const ResetReason RESET_REASON_POWER_ON =
+      ResetReason._(1, _omitEnumNames ? '' : 'RESET_REASON_POWER_ON');
+  static const ResetReason RESET_REASON_EXTERNAL_PIN =
+      ResetReason._(2, _omitEnumNames ? '' : 'RESET_REASON_EXTERNAL_PIN');
+  static const ResetReason RESET_REASON_SOFTWARE =
+      ResetReason._(3, _omitEnumNames ? '' : 'RESET_REASON_SOFTWARE');
+  static const ResetReason RESET_REASON_PANIC =
+      ResetReason._(4, _omitEnumNames ? '' : 'RESET_REASON_PANIC');
+  static const ResetReason RESET_REASON_INTERRUPT_WATCHDOG =
+      ResetReason._(5, _omitEnumNames ? '' : 'RESET_REASON_INTERRUPT_WATCHDOG');
+  static const ResetReason RESET_REASON_TASK_WATCHDOG =
+      ResetReason._(6, _omitEnumNames ? '' : 'RESET_REASON_TASK_WATCHDOG');
+  static const ResetReason RESET_REASON_WATCHDOG =
+      ResetReason._(7, _omitEnumNames ? '' : 'RESET_REASON_WATCHDOG');
+  static const ResetReason RESET_REASON_DEEP_SLEEP =
+      ResetReason._(8, _omitEnumNames ? '' : 'RESET_REASON_DEEP_SLEEP');
+  static const ResetReason RESET_REASON_BROWNOUT =
+      ResetReason._(9, _omitEnumNames ? '' : 'RESET_REASON_BROWNOUT');
+  static const ResetReason RESET_REASON_SDIO =
+      ResetReason._(10, _omitEnumNames ? '' : 'RESET_REASON_SDIO');
+  static const ResetReason RESET_REASON_USB =
+      ResetReason._(11, _omitEnumNames ? '' : 'RESET_REASON_USB');
+  static const ResetReason RESET_REASON_JTAG =
+      ResetReason._(12, _omitEnumNames ? '' : 'RESET_REASON_JTAG');
+  static const ResetReason RESET_REASON_EFUSE =
+      ResetReason._(13, _omitEnumNames ? '' : 'RESET_REASON_EFUSE');
+  static const ResetReason RESET_REASON_POWER_GLITCH =
+      ResetReason._(14, _omitEnumNames ? '' : 'RESET_REASON_POWER_GLITCH');
+  static const ResetReason RESET_REASON_CPU_LOCKUP =
+      ResetReason._(15, _omitEnumNames ? '' : 'RESET_REASON_CPU_LOCKUP');
+
+  static const $core.List<ResetReason> values = <ResetReason>[
+    RESET_REASON_UNKNOWN,
+    RESET_REASON_POWER_ON,
+    RESET_REASON_EXTERNAL_PIN,
+    RESET_REASON_SOFTWARE,
+    RESET_REASON_PANIC,
+    RESET_REASON_INTERRUPT_WATCHDOG,
+    RESET_REASON_TASK_WATCHDOG,
+    RESET_REASON_WATCHDOG,
+    RESET_REASON_DEEP_SLEEP,
+    RESET_REASON_BROWNOUT,
+    RESET_REASON_SDIO,
+    RESET_REASON_USB,
+    RESET_REASON_JTAG,
+    RESET_REASON_EFUSE,
+    RESET_REASON_POWER_GLITCH,
+    RESET_REASON_CPU_LOCKUP,
+  ];
+
+  static final $core.List<ResetReason?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 15);
+  static ResetReason? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const ResetReason._(super.value, super.name);
 }
 
 const $core.bool _omitEnumNames =

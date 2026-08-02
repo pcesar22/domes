@@ -41,6 +41,7 @@ Schematic header positions and ESP32 GPIO numbers are different namespaces. The 
 
 | Signal | DevKit header | ESP32 GPIO |
 | --- | --- | --- |
+| CP2102N UART TX / RX | DevKit onboard bridge | 43 / 44 |
 | LED data | H1 pin 9 | 16 |
 | IMU INT1 | H1 pin 5 | 5 |
 | Audio shutdown | H1 pin 7 | 7 |
@@ -60,11 +61,15 @@ and frequency profile in the firmware.
 ## Build And Bring Up
 
 ```bash
-cd firmware/domes
-. ~/esp/esp-idf/export.sh
-idf.py build
-idf.py -p /dev/ttyACM0 flash
+PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+tools/firmware/flash_and_verify.sh firmware/domes "$PORT"
 ```
+
+The DevKit CP2102N bridge (`/dev/ttyUSB*`) is the programming, framed UART config, and serial OTA
+interface. Use its serial-number link under `/dev/serial/by-id/`. Native ESP32-S3 USB Serial/JTAG
+(`/dev/ttyACM*`) is a second, optional console/JTAG connection and is not a config transport.
+The helper uses an isolated build directory and fresh `SDKCONFIG`, then verifies the runtime UART.
 
 Continue with [`BRING_UP_CHECKLIST.md`](BRING_UP_CHECKLIST.md). The reusable repository verification
 policy is [`../../docs/TESTING.md`](../../docs/TESTING.md).

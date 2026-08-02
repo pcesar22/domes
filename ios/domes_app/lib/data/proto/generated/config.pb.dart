@@ -12,6 +12,7 @@
 
 import 'dart:core' as $core;
 
+import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'config.pbenum.dart';
@@ -282,6 +283,61 @@ class SetFeatureRequest extends $pb.GeneratedMessage {
   $core.bool hasEnabled() => $_has(1);
   @$pb.TagNumber(2)
   void clearEnabled() => $_clearField(2);
+}
+
+class GetFeatureRequest extends $pb.GeneratedMessage {
+  factory GetFeatureRequest({
+    Feature? feature,
+  }) {
+    final result = create();
+    if (feature != null) result.feature = feature;
+    return result;
+  }
+
+  GetFeatureRequest._();
+
+  factory GetFeatureRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetFeatureRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetFeatureRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
+      createEmptyInstance: create)
+    ..aE<Feature>(1, _omitFieldNames ? '' : 'feature',
+        enumValues: Feature.values)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetFeatureRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetFeatureRequest copyWith(void Function(GetFeatureRequest) updates) =>
+      super.copyWith((message) => updates(message as GetFeatureRequest))
+          as GetFeatureRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetFeatureRequest create() => GetFeatureRequest._();
+  @$core.override
+  GetFeatureRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetFeatureRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetFeatureRequest>(create);
+  static GetFeatureRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  Feature get feature => $_getN(0);
+  @$pb.TagNumber(1)
+  set feature(Feature value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasFeature() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearFeature() => $_clearField(1);
 }
 
 /// LED pattern with parameters
@@ -584,6 +640,63 @@ class SetFeatureResponse extends $pb.GeneratedMessage {
   static SetFeatureResponse getDefault() => _defaultInstance ??=
       $pb.GeneratedMessage.$_defaultFor<SetFeatureResponse>(create);
   static SetFeatureResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  FeatureState get feature => $_getN(0);
+  @$pb.TagNumber(1)
+  set feature(FeatureState value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasFeature() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearFeature() => $_clearField(1);
+  @$pb.TagNumber(1)
+  FeatureState ensureFeature() => $_ensure(0);
+}
+
+class GetFeatureResponse extends $pb.GeneratedMessage {
+  factory GetFeatureResponse({
+    FeatureState? feature,
+  }) {
+    final result = create();
+    if (feature != null) result.feature = feature;
+    return result;
+  }
+
+  GetFeatureResponse._();
+
+  factory GetFeatureResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetFeatureResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetFeatureResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
+      createEmptyInstance: create)
+    ..aOM<FeatureState>(1, _omitFieldNames ? '' : 'feature',
+        subBuilder: FeatureState.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetFeatureResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetFeatureResponse copyWith(void Function(GetFeatureResponse) updates) =>
+      super.copyWith((message) => updates(message as GetFeatureResponse))
+          as GetFeatureResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetFeatureResponse create() => GetFeatureResponse._();
+  @$core.override
+  GetFeatureResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetFeatureResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetFeatureResponse>(create);
+  static GetFeatureResponse? _defaultInstance;
 
   @$pb.TagNumber(1)
   FeatureState get feature => $_getN(0);
@@ -1098,6 +1211,7 @@ class GetSystemInfoResponse extends $pb.GeneratedMessage {
     SystemMode? mode,
     $core.int? featureMask,
     $core.int? podId,
+    ResetReason? resetReason,
   }) {
     final result = create();
     if (firmwareVersion != null) result.firmwareVersion = firmwareVersion;
@@ -1107,6 +1221,7 @@ class GetSystemInfoResponse extends $pb.GeneratedMessage {
     if (mode != null) result.mode = mode;
     if (featureMask != null) result.featureMask = featureMask;
     if (podId != null) result.podId = podId;
+    if (resetReason != null) result.resetReason = resetReason;
     return result;
   }
 
@@ -1132,6 +1247,8 @@ class GetSystemInfoResponse extends $pb.GeneratedMessage {
     ..aI(6, _omitFieldNames ? '' : 'featureMask',
         fieldType: $pb.PbFieldType.OU3)
     ..aI(7, _omitFieldNames ? '' : 'podId', fieldType: $pb.PbFieldType.OU3)
+    ..aE<ResetReason>(8, _omitFieldNames ? '' : 'resetReason',
+        enumValues: ResetReason.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1216,6 +1333,15 @@ class GetSystemInfoResponse extends $pb.GeneratedMessage {
   $core.bool hasPodId() => $_has(6);
   @$pb.TagNumber(7)
   void clearPodId() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  ResetReason get resetReason => $_getN(7);
+  @$pb.TagNumber(8)
+  set resetReason(ResetReason value) => $_setField(8, value);
+  @$pb.TagNumber(8)
+  $core.bool hasResetReason() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearResetReason() => $_clearField(8);
 }
 
 /// Set pod ID (persisted to NVS)
@@ -2005,7 +2131,8 @@ class EspNowBenchResponse extends $pb.GeneratedMessage {
   void clearP99RttUs() => $_clearField(8);
 }
 
-/// Crash dump stored in NVS after a panic
+/// Diagnostic snapshot stored in NVS by the clean-restart shutdown handler.
+/// Hard faults and watchdog resets require ESP-IDF's flash coredump facility.
 class GetCrashDumpRequest extends $pb.GeneratedMessage {
   factory GetCrashDumpRequest() => create();
 
@@ -2993,13 +3120,7 @@ class SimulateTouchRequest extends $pb.GeneratedMessage {
 }
 
 class SimulateTouchResponse extends $pb.GeneratedMessage {
-  factory SimulateTouchResponse({
-    Status? status,
-  }) {
-    final result = create();
-    if (status != null) result.status = status;
-    return result;
-  }
+  factory SimulateTouchResponse() => create();
 
   SimulateTouchResponse._();
 
@@ -3014,7 +3135,6 @@ class SimulateTouchResponse extends $pb.GeneratedMessage {
       _omitMessageNames ? '' : 'SimulateTouchResponse',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
       createEmptyInstance: create)
-    ..aE<Status>(1, _omitFieldNames ? '' : 'status', enumValues: Status.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -3036,15 +3156,6 @@ class SimulateTouchResponse extends $pb.GeneratedMessage {
   static SimulateTouchResponse getDefault() => _defaultInstance ??=
       $pb.GeneratedMessage.$_defaultFor<SimulateTouchResponse>(create);
   static SimulateTouchResponse? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  Status get status => $_getN(0);
-  @$pb.TagNumber(1)
-  set status(Status value) => $_setField(1, value);
-  @$pb.TagNumber(1)
-  $core.bool hasStatus() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearStatus() => $_clearField(1);
 }
 
 /// Enable/disable sim drill mode (auto-inject during ESP-NOW drills)
@@ -3128,13 +3239,11 @@ class SetSimModeRequest extends $pb.GeneratedMessage {
 
 class SetSimModeResponse extends $pb.GeneratedMessage {
   factory SetSimModeResponse({
-    Status? status,
     $core.bool? enabled,
     $core.int? delayMs,
     $core.int? padIndex,
   }) {
     final result = create();
-    if (status != null) result.status = status;
     if (enabled != null) result.enabled = enabled;
     if (delayMs != null) result.delayMs = delayMs;
     if (padIndex != null) result.padIndex = padIndex;
@@ -3154,7 +3263,6 @@ class SetSimModeResponse extends $pb.GeneratedMessage {
       _omitMessageNames ? '' : 'SetSimModeResponse',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
       createEmptyInstance: create)
-    ..aE<Status>(1, _omitFieldNames ? '' : 'status', enumValues: Status.values)
     ..aOB(2, _omitFieldNames ? '' : 'enabled')
     ..aI(3, _omitFieldNames ? '' : 'delayMs', fieldType: $pb.PbFieldType.OU3)
     ..aI(4, _omitFieldNames ? '' : 'padIndex', fieldType: $pb.PbFieldType.OU3)
@@ -3179,233 +3287,115 @@ class SetSimModeResponse extends $pb.GeneratedMessage {
       $pb.GeneratedMessage.$_defaultFor<SetSimModeResponse>(create);
   static SetSimModeResponse? _defaultInstance;
 
-  @$pb.TagNumber(1)
-  Status get status => $_getN(0);
-  @$pb.TagNumber(1)
-  set status(Status value) => $_setField(1, value);
-  @$pb.TagNumber(1)
-  $core.bool hasStatus() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearStatus() => $_clearField(1);
-
   @$pb.TagNumber(2)
-  $core.bool get enabled => $_getBF(1);
+  $core.bool get enabled => $_getBF(0);
   @$pb.TagNumber(2)
-  set enabled($core.bool value) => $_setBool(1, value);
+  set enabled($core.bool value) => $_setBool(0, value);
   @$pb.TagNumber(2)
-  $core.bool hasEnabled() => $_has(1);
+  $core.bool hasEnabled() => $_has(0);
   @$pb.TagNumber(2)
   void clearEnabled() => $_clearField(2);
 
   @$pb.TagNumber(3)
-  $core.int get delayMs => $_getIZ(2);
+  $core.int get delayMs => $_getIZ(1);
   @$pb.TagNumber(3)
-  set delayMs($core.int value) => $_setUnsignedInt32(2, value);
+  set delayMs($core.int value) => $_setUnsignedInt32(1, value);
   @$pb.TagNumber(3)
-  $core.bool hasDelayMs() => $_has(2);
+  $core.bool hasDelayMs() => $_has(1);
   @$pb.TagNumber(3)
   void clearDelayMs() => $_clearField(3);
 
   @$pb.TagNumber(4)
-  $core.int get padIndex => $_getIZ(3);
+  $core.int get padIndex => $_getIZ(2);
   @$pb.TagNumber(4)
-  set padIndex($core.int value) => $_setUnsignedInt32(3, value);
+  set padIndex($core.int value) => $_setUnsignedInt32(2, value);
   @$pb.TagNumber(4)
-  $core.bool hasPadIndex() => $_has(3);
+  $core.bool hasPadIndex() => $_has(2);
   @$pb.TagNumber(4)
   void clearPadIndex() => $_clearField(4);
 }
 
-enum ConfigRequest_Request { listFeatures, setFeature, notSet }
-
-/// Top-level request envelope
-class ConfigRequest extends $pb.GeneratedMessage {
-  factory ConfigRequest({
-    ListFeaturesRequest? listFeatures,
-    SetFeatureRequest? setFeature,
+/// Emitted by a connected pod on the rising edge of a physical touch.
+/// The payload is protobuf-only and does not carry a command status byte.
+class TouchEventNotification extends $pb.GeneratedMessage {
+  factory TouchEventNotification({
+    $core.int? podId,
+    $core.int? padIndex,
+    $fixnum.Int64? timestampUs,
   }) {
     final result = create();
-    if (listFeatures != null) result.listFeatures = listFeatures;
-    if (setFeature != null) result.setFeature = setFeature;
+    if (podId != null) result.podId = podId;
+    if (padIndex != null) result.padIndex = padIndex;
+    if (timestampUs != null) result.timestampUs = timestampUs;
     return result;
   }
 
-  ConfigRequest._();
+  TouchEventNotification._();
 
-  factory ConfigRequest.fromBuffer($core.List<$core.int> data,
+  factory TouchEventNotification.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory ConfigRequest.fromJson($core.String json,
+  factory TouchEventNotification.fromJson($core.String json,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
-  static const $core.Map<$core.int, ConfigRequest_Request>
-      _ConfigRequest_RequestByTag = {
-    1: ConfigRequest_Request.listFeatures,
-    2: ConfigRequest_Request.setFeature,
-    0: ConfigRequest_Request.notSet
-  };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ConfigRequest',
+      _omitMessageNames ? '' : 'TouchEventNotification',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
       createEmptyInstance: create)
-    ..oo(0, [1, 2])
-    ..aOM<ListFeaturesRequest>(1, _omitFieldNames ? '' : 'listFeatures',
-        subBuilder: ListFeaturesRequest.create)
-    ..aOM<SetFeatureRequest>(2, _omitFieldNames ? '' : 'setFeature',
-        subBuilder: SetFeatureRequest.create)
+    ..aI(1, _omitFieldNames ? '' : 'podId', fieldType: $pb.PbFieldType.OU3)
+    ..aI(2, _omitFieldNames ? '' : 'padIndex', fieldType: $pb.PbFieldType.OU3)
+    ..a<$fixnum.Int64>(
+        3, _omitFieldNames ? '' : 'timestampUs', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ConfigRequest clone() => deepCopy();
+  TouchEventNotification clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ConfigRequest copyWith(void Function(ConfigRequest) updates) =>
-      super.copyWith((message) => updates(message as ConfigRequest))
-          as ConfigRequest;
+  TouchEventNotification copyWith(
+          void Function(TouchEventNotification) updates) =>
+      super.copyWith((message) => updates(message as TouchEventNotification))
+          as TouchEventNotification;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static ConfigRequest create() => ConfigRequest._();
+  static TouchEventNotification create() => TouchEventNotification._();
   @$core.override
-  ConfigRequest createEmptyInstance() => create();
+  TouchEventNotification createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static ConfigRequest getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<ConfigRequest>(create);
-  static ConfigRequest? _defaultInstance;
+  static TouchEventNotification getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<TouchEventNotification>(create);
+  static TouchEventNotification? _defaultInstance;
 
   @$pb.TagNumber(1)
-  @$pb.TagNumber(2)
-  ConfigRequest_Request whichRequest() =>
-      _ConfigRequest_RequestByTag[$_whichOneof(0)]!;
+  $core.int get podId => $_getIZ(0);
   @$pb.TagNumber(1)
-  @$pb.TagNumber(2)
-  void clearRequest() => $_clearField($_whichOneof(0));
-
+  set podId($core.int value) => $_setUnsignedInt32(0, value);
   @$pb.TagNumber(1)
-  ListFeaturesRequest get listFeatures => $_getN(0);
+  $core.bool hasPodId() => $_has(0);
   @$pb.TagNumber(1)
-  set listFeatures(ListFeaturesRequest value) => $_setField(1, value);
-  @$pb.TagNumber(1)
-  $core.bool hasListFeatures() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearListFeatures() => $_clearField(1);
-  @$pb.TagNumber(1)
-  ListFeaturesRequest ensureListFeatures() => $_ensure(0);
+  void clearPodId() => $_clearField(1);
 
   @$pb.TagNumber(2)
-  SetFeatureRequest get setFeature => $_getN(1);
+  $core.int get padIndex => $_getIZ(1);
   @$pb.TagNumber(2)
-  set setFeature(SetFeatureRequest value) => $_setField(2, value);
+  set padIndex($core.int value) => $_setUnsignedInt32(1, value);
   @$pb.TagNumber(2)
-  $core.bool hasSetFeature() => $_has(1);
+  $core.bool hasPadIndex() => $_has(1);
   @$pb.TagNumber(2)
-  void clearSetFeature() => $_clearField(2);
-  @$pb.TagNumber(2)
-  SetFeatureRequest ensureSetFeature() => $_ensure(1);
-}
-
-enum ConfigResponse_Response { listFeatures, setFeature, notSet }
-
-/// Top-level response envelope
-class ConfigResponse extends $pb.GeneratedMessage {
-  factory ConfigResponse({
-    Status? status,
-    ListFeaturesResponse? listFeatures,
-    SetFeatureResponse? setFeature,
-  }) {
-    final result = create();
-    if (status != null) result.status = status;
-    if (listFeatures != null) result.listFeatures = listFeatures;
-    if (setFeature != null) result.setFeature = setFeature;
-    return result;
-  }
-
-  ConfigResponse._();
-
-  factory ConfigResponse.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory ConfigResponse.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static const $core.Map<$core.int, ConfigResponse_Response>
-      _ConfigResponse_ResponseByTag = {
-    2: ConfigResponse_Response.listFeatures,
-    3: ConfigResponse_Response.setFeature,
-    0: ConfigResponse_Response.notSet
-  };
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ConfigResponse',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
-      createEmptyInstance: create)
-    ..oo(0, [2, 3])
-    ..aE<Status>(1, _omitFieldNames ? '' : 'status', enumValues: Status.values)
-    ..aOM<ListFeaturesResponse>(2, _omitFieldNames ? '' : 'listFeatures',
-        subBuilder: ListFeaturesResponse.create)
-    ..aOM<SetFeatureResponse>(3, _omitFieldNames ? '' : 'setFeature',
-        subBuilder: SetFeatureResponse.create)
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ConfigResponse clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ConfigResponse copyWith(void Function(ConfigResponse) updates) =>
-      super.copyWith((message) => updates(message as ConfigResponse))
-          as ConfigResponse;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static ConfigResponse create() => ConfigResponse._();
-  @$core.override
-  ConfigResponse createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static ConfigResponse getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<ConfigResponse>(create);
-  static ConfigResponse? _defaultInstance;
-
-  @$pb.TagNumber(2)
-  @$pb.TagNumber(3)
-  ConfigResponse_Response whichResponse() =>
-      _ConfigResponse_ResponseByTag[$_whichOneof(0)]!;
-  @$pb.TagNumber(2)
-  @$pb.TagNumber(3)
-  void clearResponse() => $_clearField($_whichOneof(0));
-
-  @$pb.TagNumber(1)
-  Status get status => $_getN(0);
-  @$pb.TagNumber(1)
-  set status(Status value) => $_setField(1, value);
-  @$pb.TagNumber(1)
-  $core.bool hasStatus() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearStatus() => $_clearField(1);
-
-  @$pb.TagNumber(2)
-  ListFeaturesResponse get listFeatures => $_getN(1);
-  @$pb.TagNumber(2)
-  set listFeatures(ListFeaturesResponse value) => $_setField(2, value);
-  @$pb.TagNumber(2)
-  $core.bool hasListFeatures() => $_has(1);
-  @$pb.TagNumber(2)
-  void clearListFeatures() => $_clearField(2);
-  @$pb.TagNumber(2)
-  ListFeaturesResponse ensureListFeatures() => $_ensure(1);
+  void clearPadIndex() => $_clearField(2);
 
   @$pb.TagNumber(3)
-  SetFeatureResponse get setFeature => $_getN(2);
+  $fixnum.Int64 get timestampUs => $_getI64(2);
   @$pb.TagNumber(3)
-  set setFeature(SetFeatureResponse value) => $_setField(3, value);
+  set timestampUs($fixnum.Int64 value) => $_setInt64(2, value);
   @$pb.TagNumber(3)
-  $core.bool hasSetFeature() => $_has(2);
+  $core.bool hasTimestampUs() => $_has(2);
   @$pb.TagNumber(3)
-  void clearSetFeature() => $_clearField(3);
-  @$pb.TagNumber(3)
-  SetFeatureResponse ensureSetFeature() => $_ensure(2);
+  void clearTimestampUs() => $_clearField(3);
 }
 
 const $core.bool _omitFieldNames =

@@ -58,10 +58,7 @@ void main() {
   group('OtaNotifier.startOta', () {
     test('sets error when not connected', () async {
       final firmware = List.filled(1024, 0xFF);
-      await notifier.startOta(
-        Uint8List.fromList(firmware),
-        version: 'v1.0.0',
-      );
+      await notifier.startOta(Uint8List.fromList(firmware), version: 'v1.0.0');
 
       final state = container.read(otaProvider);
       expect(state.phase, OtaPhase.error);

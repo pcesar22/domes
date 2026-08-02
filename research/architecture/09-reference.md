@@ -4,9 +4,10 @@
 > tables below as live values. Follow the authority map in
 > [`../SOFTWARE_ARCHITECTURE.md`](../SOFTWARE_ARCHITECTURE.md) to the owning source files.
 
-## AI Agent Instructions
+## Historical Scope
 
-Load this file when:
+This superseded reference originally covered:
+
 - Looking up pin assignments
 - Checking NVS key names
 - Finding error codes

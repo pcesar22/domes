@@ -9,11 +9,12 @@
  * decode errors.
  */
 
-#include "trace/traceApi.hpp"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "trace/traceApi.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -26,7 +27,7 @@ public:
     static void init();
 
     /// Start periodic reporting task
-    static void startTask();
+    static esp_err_t startTask();
 
     /// Record a CRC error in frame decoding
     static void recordCrcError() { crcErrors_.fetch_add(1, std::memory_order_relaxed); }

@@ -57,7 +57,7 @@ public:
     esp_err_t init() override;
     FirmwareVersion getCurrentVersion() const override;
     esp_err_t checkForUpdate(OtaCheckResult& result) override;
-    esp_err_t startUpdate(const char* downloadUrl, const char* expectedSha256 = nullptr) override;
+    esp_err_t startUpdate(const char* downloadUrl, const char* expectedSha256) override;
     void abort() override;
     OtaState getState() const override;
     size_t getBytesReceived() const override;
@@ -74,10 +74,12 @@ private:
      * @brief Verify firmware hash after download
      *
      * @param partition Partition containing new firmware
-     * @param expectedSha256 Expected hash (64 hex chars)
+     * @param imageSize Exact downloaded application image size in bytes
+     * @param expectedSha256 Expected full-file hash (64 hex chars)
      * @return ESP_OK if hash matches
      */
-    esp_err_t verifyFirmwareHash(const esp_partition_t* partition, const char* expectedSha256);
+    esp_err_t verifyFirmwareHash(const esp_partition_t* partition, size_t imageSize,
+                                 const char* expectedSha256);
 
     GithubClient& github_;
 
