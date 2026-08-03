@@ -292,6 +292,43 @@ jobs:
           cargo build --locked --release
           echo "CLI built successfully"
 
+      - name: Configure bounded BLE diagnostic retry
+        run: |
+          helper="$RUNNER_TEMP/domes-ble-read"
+          cat > "$helper" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          if (($# == 0)); then
+            echo "BLE retry helper requires a command" >&2
+            exit 2
+          fi
+
+          output_file=$(mktemp "${RUNNER_TEMP:-/tmp}/domes-ble-read.XXXXXX")
+          trap 'rm -f "$output_file"' EXIT
+
+          for attempt in 1 2; do
+            if "$@" > "$output_file" 2>&1; then
+              cat "$output_file"
+              exit 0
+            else
+              status=$?
+            fi
+
+            cat "$output_file" >&2
+            if ((attempt == 1)) &&
+               grep -Fq "Failed to connect to BLE device" "$output_file" &&
+               grep -Fqi "le-connection-abort-by-local" "$output_file"; then
+              echo "Transient BlueZ local connection abort; retrying once in 3 seconds." >&2
+              sleep 3
+            else
+              exit "$status"
+            fi
+          done
+          EOF
+          chmod 0700 "$helper"
+          echo "BLE_READ_RETRY=$helper" >> "$GITHUB_ENV"
+
       - name: Flash all devices
         id: flash
         working-directory: firmware/domes
@@ -469,7 +506,7 @@ jobs:
 
           declare -A ble_by_id=()
           for address in "${ble_addresses[@]}"; do
-            if ! info=$("$CLI" --ble "$address" system info 2>&1); then
+            if ! info=$("$BLE_READ_RETRY" "$CLI" --ble "$address" system info); then
               printf '%s\n' "$info"
               continue
             fi
@@ -488,8 +525,22 @@ jobs:
               exit 1
             fi
             ble_by_id[$pod_id]=$address
-            "$CLI" --ble "$address" system self-test
-            "$CLI" --ble "$address" system health
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" system self-test
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" system health
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" system memory
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" feature list
+
+            # Exercise BLE writes without retrying a mutating command.
+            "$CLI" --ble "$address" led solid --color 0000ff --brightness 32
+            "$CLI" --ble "$address" led off
+            "$CLI" --ble "$address" feature disable haptic
+            haptic_status=$("$BLE_READ_RETRY" "$CLI" --ble "$address" feature status haptic)
+            printf '%s\n' "$haptic_status"
+            grep -Fq "Feature 'haptic' is disabled" <<< "$haptic_status"
+            "$CLI" --ble "$address" feature enable haptic
+            haptic_status=$("$BLE_READ_RETRY" "$CLI" --ble "$address" feature status haptic)
+            printf '%s\n' "$haptic_status"
+            grep -Fq "Feature 'haptic' is enabled" <<< "$haptic_status"
           done
 
           for pod_id in "${!serial_ids[@]}"; do
@@ -694,13 +745,13 @@ jobs:
             fi
             "$CLI" --port "$SECONDARY" system health
 
-            ble_info=$("$CLI" --ble "$SECONDARY_BLE" system info)
+            ble_info=$("$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system info)
             printf '%s\n' "$ble_info"
             if ! grep -Fq "Firmware:   $BASELINE_VERSION" <<< "$ble_info"; then
               echo "::error::Secondary BLE did not recover the baseline image"
               return 1
             fi
-            "$CLI" --ble "$SECONDARY_BLE" system health
+            "$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system health
           }
 
           if invalid_output=$("$CLI" --ble "$SECONDARY_BLE" ota flash \
@@ -788,7 +839,7 @@ jobs:
             firmware/domes/build/domes.elf "$CLI"
           "$CLI" --port "$SECONDARY" system crash-dump --clear
 
-          ble_info=$("$CLI" --ble "$SECONDARY_BLE" system info)
+          ble_info=$("$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system info)
           printf '%s\n' "$ble_info"
           if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$ble_info"; then
             echo "::error::Secondary device did not recover BLE after OTA"
@@ -824,7 +875,7 @@ jobs:
             exit 1
           fi
 
-          second_boot_ble_info=$("$CLI" --ble "$SECONDARY_BLE" system info)
+          second_boot_ble_info=$("$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system info)
           printf '%s\n' "$second_boot_ble_info"
           if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$second_boot_ble_info"; then
             echo "::error::Secondary device did not recover BLE after a second reboot"
@@ -988,9 +1039,10 @@ jobs:
           import json
           import sys
 
-          profiles = json.loads(sys.argv[1])
+          document = json.loads(sys.argv[1])
+          profiles = document.get("devices") if isinstance(document, dict) else None
           if not isinstance(profiles, dict) or set(profiles) != {"pod1", "pod2"}:
-              raise SystemExit(f"unexpected --all memory result: {profiles!r}")
+              raise SystemExit(f"unexpected --all memory result: {document!r}")
           PY
 
           canonical_primary=$(readlink -f -- "$PRIMARY")
@@ -1100,21 +1152,27 @@ jobs:
           "$CLI" --port "$PRIMARY" espnow sim-mode off
           "$CLI" --port "$SECONDARY" espnow sim-mode off
 
+          echo "=== Exercising discovery cancellation before a peer appears ==="
+          "$CLI" --port "$PRIMARY" feature enable esp-now
+          sleep 1
+          "$CLI" --port "$PRIMARY" feature disable esp-now
+          wait_for_disabled "single-pod discovery cancellation"
+
           run_benchmark() {
             local port=$1
             local output
 
-            echo "=== ESP-NOW latency benchmark from $port (20 rounds) ==="
-            if ! output=$("$CLI" --port "$port" espnow bench --rounds 20 2>&1); then
+            echo "=== ESP-NOW latency benchmark from $port (100 rounds) ==="
+            if ! output=$("$CLI" --port "$port" espnow bench --rounds 100 2>&1); then
               printf '%s\n' "$output"
               echo "::error::ESP-NOW benchmark command failed on $port"
               return 1
             fi
             printf '%s\n' "$output"
 
-            if ! grep -Eq 'Rounds:[[:space:]]+20/20 completed \(0 failed\)' <<< "$output" ||
+            if ! grep -Eq 'Rounds:[[:space:]]+100/100 completed \(0 failed\)' <<< "$output" ||
                ! grep -q 'Mean RTT:' <<< "$output"; then
-              echo "::error::ESP-NOW benchmark did not complete 20/20 rounds on $port"
+              echo "::error::ESP-NOW benchmark did not complete 100/100 rounds on $port"
               return 1
             fi
           }
@@ -1163,6 +1221,7 @@ jobs:
           echo "ESP-NOW test complete"
 
       - name: Test - Default Build Omits WiFi Client Control
+        id: wifi_capability
         env:
           PORT_LIST: ${{ steps.detect.outputs.ports }}
         run: |
@@ -1322,6 +1381,7 @@ jobs:
               'trace stop' \
               'espnow sim-mode off' \
               'feature disable esp-now' \
+              'feature enable haptic' \
               'led off' \
               'system set-mode idle'; do
               read -ra args <<< "$command"
@@ -1345,6 +1405,32 @@ jobs:
               printf '%s\n' "$status"
               echo "::error::ESP-NOW cleanup did not reach disabled on $port"
               cleanup_failed=1
+            fi
+
+            echo "=== Capturing final health and feature state: $port ==="
+            for command in \
+              'system health' \
+              'system memory' \
+              'system self-test' \
+              'feature list' \
+              'led off' \
+              'system set-mode idle'; do
+              read -ra args <<< "$command"
+              if ! "$CLI" --port "$port" "${args[@]}"; then
+                echo "::error::Final verification command failed on $port: $command"
+                cleanup_failed=1
+              fi
+            done
+
+            if ! final_info=$("$CLI" --port "$port" system info); then
+              echo "::error::Final system information failed on $port"
+              cleanup_failed=1
+            else
+              printf '%s\n' "$final_info"
+              if ! grep -Eq 'Mode:[[:space:]]+idle' <<< "$final_info"; then
+                echo "::error::Final device mode is not idle on $port"
+                cleanup_failed=1
+              fi
             fi
           done
 
@@ -1380,6 +1466,7 @@ jobs:
           SYSTEM_HEALTH_OUTCOME: ${{ steps.system_health.outcome }}
           TRACE_OUTCOME: ${{ steps.traces.outcome }}
           TRACE_DIR: ${{ steps.traces.outputs.trace_dir }}
+          WIFI_CAPABILITY_OUTCOME: ${{ steps.wifi_capability.outcome }}
         run: |
           exec >> "$GITHUB_STEP_SUMMARY"
           echo "## Hardware Test Results"
@@ -1415,6 +1502,7 @@ jobs:
           report "BLE OTA (secondary)" "$BLE_OTA_OUTCOME"
           report "Post-BLE-OTA verification" "$POST_BLE_OTA_OUTCOME"
           report "Forced failed-self-test rollback" "$FORCED_ROLLBACK_OUTCOME"
+          report "Default-build WiFi capability contract" "$WIFI_CAPABILITY_OUTCOME"
           report "Automated initialization self-test" "$SELF_TEST_OUTCOME"
           if [ "$IS_MULTI" = "true" ]; then
             report "Device registry and multi-device fan-out" "$MULTI_FEATURE_OUTCOME"

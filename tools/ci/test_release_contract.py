@@ -109,8 +109,11 @@ class ReleaseContractTest(unittest.TestCase):
         )
 
     def test_software_ci_has_one_stable_aggregate_gate(self) -> None:
-        self.assertIn("  pull_request:\n", self.software_workflow)
-        self.assertIn("  merge_group:\n", self.software_workflow)
+        self.assertIn(
+            "  workflow_call:\n  pull_request:\n  merge_group:\n",
+            self.software_workflow,
+        )
+        self.assertNotIn("pull_request_target", self.software_workflow)
         self.assertIn("    branches: [main]\n", self.software_workflow)
         self.assertIn("    name: CI Gate\n", self.software_workflow)
         self.assertIn(
@@ -119,6 +122,8 @@ class ReleaseContractTest(unittest.TestCase):
         )
         self.assertIn('if [[ "$result" != "success" ]]', self.software_workflow)
         self.assertEqual(1, self.software_workflow.count("    name: CI Gate\n"))
+        ci_gate = self.software_workflow.split("  ci-gate:\n", maxsplit=1)[1]
+        self.assertIn("    if: ${{ always() }}\n", ci_gate)
 
         self.assertIn("  workflow_call:\n", self.flutter_workflow)
         self.assertNotIn("  pull_request:\n", self.flutter_workflow)
@@ -287,6 +292,24 @@ class ReleaseContractTest(unittest.TestCase):
             self.hardware_workflow.count("verify_secondary_recovery"), 3
         )
 
+    def test_hardware_ble_retry_is_bounded_to_transient_diagnostic_reads(
+        self,
+    ) -> None:
+        required_fragments = (
+            "for attempt in 1 2",
+            'grep -Fq "Failed to connect to BLE device"',
+            'grep -Fqi "le-connection-abort-by-local"',
+            '"$BLE_READ_RETRY" "$CLI" --ble "$address" system self-test',
+            '"$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system health',
+        )
+        for fragment in required_fragments:
+            self.assertIn(fragment, self.hardware_workflow)
+
+        self.assertNotIn(
+            '"$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" ota flash',
+            self.hardware_workflow,
+        )
+
     def test_hardware_serial_ota_negative_paths_prove_protocol_progress(self) -> None:
         required_fragments = (
             "Truncated serial OTA failed for an unexpected reason",
@@ -308,6 +331,7 @@ class ReleaseContractTest(unittest.TestCase):
             'HOME="$REGISTRY_HOME" "$CLI" devices list',
             "--target pod1 --target pod2 feature list",
             'HOME="$REGISTRY_HOME" "$CLI" --all system memory --json',
+            'profiles = document.get("devices")',
             'set(profiles) != {"pod1", "pod2"}',
             "Registry accepted a duplicate canonical serial endpoint",
             'HOME="$REGISTRY_HOME" "$CLI" devices remove pod1',
@@ -317,6 +341,26 @@ class ReleaseContractTest(unittest.TestCase):
             self.assertIn(fragment, self.hardware_workflow)
 
         self.assertIn('--all --port "$PRIMARY" feature list', self.hardware_workflow)
+
+    def test_hardware_summary_and_cleanup_retain_final_state(self) -> None:
+        required_fragments = (
+            "id: wifi_capability",
+            "WIFI_CAPABILITY_OUTCOME: ${{ steps.wifi_capability.outcome }}",
+            'report "Default-build WiFi capability contract" "$WIFI_CAPABILITY_OUTCOME"',
+            "'feature enable haptic'",
+            "Capturing final health and feature state",
+            "Final device mode is not idle",
+        )
+        for fragment in required_fragments:
+            self.assertIn(fragment, self.hardware_workflow)
+
+    def test_hardware_espnow_uses_readiness_rounds_and_cancellation_probe(self) -> None:
+        self.assertIn("--rounds 100", self.hardware_workflow)
+        self.assertIn("100/100 completed", self.hardware_workflow)
+        self.assertIn(
+            'wait_for_disabled "single-pod discovery cancellation"',
+            self.hardware_workflow,
+        )
 
     def test_hardware_requires_unique_ble_identity_and_complementary_roles(
         self,
