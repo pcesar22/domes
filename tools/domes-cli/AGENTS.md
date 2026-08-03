@@ -87,7 +87,9 @@ cargo run -- devices list
 The default firmware build omits and rejects the WiFi feature. `wifi enable`/`disable` is
 operational only in `CONFIG_DOMES_WIFI_AUTO_CONNECT` builds with stored credentials; verify the
 actual TCP path with a successful `--wifi HOST:5000` command. `feature list` contains only features
-supported by the running build.
+supported by the running build. The CLI preflights WiFi mutations, `ota check`, and auto-update
+enable against that advertised capability; auto-update disable remains valid cleanup when WiFi is
+absent.
 
 ## Common Issues
 

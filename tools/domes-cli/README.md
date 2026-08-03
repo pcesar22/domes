@@ -56,8 +56,11 @@ target per process.
 
 The default firmware build omits the WiFi runtime feature and rejects attempts to set it. A
 `CONFIG_DOMES_WIFI_AUTO_CONNECT` build exposes the feature, prefers stored credentials, and uses
-compile-time secrets only to seed an unprovisioned first boot. Automatic GitHub/WiFi update is not a
-verified release path; configuring that service is not transfer and reboot validation.
+compile-time secrets only to seed an unprovisioned first boot. On a build without that capability,
+the CLI rejects WiFi mutations, update checks, and auto-update enable before sending an unsupported
+command; auto-update disable remains available as deterministic cleanup. Automatic GitHub/WiFi
+update is not a verified release path; configuring that service is not transfer and reboot
+validation.
 
 On the NFF DevKit, `/dev/ttyUSB*` is the CP2102N flash/config/OTA interface and `/dev/ttyACM*` is the
 separate native USB console/JTAG interface. Kernel numbers can change; use a CP2102N
@@ -105,8 +108,8 @@ $CLI --port "$PORT" touch simulate --pad 1
 
 On a `CONFIG_DOMES_WIFI_AUTO_CONNECT` build, `wifi enable` and `wifi disable` connect and disconnect
 the station client with stored credentials, while `wifi status` reports its supported feature
-state. The default build omits that feature and returns an invalid-feature error. These commands do
-not provision credentials or prove the TCP server is reachable; use a successful
+state. The default build omits that feature and the CLI reports that the capability is absent. These
+commands do not provision credentials or prove the TCP server is reachable; use a successful
 `--wifi HOST:5000` command to verify the transport.
 
 `feature list` contains only features supported by the running build. Its LED, touch, audio,

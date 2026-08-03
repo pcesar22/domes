@@ -84,8 +84,8 @@ impl OtaStatus {
     }
 }
 
-// Note: OTA chunk size is now determined by the transport's max_ota_chunk_size() method
-// to handle different MTU limits (BLE uses smaller chunks than serial/TCP)
+// OTA chunk size is determined by the transport. BLE uses smaller chunks than
+// the supported serial OTA path because of its lower MTU.
 
 /// SHA256 size
 const SHA256_SIZE: usize = 32;
@@ -442,6 +442,9 @@ const OTA_CHECK_TIMEOUT_MS: u64 = 15000;
 
 /// Check for firmware updates via GitHub releases
 pub fn ota_check(transport: &mut dyn Transport) -> Result<CliUpdateInfo> {
+    super::wifi::require_wifi_capability(transport)
+        .context("OTA update checks require WiFi support")?;
+
     let frame = transport
         .send_command_with_timeout(
             ConfigMsgType::CheckUpdateReq as u8,
@@ -463,6 +466,11 @@ pub fn ota_check(transport: &mut dyn Transport) -> Result<CliUpdateInfo> {
 
 /// Set auto-update enabled/disabled
 pub fn ota_auto_update(transport: &mut dyn Transport, enabled: bool) -> Result<bool> {
+    if enabled {
+        super::wifi::require_wifi_capability(transport)
+            .context("Enabling auto-update requires WiFi support")?;
+    }
+
     let payload = serialize_set_auto_update(enabled);
     let frame = transport
         .send_command(ConfigMsgType::SetAutoUpdateReq as u8, &payload)
@@ -503,12 +511,18 @@ fn print_progress(current: usize, total: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proto::config::{
+        Feature, FeatureState, ListFeaturesResponse, SetAutoUpdateResponse, Status,
+    };
     use crate::transport::Frame;
+    use prost::Message;
     use std::collections::VecDeque;
 
     struct MockTransport {
         responses: VecDeque<Frame>,
+        command_responses: VecDeque<Frame>,
         sent: Vec<(u8, Vec<u8>)>,
+        commands: Vec<u8>,
         chunk_size: usize,
     }
 
@@ -516,8 +530,20 @@ mod tests {
         fn new(responses: Vec<Frame>, chunk_size: usize) -> Self {
             Self {
                 responses: responses.into(),
+                command_responses: VecDeque::new(),
                 sent: Vec::new(),
+                commands: Vec::new(),
                 chunk_size,
+            }
+        }
+
+        fn with_command_responses(responses: Vec<Frame>) -> Self {
+            Self {
+                responses: VecDeque::new(),
+                command_responses: responses.into(),
+                sent: Vec::new(),
+                commands: Vec::new(),
+                chunk_size: 2,
             }
         }
     }
@@ -534,8 +560,11 @@ mod tests {
                 .context("No mock OTA response queued")
         }
 
-        fn send_command(&mut self, _msg_type: u8, _payload: &[u8]) -> Result<Frame> {
-            anyhow::bail!("Mock OTA transport does not support config commands")
+        fn send_command(&mut self, msg_type: u8, _payload: &[u8]) -> Result<Frame> {
+            self.commands.push(msg_type);
+            self.command_responses
+                .pop_front()
+                .context("No mock config response queued")
         }
 
         fn max_ota_chunk_size(&self) -> usize {
@@ -549,6 +578,20 @@ mod tests {
         Frame {
             msg_type: OtaMsgType::Ack as u8,
             payload,
+        }
+    }
+
+    fn feature_list_without_wifi() -> Frame {
+        let response = ListFeaturesResponse {
+            features: vec![FeatureState {
+                feature: Feature::LedEffects as i32,
+                enabled: true,
+            }],
+            pod_id: 1,
+        };
+        Frame {
+            msg_type: ConfigMsgType::ListFeaturesRsp as u8,
+            payload: response.encode_to_vec(),
         }
     }
 
@@ -743,5 +786,45 @@ mod tests {
             let error = firmware_size_for_wire(too_large).unwrap_err().to_string();
             assert!(error.contains("32-bit size limit"));
         }
+    }
+
+    #[test]
+    fn ota_network_actions_reject_unadvertised_wifi_capability() {
+        let mut check_transport =
+            MockTransport::with_command_responses(vec![feature_list_without_wifi()]);
+        let error = ota_check(&mut check_transport).unwrap_err().to_string();
+        assert!(error.contains("OTA update checks require WiFi support"));
+        assert_eq!(
+            check_transport.commands,
+            vec![ConfigMsgType::ListFeaturesReq as u8]
+        );
+
+        let mut enable_transport =
+            MockTransport::with_command_responses(vec![feature_list_without_wifi()]);
+        let error = ota_auto_update(&mut enable_transport, true)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("Enabling auto-update requires WiFi support"));
+        assert_eq!(
+            enable_transport.commands,
+            vec![ConfigMsgType::ListFeaturesReq as u8]
+        );
+    }
+
+    #[test]
+    fn auto_update_disable_remains_available_without_wifi() {
+        let response = SetAutoUpdateResponse { enabled: false };
+        let mut payload = vec![Status::Ok as u8];
+        payload.extend(response.encode_to_vec());
+        let mut transport = MockTransport::with_command_responses(vec![Frame {
+            msg_type: ConfigMsgType::SetAutoUpdateRsp as u8,
+            payload,
+        }]);
+
+        assert!(!ota_auto_update(&mut transport, false).unwrap());
+        assert_eq!(
+            transport.commands,
+            vec![ConfigMsgType::SetAutoUpdateReq as u8]
+        );
     }
 }
