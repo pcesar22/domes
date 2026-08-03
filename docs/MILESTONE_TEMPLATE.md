@@ -3,11 +3,11 @@
 Use this template for every delivery milestone in
 [`firmware/MILESTONES.md`](../firmware/MILESTONES.md). A milestone is a zero-duration decision point:
 the required outcome has either been accepted or it has not. Work items belong in issues and pull
-requests; this contract records what must be delivered, how acceptance is proven, and who signs off.
+requests; this contract records what must be delivered and how acceptance is proven.
 
 This is a thinking and review aid, not a formatting specification. Adapt the headings, prose, or
 tables when that improves understanding. Preserve the underlying outcome, boundaries, evidence,
-acceptance, ownership, current state, next action, and sign-off intent.
+acceptance, ownership, current state, and next action.
 
 ## Status Model
 
@@ -20,9 +20,11 @@ Track lifecycle separately from health.
 | Deliverable state | `Not started`, `In progress`, `Delivered`, `Accepted` | State of an inspectable output |
 | Gate state | `Not run`, `Pass`, `Fail`, `Unverified`, `N/A` | State of acceptance evidence |
 
-`Complete` requires all applicable gates to pass, evidence from the reviewed revision, and recorded
-human approval. Do not report percentage complete. Report accepted gates, remaining gates, and the
-next unmet gate.
+`Complete` requires all applicable gates to pass and a semantic audit of direct evidence from the
+reviewed revision. The AI milestone manager owns acceptance and status transitions. Humans refine
+the contract and may provide measurements or physical observations; those inputs are evidence, not
+approval. Do not report percentage complete. Report accepted gates, remaining gates, and the next
+unmet gate.
 
 ## Ready Checklist
 
@@ -30,12 +32,12 @@ A milestone may move from `Proposed` to `Ready` only when:
 
 - the outcome is singular, valuable, and understandable without reading its task list;
 - scope and exclusions prevent reasonable misinterpretation;
-- dependencies, constraints, owner, and approver are named;
+- dependencies, constraints, and owner are named;
 - every deliverable is inspectable;
 - every acceptance gate has a binary result, method, and required evidence;
 - hardware, security, migration, compatibility, and human-observation requirements are explicit;
-- reopening conditions are defined; and
-- a human has approved the contract.
+- evidence invalidation conditions are understood; and
+- the milestone manager's semantic audit returns `Meets intent`.
 
 ## Recommended Delivery Dashboard
 
@@ -54,9 +56,9 @@ detailed contract, or missing next gate is a status-quality defect regardless of
 
 ## Scope Heuristics
 
-- Keep the number of deliverables and gates small enough for one coherent human acceptance review.
+- Keep the number of deliverables and gates small enough for one coherent evidence review.
 - Target one coherent validation campaign and one accountable outcome.
-- Split unrelated outcomes or independently approvable capabilities.
+- Split unrelated outcomes or independently reviewable capabilities.
 - Do not hide research uncertainty inside an implementation milestone. Time-box discovery first or
   define a decision deliverable with explicit evidence.
 - Prefer objective thresholds over adjectives such as fast, robust, complete, seamless, or ready.
@@ -71,9 +73,7 @@ detailed contract, or missing next gate is a status-quality defect regardless of
 **Status:** `Proposed`
 **Health:** `On track`
 **Owner:** <One directly accountable individual or role>
-**Approver:** <One human acceptance authority>
 **Last reviewed:** YYYY-MM-DD
-**Target:** <Date, release, or explicitly unscheduled>
 **Depends on:** <Milestone IDs or None>
 **Blocks:** <Milestone IDs or None>
 
@@ -115,12 +115,6 @@ detailed contract, or missing next gate is a status-quality defect regardless of
 
 **Decisions needed:** <Decision, decision owner, and needed-by point, or None>
 
-#### Sign-Off
-
-| Role | Name | Decision | Date | Notes |
-| --- | --- | --- | --- | --- |
-| Approver | <Name or pending> | `Pending` | - | - |
-
 #### Invalidation And Reopening
 
 - Reopen when <source, hardware, dependency, requirement, or evidence change invalidates acceptance>.
@@ -134,7 +128,7 @@ Every review should answer, in order:
 2. What has been delivered and accepted, with evidence?
 3. What is being done now?
 4. What is the next unmet acceptance gate?
-5. What is blocked or needs a human decision?
+5. What is blocked or needs an owner decision?
 6. Which milestone follows, and which dependency enables it?
 7. Is any evidence stale or inconsistent with the implementation?
 

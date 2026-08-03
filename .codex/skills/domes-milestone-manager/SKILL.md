@@ -1,6 +1,6 @@
 ---
 name: domes-milestone-manager
-description: Create, sequence, audit, and update evidence-based DOMES delivery milestones. Use when defining milestone outcomes and acceptance gates, reporting project status or next steps, checking whether a milestone is ready or complete, reconciling MILESTONES.md with code, CI, documentation, architecture, CLI, firmware, or hardware evidence, or preparing a milestone for human sign-off.
+description: Create, sequence, audit, accept, and update evidence-based DOMES delivery milestones. Use when defining milestone outcomes and acceptance gates, reporting project status or next steps, checking whether a milestone is ready or complete, reconciling MILESTONES.md with code, CI, documentation, architecture, CLI, firmware, or hardware evidence, or deciding a milestone status transition.
 ---
 
 # DOMES Milestone Manager
@@ -14,7 +14,7 @@ intent; do not require exact headings, tables, ordering, or phrasing.
 
 - **Create or reorganize:** inventory current evidence, propose sequencing, and draft milestones.
 - **Check status:** compare every claimed state with current evidence and report delivered, now, next,
-  blockers, decisions, and sign-off needs.
+  blockers, decisions, and the acceptance decision.
 - **Update status:** change the ledger only after verification supports the transition.
 - **Audit quality:** reason through the milestone, challenge ambiguity, trace claims to evidence, and
   identify unsupported status or completion claims.
@@ -34,18 +34,18 @@ host tests are not firmware integration, and a successful build is not hardware 
 ## Create A Milestone
 
 1. State one externally meaningful outcome in one sentence.
-2. Name one accountable owner and one human approver.
+2. Name one accountable owner.
 3. Bound included and excluded behavior explicitly.
 4. List hard constraints and dependencies before deliverables.
-5. Keep independently inspectable deliverables and acceptance gates few enough that a human can
-   understand the outcome and sign-off decision in one review.
+5. Keep independently inspectable deliverables and acceptance gates few enough for one coherent
+   evidence review.
 6. Write each gate as a binary required result plus a reproducible verification method.
 7. Identify the evidence artifact each gate must produce.
 8. Define invalidation and reopening conditions.
 9. Sequence it after every dependency needed to execute its acceptance gates.
-10. Leave it `Proposed` until a human approves scope and acceptance criteria.
+10. Leave it `Proposed` until the milestone manager's semantic audit returns `Meets intent`.
 
-Split a milestone when it contains unrelated outcomes, multiple independent sign-offs, an unbounded
+Split a milestone when it contains unrelated outcomes, independently reviewable capabilities, an unbounded
 research question, or gates that cannot be evaluated in the same validation campaign.
 
 ## Check Or Update Status
@@ -59,14 +59,16 @@ Apply transitions conservatively:
 
 | Transition | Required evidence |
 | --- | --- |
-| `Proposed` to `Ready` | Outcome, scope, constraints, dependencies, gates, owner, and approver accepted |
+| `Proposed` to `Ready` | Semantic audit returns `Meets intent`; outcome, scope, constraints, dependencies, gates, and owner are clear |
 | `Ready` to `In progress` | Dependency gates satisfied and implementation work started |
-| `In progress` to `Acceptance pending` | Deliverables present and every non-human gate passes on the reviewed revision |
-| `Acceptance pending` to `Complete` | Required human sign-off recorded; no failed, unverified, or stale gate remains |
+| `In progress` to `Acceptance pending` | Deliverables present and applicable gates appear satisfied; final evidence audit remains |
+| `Acceptance pending` to `Complete` | Milestone manager audits direct current evidence and finds no failed, unverified, contradictory, or stale gate |
 | `Complete` to `In progress` | A listed invalidation condition occurs; record why the milestone reopened |
 
 Do not use percentages. Report progress as accepted gates over total gates and name the next unmet
-gate. An AI may recommend `Acceptance pending`; it must not fabricate or grant human approval.
+gate. The milestone manager owns acceptance and status transitions. Humans refine the contract and
+may provide measurements or physical observations; those inputs are evidence, not approval. Record
+the reasoning and evidence for every transition, and refuse a transition when the evidence is weak.
 
 For a status request, return this order:
 
@@ -94,14 +96,14 @@ For each milestone, answer:
    included where relevant?
 7. **Sequence:** Are prerequisites complete or explicitly blocking the milestone, and does the next
    milestone logically follow?
-8. **Ownership:** Is one person or role accountable for resolving ambiguity and obtaining sign-off?
+8. **Ownership:** Is one person or role accountable for resolving ambiguity and producing evidence?
 9. **Truthfulness:** Are targets separated from observations, and are limitations visible rather than
    softened by wording?
 10. **Closure:** Does `Complete` mean the outcome is accepted, not merely that code exists or a command
     ran?
 11. **Durability:** Are the conditions that make old evidence stale or reopen the milestone understood?
 12. **Supervision:** Can a reader immediately identify delivered results, current work, next action,
-    blockers, decisions, and required sign-off?
+    blockers, decisions, and acceptance state?
 
 Return one of `Meets intent`, `Needs revision`, or `Not verifiable` for each milestone, followed by
 specific evidence and the smallest changes needed. Explicitly state uncertainty and conflicting
