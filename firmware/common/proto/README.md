@@ -33,7 +33,8 @@ cargo build --locked --manifest-path tools/domes-cli/Cargo.toml
 2. Regenerate every committed consumer.
 3. Review generated diffs for changed IDs, field bounds, and removed messages.
 4. Build the firmware, CLI, and Flutter app where affected.
-5. Run host protocol tests and exercise a real transport for wire-level changes.
+5. Run host protocol tests and exercise every affected device transport. For a change confined to a
+   shared framing or message contract, exercise at least one representative real transport.
 
 The ordinary ESP-IDF build compiles committed nanopb output; it does not regenerate it.
 

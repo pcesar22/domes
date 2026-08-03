@@ -66,7 +66,8 @@ jobs:
           from pathlib import Path
 
           config = json.loads(Path("build/config/sdkconfig.json").read_text())
-          assert config["BOOTLOADER_APP_ROLLBACK_ENABLE"] is True
+          if config.get("BOOTLOADER_APP_ROLLBACK_ENABLE") is not True:
+              raise SystemExit("firmware build does not enable bootloader app rollback")
           PY
           if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
             echo "::error::ESP-IDF rewrote firmware/domes/dependencies.lock"
@@ -97,6 +98,8 @@ jobs:
           python -m esptool --chip esp32s3 image_info "$release_dir/domes-factory.bin"
 
           cp domes.bin "$release_dir/domes.bin"
+          cp domes.elf "$release_dir/domes.elf"
+          cp project_description.json "$release_dir/project_description.json"
           cp bootloader/bootloader.bin "$release_dir/bootloader.bin"
           cp partition_table/partition-table.bin "$release_dir/partition-table.bin"
           cp ota_data_initial.bin "$release_dir/ota_data_initial.bin"
@@ -107,18 +110,32 @@ jobs:
 
           cd "$release_dir"
           test -s domes.bin
+          test -s domes.elf
+          test -s project_description.json
           test -s domes-factory.bin
           test -s bootloader.bin
           test -s partition-table.bin
           test -s ota_data_initial.bin
           sha256sum \
             domes.bin \
+            domes.elf \
+            project_description.json \
             domes-factory.bin \
             bootloader.bin \
             partition-table.bin \
             ota_data_initial.bin \
             flash_args > SHA256SUMS
           sha256sum --check SHA256SUMS
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path(".").resolve()
+          metadata = json.loads((root / "project_description.json").read_text())
+          metadata_elf = (root / metadata.get("app_elf", "")).resolve()
+          if metadata_elf != root / "domes.elf" or not metadata_elf.is_file():
+              raise SystemExit(f"project metadata does not resolve to packaged ELF: {metadata_elf}")
+          PY
 
       - name: Upload firmware package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -199,7 +216,9 @@ jobs:
 
       - name: Build CLI
         working-directory: tools/domes-cli
-        run: cargo build --locked --release
+        run: |
+          cargo build --locked
+          cargo build --locked --release
 
       - name: Run CLI tests
         working-directory: tools/domes-cli

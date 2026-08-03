@@ -56,8 +56,11 @@ target per process.
 
 The default firmware build omits the WiFi runtime feature and rejects attempts to set it. A
 `CONFIG_DOMES_WIFI_AUTO_CONNECT` build exposes the feature, prefers stored credentials, and uses
-compile-time secrets only to seed an unprovisioned first boot. Automatic GitHub/WiFi update is not a
-verified release path; configuring that service is not transfer and reboot validation.
+compile-time secrets only to seed an unprovisioned first boot. On a build without that capability,
+the CLI rejects WiFi mutations, update checks, and auto-update enable before sending an unsupported
+command; auto-update disable remains available as deterministic cleanup. Automatic GitHub/WiFi
+update is not a verified release path; configuring that service is not transfer and reboot
+validation.
 
 On the NFF DevKit, `/dev/ttyUSB*` is the CP2102N flash/config/OTA interface and `/dev/ttyACM*` is the
 separate native USB console/JTAG interface. Kernel numbers can change; use a CP2102N
@@ -80,7 +83,11 @@ $CLI --port "$PORT" feature list
 ```
 
 `system crash-dump` is a legacy command name. The current firmware returns a clean-restart snapshot
-saved before `esp_restart()`; it does not retrieve a panic backtrace or ESP-IDF core dump.
+saved before `esp_restart()`; it does not retrieve a panic backtrace or ESP-IDF core dump. Current
+format-2 records are CRC-protected and identify the pre-restart firmware and exact ELF SHA-256 along
+with boot count, internal heap, and processed PCs. Legacy format-0 values are labeled as having
+unverified semantics. Corrupt or unsupported records fail closed; use `system crash-dump --clear`
+to explicitly remove an unreadable record.
 
 Large BLE diagnostics are fragmented by current firmware and reassembled by the current CLI. A
 large response timeout against older firmware/CLI combinations is a compatibility failure, not a
@@ -101,8 +108,8 @@ $CLI --port "$PORT" touch simulate --pad 1
 
 On a `CONFIG_DOMES_WIFI_AUTO_CONNECT` build, `wifi enable` and `wifi disable` connect and disconnect
 the station client with stored credentials, while `wifi status` reports its supported feature
-state. The default build omits that feature and returns an invalid-feature error. These commands do
-not provision credentials or prove the TCP server is reachable; use a successful
+state. The default build omits that feature and the CLI reports that the capability is absent. These
+commands do not provision credentials or prove the TCP server is reachable; use a successful
 `--wifi HOST:5000` command to verify the transport.
 
 `feature list` contains only features supported by the running build. Its LED, touch, audio,
@@ -193,13 +200,73 @@ or synchronization evidence.
 ## ESP-NOW
 
 ```bash
-$CLI --port "$PORT" espnow status
-$CLI --port "$PORT" espnow bench --rounds 100
-$CLI --port "$PORT" espnow sim-mode on
+PORT1="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+PORT2="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '2p')"
+wait_for_disabled() {
+  for attempt in {1..20}; do
+    status1=$($CLI --port "$PORT1" espnow status)
+    status2=$($CLI --port "$PORT2" espnow status)
+    if grep -Eq 'State:[[:space:]]+disabled' <<< "$status1" &&
+       grep -Eq 'State:[[:space:]]+disabled' <<< "$status2"; then
+      return 0
+    fi
+    sleep 1
+  done
+  printf '%s\n%s\n' "$status1" "$status2"
+  return 1
+}
+$CLI --port "$PORT1" feature disable esp-now
+$CLI --port "$PORT2" feature disable esp-now
+wait_for_disabled
+$CLI --port "$PORT1" espnow sim-mode off
+$CLI --port "$PORT2" espnow sim-mode off
+$CLI --port "$PORT1" feature enable esp-now
+$CLI --port "$PORT2" feature enable esp-now
+peers_ready=false
+for attempt in {1..30}; do
+  status1=$($CLI --port "$PORT1" espnow status)
+  status2=$($CLI --port "$PORT2" espnow status)
+  state1=$(awk '/State:/ {print $2; exit}' <<< "$status1")
+  state2=$(awk '/State:/ {print $2; exit}' <<< "$status2")
+  if [[ "$state1:$state2" == "master:slave" ||
+        "$state1:$state2" == "slave:master" ]] &&
+     grep -Eq 'Peers:[[:space:]]+1' <<< "$status1" &&
+     grep -Eq 'Peers:[[:space:]]+1' <<< "$status2"; then
+    peers_ready=true
+    break
+  fi
+  sleep 1
+done
+if [[ "$peers_ready" != true ]]; then
+  printf '%s\n%s\n' "$status1" "$status2"
+  exit 1
+fi
+if [[ "$state1:$state2" == "master:slave" ]]; then
+  MASTER_PORT=$PORT1
+  SLAVE_PORT=$PORT2
+elif [[ "$state1:$state2" == "slave:master" ]]; then
+  MASTER_PORT=$PORT2
+  SLAVE_PORT=$PORT1
+else
+  printf '%s\n%s\n' "$status1" "$status2"
+  exit 1
+fi
+$CLI --port "$SLAVE_PORT" espnow bench --rounds 100
+$CLI --port "$MASTER_PORT" espnow bench --rounds 100
+$CLI --port "$PORT1" feature disable esp-now
+$CLI --port "$PORT2" feature disable esp-now
+wait_for_disabled
 ```
 
 Status on one pod does not prove peer communication. A valid result requires at least two physical
-pods, peer discovery, and packet or benchmark evidence.
+pods, complementary roles, one peer on each, and packet or benchmark evidence. Derive `SLAVE_PORT`
+and `MASTER_PORT` from status and benchmark the slave first immediately after roles become visible;
+this exercises the master's startup receive path. Run trace-backed simulated drills in a fresh
+lifecycle after both benchmark pods report `disabled`; do not enable simulation during the latency
+benchmark. `stopping` means the old lifecycle is still unwinding and must not be treated as ready for
+another enable cycle.
 
 ## Device Registry And Fan-Out
 

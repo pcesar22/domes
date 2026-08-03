@@ -134,7 +134,7 @@ WiFi/mDNS discovery. Registry-backed `--all` operates only on saved entries.
 ## Hardware CI
 
 The self-hosted hardware workflow requires an online Linux x64 runner with Actions Runner 2.327.1
-or newer, ESP-IDF v5.4.4, Rust 1.92.0, native BLE support, and at least two attached NFF pods. The
+or newer, ESP-IDF v5.4.4, Rust 1.92.0, native BLE support, and exactly two selected NFF pods. The
 runner must expose the CP2102N ports to the service account and retain stable device identity under
 `/dev/serial/by-id/`. The repository workflow does not install, register, or power that host.
 

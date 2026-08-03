@@ -159,23 +159,6 @@ pub fn connect_device(entry: &DeviceEntry) -> Result<Box<dyn Transport>> {
     }
 }
 
-/// Deduplicate a list of addresses, warning on duplicates
-fn dedup_addresses(addrs: &[String], transport_label: &str) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
-    let mut result = Vec::new();
-    for addr in addrs {
-        if seen.insert(addr.clone()) {
-            result.push(addr.clone());
-        } else {
-            eprintln!(
-                "Warning: duplicate {} address '{}' ignored",
-                transport_label, addr
-            );
-        }
-    }
-    result
-}
-
 /// Resolve CLI arguments into device connections
 ///
 /// Priority:
@@ -193,12 +176,7 @@ pub fn resolve_devices(
         connections: Vec::new(),
         failures: Vec::new(),
     };
-    let mut selected_serial_devices = HashMap::new();
-
-    // Deduplicate addresses to prevent double-open corruption
-    let ports = dedup_addresses(ports, "serial");
-    let wifis = dedup_addresses(wifis, "wifi");
-    let bles = dedup_addresses(bles, "ble");
+    let mut selected_devices = HashMap::new();
 
     // If --all, load entire registry
     if all {
@@ -209,9 +187,12 @@ pub fn resolve_devices(
         let mut entries: Vec<_> = registry.iter().collect();
         entries.sort_by(|(left, _), (right, _)| left.cmp(right));
         for (name, entry) in entries {
-            if entry.transport_type == "serial"
-                && !reserve_serial_device(&mut selected_serial_devices, name, &entry.address)
-            {
+            if !reserve_device_endpoint(
+                &mut selected_devices,
+                name,
+                &entry.transport_type,
+                &entry.address,
+            ) {
                 continue;
             }
             eprintln!(
@@ -238,9 +219,12 @@ pub fn resolve_devices(
                 });
                 continue;
             };
-            if entry.transport_type == "serial"
-                && !reserve_serial_device(&mut selected_serial_devices, target_name, &entry.address)
-            {
+            if !reserve_device_endpoint(
+                &mut selected_devices,
+                target_name,
+                &entry.transport_type,
+                &entry.address,
+            ) {
                 continue;
             }
             eprintln!(
@@ -259,7 +243,7 @@ pub fn resolve_devices(
     // Direct connections via --port
     for (i, port) in ports.iter().enumerate() {
         let name = format!("serial-{}", i);
-        if !reserve_serial_device(&mut selected_serial_devices, &name, port) {
+        if !reserve_device_endpoint(&mut selected_devices, &name, "serial", port) {
             continue;
         }
         let connection = SerialTransport::open(port)
@@ -271,6 +255,9 @@ pub fn resolve_devices(
     // Direct connections via --wifi
     for (i, addr) in wifis.iter().enumerate() {
         let name = format!("wifi-{}", i);
+        if !reserve_device_endpoint(&mut selected_devices, &name, "wifi", addr) {
+            continue;
+        }
         eprintln!("Connecting to {} via WiFi...", addr);
         let connection = TcpTransport::connect(addr)
             .map(|transport| Box::new(transport) as Box<dyn Transport>)
@@ -281,6 +268,9 @@ pub fn resolve_devices(
     // Direct connections via --ble
     for (i, ble_target) in bles.iter().enumerate() {
         let name = format!("ble-{}", i);
+        if !reserve_device_endpoint(&mut selected_devices, &name, "ble", ble_target) {
+            continue;
+        }
         eprintln!("Scanning for BLE device '{}'...", ble_target);
         let target = BleTarget::parse(ble_target);
         let connection = BleTransport::connect(target, Duration::from_secs(10), true)
@@ -308,16 +298,21 @@ fn record_connection(
     }
 }
 
-fn reserve_serial_device(
+fn reserve_device_endpoint(
     selected: &mut HashMap<String, (String, String)>,
     label: &str,
+    transport_type: &str,
     address: &str,
 ) -> bool {
-    let identity = serial_device_identity(address);
+    let identity = endpoint_identity(transport_type, address);
     if let Some((existing_label, existing_address)) = selected.get(&identity) {
         eprintln!(
-            "Warning: serial target '{}' ({}) resolves to the same device as '{}' ({}); ignoring duplicate",
-            label, address, existing_label, existing_address
+            "Warning: target '{}' ({} @ {}) resolves to the same endpoint as '{}' ({}); ignoring duplicate",
+            label,
+            transport_type,
+            address,
+            existing_label,
+            existing_address
         );
         return false;
     }
@@ -343,14 +338,18 @@ fn serial_device_identity(address: &str) -> String {
 }
 
 fn device_endpoint_identity(entry: &DeviceEntry) -> String {
-    match entry.transport_type.as_str() {
-        "serial" => format!("serial:{}", serial_device_identity(&entry.address)),
-        "wifi" | "tcp" => format!("tcp:{}", entry.address.to_ascii_lowercase()),
-        "ble" if entry.address.contains(':') => {
-            format!("ble-mac:{}", entry.address.to_ascii_lowercase())
+    endpoint_identity(&entry.transport_type, &entry.address)
+}
+
+fn endpoint_identity(transport_type: &str, address: &str) -> String {
+    match transport_type {
+        "serial" => format!("serial:{}", serial_device_identity(address)),
+        "wifi" | "tcp" => format!("tcp:{}", address.to_ascii_lowercase()),
+        "ble" if is_ble_mac(address) => {
+            format!("ble-mac:{}", address.to_ascii_lowercase())
         }
-        "ble" => format!("ble-name:{}", entry.address),
-        _ => format!("{}:{}", entry.transport_type, entry.address),
+        "ble" => format!("ble-name:{}", address),
+        _ => format!("{}:{}", transport_type, address),
     }
 }
 
@@ -478,12 +477,7 @@ fn validate_ble_address(address: &str) -> Result<()> {
         return Ok(());
     }
 
-    let octets: Vec<&str> = address.split(':').collect();
-    let is_mac = octets.len() == 6
-        && octets.iter().all(|octet| {
-            octet.len() == 2 && octet.chars().all(|character| character.is_ascii_hexdigit())
-        });
-    if !is_mac {
+    if !is_ble_mac(address) {
         anyhow::bail!(
             "Invalid BLE address '{}': expected an advertised name or six hexadecimal octets",
             address
@@ -491,6 +485,14 @@ fn validate_ble_address(address: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn is_ble_mac(address: &str) -> bool {
+    let octets: Vec<&str> = address.split(':').collect();
+    octets.len() == 6
+        && octets.iter().all(|octet| {
+            octet.len() == 2 && octet.chars().all(|character| character.is_ascii_hexdigit())
+        })
 }
 
 fn write_device_registry(config_path: &Path, devices: &HashMap<String, DeviceEntry>) -> Result<()> {
@@ -636,13 +638,62 @@ mod tests {
     fn duplicate_serial_registry_targets_are_reserved_once() {
         let mut selected = HashMap::new();
 
-        assert!(reserve_serial_device(&mut selected, "pod1", "/dev/ttyUSB0"));
-        assert!(!reserve_serial_device(
+        assert!(reserve_device_endpoint(
+            &mut selected,
+            "pod1",
+            "serial",
+            "/dev/ttyUSB0"
+        ));
+        assert!(!reserve_device_endpoint(
             &mut selected,
             "pod1-alias",
+            "serial",
             "/dev/ttyUSB0"
         ));
         assert_eq!(selected.len(), 1);
+    }
+
+    #[test]
+    fn ble_and_tcp_aliases_are_reserved_once() {
+        let mut selected = HashMap::new();
+
+        assert!(reserve_device_endpoint(
+            &mut selected,
+            "ble-registry",
+            "ble",
+            "94:A9:90:0A:EB:C2"
+        ));
+        assert!(!reserve_device_endpoint(
+            &mut selected,
+            "ble-direct",
+            "ble",
+            "94:a9:90:0a:eb:c2"
+        ));
+        assert!(reserve_device_endpoint(
+            &mut selected,
+            "wifi-registry",
+            "wifi",
+            "POD.LOCAL:5000"
+        ));
+        assert!(!reserve_device_endpoint(
+            &mut selected,
+            "tcp-direct",
+            "tcp",
+            "pod.local:5000"
+        ));
+        assert!(reserve_device_endpoint(
+            &mut selected,
+            "ble-name-upper",
+            "ble",
+            "Lab:Pod"
+        ));
+        assert!(reserve_device_endpoint(
+            &mut selected,
+            "ble-name-lower",
+            "ble",
+            "lab:pod"
+        ));
+        assert_eq!(selected.len(), 4);
     }
 
     #[cfg(unix)]
@@ -661,14 +712,16 @@ mod tests {
         symlink(&device, &by_id).unwrap();
 
         let mut selected = HashMap::new();
-        assert!(reserve_serial_device(
+        assert!(reserve_device_endpoint(
             &mut selected,
             "direct",
+            "serial",
             device.to_str().unwrap()
         ));
-        assert!(!reserve_serial_device(
+        assert!(!reserve_device_endpoint(
             &mut selected,
             "registry-pod",
+            "serial",
             by_id.to_str().unwrap()
         ));
         assert_eq!(selected.len(), 1);

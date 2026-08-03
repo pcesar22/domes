@@ -16,13 +16,12 @@ game state machine, and two-pod ESP-NOW drills are implemented. The haptic drive
 the target LRA, but haptic/audio hardware verification remains open. The integrated production PCB
 remains planned.
 
-The 2026-08-02 two-board review confirmed app flashing, repeated framed UART commands, BLE
-discovery and diagnostics, registry fan-out, self-test/health reporting, and lossless 100-packet
-ESP-NOW benchmarks in both directions. Physical LED, touch, IMU, audio, and haptic observations,
-merged-factory programming, forced rollback, and final two-board trace capture remain separate
-release checks; command acceptance is not physical proof. Pod 1 serial OTA and Pod 2 BLE OTA each
-passed transfer, recovery, expected-version, health/self-test, and second-boot checks on the reviewed
-image. Those dated results do not replace a rerun of the final pull-request image.
+The 2026-08-02 two-board review exercised erased-board factory and normal programming, repeated UART
+and BLE commands, device-registry fan-out, serial and BLE OTA success/recovery, forced rollback,
+CRC- and ELF-bound restart snapshots, repeated lossless ESP-NOW lifecycles, and a trace-backed
+two-pod drill. Physical LED, touch, IMU, audio, and haptic observations remain separate release
+checks; command acceptance and initialization tests are not physical proof. The dated evidence and
+remaining boundaries are maintained in the milestone ledger rather than duplicated here.
 
 See [`firmware/MILESTONES.md`](firmware/MILESTONES.md) for delivery evidence and remaining work.
 That file owns status; architecture documents describe design and must not be used as completion
@@ -201,7 +200,7 @@ firmware/
 hardware/           Board design, BOM, and bring-up material
 ios/domes_app/      Flutter application prototype
 tools/domes-cli/    Rust device CLI
-tools/trace/        Multi-device trace utilities and name mapping
+tools/              CLI, protocol generation, verification, evaluation, and trace tooling
 docs/               Current documentation map, testing, and pin reference
 research/           System/software decisions and design references
 ```
@@ -217,7 +216,7 @@ Start with [`docs/README.md`](docs/README.md). It defines document ownership and
 | [`firmware/MILESTONES.md`](firmware/MILESTONES.md) | Implemented, verified, and pending work |
 | [`docs/PIN_REFERENCE.md`](docs/PIN_REFERENCE.md) | Compiled and planned GPIO mappings |
 | [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md) | Software boundaries and decisions |
-| [`research/SYSTEM_ARCHITECTURE.md`](research/SYSTEM_ARCHITECTURE.md) | Hardware and network system design |
+| [`research/SYSTEM_ARCHITECTURE.md`](research/SYSTEM_ARCHITECTURE.md) | Product hardware and network targets |
 | [`research/architecture/README.md`](research/architecture/README.md) | Detailed design-document lifecycle |
 
 AI-specific operating instructions live in `AGENTS.md` and the scoped `AGENTS.md` files. They defer

@@ -60,6 +60,7 @@ add_executable(test_app
     main/test_esp_now_protocol.cpp
     main/test_version_parser.cpp
     main/test_release_metadata.cpp
+    main/test_restart_snapshot_record.cpp
     main/test_config_protocol.cpp
     main/test_feature_manager.cpp
     main/test_mode_manager.cpp

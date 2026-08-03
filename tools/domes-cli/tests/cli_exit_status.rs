@@ -140,6 +140,24 @@ fn unsafe_system_health_exits_nonzero() {
 }
 
 #[test]
+fn unreadable_restart_snapshot_can_still_be_cleared() {
+    let (address, server) = serve_config_responses(vec![
+        (0x3E, 0x3F, vec![0x01]),
+        (0x40, 0x41, vec![0x00, 0x08, 0x01]),
+    ]);
+    let mut command = cargo_bin_cmd!("domes-cli");
+    command.args(["--wifi", &address, "system", "crash-dump", "--clear"]);
+
+    let output = command.output().unwrap();
+    server.join().unwrap();
+
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("Unable to read restart snapshot before clearing"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Restart snapshot cleared."));
+}
+
+#[test]
 fn connection_failure_does_not_block_healthy_target() {
     // Outer status OK, current mode IDLE, no time-in-mode value.
     let (address, server) = serve_config_response(0x30, 0x31, &[0x00, 0x08, 0x01]);
@@ -175,17 +193,28 @@ fn serve_config_response(
     response_type: u8,
     response_payload: &[u8],
 ) -> (String, thread::JoinHandle<()>) {
+    serve_config_responses(vec![(
+        expected_request_type,
+        response_type,
+        response_payload.to_vec(),
+    )])
+}
+
+fn serve_config_responses(exchanges: Vec<(u8, u8, Vec<u8>)>) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap().to_string();
-    let response = encode_frame(response_type, response_payload);
 
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0u8; 2048];
-        let request_len = stream.read(&mut request).unwrap();
-        assert!(request_len >= 5);
-        assert_eq!(request[4], expected_request_type);
-        stream.write_all(&response).unwrap();
+        for (expected_request_type, response_type, response_payload) in exchanges {
+            let mut request = [0u8; 2048];
+            let request_len = stream.read(&mut request).unwrap();
+            assert!(request_len >= 5);
+            assert_eq!(request[4], expected_request_type);
+            stream
+                .write_all(&encode_frame(response_type, &response_payload))
+                .unwrap();
+        }
     });
 
     (address, server)

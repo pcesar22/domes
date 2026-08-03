@@ -26,4 +26,7 @@
 
 ## Interpretation
 
-This is a repository-understanding and change-planning baseline. Compare one model, instruction, or tooling variable at a time.
+This is a legacy schema-v1 historical result from the predecessor harness. The current schema-v3
+runner cannot parse or compare it, and its score is not a current-harness baseline. Its revision is
+preserved as provenance; capture a new run with the current harness before making before-and-after
+comparisons.

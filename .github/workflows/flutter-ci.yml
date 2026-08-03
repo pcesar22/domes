@@ -93,5 +93,15 @@ jobs:
             echo "::error::The iOS build changed the checked-out project tree"
             printf '%s\n' "$drift"
             git diff -- ios/domes_app/ios
+            while IFS= read -r -d '' package_lock; do
+              echo "::group::$package_lock"
+              cat "$package_lock"
+              echo "::endgroup::"
+            done < <(
+              find ios/domes_app/ios \
+                -path '*/xcshareddata/swiftpm/Package.resolved' \
+                -type f \
+                -print0
+            )
             exit 1
           fi

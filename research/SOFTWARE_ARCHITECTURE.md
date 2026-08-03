@@ -47,6 +47,12 @@ sender matches the radio callback source, and correlates arm/touch/timeout traff
 per-round token. The phone-selected master and general `DrillInterpreter` described in research
 documents are target designs, not current production classes.
 
+ESP-NOW role status is lifecycle-scoped. `master` or `slave` is exposed only after the corresponding
+game loop can service peer and benchmark traffic. A disable may briefly report `stopping` while that
+loop unwinds; callers must wait for exact `disabled` before starting another lifecycle. Benchmark
+admission rechecks the enabled feature, selected peer, active game loop, and transport under its
+start lock, and the master's join-settle window accepts only selected-peer ping/pong traffic.
+
 The active feature contract is operational rather than descriptive: LED, touch, audio, haptic,
 ESP-NOW, and BLE advertising state gates the corresponding runtime path. WiFi appears in feature
 responses only for `CONFIG_DOMES_WIFI_AUTO_CONNECT` builds; those builds connect and disconnect the
@@ -147,7 +153,10 @@ older research documents are historical unless a current workflow explicitly lin
 
 The 8 MB partition profile also reserves flash for ESP-IDF ELF panic dumps. Those dumps are decoded
 with ESP-IDF and the exact matching application ELF. The legacy CLI `system crash-dump` response is
-a separate NVS clean-restart snapshot.
+a separate NVS clean-restart snapshot. Its current format is CRC-protected and records the exact ELF
+SHA-256, firmware version, boot count, internal heap, and processed PCs. Legacy records are
+display-only with explicitly unverified field semantics; corrupt records fail closed and can be
+removed with the explicit CLI clear option.
 
 ## Verification Architecture
 

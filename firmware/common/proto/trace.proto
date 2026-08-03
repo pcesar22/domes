@@ -11,7 +11,7 @@
 syntax = "proto3";
 package domes.trace;
 
-// Frame-level message types for trace protocol (0x10-0x1F range)
+// Frame-level message types for trace protocol (0x10-0x1B assigned range; 0x18 reserved)
 // Used in the frame header [0xAA 0x55][Len][MsgType][Payload][CRC32]
 enum MsgType {
     reserved 0x18;

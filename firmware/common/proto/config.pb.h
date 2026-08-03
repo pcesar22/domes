@@ -43,7 +43,7 @@ typedef enum _domes_config_MsgType {
     domes_config_MsgType_MSG_TYPE_GET_ESPNOW_STATUS_RSP = 59,
     domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_REQ = 60,
     domes_config_MsgType_MSG_TYPE_ESPNOW_BENCH_RSP = 61,
-    /* Crash dump commands (0x3E-0x41) */
+    /* Clean-restart snapshot commands with legacy crash-dump names (0x3E-0x41) */
     domes_config_MsgType_MSG_TYPE_GET_CRASH_DUMP_REQ = 62,
     domes_config_MsgType_MSG_TYPE_GET_CRASH_DUMP_RSP = 63,
     domes_config_MsgType_MSG_TYPE_CLEAR_CRASH_DUMP_REQ = 64,
@@ -332,10 +332,13 @@ typedef struct _domes_config_CrashDumpResponse {
     char reason[64]; /* Shutdown/restart reason string */
     char task_name[16]; /* Task that initiated the restart */
     uint32_t uptime_s; /* Uptime at restart (seconds) */
-    uint32_t free_heap; /* Free heap at restart */
+    uint32_t free_heap; /* Format 2: free internal 8-bit heap; legacy meaning unverified */
     pb_size_t backtrace_count;
-    uint32_t backtrace[16]; /* Program counter values (up to 16) */
-    uint32_t timestamp; /* Boot count associated with the snapshot */
+    uint32_t backtrace[16]; /* Format 2: processed PCs (up to 16); legacy values unverified */
+    uint32_t boot_count; /* Boot count associated with the snapshot */
+    char firmware_version[32]; /* Version of the image that initiated the restart */
+    uint32_t format_version; /* 0 for legacy records; current integrity-checked format otherwise */
+    char elf_sha256[65]; /* SHA-256 of the exact pre-restart ELF */
 } domes_config_CrashDumpResponse;
 
 typedef struct _domes_config_ClearCrashDumpRequest { /* Empty - clears the stored clean-restart snapshot */
@@ -562,7 +565,7 @@ extern "C" {
 #define domes_config_EspNowBenchRequest_init_default {0}
 #define domes_config_EspNowBenchResponse_init_default {0, 0, 0, 0, 0, 0, 0, 0}
 #define domes_config_GetCrashDumpRequest_init_default {0}
-#define domes_config_CrashDumpResponse_init_default {0, "", "", 0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0}
+#define domes_config_CrashDumpResponse_init_default {0, "", "", 0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0, "", 0, ""}
 #define domes_config_ClearCrashDumpRequest_init_default {0}
 #define domes_config_ClearCrashDumpResponse_init_default {0}
 #define domes_config_HeapSample_init_default     {0, 0, 0, 0}
@@ -612,7 +615,7 @@ extern "C" {
 #define domes_config_EspNowBenchRequest_init_zero {0}
 #define domes_config_EspNowBenchResponse_init_zero {0, 0, 0, 0, 0, 0, 0, 0}
 #define domes_config_GetCrashDumpRequest_init_zero {0}
-#define domes_config_CrashDumpResponse_init_zero {0, "", "", 0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0}
+#define domes_config_CrashDumpResponse_init_zero {0, "", "", 0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0, "", 0, ""}
 #define domes_config_ClearCrashDumpRequest_init_zero {0}
 #define domes_config_ClearCrashDumpResponse_init_zero {0}
 #define domes_config_HeapSample_init_zero        {0, 0, 0, 0}
@@ -705,7 +708,10 @@ extern "C" {
 #define domes_config_CrashDumpResponse_uptime_s_tag 4
 #define domes_config_CrashDumpResponse_free_heap_tag 5
 #define domes_config_CrashDumpResponse_backtrace_tag 6
-#define domes_config_CrashDumpResponse_timestamp_tag 7
+#define domes_config_CrashDumpResponse_boot_count_tag 7
+#define domes_config_CrashDumpResponse_firmware_version_tag 8
+#define domes_config_CrashDumpResponse_format_version_tag 9
+#define domes_config_CrashDumpResponse_elf_sha256_tag 10
 #define domes_config_ClearCrashDumpResponse_cleared_tag 1
 #define domes_config_HeapSample_timestamp_s_tag  1
 #define domes_config_HeapSample_free_heap_tag    2
@@ -960,7 +966,10 @@ X(a, STATIC,   SINGULAR, STRING,   task_name,         3) \
 X(a, STATIC,   SINGULAR, UINT32,   uptime_s,          4) \
 X(a, STATIC,   SINGULAR, UINT32,   free_heap,         5) \
 X(a, STATIC,   REPEATED, UINT32,   backtrace,         6) \
-X(a, STATIC,   SINGULAR, UINT32,   timestamp,         7)
+X(a, STATIC,   SINGULAR, UINT32,   boot_count,        7) \
+X(a, STATIC,   SINGULAR, STRING,   firmware_version,   8) \
+X(a, STATIC,   SINGULAR, UINT32,   format_version,    9) \
+X(a, STATIC,   SINGULAR, STRING,   elf_sha256,       10)
 #define domes_config_CrashDumpResponse_CALLBACK NULL
 #define domes_config_CrashDumpResponse_DEFAULT NULL
 
@@ -1182,7 +1191,7 @@ extern const pb_msgdesc_t domes_config_TouchEventNotification_msg;
 #define domes_config_ClearCrashDumpRequest_size  0
 #define domes_config_ClearCrashDumpResponse_size 2
 #define domes_config_Color_size                  24
-#define domes_config_CrashDumpResponse_size      198
+#define domes_config_CrashDumpResponse_size      303
 #define domes_config_EspNowBenchRequest_size     6
 #define domes_config_EspNowBenchResponse_size    48
 #define domes_config_EspNowPeer_size             25

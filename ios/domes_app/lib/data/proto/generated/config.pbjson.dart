@@ -795,7 +795,10 @@ const CrashDumpResponse$json = {
     {'1': 'uptime_s', '3': 4, '4': 1, '5': 13, '10': 'uptimeS'},
     {'1': 'free_heap', '3': 5, '4': 1, '5': 13, '10': 'freeHeap'},
     {'1': 'backtrace', '3': 6, '4': 3, '5': 13, '10': 'backtrace'},
-    {'1': 'timestamp', '3': 7, '4': 1, '5': 13, '10': 'timestamp'},
+    {'1': 'boot_count', '3': 7, '4': 1, '5': 13, '10': 'bootCount'},
+    {'1': 'firmware_version', '3': 8, '4': 1, '5': 9, '10': 'firmwareVersion'},
+    {'1': 'format_version', '3': 9, '4': 1, '5': 13, '10': 'formatVersion'},
+    {'1': 'elf_sha256', '3': 10, '4': 1, '5': 9, '10': 'elfSha256'},
   ],
 };
 
@@ -804,7 +807,9 @@ final $typed_data.Uint8List crashDumpResponseDescriptor = $convert.base64Decode(
     'ChFDcmFzaER1bXBSZXNwb25zZRIZCghoYXNfZHVtcBgBIAEoCFIHaGFzRHVtcBIWCgZyZWFzb2'
     '4YAiABKAlSBnJlYXNvbhIbCgl0YXNrX25hbWUYAyABKAlSCHRhc2tOYW1lEhkKCHVwdGltZV9z'
     'GAQgASgNUgd1cHRpbWVTEhsKCWZyZWVfaGVhcBgFIAEoDVIIZnJlZUhlYXASHAoJYmFja3RyYW'
-    'NlGAYgAygNUgliYWNrdHJhY2USHAoJdGltZXN0YW1wGAcgASgNUgl0aW1lc3RhbXA=');
+    'NlGAYgAygNUgliYWNrdHJhY2USHQoKYm9vdF9jb3VudBgHIAEoDVIJYm9vdENvdW50EikKEGZp'
+    'cm13YXJlX3ZlcnNpb24YCCABKAlSD2Zpcm13YXJlVmVyc2lvbhIlCg5mb3JtYXRfdmVyc2lvbh'
+    'gJIAEoDVINZm9ybWF0VmVyc2lvbhIdCgplbGZfc2hhMjU2GAogASgJUgllbGZTaGEyNTY=');
 
 @$core.Deprecated('Use clearCrashDumpRequestDescriptor instead')
 const ClearCrashDumpRequest$json = {

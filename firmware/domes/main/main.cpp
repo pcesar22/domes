@@ -73,7 +73,6 @@ static constexpr const char* kGithubRepo = "domes";
 static domes::LedStripDriver<pins::kLedCount>* ledDriver = nullptr;
 static domes::infra::TaskManager taskManager;
 static domes::infra::NvsConfig configStorage;
-static domes::infra::NvsConfig statsStorage;
 static domes::GithubClient* githubClient = nullptr;
 static domes::OtaManager* otaManager = nullptr;
 static domes::UartTransport* uartTransport = nullptr;
@@ -1158,24 +1157,48 @@ static esp_err_t initLedStrip() {
     return err;
 }
 
-static esp_err_t initInfrastructure() {
+static esp_err_t initInfrastructure(uint32_t& bootCount) {
+    bootCount = 0;
     esp_err_t err = domes::infra::NvsConfig::initFlash();
     if (err != ESP_OK)
         return err;
 
-    configStorage.open(domes::infra::nvs_ns::kConfig);
+    err = configStorage.open(domes::infra::nvs_ns::kConfig);
+    if (err != ESP_OK)
+        return err;
 
     err = domes::infra::Watchdog::init(timing::kWatchdogTimeoutS, true);
     if (err != ESP_OK)
         return err;
 
-    if (statsStorage.open(domes::infra::nvs_ns::kStats) == ESP_OK) {
-        uint32_t bootCount =
-            statsStorage.getOrDefault<uint32_t>(domes::infra::stats_key::kBootCount, 0) + 1;
-        statsStorage.setU32(domes::infra::stats_key::kBootCount, bootCount);
-        statsStorage.commit();
-        ESP_LOGI(kTag, "Boot #%lu", static_cast<unsigned long>(bootCount));
+    domes::infra::NvsConfig stats;
+    err = stats.open(domes::infra::nvs_ns::kStats);
+    if (err != ESP_OK)
+        return err;
+
+    uint32_t previousBootCount = 0;
+    err = stats.getU32(domes::infra::stats_key::kBootCount, previousBootCount);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        previousBootCount = 0;
+    } else if (err != ESP_OK) {
+        stats.close();
+        return err;
     }
+    if (previousBootCount == UINT32_MAX) {
+        bootCount = UINT32_MAX;
+        ESP_LOGW(kTag, "Boot count saturated at %lu", static_cast<unsigned long>(bootCount));
+    } else {
+        bootCount = previousBootCount + 1;
+    }
+    err = stats.setU32(domes::infra::stats_key::kBootCount, bootCount);
+    if (err == ESP_OK) {
+        err = stats.commit();
+    }
+    stats.close();
+    if (err != ESP_OK)
+        return err;
+
+    ESP_LOGI(kTag, "Boot #%lu", static_cast<unsigned long>(bootCount));
 
     return ESP_OK;
 }
@@ -1194,14 +1217,15 @@ extern "C" void app_main() {
     }
 
     // Initialize infrastructure first
-    if (initInfrastructure() != ESP_OK) {
+    uint32_t bootCount = 0;
+    if (initInfrastructure(bootCount) != ESP_OK) {
         ESP_LOGE(kTag, "Infrastructure init failed, halting");
         return;
     }
     ESP_LOGI(kTag, "Infrastructure initialized");
 
     // Initialize shutdown dump handler (captures diagnostics on clean esp_restart() only)
-    if (domes::infra::ShutdownDumpHandler::init() != ESP_OK) {
+    if (domes::infra::ShutdownDumpHandler::init(bootCount) != ESP_OK) {
         ESP_LOGW(kTag, "Shutdown dump handler init failed");
     }
 

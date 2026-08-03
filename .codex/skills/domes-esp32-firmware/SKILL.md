@@ -64,8 +64,9 @@ Two devices:
 tools/firmware/flash_and_verify.sh firmware/domes "$PORT1,$PORT2"
 ```
 
-The helper builds and flashes over each CP2102N port, then verifies the framed runtime path with
-`domes-cli system info`. It does not look for console text on the protocol UART.
+The helper builds and flashes over each CP2102N port, then verifies the exact embedded version,
+system health, and the complete on-device self-test over the framed runtime path. It does not look
+for console text on the protocol UART.
 
 ## Monitor Serial
 

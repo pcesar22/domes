@@ -84,7 +84,7 @@ else
 fi
 
 # Called by the EXIT trap below; ShellCheck cannot resolve trap callbacks.
-# shellcheck disable=SC2317
+# shellcheck disable=SC2329
 cleanup() {
     if ! $RETAIN_ARTIFACTS; then
         rm -rf -- "${VERIFY_TMP:?}"
@@ -180,6 +180,7 @@ check_cli() {
         fi
         cargo fmt --check &&
             cargo clippy --locked --all-targets --all-features -- -D warnings &&
+            cargo build --locked &&
             cargo build --locked --release &&
             cargo test --locked --all-targets --all-features
     )
@@ -257,6 +258,20 @@ check_firmware() {
         -D "IDF_TARGET=esp32s3" \
         -D "SDKCONFIG=$idf_sdkconfig" \
         build || return 1
+    python3 - "$idf_build_dir/config/sdkconfig.json" <<'PY' || return 1
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as config_file:
+    config = json.load(config_file)
+if config.get("BOOTLOADER_APP_ROLLBACK_ENABLE") is not True:
+    raise SystemExit("firmware build does not enable bootloader app rollback")
+PY
+    if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+        echo "ESP-IDF rewrote firmware/domes/dependencies.lock" >&2
+        git diff -- dependencies.lock >&2
+        return 1
+    fi
 
     size=$(stat -c%s "$idf_build_dir/domes.bin") || return 1
     echo "Binary size: $size / $max_size bytes"

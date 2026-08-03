@@ -45,8 +45,13 @@ validation-critical desktop BLE work; see [`../../.codex/PLATFORM.md`](../../.co
 ## Checks
 
 ```bash
+flutter pub get --enforce-lockfile
 flutter analyze --fatal-infos --fatal-warnings
 flutter test
+# On native Linux with the Flutter desktop prerequisites:
+flutter build linux --release
+# On macOS with Xcode:
+flutter build ios --release --no-codesign
 ```
 
 These checks cover models, providers, command/notification demultiplexing, touch-event routing,

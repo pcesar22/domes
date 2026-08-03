@@ -102,11 +102,11 @@ pub fn system_set_pod_id(transport: &mut dyn Transport, pod_id: u32) -> Result<u
     Ok(reported_id)
 }
 
-/// Get crash dump from device
+/// Get the clean-restart snapshot from the device
 pub fn system_crash_dump(transport: &mut dyn Transport) -> Result<CliCrashDump> {
     let frame = transport
         .send_command(ConfigMsgType::GetCrashDumpReq as u8, &[])
-        .context("Failed to send get crash dump command")?;
+        .context("Failed to send get restart snapshot command")?;
 
     if frame.msg_type != ConfigMsgType::GetCrashDumpRsp as u8 {
         anyhow::bail!(
@@ -116,14 +116,14 @@ pub fn system_crash_dump(transport: &mut dyn Transport) -> Result<CliCrashDump> 
         );
     }
 
-    parse_crash_dump_response(&frame.payload).context("Failed to parse crash dump response")
+    parse_crash_dump_response(&frame.payload).context("Failed to parse restart snapshot response")
 }
 
-/// Clear crash dump from device
+/// Clear the clean-restart snapshot from the device
 pub fn system_clear_crash_dump(transport: &mut dyn Transport) -> Result<bool> {
     let frame = transport
         .send_command(ConfigMsgType::ClearCrashDumpReq as u8, &[])
-        .context("Failed to send clear crash dump command")?;
+        .context("Failed to send clear restart snapshot command")?;
 
     if frame.msg_type != ConfigMsgType::ClearCrashDumpRsp as u8 {
         anyhow::bail!(
@@ -134,7 +134,7 @@ pub fn system_clear_crash_dump(transport: &mut dyn Transport) -> Result<bool> {
     }
 
     parse_clear_crash_dump_response(&frame.payload)
-        .context("Failed to parse clear crash dump response")
+        .context("Failed to parse clear restart snapshot response")
 }
 
 /// Get memory profile from device

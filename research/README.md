@@ -12,7 +12,7 @@ history, and archived plans. Delivery status and executable workflows live elsew
 | [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md) | Product target | Intended hardware, networking, power, enclosure, and production direction |
 | [`ID_REQUIREMENTS.md`](ID_REQUIREMENTS.md) | Product requirements | Industrial-design goals and unresolved physical-design inputs |
 | [`architecture/README.md`](architecture/README.md) | Current lifecycle index | Classification and replacements for detailed architecture proposals |
-| [`AI_DEVELOPMENT_RECOMMENDATIONS.md`](AI_DEVELOPMENT_RECOMMENDATIONS.md) | Historical planning record | Earlier Claude workflow recommendations retained for context |
+| [`AI_DEVELOPMENT_RECOMMENDATIONS.md`](AI_DEVELOPMENT_RECOMMENDATIONS.md) | Retired decision record | Adopted agent-workflow decisions and links to current authorities; obsolete commands were removed |
 | [`archive/README.md`](archive/README.md) | Archive index | Superseded roadmaps, implementation plans, and simulation artifacts |
 
 ## Authority Boundaries
@@ -27,6 +27,5 @@ history, and archived plans. Delivery status and executable workflows live elsew
   inputs to validate, not current capabilities.
 
 Detailed proposals remain in place to preserve rationale and inbound links. Their lifecycle banners
-and the architecture index identify obsolete commands, paths, packet tables, and implementation
-plans; do not promote those details back into current guides without verifying them against code and
-hardware evidence.
+and the architecture index distinguish implemented boundaries from future design. Retired records
+link to current authorities instead of preserving obsolete commands or copied lookup tables.

@@ -55,8 +55,9 @@ After flashing, run the feature list over the relevant transport:
 tools/domes-cli/target/debug/domes-cli --port "$PORT1" feature list
 ```
 
-The helper builds and flashes each CP2102N port and verifies framed UART operation with `system
-info`. Boot text is not expected on the protocol UART.
+The helper builds and flashes each CP2102N port and verifies the exact embedded version, system
+health, and the complete on-device self-test over framed UART. Boot text is not expected on the
+protocol UART.
 
 If flashing fails, check USB cable, BOOT button, serial permissions, and whether ESP-IDF was
 sourced.
@@ -185,31 +186,112 @@ Requires two pods.
 
 ```bash
 CLI="tools/domes-cli/target/debug/domes-cli"
-$CLI --port "$PORT1" feature disable esp-now
-$CLI --port "$PORT2" feature disable esp-now
-sleep 2
-$CLI --port "$PORT1" feature enable esp-now
-$CLI --port "$PORT2" feature enable esp-now
-sleep 25
-$CLI --port "$PORT1" espnow status
-$CLI --port "$PORT2" espnow status
+ROUNDS=${ROUNDS:-100}
+SESSIONS=${SESSIONS:-3}
+
+wait_for_disabled() {
+  local phase=$1 status1 status2
+  for attempt in {1..20}; do
+    status1=$("$CLI" --port "$PORT1" espnow status)
+    status2=$("$CLI" --port "$PORT2" espnow status)
+    if grep -Eq 'State:[[:space:]]+disabled' <<< "$status1" &&
+       grep -Eq 'State:[[:space:]]+disabled' <<< "$status2"; then
+      return 0
+    fi
+    sleep 1
+  done
+  printf '%s\n%s\n' "$status1" "$status2"
+  return 1
+}
+
+wait_for_peers() {
+  local phase=$1 status1 status2 state1 state2
+  for attempt in {1..30}; do
+    status1=$("$CLI" --port "$PORT1" espnow status)
+    status2=$("$CLI" --port "$PORT2" espnow status)
+    state1=$(awk '/State:/ {print $2; exit}' <<< "$status1")
+    state2=$(awk '/State:/ {print $2; exit}' <<< "$status2")
+    if [[ "$state1:$state2" == master:slave || "$state1:$state2" == slave:master ]] &&
+       grep -Eq 'Peers:[[:space:]]+1' <<< "$status1" &&
+       grep -Eq 'Peers:[[:space:]]+1' <<< "$status2"; then
+      if [[ "$state1" == master ]]; then
+        MASTER_PORT=$PORT1
+        SLAVE_PORT=$PORT2
+      else
+        MASTER_PORT=$PORT2
+        SLAVE_PORT=$PORT1
+      fi
+      printf '%s\n%s\n' "$status1" "$status2"
+      return 0
+    fi
+    sleep 1
+  done
+  printf '%s\n%s\n' "$status1" "$status2"
+  return 1
+}
+
+run_benchmark() {
+  local port=$1 output
+  output=$("$CLI" --port "$port" espnow bench --rounds "$ROUNDS")
+  printf '%s\n' "$output"
+  grep -Eq "Rounds:[[:space:]]+$ROUNDS/$ROUNDS completed \\(0 failed\\)" <<< "$output"
+  grep -q 'Mean RTT:' <<< "$output"
+}
+
+"$CLI" --port "$PORT1" feature disable esp-now
+"$CLI" --port "$PORT2" feature disable esp-now
+wait_for_disabled initial
+"$CLI" --port "$PORT1" espnow sim-mode off
+"$CLI" --port "$PORT2" espnow sim-mode off
+
+for session in $(seq 1 "$SESSIONS"); do
+  "$CLI" --port "$PORT1" feature enable esp-now
+  "$CLI" --port "$PORT2" feature enable esp-now
+  wait_for_peers "benchmark session $session"
+  run_benchmark "$SLAVE_PORT"
+  run_benchmark "$MASTER_PORT"
+  "$CLI" --port "$PORT1" feature disable esp-now
+  "$CLI" --port "$PORT2" feature disable esp-now
+  wait_for_disabled "benchmark session $session"
+done
+
+# The trace-backed simulated drill is a separate fresh lifecycle.
+for port in "$PORT1" "$PORT2"; do
+  "$CLI" --port "$port" trace stop
+  "$CLI" --port "$port" trace clear
+  "$CLI" --port "$port" trace start
+  "$CLI" --port "$port" espnow sim-mode on --delay-ms 100 --pad 0
+done
+"$CLI" --port "$PORT1" feature enable esp-now
+"$CLI" --port "$PORT2" feature enable esp-now
+wait_for_peers "simulated drill"
+sleep 35
+
+for port in "$PORT1" "$PORT2"; do
+  status=$("$CLI" --port "$port" espnow status)
+  printf '%s\n' "$status"
+  grep -Eq 'State:[[:space:]]+disabled' <<< "$status"
+  grep -Eq 'Peers:[[:space:]]+1' <<< "$status"
+  grep -Eq 'TX fails:[[:space:]]+0' <<< "$status"
+done
+"$CLI" --port "$PORT1" trace stop
+"$CLI" --port "$PORT2" trace stop
+"$CLI" --port "$PORT1" trace dump --output /tmp/domes-pod1.json \
+  --names tools/trace/trace_names.json
+"$CLI" --port "$PORT2" trace dump --output /tmp/domes-pod2.json \
+  --names tools/trace/trace_names.json
+python3 tools/trace/trace_merge.py \
+  --pod /tmp/domes-pod1.json --pod-name pod1 \
+  --pod /tmp/domes-pod2.json --pod-name pod2 \
+  --names tools/trace/trace_names.json --align zero \
+  --output /tmp/domes-merged.json
 ```
 
-Both devices should show one peer, one master/slave pairing, and RX packets greater than zero.
-
-Monitor drill execution:
-
-```bash
-python3 tools/firmware/monitor_serial.py "$CONSOLE1,$CONSOLE2" 20 2>&1 | \
-  rg -i "round|arm|hit|miss|drill|game|espnow"
-```
-
-Cleanup:
-
-```bash
-$CLI --port "$PORT1" feature disable esp-now
-$CLI --port "$PORT2" feature disable esp-now
-```
+`stopping` is a transitional state: the previous discovery or game loop still owns lifecycle state, so do not
+re-enable until both pods report exact `disabled`. A valid result requires complementary roles, one
+peer on each pod, complete zero-loss benchmark cardinality, and trace events for the drill. The merge
+groups local timelines by capture start; it does not correlate clocks. Native USB console logs are
+optional supporting evidence, not a replacement for these assertions.
 
 Do not use WiFi feature commands as ESP-NOW setup. The default build omits the WiFi client feature,
 while a `CONFIG_DOMES_WIFI_AUTO_CONNECT` build treats it as independent stored-credential client

@@ -1,15 +1,20 @@
 # DOMES Host Tools
 
-This directory contains the supported host CLI plus small trace, visualization, and Linux device
-helpers. Device communication belongs in `domes-cli`; do not create one-off protocol clients for
-serial, TCP, BLE, or OTA workflows.
+This directory contains the supported host CLI and repository-owned protocol generation, firmware
+verification, CI contract, agent-evaluation, trace, visualization, and Linux device tools. Device
+communication belongs in `domes-cli`; do not create one-off protocol clients for serial, TCP, BLE,
+or OTA workflows.
 
 ## Tool Index
 
 | Path | Purpose |
 | --- | --- |
+| [`agent_eval/`](agent_eval/) | Reproducible, contained coding-agent repository-understanding evaluations; never a substitute for human or hardware review |
 | [`domes-cli/`](domes-cli/) | Supported device CLI for discovery, configuration, diagnostics, OTA, tracing, and multi-device operations |
+| [`generate_protocols.sh`](generate_protocols.sh) | Generate or drift-check nanopb and Dart bindings from the authoritative protobuf schemas |
+| [`ci/test_release_contract.py`](ci/test_release_contract.py) | Assert release, CI, programming, OTA, and hardware-workflow contracts |
 | [`firmware/flash_and_verify.sh`](firmware/flash_and_verify.sh) | Build, flash, and verify framed UART operation on one or more ESP32 devices |
+| [`firmware/verify_restart_snapshot.sh`](firmware/verify_restart_snapshot.sh) | Validate a clean-restart snapshot against its boot count and version-matched pre-restart ELF |
 | [`firmware/monitor_serial.py`](firmware/monitor_serial.py) | Monitor and label serial output from one or more attached devices |
 | [`docs/check_markdown_links.py`](docs/check_markdown_links.py) | Check tracked Markdown files for broken repository-relative links |
 | [`trace/trace_merge.py`](trace/trace_merge.py) | Merge multiple CLI trace exports into one Perfetto-compatible timeline |
@@ -55,8 +60,9 @@ python3 tools/firmware/monitor_serial.py \
 
 The flash helper and `domes-cli` use NFF CP2102N ports (`/dev/ttyUSB*`, preferably
 `/dev/serial/by-id/`). The monitor reads separately connected native USB console ports
-(`/dev/ttyACM*`). The helper verifies `system info` over the framed UART after flashing; it does not
-search console text on that protocol port.
+(`/dev/ttyACM*`). Over framed UART, the helper verifies the exact built version through `system
+info` and requires `system health` plus the complete `system self-test` to pass; it does not search
+console text on that protocol port.
 
 Compatibility wrappers under `.codex/` and `.claude/` forward to these files. Update only the
 canonical helpers when changing shared behavior.

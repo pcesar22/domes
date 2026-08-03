@@ -127,9 +127,11 @@ public:
     const char* discoveryState() const {
         if (!running_.load(std::memory_order_relaxed))
             return "stopped";
+        const bool lifecycleActive = lifecycleActive_.load(std::memory_order_acquire);
         if (!isFeatureEnabled())
-            return "disabled";
-        if (peerFound_.load(std::memory_order_acquire)) {
+            return lifecycleActive ? "stopping" : "disabled";
+        if (gameLoopActive_.load(std::memory_order_acquire) &&
+            peerFound_.load(std::memory_order_acquire)) {
             return isMaster_.load(std::memory_order_relaxed) ? "master" : "slave";
         }
         if (peerCount_.load(std::memory_order_relaxed) > 0)
@@ -216,6 +218,7 @@ private:
     // Shared helpers
     // =========================================================================
     bool receiveAndDispatch(uint32_t timeoutMs);
+    bool receiveAndDispatchBenchmarkTraffic(uint32_t timeoutMs);
     bool isFeatureEnabled() const { return features_.isEnabled(config::Feature::kEspNow); }
     bool handleReceived(const uint8_t* data, size_t len);
     bool handleValidatedReceived(const uint8_t* data, size_t len,
@@ -252,6 +255,8 @@ private:
     uint8_t peerMac_[ESP_NOW_ETH_ALEN] = {};
     std::atomic<bool> peerFound_{false};
     std::atomic<bool> isMaster_{false};
+    std::atomic<bool> lifecycleActive_{false};
+    std::atomic<bool> gameLoopActive_{false};
 
     // Peer tracking
     std::array<DiscoveredPeer, kMaxDiscoveredPeers> peers_ = {};

@@ -37,7 +37,7 @@ firmware/test_app/build/test_app --gtest_filter='GameEngineTest.*'
 | Area | Representative sources |
 | --- | --- |
 | Shared protocol support | CRC32, frame codec, OTA codec, version parsing, protobuf config messages and device notifications |
-| OTA and release state | Session coordination, transfer state machine, embedded version parsing, and release metadata |
+| OTA and release state | Session coordination, transfer state machine, embedded version parsing, release metadata, and restart-record integrity |
 | Runtime state | `FeatureManager` and `ModeManager` |
 | Game behavior | Per-pod `GameEngine` state transitions and feedback behavior |
 | ESP-NOW contract | Exact packed-message sizes, discovery classification, authenticated sender matching, and per-round token matching |

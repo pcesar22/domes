@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       ports:
-        description: 'At least two comma-separated ports; leave empty to auto-detect NFF CP2102N/ttyUSB runtime ports'
+        description: 'Exactly two comma-separated ports; leave empty to auto-detect NFF CP2102N/ttyUSB runtime ports'
         required: false
         default: ''
 
@@ -35,7 +35,7 @@ jobs:
   hardware-test:
     name: On-Device Tests
     runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     if: |
       (github.event_name == 'pull_request' &&
@@ -120,8 +120,8 @@ jobs:
             done
           fi
 
-          if ((${#PORTS[@]} < 2)); then
-            echo "::error::Hardware validation requires two NFF CP2102N runtime ports; found ${#PORTS[@]}"
+          if ((${#PORTS[@]} != 2)); then
+            echo "::error::Hardware validation requires exactly two selected NFF CP2102N runtime ports; found ${#PORTS[@]}"
             ls -la /dev/serial/by-id/*CP2102N* /dev/ttyUSB* 2>/dev/null || true
             exit 1
           fi
@@ -222,7 +222,10 @@ jobs:
               assert description["project_version"] == expected_version, description
 
               config = json.loads(Path(build_dir, "config", "sdkconfig.json").read_text())
-              assert config["BOOTLOADER_APP_ROLLBACK_ENABLE"] is True, build_dir
+              if config.get("BOOTLOADER_APP_ROLLBACK_ENABLE") is not True:
+                  raise SystemExit(
+                      f"{build_dir} does not enable bootloader app rollback"
+                  )
 
               image_info = subprocess.run(
                   [
@@ -288,6 +291,43 @@ jobs:
           fi
           cargo build --locked --release
           echo "CLI built successfully"
+
+      - name: Configure bounded BLE diagnostic retry
+        run: |
+          helper="$RUNNER_TEMP/domes-ble-read"
+          cat > "$helper" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          if (($# == 0)); then
+            echo "BLE retry helper requires a command" >&2
+            exit 2
+          fi
+
+          output_file=$(mktemp "${RUNNER_TEMP:-/tmp}/domes-ble-read.XXXXXX")
+          trap 'rm -f "$output_file"' EXIT
+
+          for attempt in 1 2; do
+            if "$@" > "$output_file" 2>&1; then
+              cat "$output_file"
+              exit 0
+            else
+              status=$?
+            fi
+
+            cat "$output_file" >&2
+            if ((attempt == 1)) &&
+               grep -Fq "Failed to connect to BLE device" "$output_file" &&
+               grep -Fqi "le-connection-abort-by-local" "$output_file"; then
+              echo "Transient BlueZ local connection abort; retrying once in 3 seconds." >&2
+              sleep 3
+            else
+              exit "$status"
+            fi
+          done
+          EOF
+          chmod 0700 "$helper"
+          echo "BLE_READ_RETRY=$helper" >> "$GITHUB_ENV"
 
       - name: Flash all devices
         id: flash
@@ -466,7 +506,7 @@ jobs:
 
           declare -A ble_by_id=()
           for address in "${ble_addresses[@]}"; do
-            if ! info=$("$CLI" --ble "$address" system info 2>&1); then
+            if ! info=$("$BLE_READ_RETRY" "$CLI" --ble "$address" system info); then
               printf '%s\n' "$info"
               continue
             fi
@@ -480,9 +520,27 @@ jobs:
               echo "Ignoring unrelated DOMES BLE device $address (pod ID $pod_id)"
               continue
             fi
+            if [[ -n "${ble_by_id[$pod_id]+present}" ]]; then
+              echo "::error::Multiple BLE addresses matched selected pod ID $pod_id: ${ble_by_id[$pod_id]} and $address"
+              exit 1
+            fi
             ble_by_id[$pod_id]=$address
-            "$CLI" --ble "$address" system self-test
-            "$CLI" --ble "$address" system health
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" system self-test
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" system health
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" system memory
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" feature list
+
+            # Exercise BLE writes without retrying a mutating command.
+            "$CLI" --ble "$address" led solid --color 0000ff --brightness 32
+            "$CLI" --ble "$address" led off
+            "$CLI" --ble "$address" feature disable haptic
+            haptic_status=$("$BLE_READ_RETRY" "$CLI" --ble "$address" feature status haptic)
+            printf '%s\n' "$haptic_status"
+            grep -Fq "Feature 'haptic' is disabled" <<< "$haptic_status"
+            "$CLI" --ble "$address" feature enable haptic
+            haptic_status=$("$BLE_READ_RETRY" "$CLI" --ble "$address" feature status haptic)
+            printf '%s\n' "$haptic_status"
+            grep -Fq "Feature 'haptic' is enabled" <<< "$haptic_status"
           done
 
           for pod_id in "${!serial_ids[@]}"; do
@@ -507,8 +565,15 @@ jobs:
           invalid_image="${RUNNER_TEMP:-/tmp}/domes-invalid-${GITHUB_RUN_ID}.bin"
           head -c 4096 firmware/domes/build-ota/domes.bin > "$invalid_image"
 
-          if "$CLI" --port "$PRIMARY" ota flash "$invalid_image" --version "$CI_VERSION"; then
+          if invalid_output=$("$CLI" --port "$PRIMARY" ota flash \
+            "$invalid_image" --version "$CI_VERSION" 2>&1); then
+            printf '%s\n' "$invalid_output"
             echo "::error::Device accepted a truncated OTA image"
+            exit 1
+          fi
+          printf '%s\n' "$invalid_output"
+          if ! grep -Fq "Verification failed" <<< "$invalid_output"; then
+            echo "::error::Truncated serial OTA failed for an unexpected reason"
             exit 1
           fi
           sleep 2
@@ -518,9 +583,15 @@ jobs:
 
           # A valid image must still be rejected when the host declaration does
           # not exactly match the embedded ESP app descriptor.
-          if "$CLI" --port "$PRIMARY" ota flash \
-            firmware/domes/build-ota/domes.bin --version "$BASELINE_VERSION"; then
+          if mismatch_output=$("$CLI" --port "$PRIMARY" ota flash \
+            firmware/domes/build-ota/domes.bin --version "$BASELINE_VERSION" 2>&1); then
+            printf '%s\n' "$mismatch_output"
             echo "::error::Device accepted an OTA image with mismatched declared version"
+            exit 1
+          fi
+          printf '%s\n' "$mismatch_output"
+          if ! grep -Fq "Version error" <<< "$mismatch_output"; then
+            echo "::error::Version-mismatched serial OTA failed for an unexpected reason"
             exit 1
           fi
           mismatch_info=$("$CLI" --port "$PRIMARY" system info)
@@ -533,23 +604,38 @@ jobs:
       - name: Test - Interrupted OTA Session Recovery
         id: interrupted_ota
         env:
+          BASELINE_VERSION: ${{ steps.firmware_build.outputs.baseline_version }}
           CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
           SECONDARY: ${{ steps.detect.outputs.secondary }}
         run: |
           CLI=tools/domes-cli/target/release/domes-cli
+          interrupt_log="${RUNNER_TEMP:-/tmp}/domes-interrupted-serial-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
           set +e
-          timeout 2s "$CLI" --port "$SECONDARY" ota flash \
-            firmware/domes/build-ota/domes.bin --version "$CI_VERSION"
+          timeout --signal=TERM --kill-after=5s 5s \
+            "$CLI" --port "$SECONDARY" ota flash \
+            firmware/domes/build-ota/domes.bin --version "$CI_VERSION" \
+            > "$interrupt_log" 2>&1
           status=$?
           set -e
-          if [[ $status -ne 124 && $status -ne 143 ]]; then
+          cat "$interrupt_log"
+          if [[ $status -ne 124 && $status -ne 137 && $status -ne 143 ]]; then
             echo "::error::OTA interruption returned unexpected status $status"
+            exit 1
+          fi
+          if ! grep -Fq "Device accepted OTA_BEGIN." "$interrupt_log"; then
+            echo "::error::Serial OTA client stopped before the device accepted OTA_BEGIN"
             exit 1
           fi
 
           echo "Waiting for device-side OTA inactivity cleanup..."
           sleep 20
           "$CLI" --port "$SECONDARY" system health
+          recovery_info=$("$CLI" --port "$SECONDARY" system info)
+          printf '%s\n' "$recovery_info"
+          if ! grep -Fq "Firmware:   $BASELINE_VERSION" <<< "$recovery_info"; then
+            echo "::error::Interrupted serial OTA changed the running image"
+            exit 1
+          fi
 
       - name: Test - Serial OTA (primary device)
         id: serial_ota
@@ -571,6 +657,7 @@ jobs:
         id: post_ota
         env:
           BASELINE_BOOT_COUNT: ${{ steps.identity.outputs.primary_boot_count }}
+          BASELINE_VERSION: ${{ steps.firmware_build.outputs.baseline_version }}
           CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
           PRIMARY: ${{ steps.detect.outputs.primary }}
         run: |
@@ -597,6 +684,10 @@ jobs:
             echo "::error::Accepted serial OTA image is not running from ota_1"
             exit 1
           fi
+          tools/firmware/verify_restart_snapshot.sh \
+            "$PRIMARY" "$BASELINE_BOOT_COUNT" "$BASELINE_VERSION" \
+            firmware/domes/build/domes.elf "$CLI"
+          "$CLI" --port "$PRIMARY" system crash-dump --clear
           "$CLI" --port "$PRIMARY" feature list
 
           echo "Resetting $PRIMARY again to verify the accepted OTA image is durable..."
@@ -621,7 +712,82 @@ jobs:
             echo "::error::Accepted serial OTA image changed partitions after reboot"
             exit 1
           fi
+          hard_reset_snapshot=$("$CLI" --port "$PRIMARY" system crash-dump)
+          printf '%s\n' "$hard_reset_snapshot"
+          if ! grep -Fq "No restart snapshot stored." <<< "$hard_reset_snapshot"; then
+            echo "::error::ROM reset unexpectedly produced a clean-restart snapshot"
+            exit 1
+          fi
           echo "Post-OTA verification passed"
+
+      - name: Test - BLE OTA Failure Recovery (secondary device)
+        id: ble_ota_recovery
+        env:
+          BASELINE_VERSION: ${{ steps.firmware_build.outputs.baseline_version }}
+          CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
+          SECONDARY: ${{ steps.detect.outputs.secondary }}
+          SECONDARY_BLE: ${{ steps.ble.outputs.secondary_address }}
+        run: |
+          CLI=tools/domes-cli/target/release/domes-cli
+          invalid_image="${RUNNER_TEMP:-/tmp}/domes-invalid-ble-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.bin"
+          interrupt_log="${RUNNER_TEMP:-/tmp}/domes-interrupted-ble-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
+          head -c 4096 firmware/domes/build-ota/domes.bin > "$invalid_image"
+
+          verify_secondary_recovery() {
+            local ble_info
+            local serial_info
+
+            serial_info=$("$CLI" --port "$SECONDARY" system info)
+            printf '%s\n' "$serial_info"
+            if ! grep -Fq "Firmware:   $BASELINE_VERSION" <<< "$serial_info"; then
+              echo "::error::BLE OTA failure changed the running image"
+              return 1
+            fi
+            "$CLI" --port "$SECONDARY" system health
+
+            ble_info=$("$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system info)
+            printf '%s\n' "$ble_info"
+            if ! grep -Fq "Firmware:   $BASELINE_VERSION" <<< "$ble_info"; then
+              echo "::error::Secondary BLE did not recover the baseline image"
+              return 1
+            fi
+            "$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system health
+          }
+
+          if invalid_output=$("$CLI" --ble "$SECONDARY_BLE" ota flash \
+            "$invalid_image" --version "$CI_VERSION" 2>&1); then
+            printf '%s\n' "$invalid_output"
+            echo "::error::Device accepted a truncated BLE OTA image"
+            exit 1
+          fi
+          printf '%s\n' "$invalid_output"
+          if ! grep -Fq "Verification failed" <<< "$invalid_output"; then
+            echo "::error::Truncated BLE OTA failed for an unexpected reason"
+            exit 1
+          fi
+          sleep 2
+          verify_secondary_recovery
+
+          set +e
+          timeout --signal=TERM --kill-after=5s 30s \
+            "$CLI" --ble "$SECONDARY_BLE" ota flash \
+            firmware/domes/build-ota/domes.bin --version "$CI_VERSION" \
+            > "$interrupt_log" 2>&1
+          status=$?
+          set -e
+          cat "$interrupt_log"
+          if [[ $status -ne 124 && $status -ne 137 && $status -ne 143 ]]; then
+            echo "::error::BLE OTA interruption returned unexpected status $status"
+            exit 1
+          fi
+          if ! grep -Fq "Device accepted OTA_BEGIN." "$interrupt_log"; then
+            echo "::error::BLE OTA client stopped before the device accepted OTA_BEGIN"
+            exit 1
+          fi
+
+          echo "Waiting for interrupted BLE OTA cleanup..."
+          sleep 20
+          verify_secondary_recovery
 
       - name: Test - BLE OTA (secondary device)
         id: ble_ota
@@ -641,6 +807,7 @@ jobs:
         id: post_ble_ota
         env:
           BASELINE_BOOT_COUNT: ${{ steps.identity.outputs.secondary_boot_count }}
+          BASELINE_VERSION: ${{ steps.firmware_build.outputs.baseline_version }}
           CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
           SECONDARY: ${{ steps.detect.outputs.secondary }}
           SECONDARY_BLE: ${{ steps.ble.outputs.secondary_address }}
@@ -667,8 +834,12 @@ jobs:
             echo "::error::Accepted BLE OTA image is not running from ota_1"
             exit 1
           fi
+          tools/firmware/verify_restart_snapshot.sh \
+            "$SECONDARY" "$BASELINE_BOOT_COUNT" "$BASELINE_VERSION" \
+            firmware/domes/build/domes.elf "$CLI"
+          "$CLI" --port "$SECONDARY" system crash-dump --clear
 
-          ble_info=$("$CLI" --ble "$SECONDARY_BLE" system info)
+          ble_info=$("$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system info)
           printf '%s\n' "$ble_info"
           if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$ble_info"; then
             echo "::error::Secondary device did not recover BLE after OTA"
@@ -697,8 +868,14 @@ jobs:
             echo "::error::Accepted BLE OTA image changed partitions after reboot"
             exit 1
           fi
+          hard_reset_snapshot=$("$CLI" --port "$SECONDARY" system crash-dump)
+          printf '%s\n' "$hard_reset_snapshot"
+          if ! grep -Fq "No restart snapshot stored." <<< "$hard_reset_snapshot"; then
+            echo "::error::ROM reset unexpectedly produced a clean-restart snapshot"
+            exit 1
+          fi
 
-          second_boot_ble_info=$("$CLI" --ble "$SECONDARY_BLE" system info)
+          second_boot_ble_info=$("$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system info)
           printf '%s\n' "$second_boot_ble_info"
           if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$second_boot_ble_info"; then
             echo "::error::Secondary device did not recover BLE after a second reboot"
@@ -776,6 +953,10 @@ jobs:
             echo "::error::Rollback did not restore the accepted ota_1 partition"
             exit 1
           fi
+          tools/firmware/verify_restart_snapshot.sh \
+            "$PRIMARY" "$((before_boot_count + 1))" "$ROLLBACK_VERSION" \
+            firmware/domes/build-rollback/domes.elf "$CLI"
+          "$CLI" --port "$PRIMARY" system crash-dump --clear
 
           echo "Resetting restored image once more..."
           python -m esptool --chip esp32s3 --port "$PRIMARY" run
@@ -799,6 +980,12 @@ jobs:
             echo "::error::Restored image changed partitions after durability reboot"
             exit 1
           fi
+          hard_reset_snapshot=$("$CLI" --port "$PRIMARY" system crash-dump)
+          printf '%s\n' "$hard_reset_snapshot"
+          if ! grep -Fq "No restart snapshot stored." <<< "$hard_reset_snapshot"; then
+            echo "::error::ROM reset unexpectedly produced a clean-restart snapshot"
+            exit 1
+          fi
 
       - name: Start trace capture
         id: trace_start
@@ -814,23 +1001,85 @@ jobs:
             "$CLI" --port "$port" trace start
           done
 
-      - name: Test - Multi-Device Feature List
+      - name: Test - Device Registry and Multi-Device Fan-Out
         id: multi_feature_list
         if: steps.detect.outputs.multi == 'true'
         env:
           PRIMARY: ${{ steps.detect.outputs.primary }}
           SECONDARY: ${{ steps.detect.outputs.secondary }}
         run: |
-          echo "Testing multi-device feature list..."
           CLI=tools/domes-cli/target/release/domes-cli
+          REGISTRY_HOME=$(mktemp -d "${RUNNER_TEMP:-/tmp}/domes-registry.XXXXXX")
+          trap 'rm -rf "$REGISTRY_HOME"' EXIT
 
-          # Test with multiple --port flags
+          echo "Testing direct multi-device fan-out..."
           "$CLI" \
             --port "$PRIMARY" \
             --port "$SECONDARY" \
             feature list
 
-          echo "Multi-device feature list passed"
+          echo "Testing an isolated device registry..."
+          HOME="$REGISTRY_HOME" "$CLI" devices add pod1 serial "$PRIMARY"
+          HOME="$REGISTRY_HOME" "$CLI" devices add pod2 serial "$SECONDARY"
+
+          registry_list=$(HOME="$REGISTRY_HOME" "$CLI" devices list)
+          printf '%s\n' "$registry_list"
+          if ! grep -Eq '^pod1[[:space:]]+serial[[:space:]]+' <<< "$registry_list" ||
+             ! grep -Eq '^pod2[[:space:]]+serial[[:space:]]+' <<< "$registry_list"; then
+            echo "::error::Device registry did not list both selected pods"
+            exit 1
+          fi
+
+          HOME="$REGISTRY_HOME" "$CLI" \
+            --target pod1 --target pod2 feature list
+
+          memory_json=$(HOME="$REGISTRY_HOME" "$CLI" --all system memory --json)
+          printf '%s\n' "$memory_json"
+          python3 - "$memory_json" <<'PY'
+          import json
+          import sys
+
+          document = json.loads(sys.argv[1])
+          profiles = document.get("devices") if isinstance(document, dict) else None
+          if not isinstance(profiles, dict) or set(profiles) != {"pod1", "pod2"}:
+              raise SystemExit(f"unexpected --all memory result: {document!r}")
+          PY
+
+          canonical_primary=$(readlink -f -- "$PRIMARY")
+          if duplicate_output=$(HOME="$REGISTRY_HOME" "$CLI" devices add \
+            pod1-alias serial "$canonical_primary" 2>&1); then
+            printf '%s\n' "$duplicate_output"
+            echo "::error::Registry accepted a duplicate canonical serial endpoint"
+            exit 1
+          fi
+          printf '%s\n' "$duplicate_output"
+          if ! grep -Fq "already registered as 'pod1'" <<< "$duplicate_output"; then
+            echo "::error::Duplicate registry endpoint failed for an unexpected reason"
+            exit 1
+          fi
+
+          if selector_output=$(HOME="$REGISTRY_HOME" "$CLI" \
+            --all --port "$PRIMARY" feature list 2>&1); then
+            printf '%s\n' "$selector_output"
+            echo "::error::CLI accepted --all with an explicit serial selector"
+            exit 1
+          fi
+          printf '%s\n' "$selector_output"
+          if ! grep -Fq "cannot be used with '--port" <<< "$selector_output"; then
+            echo "::error::Selector conflict failed for an unexpected reason"
+            exit 1
+          fi
+
+          HOME="$REGISTRY_HOME" "$CLI" devices remove pod1
+          HOME="$REGISTRY_HOME" "$CLI" devices remove pod2
+          empty_registry=$(HOME="$REGISTRY_HOME" "$CLI" devices list)
+          printf '%s\n' "$empty_registry"
+          if ! grep -Fxq "No devices registered." <<< "$empty_registry"; then
+            echo "::error::Registry was not empty after removing both pods"
+            exit 1
+          fi
+
+          echo "Device registry and multi-device fan-out passed"
 
       - name: Test - ESP-NOW Communication
         id: espnow
@@ -842,52 +1091,137 @@ jobs:
           echo "Testing ESP-NOW between devices..."
           CLI=tools/domes-cli/target/release/domes-cli
 
-          # Enable ESP-NOW on both devices
-          echo "=== Enabling ESP-NOW on both devices ==="
-          "$CLI" --port "$PRIMARY" espnow sim-mode on --delay-ms 100 --pad 0
-          "$CLI" --port "$SECONDARY" espnow sim-mode on --delay-ms 100 --pad 0
+          wait_for_peers() {
+            local phase=$1
+            local peers_ready=false
+
+            echo "Waiting for ESP-NOW peer discovery ($phase)..."
+            for attempt in {1..30}; do
+              primary_status=$("$CLI" --port "$PRIMARY" espnow status)
+              secondary_status=$("$CLI" --port "$SECONDARY" espnow status)
+              primary_role=$(awk '/State:/ {print $2; exit}' <<< "$primary_status")
+              secondary_role=$(awk '/State:/ {print $2; exit}' <<< "$secondary_status")
+              if [[ "$primary_role:$secondary_role" == "master:slave" ||
+                    "$primary_role:$secondary_role" == "slave:master" ]] &&
+                 grep -Eq 'Peers:[[:space:]]+1' <<< "$primary_status" &&
+                 grep -Eq 'Peers:[[:space:]]+1' <<< "$secondary_status"; then
+                if [[ "$primary_role" == "master" ]]; then
+                  MASTER_PORT=$PRIMARY
+                  SLAVE_PORT=$SECONDARY
+                else
+                  MASTER_PORT=$SECONDARY
+                  SLAVE_PORT=$PRIMARY
+                fi
+                peers_ready=true
+                break
+              fi
+              echo "Peer discovery attempt $attempt/30 is not ready ($phase)"
+              sleep 1
+            done
+            if [[ "$peers_ready" != "true" ]]; then
+              printf '%s\n%s\n' "$primary_status" "$secondary_status"
+              echo "::error::ESP-NOW requires exactly one master and one slave with one peer each"
+              return 1
+            fi
+            printf '%s\n%s\n' "$primary_status" "$secondary_status"
+          }
+
+          wait_for_disabled() {
+            local phase=$1
+
+            for attempt in {1..20}; do
+              primary_status=$("$CLI" --port "$PRIMARY" espnow status)
+              secondary_status=$("$CLI" --port "$SECONDARY" espnow status)
+              if grep -Eq 'State:[[:space:]]+disabled' <<< "$primary_status" &&
+                 grep -Eq 'State:[[:space:]]+disabled' <<< "$secondary_status"; then
+                return 0
+              fi
+              echo "ESP-NOW shutdown attempt $attempt/20 is not complete ($phase)"
+              sleep 1
+            done
+
+            printf '%s\n%s\n' "$primary_status" "$secondary_status"
+            echo "::error::ESP-NOW did not stop on both pods ($phase)"
+            return 1
+          }
+
+          echo "=== Starting benchmark-only ESP-NOW session ==="
+          "$CLI" --port "$PRIMARY" feature disable esp-now
+          "$CLI" --port "$SECONDARY" feature disable esp-now
+          wait_for_disabled "initial benchmark state"
+          "$CLI" --port "$PRIMARY" espnow sim-mode off
+          "$CLI" --port "$SECONDARY" espnow sim-mode off
+
+          echo "=== Exercising discovery cancellation before a peer appears ==="
           "$CLI" --port "$PRIMARY" feature enable esp-now
-          "$CLI" --port "$SECONDARY" feature enable esp-now
-
-          # Discovery takes 15 seconds; allow the complete ten-round simulated
-          # drill to finish before diagnostics and trace collection.
-          echo "Waiting for ESP-NOW discovery and simulated drill completion..."
-          sleep 35
-
-          # Check ESP-NOW status on both devices
-          echo "=== ESP-NOW status: primary ==="
-          "$CLI" --port "$PRIMARY" espnow status
-          echo ""
-          echo "=== ESP-NOW status: secondary ==="
-          "$CLI" --port "$SECONDARY" espnow status
-          echo ""
+          sleep 1
+          "$CLI" --port "$PRIMARY" feature disable esp-now
+          wait_for_disabled "single-pod discovery cancellation"
 
           run_benchmark() {
             local port=$1
             local output
 
-            echo "=== ESP-NOW latency benchmark from $port (20 rounds) ==="
-            if ! output=$("$CLI" --port "$port" espnow bench --rounds 20 2>&1); then
+            echo "=== ESP-NOW latency benchmark from $port (100 rounds) ==="
+            if ! output=$("$CLI" --port "$port" espnow bench --rounds 100 2>&1); then
               printf '%s\n' "$output"
               echo "::error::ESP-NOW benchmark command failed on $port"
               return 1
             fi
             printf '%s\n' "$output"
 
-            if ! grep -Eq 'Rounds:[[:space:]]+20/20 completed \(0 failed\)' <<< "$output" ||
+            if ! grep -Eq 'Rounds:[[:space:]]+100/100 completed \(0 failed\)' <<< "$output" ||
                ! grep -q 'Mean RTT:' <<< "$output"; then
-              echo "::error::ESP-NOW benchmark did not complete 20/20 rounds on $port"
+              echo "::error::ESP-NOW benchmark did not complete 100/100 rounds on $port"
               return 1
             fi
           }
 
-          run_benchmark "$PRIMARY"
-          run_benchmark "$SECONDARY"
+          # Exercise fresh role-assignment startup repeatedly. Benchmarking the
+          # slave first at the first visible role state covers the master settle
+          # window where an early PING was previously discarded.
+          for session in 1 2 3; do
+            echo "=== ESP-NOW benchmark session $session/3 ==="
+            "$CLI" --port "$PRIMARY" feature enable esp-now
+            "$CLI" --port "$SECONDARY" feature enable esp-now
+            wait_for_peers "benchmark session $session"
+            run_benchmark "$SLAVE_PORT"
+            run_benchmark "$MASTER_PORT"
+            "$CLI" --port "$PRIMARY" feature disable esp-now
+            "$CLI" --port "$SECONDARY" feature disable esp-now
+            wait_for_disabled "benchmark session $session"
+          done
           echo "espnow_bench_passed=true" >> "$GITHUB_OUTPUT"
+
+          echo "=== Restarting ESP-NOW for the simulated drill ==="
+          for port in "$PRIMARY" "$SECONDARY"; do
+            "$CLI" --port "$port" trace stop
+            "$CLI" --port "$port" trace clear
+            "$CLI" --port "$port" trace start
+            "$CLI" --port "$port" espnow sim-mode on --delay-ms 100 --pad 0
+          done
+          "$CLI" --port "$PRIMARY" feature enable esp-now
+          "$CLI" --port "$SECONDARY" feature enable esp-now
+          wait_for_peers "simulated drill"
+
+          echo "Waiting for the complete ten-round simulated drill..."
+          sleep 35
+
+          for port in "$PRIMARY" "$SECONDARY"; do
+            status=$("$CLI" --port "$port" espnow status)
+            printf '%s\n' "$status"
+            if ! grep -Eq 'State:[[:space:]]+disabled' <<< "$status" ||
+               ! grep -Eq 'Peers:[[:space:]]+1' <<< "$status" ||
+               ! grep -Eq 'TX fails:[[:space:]]+0' <<< "$status"; then
+              echo "::error::ESP-NOW drill did not finish cleanly on $port"
+              exit 1
+            fi
+          done
 
           echo "ESP-NOW test complete"
 
       - name: Test - Default Build Omits WiFi Client Control
+        id: wifi_capability
         env:
           PORT_LIST: ${{ steps.detect.outputs.ports }}
         run: |
@@ -896,16 +1230,28 @@ jobs:
 
           for port in "${PORTS[@]}"; do
             echo "Checking WiFi client capability on $port..."
-            if output=$("$CLI" --port "$port" wifi status 2>&1); then
+            for command in \
+              'wifi status' \
+              'wifi enable' \
+              'wifi disable' \
+              'feature enable wifi' \
+              'feature disable wifi' \
+              'ota check' \
+              'ota auto-update --enable'; do
+              read -ra args <<< "$command"
+              if output=$("$CLI" --port "$port" "${args[@]}" 2>&1); then
+                printf '%s\n' "$output"
+                echo "::error::Default firmware unexpectedly accepted: $command"
+                exit 1
+              fi
               printf '%s\n' "$output"
-              echo "::error::Default firmware unexpectedly exposes runtime WiFi client control"
-              exit 1
-            fi
-            printf '%s\n' "$output"
-            if ! grep -q 'does not expose the WiFi feature flag' <<< "$output"; then
-              echo "::error::WiFi capability failed for an unexpected reason"
-              exit 1
-            fi
+              if ! grep -q 'does not expose the WiFi feature flag' <<< "$output"; then
+                echo "::error::WiFi capability command failed for an unexpected reason: $command"
+                exit 1
+              fi
+            done
+
+            "$CLI" --port "$port" ota auto-update --disable
           done
 
       - name: Test - Automated Initialization Self-Test (all devices)
@@ -1047,6 +1393,7 @@ jobs:
               'trace stop' \
               'espnow sim-mode off' \
               'feature disable esp-now' \
+              'feature enable haptic' \
               'led off' \
               'system set-mode idle'; do
               read -ra args <<< "$command"
@@ -1055,6 +1402,48 @@ jobs:
                 cleanup_failed=1
               fi
             done
+
+            disabled=false
+            for attempt in {1..20}; do
+              status=$("$CLI" --port "$port" espnow status 2>&1) || true
+              if grep -Eq 'State:[[:space:]]+disabled' <<< "$status"; then
+                disabled=true
+                break
+              fi
+              echo "ESP-NOW cleanup poll $attempt/20 is not disabled on $port"
+              sleep 1
+            done
+            if [[ "$disabled" != "true" ]]; then
+              printf '%s\n' "$status"
+              echo "::error::ESP-NOW cleanup did not reach disabled on $port"
+              cleanup_failed=1
+            fi
+
+            echo "=== Capturing final health and feature state: $port ==="
+            for command in \
+              'system health' \
+              'system memory' \
+              'system self-test' \
+              'feature list' \
+              'led off' \
+              'system set-mode idle'; do
+              read -ra args <<< "$command"
+              if ! "$CLI" --port "$port" "${args[@]}"; then
+                echo "::error::Final verification command failed on $port: $command"
+                cleanup_failed=1
+              fi
+            done
+
+            if ! final_info=$("$CLI" --port "$port" system info); then
+              echo "::error::Final system information failed on $port"
+              cleanup_failed=1
+            else
+              printf '%s\n' "$final_info"
+              if ! grep -Eq 'Mode:[[:space:]]+idle' <<< "$final_info"; then
+                echo "::error::Final device mode is not idle on $port"
+                cleanup_failed=1
+              fi
+            fi
           done
 
           exit "$cleanup_failed"
@@ -1080,12 +1469,16 @@ jobs:
           POST_BLE_OTA_OUTCOME: ${{ steps.post_ble_ota.outcome }}
           SERIAL_OTA_OUTCOME: ${{ steps.serial_ota.outcome }}
           BLE_OUTCOME: ${{ steps.ble.outcome }}
+          BLE_OTA_RECOVERY_OUTCOME: ${{ steps.ble_ota_recovery.outcome }}
           BLE_OTA_OUTCOME: ${{ steps.ble_ota.outcome }}
           SELF_TEST_OUTCOME: ${{ steps.self_test.outcome }}
           SUMMARY_BRANCH: ${{ github.head_ref || github.ref_name }}
+          SUMMARY_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SUMMARY_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
           SYSTEM_HEALTH_OUTCOME: ${{ steps.system_health.outcome }}
           TRACE_OUTCOME: ${{ steps.traces.outcome }}
           TRACE_DIR: ${{ steps.traces.outputs.trace_dir }}
+          WIFI_CAPABILITY_OUTCOME: ${{ steps.wifi_capability.outcome }}
         run: |
           exec >> "$GITHUB_STEP_SUMMARY"
           echo "## Hardware Test Results"
@@ -1094,7 +1487,9 @@ jobs:
           echo "|----------|-------|"
           echo "| Devices | $DEVICE_COUNT ($PORT_LIST) |"
           echo "| Multi-device | $IS_MULTI |"
-          echo "| Commit | \`$GITHUB_SHA\` |"
+          echo "| Tested merge/dispatch commit | \`$GITHUB_SHA\` |"
+          echo "| Source commit | \`$SUMMARY_HEAD_SHA\` |"
+          echo "| Pull request base commit | \`${SUMMARY_BASE_SHA:-n/a}\` |"
           echo "| Branch | $SUMMARY_BRANCH |"
           echo ""
           echo "### Test Results"
@@ -1115,12 +1510,14 @@ jobs:
           report "Interrupted OTA session recovery" "$INTERRUPTED_OTA_OUTCOME"
           report "Serial OTA (primary)" "$SERIAL_OTA_OUTCOME"
           report "Post-OTA verification" "$POST_OTA_OUTCOME"
+          report "BLE OTA failure recovery (secondary)" "$BLE_OTA_RECOVERY_OUTCOME"
           report "BLE OTA (secondary)" "$BLE_OTA_OUTCOME"
           report "Post-BLE-OTA verification" "$POST_BLE_OTA_OUTCOME"
           report "Forced failed-self-test rollback" "$FORCED_ROLLBACK_OUTCOME"
+          report "Default-build WiFi capability contract" "$WIFI_CAPABILITY_OUTCOME"
           report "Automated initialization self-test" "$SELF_TEST_OUTCOME"
           if [ "$IS_MULTI" = "true" ]; then
-            report "Multi-device feature list" "$MULTI_FEATURE_OUTCOME"
+            report "Device registry and multi-device fan-out" "$MULTI_FEATURE_OUTCOME"
             report "ESP-NOW communication" "$ESPNOW_OUTCOME"
           fi
           report "System health check" "$SYSTEM_HEALTH_OUTCOME"

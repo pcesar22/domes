@@ -60,6 +60,9 @@ access is unavailable, state exactly what remains unverified. In particular:
 - An accepted command is not physical confirmation of LEDs, haptics, touch, sensors, or audio.
 - A successful OTA boot is not proof of the separately forced failed-self-test rollback path.
 - Multi-device and ESP-NOW behavior requires the required number of physical pods.
+- ESP-NOW evidence requires a fresh exact `disabled` lifecycle, complementary roles with one peer
+  each, simulation-off benchmarks in both directions, and a separate traced simulation drill;
+  `stopping` is transitional, not ready.
 - Hardware CI requires the `hw-test` label; ask the user before adding it.
 
 ## Git And GitHub Boundaries
