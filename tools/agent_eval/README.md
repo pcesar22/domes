@@ -138,3 +138,11 @@ metadata so a reviewer can inspect correctness before comparing runs or acceptin
 Cases cover cross-language protobuf changes, response envelopes, ISR safety, CLI commands, Flutter
 BLE lifecycle, documentation authority, OTA rollback claims, multi-pod port routing, scoped docs,
 unsafe firmware review, WiFi boundaries, and release verification.
+
+## Legacy Results
+
+`results/pre-optimization-sol-medium-2026-08-02.json` is a schema-v1 result produced by the
+predecessor harness at its recorded revision. It is retained as historical evidence, but the current
+schema-v3 runner cannot parse or compare it and its score is not a current-harness baseline. Do not
+rewrite its revision or infer missing containment and evidence metadata. Capture a new run with the
+current harness before making before-and-after comparisons.

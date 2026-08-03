@@ -5,6 +5,10 @@ not maintain separate, conflicting test requirements.
 
 ## Aggregate Local Check
 
+Run `scripts/doctor.sh` first to see which software and hardware verification paths this host can
+support. `scripts/doctor.sh --json` provides versioned machine-readable capability data; missing
+optional hardware does not fail the probe. The doctor is read-only and never performs remediation.
+
 Initialize submodules and install the toolchains used by the aggregate check: ESP-IDF v5.4.4, a
 C++20 compiler and CMake, Rust 1.92.0/Cargo, Flutter 3.44.8/Dart, Python 3, `protoc`, Dart
 `protoc_plugin` 25.0.0, Go, and ShellCheck.
@@ -28,6 +32,13 @@ scripts/verify.sh
 It checks generated bindings, host firmware tests, CLI format/lint/build/tests, host tooling, the
 Flutter app, and the ESP-IDF firmware build. `scripts/verify.sh --quick` skips only the ESP-IDF
 build; use it for iteration, not final firmware verification.
+
+For scoped iteration, use `scripts/verify.sh --changed <base>` or repeat
+`--component firmware|cli|flutter|docs`. Add `--json-summary <path>` for a versioned result and
+`--keep-artifacts <directory>` for complete logs and build outputs. Protocol, transport, OTA,
+runtime-config, workflow, and unknown paths expand conservatively across consumers. The no-argument
+command remains the required final software gate; see `tools/verify/README.md` for the selection and
+schema contract.
 
 When the pinned IDF is installed outside the default path, set
 `IDF_EXPORT_SCRIPT=/path/to/esp-idf/export.sh` for `scripts/verify.sh` and
