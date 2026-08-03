@@ -15,6 +15,7 @@ Use progressive disclosure:
 | `ios/domes_app/` | `ios/domes_app/AGENTS.md` |
 | `hardware/` | `hardware/AGENTS.md` |
 | GitHub, commits, reviews, or releases | `$domes-github-workflow` |
+| Delivery milestones or project status | `$domes-milestone-manager` |
 | Platform, BLE, USB, or multi-device setup | `.codex/PLATFORM.md` |
 | Host capability discovery | `scripts/doctor.sh` (use `--json` for automation) |
 | Codex defaults and specialist agents | `.codex/README.md` |
