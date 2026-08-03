@@ -32,6 +32,10 @@ pub fn system_set_mode(
     transport: &mut dyn Transport,
     mode: SystemMode,
 ) -> Result<(SystemMode, bool)> {
+    if mode == SystemMode::Booting {
+        anyhow::bail!("The booting mode is device-managed and cannot be requested");
+    }
+
     let payload = serialize_set_mode(mode);
     let frame = transport
         .send_command(ConfigMsgType::SetModeReq as u8, &payload)
@@ -68,6 +72,10 @@ pub fn system_info(transport: &mut dyn Transport) -> Result<CliSystemInfo> {
 
 /// Set the pod ID (persisted to NVS, takes effect on next reboot for BLE name)
 pub fn system_set_pod_id(transport: &mut dyn Transport, pod_id: u32) -> Result<u32> {
+    if !(1..=255).contains(&pod_id) {
+        anyhow::bail!("Pod ID must be between 1 and 255");
+    }
+
     let payload = serialize_set_pod_id(pod_id);
     let frame = transport
         .send_command(ConfigMsgType::SetPodIdReq as u8, &payload)
@@ -81,14 +89,24 @@ pub fn system_set_pod_id(transport: &mut dyn Transport, pod_id: u32) -> Result<u
         );
     }
 
-    parse_set_pod_id_response(&frame.payload).context("Failed to parse set pod id response")
+    let reported_id =
+        parse_set_pod_id_response(&frame.payload).context("Failed to parse set pod id response")?;
+    if reported_id != pod_id {
+        anyhow::bail!(
+            "Set pod ID response did not match request: expected {}, got {}",
+            pod_id,
+            reported_id
+        );
+    }
+
+    Ok(reported_id)
 }
 
-/// Get crash dump from device
+/// Get the clean-restart snapshot from the device
 pub fn system_crash_dump(transport: &mut dyn Transport) -> Result<CliCrashDump> {
     let frame = transport
         .send_command(ConfigMsgType::GetCrashDumpReq as u8, &[])
-        .context("Failed to send get crash dump command")?;
+        .context("Failed to send get restart snapshot command")?;
 
     if frame.msg_type != ConfigMsgType::GetCrashDumpRsp as u8 {
         anyhow::bail!(
@@ -98,14 +116,14 @@ pub fn system_crash_dump(transport: &mut dyn Transport) -> Result<CliCrashDump> 
         );
     }
 
-    parse_crash_dump_response(&frame.payload).context("Failed to parse crash dump response")
+    parse_crash_dump_response(&frame.payload).context("Failed to parse restart snapshot response")
 }
 
-/// Clear crash dump from device
+/// Clear the clean-restart snapshot from the device
 pub fn system_clear_crash_dump(transport: &mut dyn Transport) -> Result<bool> {
     let frame = transport
         .send_command(ConfigMsgType::ClearCrashDumpReq as u8, &[])
-        .context("Failed to send clear crash dump command")?;
+        .context("Failed to send clear restart snapshot command")?;
 
     if frame.msg_type != ConfigMsgType::ClearCrashDumpRsp as u8 {
         anyhow::bail!(
@@ -116,7 +134,7 @@ pub fn system_clear_crash_dump(transport: &mut dyn Transport) -> Result<bool> {
     }
 
     parse_clear_crash_dump_response(&frame.payload)
-        .context("Failed to parse clear crash dump response")
+        .context("Failed to parse clear restart snapshot response")
 }
 
 /// Get memory profile from device
@@ -133,8 +151,7 @@ pub fn system_memory_profile(transport: &mut dyn Transport) -> Result<CliMemoryP
         );
     }
 
-    parse_memory_profile_response(&frame.payload)
-        .context("Failed to parse memory profile response")
+    parse_memory_profile_response(&frame.payload).context("Failed to parse memory profile response")
 }
 
 /// Timeout for self-test command (tests WiFi scan, BLE, NVS, etc.)

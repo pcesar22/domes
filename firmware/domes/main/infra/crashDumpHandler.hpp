@@ -17,42 +17,27 @@
  */
 
 #include "esp_err.h"
-
-#include <array>
-#include <cstdint>
+#include "restartSnapshotRecord.hpp"
 
 namespace domes::infra {
 
-/// Maximum backtrace depth
-constexpr size_t kMaxBacktraceDepth = 16;
-
-/// NVS namespace for crash dumps
+/// Legacy NVS namespace retained for restart-snapshot compatibility
 constexpr const char* kCrashDumpNs = "crashdump";
 
 /// NVS keys
 namespace crash_key {
-constexpr const char* kValid = "valid";          ///< uint8_t: 1 if dump exists
-constexpr const char* kReason = "reason";        ///< string: panic reason
-constexpr const char* kTaskName = "task_name";   ///< string: crashed task
-constexpr const char* kUptimeS = "uptime_s";     ///< uint32_t
-constexpr const char* kFreeHeap = "free_heap";   ///< uint32_t
-constexpr const char* kBacktrace = "backtrace";  ///< blob: PC values
-constexpr const char* kBootCount = "boot_count"; ///< uint32_t: which boot
+constexpr const char* kValid = "valid";                 ///< uint8_t: 1 if snapshot exists
+constexpr const char* kReason = "reason";               ///< string: clean-restart reason
+constexpr const char* kTaskName = "task_name";          ///< string: task active at restart
+constexpr const char* kUptimeS = "uptime_s";            ///< uint32_t
+constexpr const char* kFreeHeap = "free_heap";          ///< uint32_t
+constexpr const char* kBacktrace = "backtrace";         ///< blob: PC values
+constexpr const char* kBootCount = "boot_count";        ///< uint32_t: which boot
+constexpr const char* kFirmwareVersion = "fw_version";  ///< string: pre-restart image version
+constexpr const char* kElfSha256 = "elf_sha256";        ///< string: exact ELF SHA-256
+constexpr const char* kFormatVersion = "format_ver";    ///< uint8_t: record schema version
+constexpr const char* kRecordCrc = "record_crc";        ///< uint32_t: record integrity CRC
 }  // namespace crash_key
-
-/**
- * @brief Stored crash dump data
- */
-struct CrashDumpData {
-    bool valid = false;
-    char reason[64] = {};
-    char taskName[16] = {};
-    uint32_t uptimeS = 0;
-    uint32_t freeHeap = 0;
-    uint32_t backtrace[kMaxBacktraceDepth] = {};
-    uint8_t backtraceDepth = 0;
-    uint32_t bootCount = 0;
-};
 
 /**
  * @brief Shutdown dump handler
@@ -69,17 +54,18 @@ public:
      * Registers via esp_register_shutdown_handler() (clean restarts only).
      * Call once during startup.
      *
+     * @param bootCount Current persisted boot count to capture on restart
      * @return ESP_OK on success
      */
-    static esp_err_t init();
+    static esp_err_t init(uint32_t bootCount);
 
     /**
-     * @brief Check if a crash dump exists in NVS
+     * @brief Check if a restart snapshot exists in NVS
      */
     static bool hasDump();
 
     /**
-     * @brief Load crash dump from NVS
+     * @brief Load a restart snapshot from NVS
      *
      * @param dump Output struct to fill
      * @return ESP_OK if dump exists, ESP_ERR_NOT_FOUND otherwise
@@ -87,7 +73,7 @@ public:
     static esp_err_t loadDump(CrashDumpData& dump);
 
     /**
-     * @brief Clear crash dump from NVS
+     * @brief Clear the restart snapshot from NVS
      *
      * @return ESP_OK on success
      */
@@ -103,6 +89,7 @@ private:
     static void shutdownHandler();
 
     static bool initialized_;
+    static uint32_t bootCount_;
 };
 
 }  // namespace domes::infra

@@ -4,9 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Widget _wrap(Widget child) {
-  return ProviderScope(
-    child: MaterialApp(home: child),
-  );
+  return ProviderScope(child: MaterialApp(home: child));
 }
 
 void main() {
@@ -53,8 +51,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Auto-Connect'), findsOneWidget);
-      expect(find.text('Reconnect to last device on app start'),
-          findsOneWidget);
+      expect(
+        find.text('Reconnect to last device on app start'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('shows about section', (tester) async {

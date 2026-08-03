@@ -27,7 +27,7 @@ enum class OtaState : uint8_t {
     kVerifying,        ///< Verifying downloaded firmware
     kInstalling,       ///< Writing to flash
     kRebooting,        ///< About to reboot
-    kError,            ///< Error occurred
+    kError,            ///< Previous attempt failed; a new check or update may retry
 };
 
 /**
@@ -102,8 +102,7 @@ public:
      * @param expectedSha256 Expected SHA-256 hash (optional, can be nullptr)
      * @return ESP_OK if download started
      */
-    virtual esp_err_t startUpdate(const char* downloadUrl,
-                                  const char* expectedSha256 = nullptr) = 0;
+    virtual esp_err_t startUpdate(const char* downloadUrl, const char* expectedSha256) = 0;
 
     /**
      * @brief Abort current OTA operation

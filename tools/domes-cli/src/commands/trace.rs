@@ -4,9 +4,10 @@
 //! TraceEvent data is 16-byte binary carried in protobuf 'bytes' fields.
 
 use crate::proto::trace::{
-    AckResponse, MsgType as TraceMsgType, Status as TraceStatus, StreamBatch, TraceDataChunk,
-    TraceDumpComplete, TraceSessionInfo, TraceStatusResponse,
+    AckResponse, Category, EventType, MsgType as TraceMsgType, Status as TraceStatus, StreamBatch,
+    TraceDataChunk, TraceDumpComplete, TraceSessionInfo, TraceStatusResponse,
 };
+use crate::transport::frame::Frame;
 use crate::transport::Transport;
 use anyhow::{Context, Result};
 use prost::Message;
@@ -25,6 +26,109 @@ struct TraceEvent {
     flags: u8,
     arg1: u32,
     arg2: u32,
+}
+
+const TRACE_EVENT_SIZE: usize = std::mem::size_of::<TraceEvent>();
+
+fn decode_trace_events(event_bytes: &[u8]) -> Result<Vec<TraceEvent>> {
+    if !event_bytes.len().is_multiple_of(TRACE_EVENT_SIZE) {
+        anyhow::bail!(
+            "Trace event payload has {} bytes; expected a multiple of {}",
+            event_bytes.len(),
+            TRACE_EVENT_SIZE
+        );
+    }
+
+    Ok(event_bytes
+        .chunks_exact(TRACE_EVENT_SIZE)
+        .map(|bytes| unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const TraceEvent) })
+        .collect())
+}
+
+#[derive(Debug, Default)]
+struct TraceDumpIntegrity {
+    next_offset: u32,
+    checksum: u32,
+}
+
+impl TraceDumpIntegrity {
+    fn accept_chunk(&mut self, chunk: &TraceDataChunk) -> Result<Vec<TraceEvent>> {
+        if chunk.offset != self.next_offset {
+            anyhow::bail!(
+                "Trace chunk offset mismatch: expected {}, got {}",
+                self.next_offset,
+                chunk.offset
+            );
+        }
+
+        let events = decode_trace_events(&chunk.events)?;
+        let event_count =
+            u32::try_from(events.len()).context("Trace chunk event count overflow")?;
+        if chunk.count != event_count {
+            anyhow::bail!(
+                "Trace chunk count mismatch at offset {}: declared {}, decoded {}",
+                chunk.offset,
+                chunk.count,
+                event_count
+            );
+        }
+
+        self.next_offset = self
+            .next_offset
+            .checked_add(event_count)
+            .context("Trace event offset overflow")?;
+        for byte in &chunk.events {
+            self.checksum = self.checksum.wrapping_add(u32::from(*byte));
+        }
+
+        Ok(events)
+    }
+
+    fn finish(&self, complete: &TraceDumpComplete, session_event_count: u32) -> Result<()> {
+        if complete.total_events != self.next_offset {
+            anyhow::bail!(
+                "Trace dump total mismatch: end marker declares {}, received {}",
+                complete.total_events,
+                self.next_offset
+            );
+        }
+        if session_event_count != self.next_offset {
+            anyhow::bail!(
+                "Trace dump session mismatch: session declared {}, received {}",
+                session_event_count,
+                self.next_offset
+            );
+        }
+        if complete.checksum != self.checksum {
+            anyhow::bail!(
+                "Trace dump checksum mismatch: expected 0x{:08X}, calculated 0x{:08X}",
+                complete.checksum,
+                self.checksum
+            );
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+struct StreamSequenceTracker {
+    next_sequence: u32,
+}
+
+impl StreamSequenceTracker {
+    fn accept(&mut self, sequence: u32) -> Result<()> {
+        if sequence != self.next_sequence {
+            anyhow::bail!(
+                "Trace stream sequence gap: expected {}, got {}",
+                self.next_sequence,
+                sequence
+            );
+        }
+
+        self.next_sequence = sequence.wrapping_add(1);
+        Ok(())
+    }
 }
 
 /// Trace status information
@@ -60,9 +164,8 @@ pub fn trace_start(transport: &mut dyn Transport) -> Result<()> {
 
     let status = decode_ack(&frame.payload)?;
     match status {
-        TraceStatus::Ok => Ok(()),
+        TraceStatus::Ok | TraceStatus::AlreadyOn => Ok(()),
         TraceStatus::NotInit => anyhow::bail!("Trace system not initialized"),
-        TraceStatus::AlreadyOn => anyhow::bail!("Tracing is already enabled"),
         _ => anyhow::bail!("Trace start failed: {}", status),
     }
 }
@@ -83,9 +186,8 @@ pub fn trace_stop(transport: &mut dyn Transport) -> Result<()> {
 
     let status = decode_ack(&frame.payload)?;
     match status {
-        TraceStatus::Ok => Ok(()),
+        TraceStatus::Ok | TraceStatus::AlreadyOff => Ok(()),
         TraceStatus::NotInit => anyhow::bail!("Trace system not initialized"),
-        TraceStatus::AlreadyOff => anyhow::bail!("Tracing is already disabled"),
         _ => anyhow::bail!("Trace stop failed: {}", status),
     }
 }
@@ -157,6 +259,10 @@ pub struct DumpResult {
     pub output_path: std::path::PathBuf,
 }
 
+fn trace_duration_us(start_timestamp_us: u32, end_timestamp_us: u32) -> u32 {
+    end_timestamp_us.wrapping_sub(start_timestamp_us)
+}
+
 /// Dump traces to a JSON file compatible with Perfetto
 pub fn trace_dump(
     transport: &mut dyn Transport,
@@ -202,7 +308,7 @@ pub fn trace_dump(
 
     // Collect all events
     let mut events: Vec<TraceEvent> = Vec::with_capacity(session_info.event_count as usize);
-    let mut total_received = 0u32;
+    let mut integrity = TraceDumpIntegrity::default();
 
     loop {
         let frame = transport
@@ -214,27 +320,18 @@ pub fn trace_dump(
             let chunk = TraceDataChunk::decode(frame.payload.as_slice())
                 .context("Failed to decode TraceDataChunk")?;
 
-            // Extract binary events from bytes field
-            let event_bytes = &chunk.events;
-            let event_size = std::mem::size_of::<TraceEvent>();
-            let event_count = event_bytes.len() / event_size;
-
-            for i in 0..event_count {
-                let offset = i * event_size;
-                if offset + event_size <= event_bytes.len() {
-                    let event = unsafe {
-                        std::ptr::read_unaligned(
-                            event_bytes[offset..].as_ptr() as *const TraceEvent,
-                        )
-                    };
-                    events.push(event);
-                    total_received += 1;
-                }
-            }
+            events.extend(
+                integrity
+                    .accept_chunk(&chunk)
+                    .context("Invalid trace data chunk")?,
+            );
         } else if frame.msg_type == TraceMsgType::End.as_u8() {
             // Parse dump complete (protobuf)
-            let _end = TraceDumpComplete::decode(frame.payload.as_slice())
+            let complete = TraceDumpComplete::decode(frame.payload.as_slice())
                 .context("Failed to decode TraceDumpComplete")?;
+            integrity
+                .finish(&complete, session_info.event_count)
+                .context("Trace dump integrity check failed")?;
             break;
         } else {
             anyhow::bail!(
@@ -245,25 +342,20 @@ pub fn trace_dump(
     }
 
     // Convert to Chrome JSON trace format for Perfetto
-    let json = convert_to_perfetto_json(
-        &events,
-        &task_names,
-        &span_names,
-        session_info.pod_id,
-    )?;
+    let json = convert_to_perfetto_json(&events, &task_names, &span_names, session_info.pod_id)?;
 
     // Write to file
-    let mut file =
-        File::create(output_path).context("Failed to create output file")?;
+    let mut file = File::create(output_path).context("Failed to create output file")?;
     file.write_all(json.as_bytes())
         .context("Failed to write trace file")?;
 
     Ok(DumpResult {
-        event_count: total_received,
+        event_count: integrity.next_offset,
         dropped_count: session_info.dropped_count,
-        duration_us: session_info
-            .end_timestamp_us
-            .saturating_sub(session_info.start_timestamp_us),
+        duration_us: trace_duration_us(
+            session_info.start_timestamp_us,
+            session_info.end_timestamp_us,
+        ),
         pod_id: session_info.pod_id,
         output_path: output_path.to_path_buf(),
     })
@@ -317,76 +409,67 @@ fn convert_to_perfetto_json(
     span_names: &HashMap<u32, String>,
     pod_id: u32,
 ) -> Result<String> {
-    use std::fmt::Write;
+    let mut trace_events = Vec::with_capacity(task_names.len() + events.len());
 
-    let mut json = String::from("[");
-    let mut first = true;
+    let mut tasks: Vec<_> = task_names.iter().collect();
+    tasks.sort_unstable_by_key(|(task_id, _)| **task_id);
+    for (task_id, task_name) in tasks {
+        trace_events.push(serde_json::json!({
+            "name": "thread_name",
+            "cat": "__metadata",
+            "ph": "M",
+            "pid": pod_id,
+            "tid": task_id,
+            "args": {"name": task_name},
+        }));
+    }
 
     for event in events {
-        if !first {
-            json.push(',');
-        }
-        first = false;
-
         // Copy packed struct fields to local variables to avoid unaligned access
         let timestamp = { event.timestamp };
         let task_id = { event.task_id };
-        let event_type = { event.event_type };
+        let event_type = EventType::try_from(i32::from(event.event_type)).ok();
         let flags = { event.flags };
         let arg1 = { event.arg1 };
         let arg2 = { event.arg2 };
 
-        let task_name = task_names
-            .get(&(task_id as u32))
-            .map(|s| s.as_str())
-            .unwrap_or("unknown");
         let category = category_name((flags >> 4) & 0x0F);
 
         // Chrome trace event format
         let phase = match event_type {
-            0x20 => "B", // SPAN_BEGIN -> Begin
-            0x21 => "E", // SPAN_END -> End
-            0x22 => "i", // INSTANT -> Instant
-            0x23 => "C", // COUNTER -> Counter
-            0x24 => "X", // COMPLETE -> Complete (duration in arg2)
-            0x01 => "B", // TASK_SWITCH_IN -> Begin
-            0x02 => "E", // TASK_SWITCH_OUT -> End
-            0x05 => "B", // ISR_ENTER -> Begin
-            0x06 => "E", // ISR_EXIT -> End
-            0x09 => "B", // MUTEX_LOCK -> Begin (lock held)
-            0x0A => "E", // MUTEX_UNLOCK -> End (lock released)
-            0x0B => "i", // MUTEX_CONTENTION -> Instant (with wait time)
-            0x0C => "i", // SEM_TAKE -> Instant
-            0x0D => "i", // SEM_GIVE -> Instant
-            _ => "i",    // Default to instant
+            Some(EventType::SpanBegin) => "B",
+            Some(EventType::SpanEnd) => "E",
+            Some(EventType::Counter) => "C",
+            Some(EventType::Complete) => "X",
+            Some(EventType::MutexLock) => "B",
+            Some(EventType::MutexUnlock) => "E",
+            _ => "i",
         };
 
         // Resolve span name from hash
         let name = match event_type {
-            0x01 | 0x02 => format!("task:{}", task_name),
-            0x05 | 0x06 => format!("isr:{}", arg1),
-            0x09 | 0x0A => {
+            Some(EventType::MutexLock | EventType::MutexUnlock) => {
                 // Mutex lock/unlock: resolve name from hash
                 span_names
                     .get(&arg1)
                     .cloned()
                     .unwrap_or_else(|| format!("mutex:{}", arg1))
             }
-            0x0B => {
+            Some(EventType::MutexContention) => {
                 // Mutex contention: resolve name, arg2 = wait time us
                 span_names
                     .get(&arg1)
                     .cloned()
                     .unwrap_or_else(|| format!("mutex:{}", arg1))
             }
-            0x0C | 0x0D => {
+            Some(EventType::SemTake | EventType::SemGive) => {
                 // Semaphore take/give: resolve name from hash
                 span_names
                     .get(&arg1)
                     .cloned()
                     .unwrap_or_else(|| format!("sem:{}", arg1))
             }
-            0x23 => {
+            Some(EventType::Counter) => {
                 // Counter: resolve name from hash
                 span_names
                     .get(&arg1)
@@ -402,32 +485,58 @@ fn convert_to_perfetto_json(
             }
         };
 
-        write!(
-            &mut json,
-            r#"{{"name":"{}","cat":"{}","ph":"{}","ts":{},"pid":{},"tid":{}"#,
-            name, category, phase, timestamp, pod_id, task_id
-        )?;
+        let mut trace_event = serde_json::json!({
+            "name": name,
+            "cat": category,
+            "ph": phase,
+            "ts": timestamp,
+            "pid": pod_id,
+            "tid": task_id,
+        });
+        let object = trace_event
+            .as_object_mut()
+            .context("Trace event must serialize as a JSON object")?;
 
         // Add duration for complete events
-        if event_type == 0x24 {
-            write!(&mut json, r#","dur":{}"#, arg2)?;
+        if event_type == Some(EventType::Complete) {
+            object.insert("dur".into(), arg2.into());
         }
 
         // Add counter value
-        if event_type == 0x23 {
-            write!(&mut json, r#","args":{{"value":{}}}"#, arg2)?;
+        if event_type == Some(EventType::Counter) {
+            object.insert("args".into(), serde_json::json!({"value": arg2}));
         }
 
         // Add mutex contention wait time
-        if event_type == 0x0B {
-            write!(&mut json, r#","args":{{"wait_us":{}}}"#, arg2)?;
+        if event_type == Some(EventType::MutexContention) {
+            object.insert("args".into(), serde_json::json!({"wait_us": arg2}));
         }
 
-        json.push('}');
+        trace_events.push(trace_event);
     }
 
-    json.push(']');
-    Ok(json)
+    serde_json::to_string(&trace_events).context("Failed to serialize Perfetto trace JSON")
+}
+
+fn decode_stream_batch(
+    frame: &Frame,
+    sequence_tracker: &mut StreamSequenceTracker,
+) -> Result<(u32, Vec<TraceEvent>)> {
+    if frame.msg_type != TraceMsgType::StreamData.as_u8() {
+        anyhow::bail!(
+            "Unexpected trace stream message type: 0x{:02X}, expected STREAM_DATA 0x{:02X}",
+            frame.msg_type,
+            TraceMsgType::StreamData.as_u8()
+        );
+    }
+
+    let batch = StreamBatch::decode(frame.payload.as_slice())
+        .context("Failed to decode trace StreamBatch")?;
+    sequence_tracker
+        .accept(batch.sequence)
+        .context("Trace stream integrity check failed")?;
+    let events = decode_trace_events(&batch.events).context("Invalid trace stream event batch")?;
+    Ok((batch.dropped, events))
 }
 
 /// Stream trace events in real-time from a TCP connection
@@ -452,7 +561,7 @@ pub fn trace_stream(addr: &str) -> Result<()> {
 
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-        .ok();
+        .context("Failed to configure trace stream read timeout")?;
 
     eprintln!("Connected. Streaming trace events (Ctrl+C to stop)...");
     eprintln!(
@@ -468,6 +577,7 @@ pub fn trace_stream(addr: &str) -> Result<()> {
     let span_names = load_span_names(None).unwrap_or_default();
 
     let mut frame_decoder = crate::transport::frame::FrameDecoder::new();
+    let mut sequence_tracker = StreamSequenceTracker::default();
     let mut buf = [0u8; 1024];
 
     loop {
@@ -478,8 +588,10 @@ pub fn trace_stream(addr: &str) -> Result<()> {
                 break;
             }
             Ok(n) => n,
-            Err(e) if e.kind() == std::io::ErrorKind::TimedOut
-                || e.kind() == std::io::ErrorKind::WouldBlock => {
+            Err(e)
+                if e.kind() == std::io::ErrorKind::TimedOut
+                    || e.kind() == std::io::ErrorKind::WouldBlock =>
+            {
                 continue;
             }
             Err(e) => {
@@ -489,67 +601,47 @@ pub fn trace_stream(addr: &str) -> Result<()> {
 
         // Feed bytes to frame decoder
         for &byte in &buf[..n] {
-            if let Some(Ok(frame)) = frame_decoder.feed_byte(byte) {
+            if let Some(frame) = frame_decoder.feed_byte(byte) {
                 frame_decoder.reset();
-                if frame.msg_type == TraceMsgType::StreamData.as_u8() {
-                    // Decode StreamBatch
-                    if let Ok(batch) = StreamBatch::decode(frame.payload.as_slice()) {
-                        if batch.dropped > 0 {
-                            eprintln!("  [dropped {} events]", batch.dropped);
-                        }
+                let frame = frame.context("Invalid trace stream frame")?;
+                let (dropped, events) = decode_stream_batch(&frame, &mut sequence_tracker)?;
 
-                        // Parse binary events
-                        let event_size = std::mem::size_of::<TraceEvent>();
-                        let event_count = batch.events.len() / event_size;
+                if dropped > 0 {
+                    eprintln!("  [dropped {} events]", dropped);
+                }
 
-                        for i in 0..event_count {
-                            let offset = i * event_size;
-                            if offset + event_size <= batch.events.len() {
-                                let event = unsafe {
-                                    std::ptr::read_unaligned(
-                                        batch.events[offset..].as_ptr() as *const TraceEvent,
-                                    )
-                                };
+                for event in events {
+                    let timestamp = { event.timestamp };
+                    let task_id = { event.task_id };
+                    let event_type = EventType::try_from(i32::from(event.event_type)).ok();
+                    let flags = { event.flags };
+                    let arg1 = { event.arg1 };
+                    let arg2 = { event.arg2 };
 
-                                let timestamp = { event.timestamp };
-                                let task_id = { event.task_id };
-                                let event_type = { event.event_type };
-                                let flags = { event.flags };
-                                let arg1 = { event.arg1 };
-                                let arg2 = { event.arg2 };
+                    let type_name = match event_type {
+                        Some(EventType::SpanBegin) => "BEGIN",
+                        Some(EventType::SpanEnd) => "END",
+                        Some(EventType::Instant) => "INSTANT",
+                        Some(EventType::Counter) => "COUNTER",
+                        Some(EventType::Complete) => "COMPLETE",
+                        _ => "UNKNOWN",
+                    };
 
-                                let type_name = match event_type {
-                                    0x20 => "BEGIN",
-                                    0x21 => "END",
-                                    0x22 => "INSTANT",
-                                    0x23 => "COUNTER",
-                                    0x24 => "COMPLETE",
-                                    0x01 => "TASK_IN",
-                                    0x02 => "TASK_OUT",
-                                    _ => "UNKNOWN",
-                                };
+                    let cat = category_name((flags >> 4) & 0x0F);
 
-                                let cat = category_name((flags >> 4) & 0x0F);
+                    let name = span_names.get(&arg1).map(|s| s.as_str()).unwrap_or("");
 
-                                let name = span_names
-                                    .get(&arg1)
-                                    .map(|s| s.as_str())
-                                    .unwrap_or("");
-
-                                if event_type == 0x23 {
-                                    // Counter
-                                    println!(
-                                        "{:<12} {:<6} {:<12} {:<12} {} = {}",
-                                        timestamp, task_id, type_name, cat, name, arg2
-                                    );
-                                } else {
-                                    println!(
-                                        "{:<12} {:<6} {:<12} {:<12} {:>10} {:>10}  {}",
-                                        timestamp, task_id, type_name, cat, arg1, arg2, name
-                                    );
-                                }
-                            }
-                        }
+                    if event_type == Some(EventType::Counter) {
+                        // Counter
+                        println!(
+                            "{:<12} {:<6} {:<12} {:<12} {} = {}",
+                            timestamp, task_id, type_name, cat, name, arg2
+                        );
+                    } else {
+                        println!(
+                            "{:<12} {:<6} {:<12} {:<12} {:>10} {:>10}  {}",
+                            timestamp, task_id, type_name, cat, arg1, arg2, name
+                        );
                     }
                 }
             }
@@ -560,21 +652,174 @@ pub fn trace_stream(addr: &str) -> Result<()> {
 }
 
 fn category_name(cat: u8) -> &'static str {
-    match cat {
-        0 => "kernel",
-        1 => "transport",
-        2 => "ota",
-        3 => "wifi",
-        4 => "led",
-        5 => "audio",
-        6 => "touch",
-        7 => "game",
-        8 => "user",
-        9 => "haptic",
-        10 => "ble",
-        11 => "nvs",
-        12 => "espnow",
-        13 => "sync",
-        _ => "unknown",
+    Category::try_from(i32::from(cat))
+        .map(|category| category.cli_name())
+        .unwrap_or("unknown")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event_bytes(value: u8, count: usize) -> Vec<u8> {
+        vec![value; TRACE_EVENT_SIZE * count]
+    }
+
+    #[test]
+    fn dump_integrity_accepts_contiguous_chunks() {
+        let mut integrity = TraceDumpIntegrity::default();
+        let first = TraceDataChunk {
+            offset: 0,
+            count: 1,
+            events: event_bytes(1, 1),
+        };
+        let second = TraceDataChunk {
+            offset: 1,
+            count: 2,
+            events: event_bytes(2, 2),
+        };
+
+        assert_eq!(integrity.accept_chunk(&first).unwrap().len(), 1);
+        assert_eq!(integrity.accept_chunk(&second).unwrap().len(), 2);
+
+        let complete = TraceDumpComplete {
+            total_events: 3,
+            checksum: (TRACE_EVENT_SIZE as u32) + (TRACE_EVENT_SIZE as u32 * 2 * 2),
+        };
+        integrity.finish(&complete, 3).unwrap();
+    }
+
+    #[test]
+    fn dump_integrity_rejects_offset_gap() {
+        let mut integrity = TraceDumpIntegrity::default();
+        let chunk = TraceDataChunk {
+            offset: 1,
+            count: 1,
+            events: event_bytes(1, 1),
+        };
+
+        let error = integrity.accept_chunk(&chunk).unwrap_err().to_string();
+        assert!(error.contains("offset mismatch"));
+    }
+
+    #[test]
+    fn dump_integrity_rejects_count_and_alignment_mismatches() {
+        let mut integrity = TraceDumpIntegrity::default();
+        let wrong_count = TraceDataChunk {
+            offset: 0,
+            count: 2,
+            events: event_bytes(1, 1),
+        };
+        assert!(integrity
+            .accept_chunk(&wrong_count)
+            .unwrap_err()
+            .to_string()
+            .contains("count mismatch"));
+
+        let mut integrity = TraceDumpIntegrity::default();
+        let misaligned = TraceDataChunk {
+            offset: 0,
+            count: 1,
+            events: vec![0; TRACE_EVENT_SIZE - 1],
+        };
+        assert!(integrity
+            .accept_chunk(&misaligned)
+            .unwrap_err()
+            .to_string()
+            .contains("multiple"));
+    }
+
+    #[test]
+    fn dump_integrity_rejects_bad_completion_metadata() {
+        let mut integrity = TraceDumpIntegrity::default();
+        let chunk = TraceDataChunk {
+            offset: 0,
+            count: 1,
+            events: event_bytes(1, 1),
+        };
+        integrity.accept_chunk(&chunk).unwrap();
+
+        let wrong_total = TraceDumpComplete {
+            total_events: 2,
+            checksum: TRACE_EVENT_SIZE as u32,
+        };
+        assert!(integrity
+            .finish(&wrong_total, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("total mismatch"));
+
+        let wrong_checksum = TraceDumpComplete {
+            total_events: 1,
+            checksum: 0,
+        };
+        assert!(integrity
+            .finish(&wrong_checksum, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("checksum mismatch"));
+    }
+
+    #[test]
+    fn stream_sequence_tracker_detects_gaps_and_wraps() {
+        let mut tracker = StreamSequenceTracker::default();
+        tracker.accept(0).unwrap();
+        tracker.accept(1).unwrap();
+        assert!(tracker.accept(3).unwrap_err().to_string().contains("gap"));
+
+        let mut wrapping = StreamSequenceTracker {
+            next_sequence: u32::MAX,
+        };
+        wrapping.accept(u32::MAX).unwrap();
+        wrapping.accept(0).unwrap();
+    }
+
+    #[test]
+    fn stream_sequence_tracker_rejects_nonzero_initial_sequence() {
+        let error = StreamSequenceTracker::default()
+            .accept(1)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("expected 0, got 1"));
+    }
+
+    #[test]
+    fn stream_batch_rejects_unexpected_frame_type() {
+        let frame = Frame {
+            msg_type: TraceMsgType::Ack.as_u8(),
+            payload: Vec::new(),
+        };
+        let error = decode_stream_batch(&frame, &mut StreamSequenceTracker::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("Unexpected trace stream message type"));
+    }
+
+    #[test]
+    fn perfetto_json_escapes_task_and_span_names() {
+        let event = TraceEvent {
+            timestamp: 123,
+            task_id: 7,
+            event_type: EventType::Instant as u8,
+            flags: (Category::Game as u8) << 4,
+            arg1: 42,
+            arg2: 0,
+        };
+        let task_name = "task\"\\name\n";
+        let span_name = "span\"\\name\n";
+        let task_names = HashMap::from([(7, task_name.to_string())]);
+        let span_names = HashMap::from([(42, span_name.to_string())]);
+
+        let json = convert_to_perfetto_json(&[event], &task_names, &span_names, 9).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(value[0]["args"]["name"], task_name);
+        assert_eq!(value[1]["name"], span_name);
+    }
+
+    #[test]
+    fn trace_duration_handles_timestamp_wrap() {
+        assert_eq!(trace_duration_us(100, 175), 75);
+        assert_eq!(trace_duration_us(u32::MAX - 10, 9), 20);
     }
 }

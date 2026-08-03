@@ -1,8 +1,8 @@
 #pragma once
 
-#include "sim/simProtocol.hpp"
-#include "sim/simEspNowBus.hpp"
 #include "sim/podInstance.hpp"
+#include "sim/simEspNowBus.hpp"
+#include "sim/simProtocol.hpp"
 
 #include <variant>
 

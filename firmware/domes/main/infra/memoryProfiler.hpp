@@ -5,13 +5,14 @@
  * @brief Periodic heap sampling with circular buffer and trace counters
  *
  * Samples free heap, largest block, and min free heap every N seconds.
- * Stores last 60 samples (5 minutes at 5s interval) in a circular buffer.
+ * Stores as many samples as fit in one memory-profile protocol response.
  * Also records trace counter events for Perfetto visualization.
  */
 
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "protocol/memoryProfileLimits.hpp"
 
 #include <array>
 #include <atomic>
@@ -22,17 +23,17 @@ namespace domes::infra {
 /// Default sampling interval in seconds
 constexpr uint32_t kDefaultSampleIntervalS = 5;
 
-/// Number of samples in circular buffer (5 min at 5s)
-constexpr size_t kMaxHeapSamples = 60;
+/// Circular-buffer capacity, derived from the generated nanopb response.
+constexpr size_t kMaxHeapSamples = memory_profile::kMaxSamples;
 
 /**
  * @brief Single heap sample
  */
 struct HeapSample {
-    uint32_t timestampS = 0;     ///< Uptime when sampled (seconds)
-    uint32_t freeHeap = 0;       ///< Free heap bytes
-    uint32_t largestBlock = 0;   ///< Largest free contiguous block
-    uint32_t minFreeHeap = 0;    ///< Historical minimum free heap
+    uint32_t timestampS = 0;    ///< Uptime when sampled (seconds)
+    uint32_t freeHeap = 0;      ///< Free heap bytes
+    uint32_t largestBlock = 0;  ///< Largest free contiguous block
+    uint32_t minFreeHeap = 0;   ///< Historical minimum free heap
 };
 
 /**
@@ -53,8 +54,10 @@ public:
 
     /**
      * @brief Start the sampling task
+     *
+     * @return ESP_OK when the task was created
      */
-    static void startTask();
+    static esp_err_t startTask();
 
     /**
      * @brief Get the current number of samples stored

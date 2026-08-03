@@ -11,26 +11,39 @@ ESP-IDF, BLE, or device access prevents a check.
 ### Level 1: Unit Tests
 
 ```bash
-cd firmware/test_app
-mkdir -p build
-cd build
-cmake ..
-make
-ctest --output-on-failure
+cmake -S firmware/test_app -B firmware/test_app/build
+cmake --build firmware/test_app/build
+ctest --test-dir firmware/test_app/build --output-on-failure
 ```
 
 ### Level 2: Build Affected Components
 
+Firmware builds must use ESP-IDF v5.4.4, matching CI and `firmware/domes/dependencies.lock`.
+
 ```bash
-# Firmware
-cd firmware/domes
-. ~/esp/esp-idf/export.sh
-idf.py build
+# Firmware-only clean build (run from the repository root)
+VERIFY_ROOT="$(mktemp -d)"
+(cd firmware/domes && . ~/esp/esp-idf/export.sh && \
+  idf.py -B "$VERIFY_ROOT/build" -D "IDF_TARGET=esp32s3" \
+    -D "SDKCONFIG=$VERIFY_ROOT/sdkconfig" build)
+FIRMWARE_BIN="$VERIFY_ROOT/build/domes.bin"
+EXPECTED_VERSION=$(
+  . ~/esp/esp-idf/export.sh >/dev/null 2>&1
+  python -m esptool image_info --version 2 "$FIRMWARE_BIN" |
+    sed -n 's/^App version: //p'
+)
+test -n "$EXPECTED_VERSION"
 
 # Host CLI, when modified
-cd tools/domes-cli
-cargo build
-cargo test
+(cd tools/domes-cli && cargo fmt --check)
+(cd tools/domes-cli && cargo clippy --locked --all-targets --all-features -- -D warnings)
+(cd tools/domes-cli && cargo build --locked)
+(cd tools/domes-cli && cargo test --locked --all-targets --all-features)
+
+# Flutter app, when modified
+(cd ios/domes_app && flutter pub get --enforce-lockfile)
+(cd ios/domes_app && flutter analyze --fatal-infos --fatal-warnings)
+(cd ios/domes_app && flutter test)
 ```
 
 ### Level 3: Hardware or End-to-End Verification
@@ -39,8 +52,9 @@ For firmware changes, build, flash, and then verify the actual behavior with `do
 serial logs, BLE/WiFi/serial transport, or visual confirmation.
 
 ```bash
-. ~/esp/esp-idf/export.sh
-.codex/skills/domes-esp32-firmware/scripts/flash_and_verify.sh firmware/domes /dev/ttyACM0 "DOMES"
+PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+tools/firmware/flash_and_verify.sh firmware/domes "$PORT"
 ```
 
 Feature-specific verification:
@@ -56,11 +70,22 @@ Feature-specific verification:
 | BLE transport | `domes-cli --ble "DOMES-Pod-XX" feature list` |
 | Multi-device | `domes-cli --all feature list` |
 | ESP-NOW | Flash both, enable ESP-NOW, monitor peer discovery |
-| OTA updates | Flash, run `domes-cli ota flash`, verify reboot |
+| OTA updates | Transfer, verify version/health/self-test, reboot again, and repeat; test forced rollback separately |
 | Hardware CI | Add the `hw-test` label to the PR after asking the user |
 
 Do not claim a task is complete when build fails, tests fail, firmware does not flash, or required
 hardware behavior was not verified. If hardware is unavailable, say exactly what remains unverified.
+An accepted peripheral command is not physical confirmation, and a successful OTA boot is not proof
+of the forced failed-self-test rollback path.
+
+The WiFi/TCP check requires a `CONFIG_DOMES_WIFI_AUTO_CONNECT` build and stored credentials; the
+default build omits that runtime feature, and the CLI does not provision a clean board. Raw TCP OTA
+and generic trace commands are unsupported.
+
+For a repository-wide final check, prefer `scripts/verify.sh`. An ignored project-local
+`firmware/domes/sdkconfig` can preserve stale options and is not release evidence; final firmware
+verification must use a fresh build directory and `SDKCONFIG`, as above or through the verification
+and flash helpers.
 
 ## Codex Workflows
 
@@ -92,7 +117,9 @@ Documentation or agent-instruction conversions can stay in the current workspace
 
 ```bash
 mkdir -p .worktrees
-git worktree add .worktrees/<name> -b codex/<type>/<description>
+WORKTREE_NAME=transport-fix
+BRANCH=codex/fix/transport-fix
+git worktree add ".worktrees/$WORKTREE_NAME" -b "$BRANCH"
 ```
 
 Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`.
@@ -101,12 +128,17 @@ Always ask before creating or publishing a PR. Never use `.claude/worktrees/` fo
 
 ## Protocol Buffers
 
-All message serialization between firmware, CLI, and app layers must use Protocol Buffers.
+New host-facing config and trace messages must use Protocol Buffers.
 
-- Never hand-roll protocol definitions.
-- Never duplicate enums or message types in C++, Rust, or Dart.
-- All protocol definitions come from `firmware/common/proto/*.proto`.
+- Never hand-roll a new host protocol definition.
+- Never duplicate protobuf enums or message types in C++, Rust, or Dart.
+- All config and trace message definitions come from `firmware/common/proto/*.proto`.
 - If creating a message, add it to the relevant `.proto` file first.
+
+Bounded existing exceptions are the OTA chunk-transfer structs, trace recorder's compact internal
+event records, and the internal ESP-NOW peer packets mirrored by the host simulator. Keep every
+consumer of each exception wire-compatible until migrated; do not extend these exceptions to new
+protocol families.
 
 Source of truth:
 
@@ -116,7 +148,7 @@ Source of truth:
 | `firmware/common/proto/config.options` | nanopb size constraints |
 | `firmware/common/proto/trace.proto` | Trace protocol messages |
 | `tools/domes-cli/build.rs` | prost generation for the Rust CLI |
-| `ios/domes_app/scripts/generate_proto.sh` | Dart protobuf generation |
+| `tools/generate_protocols.sh` | Committed nanopb and Dart generation/checking |
 
 Generation paths:
 
@@ -124,16 +156,30 @@ Generation paths:
 - CLI: prost generates Rust types at build time.
 - Flutter app: generated Dart types live under `ios/domes_app/lib/data/proto/generated/`.
 
+Run `tools/generate_protocols.sh` after schema changes; a firmware build alone does not regenerate
+committed nanopb files.
+
 ## Runtime Config Protocol
 
-Binary protocol over USB serial, WiFi TCP, or BLE GATT:
+Binary protocol over UART serial, WiFi TCP, or BLE GATT:
 
 ```text
 [0xAA][0x55][LenLE16][Type][Payload][CRC32LE]
 ```
 
-Payloads are protobuf-encoded. Transports are USB-CDC serial, TCP port 5000, and BLE GATT
-notifications.
+OTA occupies message types `0x01-0x05`, trace occupies `0x10-0x1B`, and config command
+requests/responses occupy `0x20-0x4F` with reserved gaps. Type `0x50` is the unsolicited,
+device-originated touch notification; it is not a request and carries a bare protobuf payload.
+
+Request payloads are protobuf-encoded. Most config responses use a one-byte status envelope before
+the response protobuf: `[Status:u8][Protobuf payload]`. List and diagnostic responses that do not
+report a command status, plus unsolicited notifications, contain the protobuf directly. The owning
+firmware handler and host decoder must agree on the envelope for each message.
+
+The active NFF DevKit routes framed serial config and OTA over UART0 through its CP2102N bridge
+(`/dev/ttyUSB*`; prefer `/dev/serial/by-id/usb-Silicon_Labs_CP2102N_*`). Native ESP32-S3 USB
+Serial/JTAG is reserved for console logs and JTAG and commonly enumerates as `/dev/ttyACM*`. TCP
+config uses port 5000; BLE responses use GATT notifications.
 
 Key files:
 
@@ -147,20 +193,33 @@ Key files:
 
 ## OTA Updates
 
-`domes-cli` is the supported OTA path for serial, WiFi/TCP, BLE, and multi-device updates.
+`domes-cli` supports serial and BLE OTA. Raw WiFi/TCP image transfer is currently not routed by the
+firmware TCP config server and must not be presented as verified.
 
 ```bash
-domes-cli --port /dev/ttyACM0 ota flash firmware/domes/build/domes.bin --version v1.0.0
-domes-cli --wifi 192.168.1.100:5000 ota flash firmware/domes/build/domes.bin
-domes-cli --all ota flash firmware/domes/build/domes.bin --version v1.0.0
+domes-cli --port "$PORT" ota flash "$FIRMWARE_BIN" --version "$EXPECTED_VERSION"
+domes-cli --all ota flash "$FIRMWARE_BIN" --version "$EXPECTED_VERSION"
 ```
+
+Use `--all` for OTA only when every selected registry target is serial or BLE. WiFi targets reject
+raw image transfer.
+
+The OTA version is part of the integrity contract: it must be parser-valid, at most 31 ASCII bytes,
+and byte-for-byte equal to the application version embedded in the selected image. Extract it from
+that exact image; do not substitute a release example or an independently typed label.
+
+After serial or BLE OTA, reconnect and verify the expected version, `system health`, and
+`system self-test`; reboot once more and repeat those checks. Test invalid/interrupted recovery and
+forced failed-self-test rollback as separate failure paths. A normal successful update does not
+verify rollback.
 
 Key files:
 
 | File | Purpose |
 | --- | --- |
-| `tools/domes-cli/src/commands/ota.rs` | CLI OTA implementation |
 | `firmware/common/protocol/otaProtocol.hpp` | OTA frame payload definitions |
+| `tools/domes-cli/src/commands/ota.rs` | Rust CLI OTA implementation |
+| `ios/domes_app/lib/data/protocol/ota_protocol.dart` | Flutter OTA implementation |
 | `firmware/domes/main/transport/serialOtaReceiver.hpp` | Device-side serial OTA |
 | `firmware/domes/main/services/otaManager.hpp` | HTTPS/GitHub OTA service |
 
@@ -179,31 +238,48 @@ void myFunction() {
 ```
 
 ```bash
-domes-cli --port /dev/ttyACM0 trace dump -o trace.json --names tools/trace/trace_names.json
+domes-cli --port "$PORT" trace start
+domes-cli --port "$PORT" system health
+domes-cli --port "$PORT" trace stop
+domes-cli --port "$PORT" trace dump -o trace.json --names tools/trace/trace_names.json
 ```
 
 Open the resulting JSON in `https://ui.perfetto.dev`.
 
+For multi-pod inspection, dump one trace per pod and use
+`tools/trace/trace_merge.py --align zero` to group each local timeline by its capture start. The
+current firmware has no truthful cross-clock synchronization marker. The merge tool supports only
+capture-start grouping (`zero`) and unshifted local timestamps (`raw`); neither is timing correlation
+between pods.
+
 ## Multi-Device Testing
 
-Two NFF devboards usually appear as `/dev/ttyACM0` and `/dev/ttyACM1`. Stable symlinks are defined
-in `tools/udev/99-domes-pods.rules`.
+Two NFF DevKit CP2102N bridges usually appear as `/dev/ttyUSB0` and `/dev/ttyUSB1`. Kernel numbers
+can change; register the serial-number-based links under `/dev/serial/by-id/`, not `ttyUSB` numbers.
+`tools/udev/99-domes-pods.rules` supplies device access policy, not custom identity aliases.
 
 ```bash
-domes-cli devices add pod1 serial /dev/ttyACM0
-domes-cli devices add pod2 serial /dev/ttyACM1
+PORT1="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+PORT2="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '2p')"
+domes-cli devices add pod1 serial "$PORT1"
+domes-cli devices add pod2 serial "$PORT2"
 domes-cli devices list
 domes-cli devices scan
 domes-cli --all feature list
 domes-cli --all led solid --color ff0000
 ```
 
-For ESP-NOW testing:
+For ESP-NOW testing, follow the complete `$domes-esp32-firmware` integration runbook. It requires an
+exact `disabled` state before every fresh lifecycle, complementary master/slave roles with one peer
+each, a slave-first and master-second benchmark with simulation off, and a separate trace-backed
+simulated drill. `stopping` is transitional and is not safe to re-enable. Status from one pod or a
+sleep-based check is not communication evidence.
 
-```bash
-domes-cli --all feature enable esp-now
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0,/dev/ttyACM1 30
-```
+Native USB console monitoring is optional supporting evidence. It does not replace framed CLI
+results, benchmark cardinality, or trace assertions. Use the CP2102N `/dev/serial/by-id/` paths for
+`domes-cli`, flashing, and serial OTA.
 
 ## Platform Requirements
 
@@ -221,12 +297,12 @@ Initialization order in `main.cpp` matters:
 1. WiFi before TCP config server and BLE, for coexistence.
 2. BLE OTA service early, because advertising starts automatically.
 3. FeatureManager before TCP/Serial/BLE config handlers.
-4. TCP config server before Serial OTA, so logs are visible.
-5. Serial OTA last, because it can take over USB-CDC.
+4. TCP config server before the UART config/OTA receiver.
+5. UART config/OTA last, after the native USB console is available.
 
-After `initSerialOta()`, USB-CDC becomes the OTA/config transport and serial logs may stop or
-interleave with binary protocol data. Debug init issues before serial OTA init or temporarily delay
-that setup.
+UART0 carries only framed protocol traffic through the NFF CP2102N bridge. Keep ESP-IDF console
+output on native USB Serial/JTAG so logs cannot corrupt UART frames. If native USB is not connected,
+use BLE diagnostics or attach the second USB connection before relying on boot logs.
 
 Always search the codebase before asking for project facts:
 
@@ -241,8 +317,8 @@ rg "CONFIG_DOMES" firmware/domes
 | --- | --- |
 | `firmware/AGENTS.md` | Firmware coding standards and architecture rules |
 | `firmware/MILESTONES.md` | Development phases and current status |
-| `research/SYSTEM_ARCHITECTURE.md` | Hardware architecture and specs |
-| `research/architecture/` | Deep design docs |
+| `research/SYSTEM_ARCHITECTURE.md` | Product hardware and system target, not as-built status |
+| `research/architecture/` | Historical and proposed design records, indexed by lifecycle |
 | `docs/PIN_REFERENCE.md` | GPIO pin mappings |
 | `tools/domes-cli/AGENTS.md` | CLI guidance |
 | `hardware/AGENTS.md` | Hardware component sourcing guidance |

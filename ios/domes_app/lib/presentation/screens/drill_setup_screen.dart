@@ -28,8 +28,10 @@ class _DrillSetupScreenState extends ConsumerState<DrillSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final multiPod = ref.watch(multiPodProvider);
-    final connectedAddresses =
-        multiPod.entries.where((e) => e.value.isConnected).map((e) => e.key).toList();
+    final connectedAddresses = multiPod.entries
+        .where((e) => e.value.isConnected)
+        .map((e) => e.key)
+        .toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Drill Setup')),
@@ -43,15 +45,16 @@ class _DrillSetupScreenState extends ConsumerState<DrillSetupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Drill Type',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Drill Type',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   SegmentedButton<DrillType>(
                     segments: DrillType.values
-                        .map((t) => ButtonSegment(
-                              value: t,
-                              label: Text(t.label),
-                            ))
+                        .map(
+                          (t) => ButtonSegment(value: t, label: Text(t.label)),
+                        )
                         .toList(),
                     selected: {_drillType},
                     onSelectionChanged: (s) =>
@@ -75,8 +78,7 @@ class _DrillSetupScreenState extends ConsumerState<DrillSetupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Pods',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text('Pods', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   if (connectedAddresses.isEmpty)
                     const Text(
@@ -105,16 +107,19 @@ class _DrillSetupScreenState extends ConsumerState<DrillSetupScreen> {
                     TextButton(
                       onPressed: () {
                         setState(() {
-                          if (_selectedPods.length == connectedAddresses.length) {
+                          if (_selectedPods.length ==
+                              connectedAddresses.length) {
                             _selectedPods.clear();
                           } else {
                             _selectedPods.addAll(connectedAddresses);
                           }
                         });
                       },
-                      child: Text(_selectedPods.length == connectedAddresses.length
-                          ? 'Deselect All'
-                          : 'Select All'),
+                      child: Text(
+                        _selectedPods.length == connectedAddresses.length
+                            ? 'Deselect All'
+                            : 'Select All',
+                      ),
                     ),
                 ],
               ),
@@ -129,30 +134,51 @@ class _DrillSetupScreenState extends ConsumerState<DrillSetupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Configuration',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Configuration',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
-                  _sliderRow('Rounds', _roundCount.toDouble(), 1, 50,
-                      divisions: 49,
-                      valueLabel: '$_roundCount',
-                      onChanged: (v) =>
-                          setState(() => _roundCount = v.round())),
-                  _sliderRow('Timeout', _timeoutSec, 1, 10,
-                      valueLabel: '${_timeoutSec.toStringAsFixed(1)}s',
-                      onChanged: (v) => setState(() => _timeoutSec = v)),
-                  _sliderRow('Min Delay', _minDelaySec, 0.1, 3,
-                      valueLabel: '${_minDelaySec.toStringAsFixed(1)}s',
-                      onChanged: (v) {
-                    setState(() {
-                      _minDelaySec = v;
-                      if (_maxDelaySec < _minDelaySec) {
-                        _maxDelaySec = _minDelaySec;
-                      }
-                    });
-                  }),
-                  _sliderRow('Max Delay', _maxDelaySec, _minDelaySec, 5,
-                      valueLabel: '${_maxDelaySec.toStringAsFixed(1)}s',
-                      onChanged: (v) => setState(() => _maxDelaySec = v)),
+                  _sliderRow(
+                    'Rounds',
+                    _roundCount.toDouble(),
+                    1,
+                    50,
+                    divisions: 49,
+                    valueLabel: '$_roundCount',
+                    onChanged: (v) => setState(() => _roundCount = v.round()),
+                  ),
+                  _sliderRow(
+                    'Timeout',
+                    _timeoutSec,
+                    1,
+                    10,
+                    valueLabel: '${_timeoutSec.toStringAsFixed(1)}s',
+                    onChanged: (v) => setState(() => _timeoutSec = v),
+                  ),
+                  _sliderRow(
+                    'Min Delay',
+                    _minDelaySec,
+                    0.1,
+                    3,
+                    valueLabel: '${_minDelaySec.toStringAsFixed(1)}s',
+                    onChanged: (v) {
+                      setState(() {
+                        _minDelaySec = v;
+                        if (_maxDelaySec < _minDelaySec) {
+                          _maxDelaySec = _minDelaySec;
+                        }
+                      });
+                    },
+                  ),
+                  _sliderRow(
+                    'Max Delay',
+                    _maxDelaySec,
+                    _minDelaySec,
+                    5,
+                    valueLabel: '${_maxDelaySec.toStringAsFixed(1)}s',
+                    onChanged: (v) => setState(() => _maxDelaySec = v),
+                  ),
                 ],
               ),
             ),

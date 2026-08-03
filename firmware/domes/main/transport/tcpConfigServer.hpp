@@ -7,27 +7,27 @@
  * Listens on a TCP port and handles config protocol commands
  * from network clients (e.g., domes-cli --wifi).
  *
- * Uses the same frame protocol and ConfigCommandHandler as the
- * USB-CDC transport, allowing the same host tool to work over WiFi.
+ * Uses the same frame protocol and ConfigCommandHandler as UART0 and BLE,
+ * allowing the same host tool to work over WiFi.
  */
 
-#include "tcpTransport.hpp"
 #include "config/configCommandHandler.hpp"
 #include "config/featureManager.hpp"
 #include "config/modeManager.hpp"
 #include "interfaces/iTaskRunner.hpp"
+#include "tcpTransport.hpp"
 
 #include <atomic>
 #include <cstdint>
 
 namespace domes {
 
-class LedService;            // Forward declaration
-class ImuService;            // Forward declaration
-class EspNowTransport;       // Forward declaration
-class EspNowService;         // Forward declaration
-class IOtaManager;           // Forward declaration
-class InjectableTouchDriver; // Forward declaration
+class LedService;             // Forward declaration
+class ImuService;             // Forward declaration
+class EspNowTransport;        // Forward declaration
+class EspNowService;          // Forward declaration
+class IOtaManager;            // Forward declaration
+class InjectableTouchDriver;  // Forward declaration
 
 /**
  * @brief Default TCP port for config server
@@ -47,7 +47,7 @@ constexpr size_t kMaxTcpClients = 2;
  *
  * Features:
  * - Supports multiple concurrent clients (up to kMaxTcpClients)
- * - Uses frame protocol (same as USB-CDC)
+ * - Uses the shared UART/BLE/TCP frame protocol
  * - Graceful shutdown with client cleanup
  *
  * Usage:
@@ -67,8 +67,7 @@ public:
      * @param features Feature manager for config commands
      * @param port TCP port to listen on (default: 5000)
      */
-    explicit TcpConfigServer(config::FeatureManager& features,
-                              uint16_t port = kConfigServerPort);
+    explicit TcpConfigServer(config::FeatureManager& features, uint16_t port = kConfigServerPort);
 
     ~TcpConfigServer() override;
 

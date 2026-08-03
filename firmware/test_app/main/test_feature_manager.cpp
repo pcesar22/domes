@@ -3,12 +3,19 @@
  * @brief Unit tests for FeatureManager class
  */
 
-#include <gtest/gtest.h>
-#include "config/featureManager.hpp"
-#include "config/configProtocol.hpp"
 #include "config.pb.h"
 
+#include "config/configProtocol.hpp"
+#include "config/featureManager.hpp"
+
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <utility>
+#include <vector>
+
+#include <gtest/gtest.h>
 
 using namespace domes::config;
 
@@ -28,11 +35,10 @@ TEST(FeatureManager, AllFeaturesEnabledByDefault) {
     EXPECT_TRUE(manager.isEnabled(Feature::kAudio));
 }
 
-TEST(FeatureManager, DefaultMaskIsAllOnes) {
+TEST(FeatureManager, DefaultMaskContainsOnlyDefinedFeatures) {
     FeatureManager manager;
 
-    // All bits should be set (0xFFFFFFFF)
-    EXPECT_EQ(manager.getMask(), 0xFFFFFFFF);
+    EXPECT_EQ(manager.getMask(), FeatureManager::kAllFeaturesMask);
 }
 
 // =============================================================================
@@ -76,6 +82,53 @@ TEST(FeatureManager, DisableMultipleFeatures) {
     EXPECT_TRUE(manager.isEnabled(Feature::kEspNow));
     EXPECT_TRUE(manager.isEnabled(Feature::kTouch));
     EXPECT_TRUE(manager.isEnabled(Feature::kHaptic));
+}
+
+TEST(FeatureManager, UnsupportedFeaturesAreOmittedAndRejected) {
+    const uint32_t supported = FeatureManager::kAllFeaturesMask & ~(1u << 3);
+    FeatureManager manager(supported);
+
+    EXPECT_FALSE(manager.isSupported(Feature::kWifi));
+    EXPECT_FALSE(manager.isEnabled(Feature::kWifi));
+    EXPECT_FALSE(manager.setEnabled(Feature::kWifi, true));
+
+    std::array<domes_config_FeatureState, kMaxFeatures> states{};
+    EXPECT_EQ(manager.getAll(states.data()), 6u);
+    for (const auto& state : states) {
+        EXPECT_NE(state.feature, domes_config_Feature_FEATURE_WIFI);
+    }
+}
+
+TEST(FeatureManager, ChangeCallbackTracksSingleAndMaskUpdates) {
+    FeatureManager manager;
+    std::vector<std::pair<Feature, bool>> changes;
+    manager.onChange(
+        [&changes](Feature feature, bool enabled) { changes.emplace_back(feature, enabled); });
+
+    EXPECT_TRUE(manager.setEnabled(Feature::kHaptic, false));
+    EXPECT_EQ(changes.size(), 1u);
+    EXPECT_EQ(changes[0], std::make_pair(Feature::kHaptic, false));
+
+    manager.setMask(manager.getMask() & ~(1u << 2));
+    ASSERT_EQ(changes.size(), 2u);
+    EXPECT_EQ(changes[1], std::make_pair(Feature::kBleAdvertising, false));
+}
+
+TEST(FeatureManager, RuntimeApplyRunsAfterCallerBarrier) {
+    FeatureManager manager;
+    bool barrierRan = false;
+    bool runtimeApplyRan = false;
+
+    manager.onChange([&](Feature feature, bool enabled) {
+        if (feature == Feature::kWifi && !enabled) {
+            EXPECT_TRUE(barrierRan);
+            runtimeApplyRan = true;
+        }
+    });
+
+    EXPECT_TRUE(manager.setEnabled(Feature::kWifi, false, [&] { barrierRan = true; }));
+    EXPECT_TRUE(barrierRan);
+    EXPECT_TRUE(runtimeApplyRan);
 }
 
 // =============================================================================
@@ -177,13 +230,13 @@ TEST(FeatureManager, SetMaskUpdatesState) {
     // Set mask with only bits 1, 3, 5 set
     manager.setMask(0b00101010);
 
-    EXPECT_TRUE(manager.isEnabled(Feature::kLedEffects));    // bit 1
-    EXPECT_FALSE(manager.isEnabled(Feature::kBleAdvertising)); // bit 2
-    EXPECT_TRUE(manager.isEnabled(Feature::kWifi));          // bit 3
-    EXPECT_FALSE(manager.isEnabled(Feature::kEspNow));       // bit 4
-    EXPECT_TRUE(manager.isEnabled(Feature::kTouch));         // bit 5
-    EXPECT_FALSE(manager.isEnabled(Feature::kHaptic));       // bit 6
-    EXPECT_FALSE(manager.isEnabled(Feature::kAudio));        // bit 7
+    EXPECT_TRUE(manager.isEnabled(Feature::kLedEffects));       // bit 1
+    EXPECT_FALSE(manager.isEnabled(Feature::kBleAdvertising));  // bit 2
+    EXPECT_TRUE(manager.isEnabled(Feature::kWifi));             // bit 3
+    EXPECT_FALSE(manager.isEnabled(Feature::kEspNow));          // bit 4
+    EXPECT_TRUE(manager.isEnabled(Feature::kTouch));            // bit 5
+    EXPECT_FALSE(manager.isEnabled(Feature::kHaptic));          // bit 6
+    EXPECT_FALSE(manager.isEnabled(Feature::kAudio));           // bit 7
 }
 
 // =============================================================================
@@ -200,14 +253,56 @@ TEST(FeatureManager, ConcurrentReadsDoNotCrash) {
     }
 }
 
-TEST(FeatureManager, ConcurrentWritesDoNotCrash) {
+TEST(FeatureManager, ConcurrentWritesApplyCallbacksInMutationOrder) {
     FeatureManager manager;
+    std::atomic<bool> disableCallbackEntered{false};
+    std::atomic<bool> releaseDisableCallback{false};
+    std::atomic<bool> enableStarted{false};
+    std::atomic<bool> enableReturned{false};
+    std::atomic<int> nextCallbackOrder{0};
+    std::atomic<int> disableCallbackOrder{0};
+    std::atomic<int> enableCallbackOrder{0};
 
-    // Just verify we can toggle features many times
-    for (int i = 0; i < 1000; ++i) {
-        manager.setEnabled(Feature::kLedEffects, (i % 2) == 0);
+    manager.onChange([&](Feature feature, bool enabled) {
+        if (feature != Feature::kBleAdvertising) {
+            return;
+        }
+        if (!enabled) {
+            disableCallbackEntered.store(true, std::memory_order_release);
+            while (!releaseDisableCallback.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            disableCallbackOrder.store(
+                nextCallbackOrder.fetch_add(1, std::memory_order_acq_rel) + 1,
+                std::memory_order_release);
+        } else {
+            enableCallbackOrder.store(nextCallbackOrder.fetch_add(1, std::memory_order_acq_rel) + 1,
+                                      std::memory_order_release);
+        }
+    });
+
+    std::thread disableThread([&] { manager.setEnabled(Feature::kBleAdvertising, false); });
+    while (!disableCallbackEntered.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
     }
 
-    // Final state should be predictable
-    EXPECT_FALSE(manager.isEnabled(Feature::kLedEffects));  // 1000 is even, last call was false
+    std::thread enableThread([&] {
+        enableStarted.store(true, std::memory_order_release);
+        manager.setEnabled(Feature::kBleAdvertising, true);
+        enableReturned.store(true, std::memory_order_release);
+    });
+    while (!enableStarted.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    EXPECT_FALSE(enableReturned.load(std::memory_order_acquire));
+
+    releaseDisableCallback.store(true, std::memory_order_release);
+    disableThread.join();
+    enableThread.join();
+
+    EXPECT_EQ(disableCallbackOrder.load(std::memory_order_acquire), 1);
+    EXPECT_EQ(enableCallbackOrder.load(std::memory_order_acquire), 2);
+    EXPECT_TRUE(manager.isEnabled(Feature::kBleAdvertising));
 }

@@ -3,6 +3,7 @@
 /// Port of tools/domes-cli/src/transport/mod.rs
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 import 'frame_codec.dart';
 
@@ -20,8 +21,23 @@ abstract class Transport {
   /// Receive a frame from the device with timeout.
   Future<Frame> receiveFrame(Duration timeout);
 
-  /// Send a command and wait for response.
-  Future<Frame> sendCommand(int msgType, Uint8List payload);
+  /// Send a raw request and receive its response as one exclusive operation.
+  Future<Frame> transactFrame(
+    int msgType,
+    Uint8List payload,
+    Duration timeout, {
+    void Function()? onFrameSent,
+  });
+
+  /// Send a command and wait for the matching response.
+  Future<Frame> sendCommand(
+    int msgType,
+    Uint8List payload, {
+    required int expectedResponseType,
+  });
+
+  /// Device-originated frames that are not command responses.
+  Stream<Frame> get unsolicitedFrames;
 
   /// Get the maximum OTA chunk size for this transport.
   int get maxOtaChunkSize => kOtaChunkSizeDefault;

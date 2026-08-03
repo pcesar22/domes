@@ -11,8 +11,18 @@
 namespace domes::trace {
 
 // TraceBuffer stub
-TraceBuffer::TraceBuffer(size_t) : ringBuf_(nullptr), bufferSize_(0), initialized_(false), paused_(false), droppedCount_(0) {}
+TraceBuffer::TraceBuffer(size_t)
+    : ringBuf_(nullptr),
+      bufferSize_(0),
+      initialized_(false),
+      paused_(false),
+      droppedCount_(0),
+      eventCount_(0) {}
 TraceBuffer::~TraceBuffer() = default;
+const TraceEvent* TraceBuffer::acquire(uint32_t) {
+    return nullptr;
+}
+void TraceBuffer::release(const TraceEvent*) {}
 
 // Static member definitions
 std::unique_ptr<TraceBuffer> Recorder::buffer_;
@@ -21,8 +31,12 @@ std::atomic<bool> Recorder::initialized_{false};
 std::array<TaskNameEntry, kMaxRegisteredTasks> Recorder::taskNames_{};
 size_t Recorder::taskNameCount_{0};
 
-bool Recorder::isEnabled() { return false; }
-bool Recorder::isInitialized() { return false; }
+bool Recorder::isEnabled() {
+    return false;
+}
+bool Recorder::isInitialized() {
+    return false;
+}
 void Recorder::record(const TraceEvent&) {}
 void Recorder::recordFromIsr(const TraceEvent&) {}
 void Recorder::setEnabled(bool) {}

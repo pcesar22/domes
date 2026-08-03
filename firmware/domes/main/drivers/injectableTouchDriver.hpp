@@ -21,7 +21,8 @@ namespace domes {
 
 class InjectableTouchDriver : public ITouchDriver {
 public:
-    explicit InjectableTouchDriver(ITouchDriver& real) : real_(real) {}
+    explicit InjectableTouchDriver(ITouchDriver& real, bool pollPhysicalDriver = true)
+        : real_(real), pollPhysicalDriver_(pollPhysicalDriver) {}
 
     // -- ITouchDriver interface (delegates to real driver) --
 
@@ -31,26 +32,26 @@ public:
         for (uint8_t i = 0; i < kMaxPads; ++i) {
             uint8_t cur = injectedTicks_[i].load(std::memory_order_relaxed);
             while (cur > 0) {
-                if (injectedTicks_[i].compare_exchange_weak(
-                        cur, cur - 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
+                if (injectedTicks_[i].compare_exchange_weak(cur, cur - 1, std::memory_order_relaxed,
+                                                            std::memory_order_relaxed)) {
                     break;
                 }
                 // cur is updated by compare_exchange_weak on failure
             }
         }
-        return real_.update();
+        return pollPhysicalDriver_ ? real_.update() : ESP_OK;
     }
 
     bool isTouched(uint8_t padIndex) const override {
-        if (padIndex >= kMaxPads) return false;
+        if (padIndex >= kMaxPads)
+            return false;
         bool injected = injectedTicks_[padIndex].load(std::memory_order_relaxed) > 0;
         return injected || real_.isTouched(padIndex);
     }
 
     TouchPadState getPadState(uint8_t padIndex) const override {
         TouchPadState state = real_.getPadState(padIndex);
-        if (padIndex < kMaxPads &&
-            injectedTicks_[padIndex].load(std::memory_order_relaxed) > 0) {
+        if (padIndex < kMaxPads && injectedTicks_[padIndex].load(std::memory_order_relaxed) > 0) {
             state.touched = true;
         }
         return state;
@@ -87,6 +88,7 @@ private:
     static constexpr uint8_t kMaxPads = 4;
 
     ITouchDriver& real_;
+    bool pollPhysicalDriver_;
     std::atomic<uint8_t> injectedTicks_[kMaxPads] = {};
 };
 

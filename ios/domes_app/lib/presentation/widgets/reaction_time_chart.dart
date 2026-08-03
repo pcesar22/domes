@@ -27,10 +27,12 @@ class ReactionTimeChart extends StatelessWidget {
 
     final spots = <FlSpot>[];
     for (var i = 0; i < hitResults.length; i++) {
-      spots.add(FlSpot(
-        i.toDouble(),
-        hitResults[i].reactionTime!.inMilliseconds.toDouble(),
-      ));
+      spots.add(
+        FlSpot(
+          i.toDouble(),
+          hitResults[i].reactionTime!.inMilliseconds.toDouble(),
+        ),
+      );
     }
 
     return LineChart(
@@ -42,9 +44,11 @@ class ReactionTimeChart extends StatelessWidget {
         ),
         titlesData: FlTitlesData(
           topTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false)),
+            sideTitles: SideTitles(showTitles: false),
+          ),
           rightTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false)),
+            sideTitles: SideTitles(showTitles: false),
+          ),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
@@ -90,8 +94,8 @@ class ReactionTimeChart extends StatelessWidget {
                 final color = ms < 300
                     ? AppTheme.connectedColor
                     : ms < 600
-                        ? AppTheme.connectingColor
-                        : AppTheme.errorColor;
+                    ? AppTheme.connectingColor
+                    : AppTheme.errorColor;
                 return FlDotCirclePainter(
                   radius: 4,
                   color: color,
@@ -112,7 +116,9 @@ class ReactionTimeChart extends StatelessWidget {
                 return LineTooltipItem(
                   '${spot.y.toInt()}ms',
                   const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold),
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
                 );
               }).toList();
             },

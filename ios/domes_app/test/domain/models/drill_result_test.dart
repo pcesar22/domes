@@ -24,22 +24,25 @@ void main() {
     test('counts hits and misses', () {
       final result = makeResult([
         RoundResult(
-            roundIndex: 0,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 300),
-            timestamp: now),
+          roundIndex: 0,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 300),
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 1,
-            podAddress: 'pod-2',
-            hit: false,
-            timestamp: now),
+          roundIndex: 1,
+          podAddress: 'pod-2',
+          hit: false,
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 2,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 500),
-            timestamp: now),
+          roundIndex: 2,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 500),
+          timestamp: now,
+        ),
       ]);
 
       expect(result.totalRounds, 3);
@@ -51,23 +54,26 @@ void main() {
     test('computes avg reaction time', () {
       final result = makeResult([
         RoundResult(
-            roundIndex: 0,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 200),
-            timestamp: now),
+          roundIndex: 0,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 200),
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 1,
-            podAddress: 'pod-2',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 400),
-            timestamp: now),
+          roundIndex: 1,
+          podAddress: 'pod-2',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 400),
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 2,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 600),
-            timestamp: now),
+          roundIndex: 2,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 600),
+          timestamp: now,
+        ),
       ]);
 
       expect(result.avgReactionTime, const Duration(milliseconds: 400));
@@ -76,23 +82,26 @@ void main() {
     test('computes best and worst reaction time', () {
       final result = makeResult([
         RoundResult(
-            roundIndex: 0,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 150),
-            timestamp: now),
+          roundIndex: 0,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 150),
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 1,
-            podAddress: 'pod-2',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 800),
-            timestamp: now),
+          roundIndex: 1,
+          podAddress: 'pod-2',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 800),
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 2,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 350),
-            timestamp: now),
+          roundIndex: 2,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 350),
+          timestamp: now,
+        ),
       ]);
 
       expect(result.bestReactionTime, const Duration(milliseconds: 150));
@@ -111,15 +120,17 @@ void main() {
     test('returns null for all misses', () {
       final result = makeResult([
         RoundResult(
-            roundIndex: 0,
-            podAddress: 'pod-1',
-            hit: false,
-            timestamp: now),
+          roundIndex: 0,
+          podAddress: 'pod-1',
+          hit: false,
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 1,
-            podAddress: 'pod-2',
-            hit: false,
-            timestamp: now),
+          roundIndex: 1,
+          podAddress: 'pod-2',
+          hit: false,
+          timestamp: now,
+        ),
       ]);
 
       expect(result.avgReactionTime, isNull);
@@ -136,28 +147,32 @@ void main() {
     test('per-pod breakdown', () {
       final result = makeResult([
         RoundResult(
-            roundIndex: 0,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 200),
-            timestamp: now),
+          roundIndex: 0,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 200),
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 1,
-            podAddress: 'pod-2',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 400),
-            timestamp: now),
+          roundIndex: 1,
+          podAddress: 'pod-2',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 400),
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 2,
-            podAddress: 'pod-1',
-            hit: false,
-            timestamp: now),
+          roundIndex: 2,
+          podAddress: 'pod-1',
+          hit: false,
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 3,
-            podAddress: 'pod-2',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 300),
-            timestamp: now),
+          roundIndex: 3,
+          podAddress: 'pod-2',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 300),
+          timestamp: now,
+        ),
       ]);
 
       final perPod = result.perPodResults;
@@ -171,29 +186,32 @@ void main() {
     test('hitRounds only includes hits with reaction time', () {
       final result = makeResult([
         RoundResult(
-            roundIndex: 0,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 200),
-            timestamp: now),
+          roundIndex: 0,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 200),
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 1,
-            podAddress: 'pod-2',
-            hit: false,
-            timestamp: now),
+          roundIndex: 1,
+          podAddress: 'pod-2',
+          hit: false,
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 2,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 500),
-            timestamp: now),
+          roundIndex: 2,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 500),
+          timestamp: now,
+        ),
       ]);
 
       expect(result.hitRounds.length, 2);
       expect(
-          result.hitRounds
-              .every((r) => r.hit && r.reactionTime != null),
-          isTrue);
+        result.hitRounds.every((r) => r.hit && r.reactionTime != null),
+        isTrue,
+      );
     });
   });
 
@@ -201,16 +219,18 @@ void main() {
     test('toTextSummary contains key info', () {
       final result = makeResult([
         RoundResult(
-            roundIndex: 0,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 250),
-            timestamp: now),
+          roundIndex: 0,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 250),
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 1,
-            podAddress: 'pod-2',
-            hit: false,
-            timestamp: now),
+          roundIndex: 1,
+          podAddress: 'pod-2',
+          hit: false,
+          timestamp: now,
+        ),
       ]);
 
       final text = result.toTextSummary();
@@ -226,16 +246,18 @@ void main() {
     test('toJson produces valid JSON with correct fields', () {
       final result = makeResult([
         RoundResult(
-            roundIndex: 0,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 300),
-            timestamp: now),
+          roundIndex: 0,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 300),
+          timestamp: now,
+        ),
         RoundResult(
-            roundIndex: 1,
-            podAddress: 'pod-2',
-            hit: false,
-            timestamp: now),
+          roundIndex: 1,
+          podAddress: 'pod-2',
+          hit: false,
+          timestamp: now,
+        ),
       ]);
 
       final json = result.toJson();
@@ -254,11 +276,12 @@ void main() {
     test('toJsonString produces parseable JSON', () {
       final result = makeResult([
         RoundResult(
-            roundIndex: 0,
-            podAddress: 'pod-1',
-            hit: true,
-            reactionTime: const Duration(milliseconds: 200),
-            timestamp: now),
+          roundIndex: 0,
+          podAddress: 'pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 200),
+          timestamp: now,
+        ),
       ]);
 
       final jsonStr = result.toJsonString();

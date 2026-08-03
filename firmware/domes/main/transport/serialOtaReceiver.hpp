@@ -4,7 +4,7 @@
  * @file serialOtaReceiver.hpp
  * @brief OTA receiver task for serial transport
  *
- * Listens for OTA protocol messages on a transport (USB-CDC or UART)
+ * Listens for OTA protocol messages on a serial byte-stream transport
  * and handles firmware updates using the ESP32 OTA APIs. Also handles
  * trace protocol commands for performance profiling.
  */
@@ -15,6 +15,8 @@
 #include "esp_ota_ops.h"
 #include "interfaces/iTaskRunner.hpp"
 #include "interfaces/iTransport.hpp"
+#include "mbedtls/sha256.h"
+#include "protocol/otaProtocol.hpp"
 #include "trace/traceCommandHandler.hpp"
 
 #include <atomic>
@@ -36,7 +38,7 @@ class ImuService;  // Forward declaration
  *
  * Usage:
  * @code
- * UsbCdcTransport transport;
+ * UartTransport transport(UART_NUM_0, GPIO_NUM_43, GPIO_NUM_44);
  * transport.init();
  *
  * SerialOtaReceiver receiver(transport);
@@ -52,11 +54,10 @@ public:
      * @param features Feature manager for runtime config (optional)
      * @param podId Pod identity for trace session metadata (0 if unset)
      */
-    explicit SerialOtaReceiver(ITransport& transport,
-                                config::FeatureManager* features = nullptr,
-                                uint8_t podId = 0);
+    explicit SerialOtaReceiver(ITransport& transport, config::FeatureManager* features = nullptr,
+                               uint8_t podId = 0);
 
-    ~SerialOtaReceiver() override = default;
+    ~SerialOtaReceiver() override;
 
     // Non-copyable
     SerialOtaReceiver(const SerialOtaReceiver&) = delete;
@@ -66,6 +67,11 @@ public:
     void run() override;
     esp_err_t requestStop() override;
     bool shouldRun() const override;
+
+    /** Publish a touch notification on this receiver's transport. */
+    bool sendTouchEvent(uint8_t podId, uint8_t padIndex, uint64_t timestampUs) {
+        return configHandler_ && configHandler_->sendTouchEvent(podId, padIndex, timestampUs);
+    }
 
     /**
      * @brief Check if OTA is currently in progress
@@ -165,7 +171,7 @@ private:
     /**
      * @brief Handle OTA_END message
      */
-    void handleOtaEnd();
+    void handleOtaEnd(const uint8_t* payload, size_t len);
 
     /**
      * @brief Send ACK response
@@ -182,9 +188,16 @@ private:
      */
     void cleanupOta();
 
+    /**
+     * @brief Abort an active session after disconnect or prolonged inactivity
+     * @return true when the active session was cleaned up
+     */
+    bool cleanupInterruptedOta();
+
     ITransport& transport_;
     std::atomic<bool> stopRequested_;
     std::atomic<bool> otaInProgress_;
+    bool ownsOtaSession_ = false;
 
     // Trace command handler
     std::unique_ptr<trace::CommandHandler> traceHandler_;
@@ -198,7 +211,11 @@ private:
     size_t firmwareSize_;
     size_t bytesReceived_;
     uint32_t expectedOffset_;
+    int64_t lastOtaActivityUs_;
     uint8_t expectedSha256_[32];
+    char expectedVersion_[kOtaVersionMaxLen];
+    mbedtls_sha256_context sha256Context_;
+    bool sha256Active_;
 };
 
 }  // namespace domes

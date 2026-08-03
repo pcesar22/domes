@@ -8,11 +8,10 @@
  * in real-time using the StreamBatch protobuf message format.
  */
 
-#include "interfaces/iTaskRunner.hpp"
-#include "traceEvent.hpp"
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "interfaces/iTaskRunner.hpp"
+#include "traceEvent.hpp"
 
 #include <atomic>
 #include <cstdint>

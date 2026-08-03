@@ -43,7 +43,8 @@ Tier 2 parts should prefer JLCPCB but may have alternatives:
 
 | Component | Key requirements | Alternatives |
 | --- | --- | --- |
-| SK6812MINI-E | 3535 RGBW addressable LED | WS2812B-Mini, SK6812 5050 |
+| SK6812MINI-E | 3535 RGBW addressable LED | Only pin- and footprint-compatible 3535 parts after timing/color-order review; 5050 is not a drop-in footprint |
+| LD0832AA-0099F | 8 mm LRA, 1.8 Vrms, 235 Hz | Current NFF schematic part; JLCPCB `C2682305` |
 | USB-C connector | 16-pin, USB 2.0 Type-C receptacle | Equivalent footprint-compatible part |
 | DW01A + FS8205A | Battery protection | BQ29700 or integrated protection IC |
 
@@ -51,7 +52,7 @@ Tier 3 parts are usually externally sourced:
 
 | Component | Source | Notes |
 | --- | --- | --- |
-| LRA haptic motor | DigiKey, Mouser, Alibaba | G1040003D or 10 mm equivalent |
+| Alternate LRA haptic motor | DigiKey, Mouser, Alibaba | Requires a matching firmware voltage/frequency profile |
 | 23 mm speaker | AliExpress, Alibaba | 8 ohm, 1 W |
 | 1200 mAh LiPo | Battery suppliers | 103040 pouch cell |
 | Pogo pins | Mill-Max, AliExpress | Spring-loaded, through-hole |
@@ -73,6 +74,8 @@ For each component, verify:
 - ESP32-S3 module must be WROOM-1-N16R8: 16 MB flash, 8 MB PSRAM, PCB antenna, not U.FL.
 - LIS2DW12 must be LGA-12 and support tap detection; do not substitute LIS2DH12 without review.
 - DRV2605L must support LRA motors and fixed I2C address 0x5A.
+- The current NFF actuator is LD0832AA-0099F; do not substitute another LRA without updating and
+  validating the DRV2605L profile.
 - MAX98357A must support standard Philips I2S input.
 - SK6812 alternative must be RGBW if the design expects a separate white die.
 - TP4056 must expose CHRG and STDBY status pins.
@@ -87,6 +90,10 @@ When updating `hardware/BOM.csv`, include:
 3. Stock status.
 4. Assembly type.
 5. Notes for concerns or alternatives.
+
+The repository BOM is a design-level component list, not an exported NFF assembly BOM. Do not mark
+cost, stock, JLCPCB classification, or footprint compatibility as verified without a current catalog
+and EDA-footprint check.
 
 Example:
 

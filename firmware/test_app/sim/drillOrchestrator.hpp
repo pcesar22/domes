@@ -1,11 +1,11 @@
 #pragma once
 
-#include "sim/simOrchestrator.hpp"
-#include "sim/simEspNowBus.hpp"
-#include "sim/podCommandHandler.hpp"
-#include "sim/simProtocol.hpp"
-#include "game/gameEngine.hpp"
 #include "esp_timer.h"
+#include "game/gameEngine.hpp"
+#include "sim/podCommandHandler.hpp"
+#include "sim/simEspNowBus.hpp"
+#include "sim/simOrchestrator.hpp"
+#include "sim/simProtocol.hpp"
 
 #include <vector>
 
@@ -39,14 +39,13 @@ struct DrillResult {
     size_t hitCount() const {
         size_t count = 0;
         for (const auto& r : rounds) {
-            if (r.hit) count++;
+            if (r.hit)
+                count++;
         }
         return count;
     }
 
-    size_t missCount() const {
-        return rounds.size() - hitCount();
-    }
+    size_t missCount() const { return rounds.size() - hitCount(); }
 
     uint32_t avgReactionUs() const {
         uint64_t sum = 0;

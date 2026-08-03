@@ -29,7 +29,9 @@ esp_err_t TaskManager::createTask(const TaskConfig& config, ITaskRunner& runner)
     slot.runner = &runner;
     slot.name = config.name;
     slot.watchdogSubscribed = config.subscribeToWatchdog;
-    slot.active = true;
+    slot.owner = this;
+    slot.active.store(true, std::memory_order_release);
+    activeCount_.fetch_add(1, std::memory_order_acq_rel);
 
     BaseType_t result;
     if (config.coreAffinity == core::kAny) {
@@ -44,12 +46,13 @@ esp_err_t TaskManager::createTask(const TaskConfig& config, ITaskRunner& runner)
 
     if (result != pdPASS) {
         ESP_LOGE(kTag, "Failed to create task '%s'", config.name);
-        slot.active = false;
+        slot.active.store(false, std::memory_order_release);
+        activeCount_.fetch_sub(1, std::memory_order_acq_rel);
         slot.runner = nullptr;
+        slot.owner = nullptr;
         return ESP_FAIL;
     }
 
-    activeCount_++;
     ESP_LOGI(kTag, "Created task '%s' (stack=%lu, prio=%u, core=%s, wdt=%s)", config.name,
              static_cast<unsigned long>(config.stackSize), static_cast<unsigned>(config.priority),
              config.coreAffinity == core::kAny
@@ -63,37 +66,36 @@ esp_err_t TaskManager::createTask(const TaskConfig& config, ITaskRunner& runner)
 esp_err_t TaskManager::stopAllTasks(uint32_t timeoutMs) {
     // Request stop on all tasks
     for (auto& slot : slots_) {
-        if (slot.active && slot.runner) {
-            slot.runner->requestStop();
+        if (slot.active.load(std::memory_order_acquire) && slot.runner) {
+            const esp_err_t err = slot.runner->requestStop();
+            if (err != ESP_OK) {
+                ESP_LOGW(kTag, "Task '%s' rejected stop request: %s", slot.name,
+                         esp_err_to_name(err));
+            }
         }
     }
 
-    // Wait for tasks to exit
+    // Each task clears its slot and decrements activeCount_ immediately before
+    // deleting itself.
     TickType_t startTick = xTaskGetTickCount();
     TickType_t timeoutTicks = pdMS_TO_TICKS(timeoutMs);
 
-    while (activeCount_ > 0) {
+    while (activeCount_.load(std::memory_order_acquire) > 0) {
         // Check for timeout
         if ((xTaskGetTickCount() - startTick) > timeoutTicks) {
-            ESP_LOGW(kTag, "Timeout waiting for tasks to stop (%zu still active)", activeCount_);
+            ESP_LOGW(kTag, "Timeout waiting for tasks to stop (%zu still active)",
+                     activeCount_.load(std::memory_order_acquire));
             return ESP_ERR_TIMEOUT;
         }
 
-        // Check each task
-        for (auto& slot : slots_) {
-            if (slot.active && slot.handle) {
-                eTaskState state = eTaskGetState(slot.handle);
-                if (state == eDeleted) {
-                    ESP_LOGD(kTag, "Task '%s' stopped", slot.name);
-                    slot.active = false;
-                    slot.handle = nullptr;
-                    slot.runner = nullptr;
-                    activeCount_--;
-                }
-            }
-        }
-
         vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    for (auto& slot : slots_) {
+        slot.handle = nullptr;
+        slot.runner = nullptr;
+        slot.name = nullptr;
+        slot.owner = nullptr;
     }
 
     ESP_LOGI(kTag, "All tasks stopped");
@@ -102,7 +104,8 @@ esp_err_t TaskManager::stopAllTasks(uint32_t timeoutMs) {
 
 TaskHandle_t TaskManager::getTaskHandle(const char* name) const {
     for (const auto& slot : slots_) {
-        if (slot.active && slot.name && strcmp(slot.name, name) == 0) {
+        if (slot.active.load(std::memory_order_acquire) && slot.name &&
+            strcmp(slot.name, name) == 0) {
             return slot.handle;
         }
     }
@@ -110,12 +113,12 @@ TaskHandle_t TaskManager::getTaskHandle(const char* name) const {
 }
 
 size_t TaskManager::getActiveTaskCount() const {
-    return activeCount_;
+    return activeCount_.load(std::memory_order_acquire);
 }
 
 size_t TaskManager::findFreeSlot() const {
     for (size_t i = 0; i < kMaxManagedTasks; i++) {
-        if (!slots_[i].active) {
+        if (!slots_[i].active.load(std::memory_order_acquire)) {
             return i;
         }
     }
@@ -141,8 +144,11 @@ void TaskManager::taskEntryPoint(void* param) {
         Watchdog::unsubscribe();
     }
 
-    // Mark slot as inactive (TaskManager will clean up)
-    slot->active = false;
+    // Publish completion before deleting this task. The manager owns the
+    // bounded slot storage for the firmware lifetime.
+    if (slot->active.exchange(false, std::memory_order_acq_rel) && slot->owner) {
+        slot->owner->activeCount_.fetch_sub(1, std::memory_order_acq_rel);
+    }
 
     // Delete self
     vTaskDelete(nullptr);

@@ -21,13 +21,15 @@ void main() {
     // CRC32 of [0x20] = 0xE96CCF45 (verified with Python binascii.crc32)
     final crc =
         frame[5] | (frame[6] << 8) | (frame[7] << 16) | (frame[8] << 24);
-    expect(crc, 0xE96CCF45,
-        reason: 'CRC32 of [0x20] must match standard ISO 3309');
+    expect(
+      crc,
+      0xE96CCF45,
+      reason: 'CRC32 of [0x20] must match standard ISO 3309',
+    );
   });
 
   test('encode/decode roundtrip verifies CRC integrity', () {
-    final frame =
-        encodeFrame(0x00, Uint8List.fromList([0x01, 0x02, 0x03]));
+    final frame = encodeFrame(0x00, Uint8List.fromList([0x01, 0x02, 0x03]));
 
     final decoder = FrameDecoder();
     DecodeResult? result;

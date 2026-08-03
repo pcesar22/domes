@@ -27,17 +27,17 @@ class DrillResultsScreen extends ConsumerWidget {
               switch (value) {
                 case 'text':
                   Clipboard.setData(
-                      ClipboardData(text: result.toTextSummary()));
+                    ClipboardData(text: result.toTextSummary()),
+                  );
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                        content: Text('Results copied to clipboard')),
+                      content: Text('Results copied to clipboard'),
+                    ),
                   );
                 case 'json':
-                  Clipboard.setData(
-                      ClipboardData(text: result.toJsonString()));
+                  Clipboard.setData(ClipboardData(text: result.toJsonString()));
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('JSON copied to clipboard')),
+                    const SnackBar(content: Text('JSON copied to clipboard')),
                   );
               }
             },
@@ -85,8 +85,10 @@ class DrillResultsScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Reaction Times',
-                        style: Theme.of(context).textTheme.titleMedium),
+                    Text(
+                      'Reaction Times',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                     const SizedBox(height: 8),
                     SizedBox(
                       height: 200,
@@ -107,22 +109,23 @@ class DrillResultsScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Per-Pod Breakdown',
-                        style: Theme.of(context).textTheme.titleMedium),
+                    Text(
+                      'Per-Pod Breakdown',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                     const Divider(),
                     ...result.perPodResults.entries.map((entry) {
                       final podRounds = entry.value;
-                      final hits =
-                          podRounds.where((r) => r.hit).length;
+                      final hits = podRounds.where((r) => r.hit).length;
                       final hitRounds = podRounds
                           .where((r) => r.hit && r.reactionTime != null)
                           .toList();
                       final avgMs = hitRounds.isEmpty
                           ? null
                           : hitRounds
-                                  .map((r) => r.reactionTime!.inMilliseconds)
-                                  .reduce((a, b) => a + b) ~/
-                              hitRounds.length;
+                                    .map((r) => r.reactionTime!.inMilliseconds)
+                                    .reduce((a, b) => a + b) ~/
+                                hitRounds.length;
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -132,7 +135,8 @@ class DrillResultsScreen extends ConsumerWidget {
                               child: Text(
                                 _shortAddress(entry.key),
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.w500),
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
                             Text('$hits/${podRounds.length} hits'),
@@ -156,8 +160,10 @@ class DrillResultsScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Round Details',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Round Details',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const Divider(),
                   ...result.rounds.asMap().entries.map((entry) {
                     final i = entry.key;
@@ -168,9 +174,12 @@ class DrillResultsScreen extends ConsumerWidget {
                         children: [
                           SizedBox(
                             width: 32,
-                            child: Text('${i + 1}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w500)),
+                            child: Text(
+                              '${i + 1}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                           ),
                           Icon(
                             r.hit ? Icons.check_circle : Icons.cancel,
@@ -180,8 +189,7 @@ class DrillResultsScreen extends ConsumerWidget {
                                 : AppTheme.errorColor,
                           ),
                           const SizedBox(width: 8),
-                          Expanded(
-                              child: Text(_shortAddress(r.podAddress))),
+                          Expanded(child: Text(_shortAddress(r.podAddress))),
                           if (r.reactionTime != null)
                             Text(
                               '${r.reactionTime!.inMilliseconds}ms',
@@ -191,8 +199,10 @@ class DrillResultsScreen extends ConsumerWidget {
                               ),
                             )
                           else
-                            const Text('miss',
-                                style: TextStyle(color: AppTheme.errorColor)),
+                            const Text(
+                              'miss',
+                              style: TextStyle(color: AppTheme.errorColor),
+                            ),
                         ],
                       ),
                     );
@@ -246,8 +256,7 @@ class _SummaryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Summary',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text('Summary', style: Theme.of(context).textTheme.titleMedium),
             const Divider(),
             _StatRow(
               'Hit Rate',
@@ -259,19 +268,13 @@ class _SummaryCard extends StatelessWidget {
                 '${result.avgReactionTime!.inMilliseconds}ms',
               ),
             if (result.bestReactionTime != null)
-              _StatRow(
-                'Best',
-                '${result.bestReactionTime!.inMilliseconds}ms',
-              ),
+              _StatRow('Best', '${result.bestReactionTime!.inMilliseconds}ms'),
             if (result.worstReactionTime != null)
               _StatRow(
                 'Worst',
                 '${result.worstReactionTime!.inMilliseconds}ms',
               ),
-            _StatRow(
-              'Duration',
-              '${result.totalDuration.inSeconds}s',
-            ),
+            _StatRow('Duration', '${result.totalDuration.inSeconds}s'),
             _StatRow('Pods Used', '${result.config.podAddresses.length}'),
             _StatRow('Drill Type', result.config.type.label),
           ],
@@ -294,9 +297,10 @@ class _StatRow extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-          Text(value,
-              style:
-                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
         ],
       ),
     );

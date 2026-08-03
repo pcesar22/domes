@@ -30,8 +30,11 @@ class HomeScreen extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: Chip(
-                avatar: const Icon(Icons.bluetooth_connected,
-                    color: AppTheme.connectedColor, size: 18),
+                avatar: const Icon(
+                  Icons.bluetooth_connected,
+                  color: AppTheme.connectedColor,
+                  size: 18,
+                ),
                 label: Text(connectionState.device?.name ?? 'Connected'),
               ),
             ),
@@ -43,13 +46,12 @@ class HomeScreen extends ConsumerWidget {
                     MaterialPageRoute(builder: (_) => const DrillSetupScreen()),
                   );
                 case 'ota':
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const OtaScreen()),
-                  );
+                  Navigator.of(
+                    context,
+                  ).push(MaterialPageRoute(builder: (_) => const OtaScreen()));
                 case 'settings':
                   Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => const SettingsScreen()),
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
                   );
               }
             },
@@ -88,15 +90,19 @@ class HomeScreen extends ConsumerWidget {
           if (connectionState.isConnected)
             MaterialBanner(
               content: Text(
-                  'Connected to ${connectionState.device?.name ?? "device"}'),
-              leading:
-                  const Icon(Icons.check_circle, color: AppTheme.connectedColor),
+                'Connected to ${connectionState.device?.name ?? "device"}',
+              ),
+              leading: const Icon(
+                Icons.check_circle,
+                color: AppTheme.connectedColor,
+              ),
               actions: [
                 TextButton(
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                          builder: (_) => const PodDetailScreen()),
+                        builder: (_) => const PodDetailScreen(),
+                      ),
                     );
                   },
                   child: const Text('OPEN'),
@@ -141,12 +147,13 @@ class HomeScreen extends ConsumerWidget {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.bluetooth_searching,
-                                    size: 64,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withAlpha(100)),
+                                Icon(
+                                  Icons.bluetooth_searching,
+                                  size: 64,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withAlpha(100),
+                                ),
                                 const SizedBox(height: 16),
                                 Text(
                                   isScanning.value == true
@@ -180,7 +187,8 @@ class HomeScreen extends ConsumerWidget {
           }
         },
         icon: Icon(
-            isScanning.value == true ? Icons.stop : Icons.bluetooth_searching),
+          isScanning.value == true ? Icons.stop : Icons.bluetooth_searching,
+        ),
         label: Text(isScanning.value == true ? 'Stop' : 'Scan'),
       ),
     );
@@ -196,7 +204,8 @@ class _PodListTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final connectionState = ref.watch(podConnectionProvider);
     final isThisConnected =
-        connectionState.isConnected && connectionState.device?.address == pod.address;
+        connectionState.isConnected &&
+        connectionState.device?.address == pod.address;
 
     return ListTile(
       leading: Icon(
@@ -210,16 +219,15 @@ class _PodListTile extends ConsumerWidget {
           : const Icon(Icons.chevron_right),
       onTap: () async {
         if (isThisConnected) {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const PodDetailScreen()),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const PodDetailScreen()));
         } else {
           await ref.read(podConnectionProvider.notifier).connect(pod);
-          if (ref.read(podConnectionProvider).isConnected &&
-              context.mounted) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PodDetailScreen()),
-            );
+          if (ref.read(podConnectionProvider).isConnected && context.mounted) {
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const PodDetailScreen()));
           }
         }
       },

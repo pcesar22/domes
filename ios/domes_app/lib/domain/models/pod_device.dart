@@ -3,12 +3,7 @@ library;
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-enum PodConnectionState {
-  disconnected,
-  connecting,
-  connected,
-  disconnecting,
-}
+enum PodConnectionState { disconnected, connecting, connected, disconnecting }
 
 class PodDevice {
   final String name;
@@ -31,14 +26,13 @@ class PodDevice {
     int? rssi,
     PodConnectionState? connectionState,
     BluetoothDevice? bleDevice,
-  }) =>
-      PodDevice(
-        name: name ?? this.name,
-        address: address ?? this.address,
-        rssi: rssi ?? this.rssi,
-        connectionState: connectionState ?? this.connectionState,
-        bleDevice: bleDevice ?? this.bleDevice,
-      );
+  }) => PodDevice(
+    name: name ?? this.name,
+    address: address ?? this.address,
+    rssi: rssi ?? this.rssi,
+    connectionState: connectionState ?? this.connectionState,
+    bleDevice: bleDevice ?? this.bleDevice,
+  );
 
   bool get isConnected => connectionState == PodConnectionState.connected;
 

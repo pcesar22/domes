@@ -9,18 +9,18 @@ class AppTheme {
   static const _domesOrange = Color(0xFFFF8F00);
 
   static ThemeData get darkTheme => ThemeData(
-        brightness: Brightness.dark,
-        colorSchemeSeed: _domesBlue,
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(centerTitle: true),
-      );
+    brightness: Brightness.dark,
+    colorSchemeSeed: _domesBlue,
+    useMaterial3: true,
+    appBarTheme: const AppBarTheme(centerTitle: true),
+  );
 
   static ThemeData get lightTheme => ThemeData(
-        brightness: Brightness.light,
-        colorSchemeSeed: _domesBlue,
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(centerTitle: true),
-      );
+    brightness: Brightness.light,
+    colorSchemeSeed: _domesBlue,
+    useMaterial3: true,
+    appBarTheme: const AppBarTheme(centerTitle: true),
+  );
 
   static const Color connectedColor = _domesGreen;
   static const Color disconnectedColor = Colors.grey;

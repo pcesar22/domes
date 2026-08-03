@@ -5,20 +5,20 @@
 
 #include "memoryProfiler.hpp"
 
-#include "trace/traceApi.hpp"
-
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "trace/traceApi.hpp"
 
 #include <algorithm>
 
 namespace {
 constexpr const char* kTag = "mem_prof";
-constexpr size_t kTaskStackSize = 2048;
+constexpr size_t kTaskStackSize = 4096;
 constexpr UBaseType_t kTaskPriority = 1;  // Low priority
-}
+constexpr uint32_t kProfileHeapCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+}  // namespace
 
 namespace domes::infra {
 
@@ -44,20 +44,20 @@ esp_err_t MemoryProfiler::init(uint32_t intervalS) {
     return ESP_OK;
 }
 
-void MemoryProfiler::startTask() {
+esp_err_t MemoryProfiler::startTask() {
     if (!initialized_) {
-        return;
+        return ESP_ERR_INVALID_STATE;
     }
 
-    xTaskCreatePinnedToCore(
-        taskFunc,
-        "mem_prof",
-        kTaskStackSize,
-        nullptr,
-        kTaskPriority,
-        nullptr,
-        tskNO_AFFINITY
-    );
+    const BaseType_t created = xTaskCreatePinnedToCore(
+        taskFunc, "mem_prof", kTaskStackSize, nullptr, kTaskPriority, nullptr, tskNO_AFFINITY);
+
+    if (created != pdPASS) {
+        ESP_LOGE(kTag, "Failed to create memory profiler task");
+        return ESP_ERR_NO_MEM;
+    }
+
+    return ESP_OK;
 }
 
 size_t MemoryProfiler::sampleCount() {
@@ -95,15 +95,14 @@ size_t MemoryProfiler::getSamples(HeapSample* out, size_t maxCount) {
 HeapSample MemoryProfiler::currentStats() {
     HeapSample sample;
     sample.timestampS = static_cast<uint32_t>(esp_timer_get_time() / 1'000'000);
-    sample.freeHeap = static_cast<uint32_t>(esp_get_free_heap_size());
-    sample.largestBlock = static_cast<uint32_t>(
-        heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT));
-    sample.minFreeHeap = static_cast<uint32_t>(esp_get_minimum_free_heap_size());
+    sample.freeHeap = static_cast<uint32_t>(heap_caps_get_free_size(kProfileHeapCaps));
+    sample.largestBlock = static_cast<uint32_t>(heap_caps_get_largest_free_block(kProfileHeapCaps));
+    sample.minFreeHeap = static_cast<uint32_t>(heap_caps_get_minimum_free_size(kProfileHeapCaps));
     return sample;
 }
 
 uint32_t MemoryProfiler::totalHeapSize() {
-    return static_cast<uint32_t>(heap_caps_get_total_size(MALLOC_CAP_DEFAULT));
+    return static_cast<uint32_t>(heap_caps_get_total_size(kProfileHeapCaps));
 }
 
 void MemoryProfiler::taskFunc(void* param) {
@@ -127,8 +126,7 @@ void MemoryProfiler::taskFunc(void* param) {
         taskEXIT_CRITICAL(&spinlock_);
 
         // Emit trace counters for Perfetto
-        TRACE_COUNTER(TRACE_ID("Heap.Free"), sample.freeHeap,
-                      domes::trace::Category::kKernel);
+        TRACE_COUNTER(TRACE_ID("Heap.Free"), sample.freeHeap, domes::trace::Category::kKernel);
         TRACE_COUNTER(TRACE_ID("Heap.LargestBlock"), sample.largestBlock,
                       domes::trace::Category::kKernel);
         TRACE_COUNTER(TRACE_ID("Heap.MinFree"), sample.minFreeHeap,

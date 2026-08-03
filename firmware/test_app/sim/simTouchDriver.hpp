@@ -40,7 +40,8 @@ public:
     }
 
     void clearAll() {
-        for (auto& s : touchState_) s = false;
+        for (auto& s : touchState_)
+            s = false;
     }
 
     int updateCount() const { return updateCount_; }

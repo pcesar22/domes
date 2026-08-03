@@ -5,88 +5,238 @@ on:
     tags:
       - 'v*.*.*'
 
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: firmware-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  build-and-release:
-    name: Build and Release Firmware
-    runs-on: ubuntu-latest
+  validate-release:
+    name: Validate Release Tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Extract version from tag
+      - name: Validate release tag
         id: version
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Building release: $VERSION"
+          core='(0|[1-9][0-9]*)'
+          semver="^v(${core})\\.(${core})\\.(${core})$"
 
-      - name: Set up ESP-IDF
-        uses: espressif/esp-idf-ci-action@v1
-        with:
-          esp_idf_version: v5.2.2
-          target: esp32s3
-          path: firmware/domes
-
-      - name: Build firmware
-        run: |
-          cd firmware/domes
-          idf.py build
-
-      - name: Verify binary size
-        run: |
-          SIZE=$(stat -c%s firmware/domes/build/domes.bin)
-          MAX_SIZE=1966080
-
-          if [ $SIZE -gt $MAX_SIZE ]; then
-            echo "::error::Binary exceeds OTA partition size"
+          if [[ ! "$RELEASE_VERSION" =~ $semver ]]; then
+            echo "::error::Release tag must be a stable vMAJOR.MINOR.PATCH version: $RELEASE_VERSION"
+            exit 1
+          fi
+          if ((${#RELEASE_VERSION} > 31)); then
+            echo "::error::Release tag exceeds the 31-byte firmware version limit"
+            exit 1
+          fi
+          for component in "${BASH_REMATCH[1]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[5]}"; do
+            # Equal-length lexical comparison avoids Bash signed-integer overflow.
+            # shellcheck disable=SC2071
+            if ((${#component} > 10)) || \
+              { ((${#component} == 10)) && [[ "$component" > "4294967295" ]]; }; then
+              echo "::error::Release version component exceeds uint32: $component"
+              exit 1
+            fi
+          done
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Release tag must point to a commit on main"
             exit 1
           fi
 
-          echo "Binary size: $SIZE bytes ($(( SIZE * 100 / MAX_SIZE ))% of partition)"
+          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=false" >> "$GITHUB_OUTPUT"
 
-      - name: Generate checksums
-        run: |
-          cd firmware/domes/build
-          sha256sum domes.bin > domes.bin.sha256
-          SHA256=$(cat domes.bin.sha256 | cut -d' ' -f1)
-          echo "SHA256=$SHA256" >> $GITHUB_ENV
-          echo "SHA-256: $SHA256"
+  software-ci:
+    name: Software CI
+    needs: validate-release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/firmware-ci.yml
 
-      - name: Rename binary with version
-        run: |
-          cp firmware/domes/build/domes.bin firmware/domes/build/domes-${{ steps.version.outputs.version }}.bin
+  build-and-release:
+    name: Build and Release Firmware
+    needs: [validate-release, software-ci]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    container:
+      image: espressif/idf:v5.4.4@sha256:8d1846f61ff8db00ba6530501f90bf43604d923072a616c806fef8e85a88ed82
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          files: |
-            firmware/domes/build/domes.bin
-            firmware/domes/build/domes-${{ steps.version.outputs.version }}.bin
-            firmware/domes/build/domes.bin.sha256
-          body: |
-            ## DOMES Firmware ${{ steps.version.outputs.version }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: recursive
 
-            ### Checksums
-            ```
-            SHA-256: ${{ env.SHA256 }}
-            ```
+      - name: Check generated firmware bindings
+        run: |
+          . "$IDF_PATH/export.sh"
+          GENERATOR_PYTHONPATH="${RUNNER_TEMP:-/tmp}/nanopb-generator"
+          python -m pip install --disable-pip-version-check --require-hashes \
+            --target "$GENERATOR_PYTHONPATH" \
+            -r firmware/third_party/nanopb/extra/requirements_lock.txt
+          PYTHONPATH="$GENERATOR_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}" \
+            tools/generate_protocols.sh --check nanopb
 
-            ### Installation
-
-            #### OTA Update
-            If your device is already running DOMES firmware with WiFi configured, it will automatically detect and download this update.
-
-            #### Manual Flash
-            ```bash
-            esptool.py --port /dev/ttyUSB0 write_flash 0x20000 domes.bin
-            ```
-
-            ---
-            *Built with ESP-IDF v5.2.2*
-          draft: false
-          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+      - name: Build firmware
+        working-directory: firmware/domes
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          . "$IDF_PATH/export.sh"
+          actual_idf_version=$(idf.py --version)
+          echo "$actual_idf_version"
+          if [[ "$actual_idf_version" != "ESP-IDF v5.4.4" ]]; then
+            echo "::error::Expected ESP-IDF v5.4.4, found $actual_idf_version"
+            exit 1
+          fi
+          sdkconfig_path="${RUNNER_TEMP:-/tmp}/domes-release-sdkconfig"
+          rm -rf build
+          rm -f "$sdkconfig_path"
+          idf.py -B build \
+            -D "IDF_TARGET=esp32s3" \
+            -D "SDKCONFIG=$sdkconfig_path" \
+            -D DOMES_VERSION_OVERRIDE="$RELEASE_VERSION" \
+            build
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path("build/config/sdkconfig.json").read_text())
+          assert config["BOOTLOADER_APP_ROLLBACK_ENABLE"] is True
+          PY
+          if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+            echo "::error::ESP-IDF rewrote firmware/domes/dependencies.lock"
+            git diff -- dependencies.lock
+            exit 1
+          fi
+
+      - name: Verify binary size
+        run: |
+          size=$(stat -c%s firmware/domes/build/domes.bin)
+          max_size=1966080
+          echo "Binary size: $size / $max_size bytes"
+          if ((size > max_size)); then
+            echo "::error::Binary exceeds OTA partition size ($size > $max_size bytes)"
+            exit 1
+          fi
+
+      - name: Package and validate release images
+        id: package
+        working-directory: firmware/domes/build
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          . "$IDF_PATH/export.sh"
+          release_dir="$PWD/release"
+          mkdir -p "$release_dir"
+
+          python -m esptool --chip esp32s3 merge_bin \
+            -o "$release_dir/domes-${RELEASE_VERSION}-factory.bin" @flash_args
+          python -m esptool --chip esp32s3 image_info domes.bin
+          python -m esptool --chip esp32s3 image_info \
+            "$release_dir/domes-${RELEASE_VERSION}-factory.bin"
+
+          embedded_version=$(
+            python -m esptool --chip esp32s3 image_info --version 2 domes.bin |
+              sed -n 's/^App version: //p'
+          )
+          if [[ "$embedded_version" != "$RELEASE_VERSION" ]]; then
+            echo "::error::Release image embeds '$embedded_version', expected '$RELEASE_VERSION'"
+            exit 1
+          fi
+
+          cp domes.bin "$release_dir/domes-${RELEASE_VERSION}.bin"
+          cp domes.elf "$release_dir/domes.elf"
+          cp project_description.json "$release_dir/project_description.json"
+          cp bootloader/bootloader.bin "$release_dir/bootloader.bin"
+          cp partition_table/partition-table.bin "$release_dir/partition-table.bin"
+          cp ota_data_initial.bin "$release_dir/ota_data_initial.bin"
+          sed \
+            -e 's#bootloader/bootloader.bin#bootloader.bin#' \
+            -e 's#partition_table/partition-table.bin#partition-table.bin#' \
+            -e "s#domes\\.bin#domes-${RELEASE_VERSION}.bin#" \
+            flash_args > "$release_dir/flash_args"
+
+          cd "$release_dir"
+          test -s "domes-${RELEASE_VERSION}.bin"
+          test -s domes.elf
+          test -s project_description.json
+          test -s "domes-${RELEASE_VERSION}-factory.bin"
+          manual_flash_image="${RUNNER_TEMP:-/tmp}/domes-release-flash-args.bin"
+          python -m esptool --chip esp32s3 merge_bin -o "$manual_flash_image" @flash_args
+          cmp -- "$manual_flash_image" "domes-${RELEASE_VERSION}-factory.bin"
+          rm -f "$manual_flash_image"
+          sha256sum -- *.bin *.elf *.json flash_args > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(".").resolve()
+          metadata = json.loads((root / "project_description.json").read_text())
+          metadata_elf = (root / metadata.get("app_elf", "")).resolve()
+          if metadata_elf != root / "domes.elf" or not metadata_elf.is_file():
+              raise SystemExit(f"project metadata does not resolve to packaged ELF: {metadata_elf}")
+          if metadata.get("project_version") != os.environ["RELEASE_VERSION"]:
+              raise SystemExit("project metadata version does not match release tag")
+          PY
+          app_sha256=$(sha256sum "domes-${RELEASE_VERSION}.bin" | cut -d ' ' -f 1)
+          echo "app_sha256=$app_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          files: firmware/domes/build/release/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            ## Firmware images
+
+            - `domes-${{ needs.validate-release.outputs.version }}.bin` is the OTA application image.
+            - `domes-${{ needs.validate-release.outputs.version }}-factory.bin` is the complete factory image.
+            - `domes.elf` and `project_description.json` retain the exact symbols and build identity
+              needed for restart snapshots and panic dumps.
+            - `SHA256SUMS` verifies every published image, diagnostic artifact, and the manual flash arguments.
+
+            SHA-256: ${{ steps.package.outputs.app_sha256 }}
+
+            ### Factory installation
+
+            ```bash
+            python -m esptool --chip esp32s3 --port <PORT> erase_flash
+            python -m esptool --chip esp32s3 --port <PORT> write_flash \
+              0x0 domes-${{ needs.validate-release.outputs.version }}-factory.bin
+            ```
+
+            ### OTA update
+
+            ```bash
+            domes-cli --port <PORT> ota flash \
+              domes-${{ needs.validate-release.outputs.version }}.bin \
+              --version ${{ needs.validate-release.outputs.version }}
+            ```
+          prerelease: ${{ needs.validate-release.outputs.prerelease == 'true' }}

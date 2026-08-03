@@ -3,92 +3,9 @@
  * @brief Unit tests for firmware version parsing
  */
 
+#include "services/firmwareVersion.hpp"
+
 #include <gtest/gtest.h>
-
-#include <cstring>
-#include <cstdint>
-#include <cstdlib>
-
-namespace domes {
-
-struct FirmwareVersion {
-    uint8_t major = 0;
-    uint8_t minor = 0;
-    uint8_t patch = 0;
-    bool dirty = false;
-    char gitHash[16] = {0};
-
-    int compare(const FirmwareVersion& other) const {
-        if (major != other.major) return major - other.major;
-        if (minor != other.minor) return minor - other.minor;
-        return patch - other.patch;
-    }
-
-    bool isUpdateAvailable(const FirmwareVersion& remote) const {
-        return compare(remote) < 0;
-    }
-};
-
-FirmwareVersion parseVersion(const char* versionStr) {
-    FirmwareVersion v;
-
-    if (versionStr == nullptr || versionStr[0] == '\0') {
-        return v;
-    }
-
-    const char* p = versionStr;
-
-    if (*p == 'v' || *p == 'V') {
-        p++;
-    }
-
-    char* end = nullptr;
-    long val = strtol(p, &end, 10);
-    if (end == p || *end != '.') {
-        return v;
-    }
-    v.major = static_cast<uint8_t>(val);
-    p = end + 1;
-
-    val = strtol(p, &end, 10);
-    if (end == p || *end != '.') {
-        return v;
-    }
-    v.minor = static_cast<uint8_t>(val);
-    p = end + 1;
-
-    val = strtol(p, &end, 10);
-    if (end == p) {
-        return v;
-    }
-    v.patch = static_cast<uint8_t>(val);
-    p = end;
-
-    if (*p == '-') {
-        p++;
-        if (strncmp(p, "dirty", 5) == 0) {
-            v.dirty = true;
-        } else {
-            while (*p && *p != '-' && *p != 'g') p++;
-            if (*p == '-') p++;
-            if (*p == 'g') {
-                p++;
-                size_t i = 0;
-                while (*p && *p != '-' && i < sizeof(v.gitHash) - 1) {
-                    v.gitHash[i++] = *p++;
-                }
-                v.gitHash[i] = '\0';
-            }
-            if (*p == '-' && strncmp(p + 1, "dirty", 5) == 0) {
-                v.dirty = true;
-            }
-        }
-    }
-
-    return v;
-}
-
-}  // namespace domes
 
 using namespace domes;
 
@@ -103,6 +20,7 @@ TEST(ParseVersion, HandlesSimpleVersion) {
     EXPECT_EQ(2, v.minor);
     EXPECT_EQ(3, v.patch);
     EXPECT_FALSE(v.dirty);
+    EXPECT_TRUE(v.valid);
     EXPECT_STREQ("", v.gitHash);
 }
 
@@ -133,6 +51,17 @@ TEST(ParseVersion, HandlesGitDescribeOutput) {
     EXPECT_STREQ("a1b2c3d", v.gitHash);
 }
 
+TEST(ParseVersion, HandlesHardwareRollbackBuildVersion) {
+    FirmwareVersion v = parseVersion("v0.0.0-1-g0123456789ab");
+
+    EXPECT_TRUE(v.valid);
+    EXPECT_EQ(0u, v.major);
+    EXPECT_EQ(0u, v.minor);
+    EXPECT_EQ(0u, v.patch);
+    EXPECT_FALSE(v.dirty);
+    EXPECT_STREQ("0123456789ab", v.gitHash);
+}
+
 TEST(ParseVersion, HandlesGitDescribeWithDirty) {
     FirmwareVersion v = parseVersion("v1.2.3-5-ga1b2c3d-dirty");
 
@@ -141,6 +70,13 @@ TEST(ParseVersion, HandlesGitDescribeWithDirty) {
     EXPECT_EQ(3, v.patch);
     EXPECT_TRUE(v.dirty);
     EXPECT_STREQ("a1b2c3d", v.gitHash);
+}
+
+TEST(ParseVersion, HandlesFullLengthGitHash) {
+    FirmwareVersion v = parseVersion("v1.2.3-5-g0123456789abcdef0123456789abcdef01234567");
+
+    EXPECT_TRUE(v.valid);
+    EXPECT_STREQ("0123456789abcdef0123456789abcdef01234567", v.gitHash);
 }
 
 TEST(ParseVersion, HandlesZeroVersion) {
@@ -152,11 +88,12 @@ TEST(ParseVersion, HandlesZeroVersion) {
 }
 
 TEST(ParseVersion, HandlesLargeVersionNumbers) {
-    FirmwareVersion v = parseVersion("v255.255.255");
+    FirmwareVersion v = parseVersion("v4294967295.65536.256");
 
-    EXPECT_EQ(255, v.major);
-    EXPECT_EQ(255, v.minor);
-    EXPECT_EQ(255, v.patch);
+    EXPECT_EQ(UINT32_MAX, v.major);
+    EXPECT_EQ(65536u, v.minor);
+    EXPECT_EQ(256u, v.patch);
+    EXPECT_TRUE(v.valid);
 }
 
 TEST(ParseVersion, HandlesNullInput) {
@@ -165,6 +102,7 @@ TEST(ParseVersion, HandlesNullInput) {
     EXPECT_EQ(0, v.major);
     EXPECT_EQ(0, v.minor);
     EXPECT_EQ(0, v.patch);
+    EXPECT_FALSE(v.valid);
 }
 
 TEST(ParseVersion, HandlesEmptyString) {
@@ -173,6 +111,7 @@ TEST(ParseVersion, HandlesEmptyString) {
     EXPECT_EQ(0, v.major);
     EXPECT_EQ(0, v.minor);
     EXPECT_EQ(0, v.patch);
+    EXPECT_FALSE(v.valid);
 }
 
 TEST(ParseVersion, HandlesInvalidFormat) {
@@ -181,6 +120,24 @@ TEST(ParseVersion, HandlesInvalidFormat) {
     EXPECT_EQ(0, v.major);
     EXPECT_EQ(0, v.minor);
     EXPECT_EQ(0, v.patch);
+    EXPECT_FALSE(v.valid);
+}
+
+TEST(ParseVersion, RejectsOverflowAndMalformedSuffixes) {
+    EXPECT_FALSE(parseVersion("v4294967296.0.0").valid);
+    EXPECT_FALSE(parseVersion("v1.2").valid);
+    EXPECT_FALSE(parseVersion("v1.2.3junk").valid);
+    EXPECT_FALSE(parseVersion("v1.2.3-5-gxyz").valid);
+    EXPECT_FALSE(parseVersion("v1.2.3-5-gabcdef-extra").valid);
+    EXPECT_FALSE(parseVersion("v1.2.3-5-g0123456789abcdef0123456789abcdef012345678").valid);
+}
+
+TEST(FirmwareVersionIntegrity, RequiresExactParserValidMatch) {
+    EXPECT_TRUE(firmwareVersionsMatchExactly("v1.2.3-4-g0123456789ab", "v1.2.3-4-g0123456789ab"));
+    EXPECT_FALSE(firmwareVersionsMatchExactly("v1.2.3", "1.2.3"));
+    EXPECT_FALSE(firmwareVersionsMatchExactly("v1.2.3", "v1.2.4"));
+    EXPECT_FALSE(firmwareVersionsMatchExactly("invalid", "invalid"));
+    EXPECT_FALSE(firmwareVersionsMatchExactly(nullptr, "v1.2.3"));
 }
 
 // =============================================================================
@@ -238,7 +195,16 @@ TEST(FirmwareVersionCompare, IgnoresDirtyFlag) {
 
 TEST(FirmwareVersionCompare, IgnoresGitHash) {
     FirmwareVersion v1 = parseVersion("v1.0.0-5-ga1b2c3d");
-    FirmwareVersion v2 = parseVersion("v1.0.0-10-gx9y8z7w");
+    FirmwareVersion v2 = parseVersion("v1.0.0-10-gd9e8f7a");
 
     EXPECT_EQ(0, v1.compare(v2));
+}
+
+TEST(FirmwareVersionCompare, InvalidVersionsNeverOfferUpdates) {
+    FirmwareVersion invalid = parseVersion("not-a-version");
+    FirmwareVersion valid = parseVersion("v1.0.0");
+
+    EXPECT_FALSE(invalid.isUpdateAvailable(valid));
+    EXPECT_FALSE(valid.isUpdateAvailable(invalid));
+    EXPECT_LT(invalid.compare(valid), 0);
 }

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers/ota_provider.dart';
 import '../../application/providers/pod_connection_provider.dart';
+import '../../data/protocol/ota_protocol.dart';
 import '../theme/app_theme.dart';
 
 class OtaScreen extends ConsumerStatefulWidget {
@@ -21,7 +22,8 @@ class OtaScreen extends ConsumerStatefulWidget {
 class _OtaScreenState extends ConsumerState<OtaScreen> {
   Uint8List? _firmwareBytes;
   String? _fileName;
-  String _version = 'v1.0.0';
+  String _version = '';
+  bool _versionTouched = false;
   late final TextEditingController _versionController;
 
   @override
@@ -74,8 +76,10 @@ class _OtaScreenState extends ConsumerState<OtaScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Firmware File',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Firmware File',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: otaState.phase == OtaPhase.transferring
@@ -107,16 +111,26 @@ class _OtaScreenState extends ConsumerState<OtaScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Version',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Version',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   TextField(
-                    decoration: const InputDecoration(
-                      hintText: 'e.g. v1.0.0',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      hintText: 'Exact version embedded in the selected image',
+                      errorText: _versionTouched
+                          ? otaVersionValidationError(_version)
+                          : null,
+                      border: const OutlineInputBorder(),
                     ),
                     controller: _versionController,
-                    onChanged: (v) => _version = v,
+                    onChanged: (value) {
+                      setState(() {
+                        _version = value.trim();
+                        _versionTouched = true;
+                      });
+                    },
                     enabled: otaState.phase != OtaPhase.transferring,
                   ),
                 ],
@@ -133,15 +147,17 @@ class _OtaScreenState extends ConsumerState<OtaScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Progress',
-                        style: Theme.of(context).textTheme.titleMedium),
+                    Text(
+                      'Progress',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                     const SizedBox(height: 12),
                     LinearProgressIndicator(
                       value: otaState.phase == OtaPhase.transferring
                           ? otaState.progress
                           : otaState.phase == OtaPhase.completed
-                              ? 1.0
-                              : null,
+                          ? 1.0
+                          : null,
                     ),
                     const SizedBox(height: 8),
                     Row(
@@ -201,7 +217,9 @@ class _OtaScreenState extends ConsumerState<OtaScreen> {
 
   bool _canFlash(OtaUpdateState otaState, ConnectedPodState connection) {
     return _firmwareBytes != null &&
+        otaVersionValidationError(_version) == null &&
         connection.isConnected &&
+        otaState.phase != OtaPhase.preparing &&
         otaState.phase != OtaPhase.transferring &&
         otaState.phase != OtaPhase.verifying;
   }
@@ -223,10 +241,7 @@ class _OtaScreenState extends ConsumerState<OtaScreen> {
 
   void _startOta() {
     if (_firmwareBytes == null) return;
-    ref.read(otaProvider.notifier).startOta(
-          _firmwareBytes!,
-          version: _version,
-        );
+    ref.read(otaProvider.notifier).startOta(_firmwareBytes!, version: _version);
   }
 
   String _phaseLabel(OtaPhase phase) {

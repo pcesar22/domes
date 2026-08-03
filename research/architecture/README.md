@@ -1,135 +1,59 @@
-# DOMES Firmware Architecture
+# DOMES Detailed Architecture Records
 
-## AI Agent Instructions
+> **Document status: Current lifecycle index.** This page classifies the detailed documents in this
+> directory. Most are design history or proposals; entries explicitly marked current as-built
+> references are maintained against the implementation.
 
-This folder contains modular architecture documentation. **Load only the files relevant to your current task** to optimize context usage.
+## How To Use This Directory
 
-### Quick Reference: Which File to Load
+Start with [`../SOFTWARE_ARCHITECTURE.md`](../SOFTWARE_ARCHITECTURE.md) for the as-built system and
+its authority map. Use the files in this directory to recover rationale, compare proposed designs,
+or plan future work.
 
-| Task | Load This File |
-|------|----------------|
-| First-time setup, hello world | `00-getting-started.md` |
-| Creating new files, naming conventions | `01-project-structure.md` |
-| Build commands, configurations | `02-build-system.md` |
-| Writing a driver (LED, haptic, audio, etc.) | `03-driver-development.md` |
-| ESP-NOW, BLE, protocols | `04-communication.md` |
-| Game logic, state machine, drills | `05-game-engine.md` |
-| Unit tests, mocks, CI | `06-testing.md` |
-| Debugging, logging, crash analysis | `07-debugging.md` |
-| OTA updates, partitions | `08-ota-updates.md` |
-| Pin maps, NVS keys, error codes | `09-reference.md` |
+Do not copy pin values, packet layouts, partition sizes, NVS keys, commands, paths, or test counts
+from historical or proposed documents without checking the authoritative source. A document marked
+"partially implemented" still contains future or superseded material.
 
----
+Contributor rules live in [`../../AGENTS.md`](../../AGENTS.md), firmware-specific rules in
+[`../../firmware/AGENTS.md`](../../firmware/AGENTS.md), and current verification commands in
+[`../../docs/TESTING.md`](../../docs/TESTING.md).
 
-## System Overview
+## Lifecycle States
 
-**DOMES** (Distributed Open-source Motion & Exercise System) is a reaction training pod system.
+| State | Meaning |
+| --- | --- |
+| Current reference | Maintained as an index or as-built map and safe to navigate from |
+| Retired decision record | Obsolete tutorial or structure content removed; the file retains only the decision and current replacement |
+| Historical scaffold | Early setup or implementation guidance retained only for history |
+| Design proposal | Intended behavior or structure that was not adopted as written |
+| Target design | Product direction that remains future work unless explicitly identified as implemented |
+| Partially implemented | Some concepts exist, but the document is not an accurate description of current behavior |
 
-### Hardware Summary
-- **MCU:** ESP32-S3-WROOM-1-N16R8 (16MB flash, 8MB PSRAM)
-- **LEDs:** 16x SK6812 RGBW in ring
-- **Audio:** MAX98357A I2S amp + 23mm speaker
-- **Haptic:** DRV2605L + LRA motor
-- **Touch:** ESP32 capacitive + LIS2DW12 IMU fusion
-- **Power:** 1200mAh LiPo, TP4056 charger
-- **Connectivity:** ESP-NOW (pod-to-pod) + BLE (phone control)
+## Document Index
 
-### Tech Stack
-| Aspect | Choice |
-|--------|--------|
-| Framework | ESP-IDF v5.x |
-| RTOS | FreeRTOS (dual-core SMP) |
-| Language | C++20 (app), C (drivers) |
-| Build | CMake via `idf.py` |
-| Testing | Unity + CMock |
+| Document | Lifecycle state | Current relationship and replacement |
+| --- | --- | --- |
+| [`00-getting-started.md`](00-getting-started.md) | Retired decision record | Obsolete setup commands were removed; the file points to the maintained setup, testing, and bring-up documents. |
+| [`01-project-structure.md`](01-project-structure.md) | Retired decision record | The unadopted tree and templates were removed; the file records the current layout authorities. |
+| [`02-build-system.md`](02-build-system.md) | Retired decision record | Obsolete platform, Linux-target, partition, and flash guidance was removed; the file points to the maintained build authorities. |
+| [`03-driver-development.md`](03-driver-development.md) | Retired decision record | The obsolete interface and implementation tutorial was removed; the page points to current driver, composition, and verification authorities. |
+| [`04-communication.md`](04-communication.md) | Design proposal, partially implemented | Preserves adopted protocol-family and validation decisions while linking all live wire details to their owning sources. |
+| [`05-game-engine.md`](05-game-engine.md) | Design proposal, partially implemented | Describes the implemented per-pod FSM boundary and separates it from the unimplemented general drill architecture. |
+| [`06-testing.md`](06-testing.md) | Retired decision record | Obsolete Unity/CMock, coverage, device, and CI instructions were removed; the file points to the maintained verification matrix. |
+| [`07-debugging.md`](07-debugging.md) | Retired decision record | Stale line breakpoints, device paths, coredump settings, and permission workarounds were removed; the file points to current runbooks. |
+| [`08-ota-updates.md`](08-ota-updates.md) | Retired decision record | Obsolete partition, transport, and CLI examples were removed; the file points to the implemented OTA and programming contracts. |
+| [`09-reference.md`](09-reference.md) | Retired decision record | Copied lookup tables were removed; the record redirects each subject to its source-controlled authority. |
+| [`10-host-simulation.md`](10-host-simulation.md) | Current reference | Describes the GoogleTest/CTest host project, deterministic multi-pod simulation, trace generator, and hardware boundary. |
+| [`11-system-modes.md`](11-system-modes.md) | Retired decision record | Mixed current and proposed mode guidance was removed; the page separates the implemented `ModeManager` boundary from unadopted power and orchestration targets. |
+| [`12-multi-pod-orchestration.md`](12-multi-pod-orchestration.md) | Target design, partially implemented | Separates the current two-pod fixed workflow from app-selected master, general drill, six-pod, and synchronized-clock targets. |
+| [`trace-overhaul-architecture.md`](trace-overhaul-architecture.md) | Current reference | Describes the separate console/UART topology, trace protobuf and binary event boundary, retained dump snapshot, streaming, and local-only merge behavior. |
 
----
+## Promotion And Retirement
 
-## Architecture Layers
+A proposal is promoted only when implementation, automated checks, and any required hardware
+verification are complete. Promotion means updating the as-built architecture and milestone tracker;
+it does not make every example in the original proposal current.
 
-```
-┌─────────────────────────────────────────────────┐
-│              APPLICATION LAYER                   │
-│  Game Engine, Drill Manager, State Machine      │
-│  → See: 05-game-engine.md                       │
-├─────────────────────────────────────────────────┤
-│              SERVICE LAYER                       │
-│  Feedback, Communication, Timing, Config        │
-│  → See: 03-driver-development.md (services)     │
-├─────────────────────────────────────────────────┤
-│              DRIVER LAYER                        │
-│  LED, Audio, Haptic, Touch, IMU, Power          │
-│  → See: 03-driver-development.md                │
-├─────────────────────────────────────────────────┤
-│              PLATFORM LAYER                      │
-│  FreeRTOS, ESP-IDF APIs, HAL                    │
-│  → See: 09-reference.md                         │
-└─────────────────────────────────────────────────┘
-```
-
----
-
-## Development Milestones
-
-| Milestone | Description | Verification | Docs |
-|-----------|-------------|--------------|------|
-| M0 | Hello World boots | UART shows heartbeat | `00-getting-started.md` |
-| M1 | Target compiles | `idf.py build` exits 0 | `02-build-system.md` |
-| M2 | DevKit boots | `app_main` runs | `00-getting-started.md` |
-| M3 | Debug works | GDB breakpoints hit | `07-debugging.md` |
-| M4 | RF validated | WiFi + BLE coexist | `04-communication.md` |
-| M5 | Unit tests pass | Host tests green | `06-testing.md` |
-| M6 | Drivers work | All peripherals respond | `03-driver-development.md` |
-| M7 | ESP-NOW latency | P95 < 2ms | `04-communication.md` |
-
----
-
-## Critical Rules (Always Apply)
-
-### DO
-- Use ESP-IDF v5.x (never Arduino)
-- Use `ESP_LOGx` macros for logging
-- Use `esp_err_t` or `tl::expected` for errors
-- Use ETL containers (`etl::vector`, `etl::string`)
-- Create interfaces for all drivers (`IHapticDriver`, etc.)
-- Pin protocol tasks to Core 0, app tasks to Core 1
-- Check every `esp_err_t` return value
-
-### DON'T
-- Use `std::vector`, `std::string`, `std::map` (heap fragmentation)
-- Use `<iostream>` (adds 200KB binary size)
-- Allocate heap after initialization phase
-- Use exceptions or RTTI (disabled)
-- Ignore error returns
-
----
-
-## File Index
-
-| File | Purpose | Lines |
-|------|---------|-------|
-| `00-getting-started.md` | Setup, hello world, first flash | ~200 |
-| `01-project-structure.md` | Directory layout, naming conventions | ~150 |
-| `02-build-system.md` | Build configs, targets, sdkconfig | ~180 |
-| `03-driver-development.md` | Interfaces, driver templates, DI | ~400 |
-| `04-communication.md` | ESP-NOW, BLE, protocol messages | ~300 |
-| `05-game-engine.md` | State machine, drills, timing | ~250 |
-| `06-testing.md` | Unity, CMock, mocks, CI pipeline | ~300 |
-| `07-debugging.md` | OpenOCD, GDB, logging, core dumps | ~200 |
-| `08-ota-updates.md` | OTA flow, partitions, rollback | ~150 |
-| `09-reference.md` | Pin maps, NVS schema, error codes | ~300 |
-
----
-
-## Cross-References
-
-- **Hardware specs:** `research/SYSTEM_ARCHITECTURE.md`
-- **Coding standards:** `firmware/CLAUDE.md`
-- **AI guidelines:** `firmware/CLAUDE.md`
-- **Development roadmap:** `firmware/MILESTONES.md`
-- **AI recommendations:** `research/AI_DEVELOPMENT_RECOMMENDATIONS.md`
-
----
-
-*Document Version: 2.0*
-*Last Updated: 2026-01-05*
+When a proposal is abandoned or replaced, keep a concise retirement record that links the
+replacement; Git history retains the full proposal. Do not maintain a second live copy of protocol
+values, pinouts, NVS schemas, commands, or build configuration in this directory.

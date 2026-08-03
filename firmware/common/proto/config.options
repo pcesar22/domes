@@ -27,13 +27,15 @@ domes.config.EspNowPeer.mac  max_size:6
 domes.config.GetEspNowStatusResponse.discovery_state  max_size:16
 domes.config.GetEspNowStatusResponse.peers  max_count:8
 
-# Crash dump messages
+# Clean-restart snapshot messages (legacy crash-dump names)
 domes.config.CrashDumpResponse.reason  max_size:64
 domes.config.CrashDumpResponse.task_name  max_size:16
 domes.config.CrashDumpResponse.backtrace  max_count:16
+domes.config.CrashDumpResponse.firmware_version  max_size:32
+domes.config.CrashDumpResponse.elf_sha256  max_size:65
 
 # Memory profiler messages
-domes.config.GetMemoryProfileResponse.samples  max_count:60
+domes.config.GetMemoryProfileResponse.samples  max_count:38
 
 # SelfTestResult: test name max 16 chars, message max 48 chars
 domes.config.SelfTestResult.name  max_size:16
@@ -42,6 +44,6 @@ domes.config.SelfTestResult.message  max_size:48
 # SelfTestResponse: max 10 test results
 domes.config.SelfTestResponse.results  max_count:10
 
-# CheckUpdateResponse: version strings max 16 chars
-domes.config.CheckUpdateResponse.current_version  max_size:16
-domes.config.CheckUpdateResponse.available_version  max_size:16
+# CheckUpdateResponse: release workflow permits at most 31 bytes plus NUL
+domes.config.CheckUpdateResponse.current_version  max_size:32
+domes.config.CheckUpdateResponse.available_version  max_size:32

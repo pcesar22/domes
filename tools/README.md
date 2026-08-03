@@ -1,135 +1,111 @@
 # DOMES Host Tools
 
-Host-side tools for interacting with DOMES firmware.
+This directory contains the supported host CLI and repository-owned protocol generation, firmware
+verification, CI contract, agent-evaluation, trace, visualization, and Linux device tools. Device
+communication belongs in `domes-cli`; do not create one-off protocol clients for serial, TCP, BLE,
+or OTA workflows.
 
-## Test Scripts
+## Tool Index
 
-### test_config.py - Serial Config Protocol Test
+| Path | Purpose |
+| --- | --- |
+| [`agent_eval/`](agent_eval/) | Reproducible, contained coding-agent repository-understanding evaluations; never a substitute for human or hardware review |
+| [`domes-cli/`](domes-cli/) | Supported device CLI for discovery, configuration, diagnostics, OTA, tracing, and multi-device operations |
+| [`generate_protocols.sh`](generate_protocols.sh) | Generate or drift-check nanopb and Dart bindings from the authoritative protobuf schemas |
+| [`ci/test_release_contract.py`](ci/test_release_contract.py) | Assert release, CI, programming, OTA, and hardware-workflow contracts |
+| [`firmware/flash_and_verify.sh`](firmware/flash_and_verify.sh) | Build, flash, and verify framed UART operation on one or more ESP32 devices |
+| [`firmware/verify_restart_snapshot.sh`](firmware/verify_restart_snapshot.sh) | Validate a clean-restart snapshot against its boot count and version-matched pre-restart ELF |
+| [`firmware/monitor_serial.py`](firmware/monitor_serial.py) | Monitor and label serial output from one or more attached devices |
+| [`docs/check_markdown_links.py`](docs/check_markdown_links.py) | Check tracked Markdown files for broken repository-relative links |
+| [`trace/trace_merge.py`](trace/trace_merge.py) | Merge multiple CLI trace exports into one Perfetto-compatible timeline |
+| [`trace/generate_trace_names.py`](trace/generate_trace_names.py) | Generate and drift-check trace IDs from production `TRACE_ID` literals |
+| [`trace/trace_names.json`](trace/trace_names.json) | Map firmware trace identifiers to readable names |
+| [`udev/99-domes-pods.rules`](udev/99-domes-pods.rules) | Linux access policy for CP2102N and native USB devices; identity remains under `/dev/serial/by-id/` |
+| [`gen_results_svg.py`](gen_results_svg.py) | Generate the deterministic drill-results research graphic |
+| [`gen_timeline_svg.py`](gen_timeline_svg.py) | Generate a timeline graphic from simulation trace JSON |
 
-Tests the runtime configuration protocol over USB serial.
+## Device CLI
 
-```bash
-python3 test_config.py /dev/ttyACM0
-
-# Test multiple devices
-python3 test_config.py /dev/ttyACM0
-python3 test_config.py /dev/ttyACM1
-```
-
-**What it tests:**
-- LIST_FEATURES command (0x20) - List all features and their enabled state
-- SET_FEATURE command (0x22) - Enable/disable features
-- Frame encoding/decoding with CRC32 verification
-
-### test_config_wifi.py - WiFi/TCP Config Protocol Test
-
-Tests the runtime configuration protocol over WiFi TCP (port 5000).
-
-```bash
-python3 test_config_wifi.py 192.168.50.173
-python3 test_config_wifi.py 192.168.50.173:5000  # Explicit port
-```
-
-**Prerequisites:**
-- ESP32 must be connected to WiFi (see `CONFIG_DOMES_WIFI_AUTO_CONNECT`)
-- Test machine must be on the same network as ESP32
-- TCP config server must be running on firmware (port 5000)
-
-**WSL2 Users:** WSL2 cannot reach WiFi devices directly. Use Windows Python:
-```bash
-/mnt/c/Python313/python.exe test_config_wifi.py <ESP32_IP>
-```
-
-See `CLAUDE.md` in repo root for WiFi setup instructions.
-
-## CLI Tool
-
-### domes-cli - Rust Command Line Interface
-
-Full-featured CLI for firmware interaction.
+Build and inspect the current command surface:
 
 ```bash
-cd domes-cli
-cargo build --release
-
-# List features
-cargo run -- --port /dev/ttyACM0 feature list
-
-# Enable/disable features
-cargo run -- --port /dev/ttyACM0 feature enable led-effects
-cargo run -- --port /dev/ttyACM0 feature disable ble
-
-# WiFi transport
-cargo run -- --wifi 192.168.50.173:5000 feature list
-
-# Multi-device commands
-cargo run -- --port /dev/ttyACM0 --port /dev/ttyACM1 feature list
-cargo run -- --all led solid --color ff0000
-cargo run -- devices scan
+(cd tools/domes-cli && cargo build --locked)
+(cd tools/domes-cli && cargo test --locked --all-targets --all-features)
+(cd tools/domes-cli && cargo run -- --help)
 ```
 
-## Trace Tools
+Use [`domes-cli/README.md`](domes-cli/README.md) for connection and command examples. The executable's
+`--help` output owns exact command syntax. Protocol definitions remain in
+[`../firmware/common/proto/`](../firmware/common/proto/) and the shared framing implementation; this
+README intentionally does not duplicate message IDs or payload layouts.
 
-### trace/trace_dump.py - Performance Trace Exporter
+## Firmware Hardware Helpers
 
-Dumps trace events from firmware and exports to Chrome JSON format.
+The canonical flash and serial-monitor helpers live under `tools/firmware/`:
 
 ```bash
-python3 trace/trace_dump.py -p /dev/ttyACM0 -o trace.json
-# Open trace.json in https://ui.perfetto.dev
+PORT1="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+tools/firmware/flash_and_verify.sh firmware/domes "$PORT1"
 
-# Multi-device trace dump
-python3 trace/trace_dump.py --ports /dev/ttyACM0,/dev/ttyACM1 -o trace.json
+# Optional: two separately connected native USB console interfaces.
+mapfile -t CONSOLES < <(
+  find -L /dev/serial/by-id -maxdepth 1 -type c \
+    -name 'usb-Espressif_USB_JTAG_serial_debug_unit*' | sort
+)
+test "${#CONSOLES[@]}" -ge 2
+python3 tools/firmware/monitor_serial.py \
+  "${CONSOLES[0]},${CONSOLES[1]}" 30
 ```
 
-## Protocol Reference
+The flash helper and `domes-cli` use NFF CP2102N ports (`/dev/ttyUSB*`, preferably
+`/dev/serial/by-id/`). The monitor reads separately connected native USB console ports
+(`/dev/ttyACM*`). Over framed UART, the helper verifies the exact built version through `system
+info` and requires `system health` plus the complete `system self-test` to pass; it does not search
+console text on that protocol port.
 
-### Frame Format
+Compatibility wrappers under `.codex/` and `.claude/` forward to these files. Update only the
+canonical helpers when changing shared behavior.
 
-```
-[Start0][Start1][LenLE16][Type][Payload...][CRC32LE]
-  0xAA    0x55    2 bytes  1 byte  N bytes   4 bytes
+## Merge Pod Traces
 
-Length = 1 (type) + payload length
-CRC32 = IEEE 802.3 CRC over [Type][Payload]
-```
+First export one trace per pod with `domes-cli trace dump`, then merge them from the repository root:
 
-### Config Message Types (0x20-0x2F)
-
-| Type | Name | Direction | Payload |
-|------|------|-----------|---------|
-| 0x20 | LIST_FEATURES_REQ | Host→Device | (none) |
-| 0x21 | LIST_FEATURES_RSP | Device→Host | status, count, [id, enabled]... |
-| 0x22 | SET_FEATURE_REQ | Host→Device | feature_id, enabled |
-| 0x23 | SET_FEATURE_RSP | Device→Host | status, feature_id, enabled |
-
-### Feature IDs
-
-| ID | Name | Description |
-|----|------|-------------|
-| 1 | led-effects | LED animations |
-| 2 | ble | Bluetooth advertising |
-| 3 | wifi | WiFi connectivity |
-| 4 | esp-now | ESP-NOW protocol |
-| 5 | touch | Touch sensing |
-| 6 | haptic | Haptic feedback |
-| 7 | audio | Audio output |
-
-## Troubleshooting
-
-### Serial Port Permission (Linux)
 ```bash
-sudo usermod -a -G dialout $USER
-# Log out and back in
+python3 tools/trace/trace_merge.py \
+  --pod /tmp/pod1.json --pod-name pod1 \
+  --pod /tmp/pod2.json --pod-name pod2 \
+  --names tools/trace/trace_names.json \
+  --align zero \
+  --output /tmp/domes-merged.json
 ```
 
-### WiFi Test Fails with Timeout
-1. Check ESP32 has IP: monitor serial logs for "Got IP: x.x.x.x"
-2. Verify same network: ping the ESP32 IP from test machine
-3. Check TCP server running: look for "TCP config server listening on port 5000" in logs
-4. WSL2 users: use Windows Python (see above)
+Zero alignment groups each local timeline by its capture start. It is not cross-pod clock
+correlation. Use `--align raw` only to retain the original local timestamps; neither mode
+synchronizes pod clocks. Open the result in [Perfetto](https://ui.perfetto.dev). Run
+`python3 tools/trace/trace_merge.py --help` for the exact interface.
 
-### CRC Mismatch Errors
-- Verify frame format matches protocol spec
-- Check byte order (little-endian for length and CRC)
-- Ensure CRC is calculated over type + payload only (not start bytes or length)
+Refresh the trace-name registry after adding, renaming, or removing a production `TRACE_ID`:
+
+```bash
+python3 tools/trace/generate_trace_names.py
+python3 tools/trace/generate_trace_names.py --check
+```
+
+## Simulation Graphics
+
+The SVG generators reproduce research artifacts; they are not device communication tools:
+
+```bash
+python3 tools/gen_results_svg.py /tmp/sim-results.svg
+python3 tools/gen_timeline_svg.py /tmp/sim-trace.json /tmp/sim-timeline.svg
+```
+
+Generate the input trace with the host test application's `trace_generator`; see
+[`../firmware/test_app/README.md`](../firmware/test_app/README.md).
+
+## Platform Setup
+
+BLE, serial permissions, stable `/dev/serial/by-id/` identities, and multi-device host requirements
+are maintained in [`.codex/PLATFORM.md`](../.codex/PLATFORM.md). Repository-wide verification
+requirements are in [`docs/TESTING.md`](../docs/TESTING.md).

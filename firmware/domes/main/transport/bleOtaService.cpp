@@ -5,13 +5,12 @@
 
 #include "bleOtaService.hpp"
 
-#include "trace/traceApi.hpp"
-
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "infra/nvsConfig.hpp"
+#include "trace/traceApi.hpp"
 
 // NimBLE headers (must include esp_nimble_hci.h first in ESP-IDF)
 #include "esp_nimble_hci.h"
@@ -85,19 +84,19 @@ static int otaGattAccessCb(uint16_t connHandle, uint16_t attrHandle,
         if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
             // Data written to OTA Data characteristic
             uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
-            uint8_t buf[512];
+            std::array<uint8_t, BleOtaService::kMaxMtu> buf{};
 
-            if (len > sizeof(buf)) {
+            if (len > buf.size()) {
                 ESP_LOGW(kTag, "Write too large: %u bytes", len);
                 return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
             }
 
-            int rc = ble_hs_mbuf_to_flat(ctxt->om, buf, len, nullptr);
+            int rc = ble_hs_mbuf_to_flat(ctxt->om, buf.data(), len, nullptr);
             if (rc != 0) {
                 return BLE_ATT_ERR_UNLIKELY;
             }
 
-            g_bleOtaService->onDataReceived(buf, len);
+            g_bleOtaService->onDataReceived(buf.data(), len);
             return 0;
         }
     }
@@ -129,6 +128,7 @@ static const struct ble_gatt_chr_def otaCharacteristics[] = {
         .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
         .min_key_size = 0,
         .val_handle = nullptr,
+        .cpfd = nullptr,
     },
     {
         // OTA Status characteristic (notify for ACK/ABORT)
@@ -139,6 +139,7 @@ static const struct ble_gatt_chr_def otaCharacteristics[] = {
         .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
         .min_key_size = 0,
         .val_handle = &g_statusCharHandle,
+        .cpfd = nullptr,
     },
     {
         // Terminator
@@ -149,6 +150,7 @@ static const struct ble_gatt_chr_def otaCharacteristics[] = {
         .flags = 0,
         .min_key_size = 0,
         .val_handle = nullptr,
+        .cpfd = nullptr,
     }};
 
 static const struct ble_gatt_svc_def otaServices[] = {{
@@ -180,15 +182,12 @@ static int bleGapEventCb(struct ble_gap_event* event, void* arg) {
                 ESP_LOGI(kTag, "BLE connected, handle=%d", event->connect.conn_handle);
                 g_bleOtaService->onConnectionStateChanged(true, event->connect.conn_handle);
 
-                // Request MTU exchange for larger packets
-                ble_gattc_exchange_mtu(event->connect.conn_handle, nullptr, nullptr);
-
                 // Request connection parameters tuned for ESP-NOW coexistence.
                 // Wider intervals + slave latency reduce radio contention.
                 struct ble_gap_upd_params connParams = {};
-                connParams.itvl_min = 24;    // 30ms  (units of 1.25ms)
-                connParams.itvl_max = 40;    // 50ms
-                connParams.latency = 4;      // Skip up to 4 events during ESP-NOW bursts
+                connParams.itvl_min = 24;              // 30ms  (units of 1.25ms)
+                connParams.itvl_max = 40;              // 50ms
+                connParams.latency = 4;                // Skip up to 4 events during ESP-NOW bursts
                 connParams.supervision_timeout = 600;  // 6000ms (units of 10ms)
                 connParams.min_ce_len = 0;
                 connParams.max_ce_len = 0;
@@ -214,6 +213,12 @@ static int bleGapEventCb(struct ble_gap_event* event, void* arg) {
         case BLE_GAP_EVENT_MTU:
             ESP_LOGI(kTag, "MTU updated: %d", event->mtu.value);
             g_bleOtaService->onMtuChanged(event->mtu.value);
+            break;
+
+        case BLE_GAP_EVENT_NOTIFY_TX:
+            g_bleOtaService->onNotificationComplete(event->notify_tx.conn_handle,
+                                                    event->notify_tx.attr_handle,
+                                                    event->notify_tx.status);
             break;
 
         case BLE_GAP_EVENT_CONN_UPDATE:
@@ -270,6 +275,8 @@ static void bleResetCb(int reason) {
 BleOtaService::BleOtaService() {
     rxMutex_ = xSemaphoreCreateMutex();
     rxSemaphore_ = xSemaphoreCreateBinary();
+    txMutex_ = xSemaphoreCreateMutex();
+    txSemaphore_ = xSemaphoreCreateBinary();
 }
 
 BleOtaService::~BleOtaService() {
@@ -281,11 +288,23 @@ BleOtaService::~BleOtaService() {
     if (rxSemaphore_) {
         vSemaphoreDelete(static_cast<SemaphoreHandle_t>(rxSemaphore_));
     }
+    if (txMutex_) {
+        vSemaphoreDelete(static_cast<SemaphoreHandle_t>(txMutex_));
+    }
+    if (txSemaphore_) {
+        vSemaphoreDelete(static_cast<SemaphoreHandle_t>(txSemaphore_));
+    }
 }
 
 TransportError BleOtaService::init() {
     if (initialized_) {
         return TransportError::kAlreadyInit;
+    }
+
+    if (rxMutex_ == nullptr || rxSemaphore_ == nullptr || txMutex_ == nullptr ||
+        txSemaphore_ == nullptr) {
+        ESP_LOGE(kTag, "Failed to allocate BLE synchronization primitives");
+        return TransportError::kNoMemory;
     }
 
     ESP_LOGI(kTag, "Initializing BLE OTA service");
@@ -367,11 +386,26 @@ TransportError BleOtaService::init() {
 
 TransportError BleOtaService::send(const uint8_t* data, size_t len) {
     TRACE_SCOPE(TRACE_ID("Ble.Send"), domes::trace::Category::kBle);
+
+    if (txMutex_ == nullptr) {
+        return TransportError::kNotInitialized;
+    }
+    if (xSemaphoreTake(static_cast<SemaphoreHandle_t>(txMutex_), pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return TransportError::kTimeout;
+    }
+
+    const TransportError result = sendLocked(data, len);
+    xSemaphoreGive(static_cast<SemaphoreHandle_t>(txMutex_));
+    return result;
+}
+
+TransportError BleOtaService::sendLocked(const uint8_t* data, size_t len) {
     if (!initialized_) {
         return TransportError::kNotInitialized;
     }
 
-    if (!connected_) {
+    if (!connected_.load(std::memory_order_acquire) ||
+        txPoisoned_.load(std::memory_order_acquire)) {
         return TransportError::kDisconnected;
     }
 
@@ -387,25 +421,94 @@ TransportError BleOtaService::send(const uint8_t* data, size_t len) {
         return TransportError::kNotInitialized;
     }
 
-    // Send via notification on status characteristic
-    struct os_mbuf* om = ble_hs_mbuf_from_flat(data, len);
-    if (om == nullptr) {
-        ESP_LOGE(kTag, "Failed to allocate mbuf for notification");
-        return TransportError::kIoError;
+    // ITransport is a byte stream. Split complete frames across ATT
+    // notifications and let the host FrameDecoder reassemble them.
+    const uint16_t mtu = currentMtu_.load(std::memory_order_acquire);
+    const size_t attPayload = mtu > 3 ? mtu - 3 : 20;
+    const uint16_t connHandle = connHandle_.load(std::memory_order_acquire);
+    const uint32_t connectionEpoch = connectionEpoch_.load(std::memory_order_acquire);
+    static constexpr uint8_t kMaxNotifyAttempts = 5;
+    static constexpr uint32_t kNotifyRetryMs = 10;
+    static constexpr uint32_t kNotifyTimeoutMs = 1000;
+    size_t offset = 0;
+    while (offset < len) {
+        const size_t chunkLen = (len - offset < attPayload) ? len - offset : attPayload;
+        bool sent = false;
+
+        for (uint8_t attempt = 0;
+             attempt < kMaxNotifyAttempts && connected_.load(std::memory_order_acquire) &&
+             !txPoisoned_.load(std::memory_order_acquire) &&
+             connectionEpoch_.load(std::memory_order_acquire) == connectionEpoch;
+             ++attempt) {
+            while (xSemaphoreTake(static_cast<SemaphoreHandle_t>(txSemaphore_), 0) == pdTRUE) {
+            }
+
+            struct os_mbuf* om = ble_hs_mbuf_from_flat(data + offset, chunkLen);
+            if (om == nullptr) {
+                vTaskDelay(pdMS_TO_TICKS(kNotifyRetryMs));
+                continue;
+            }
+
+            const int rc = ble_gatts_notify_custom(connHandle, charHandle, om);
+            if (rc == BLE_HS_EAGAIN || rc == BLE_HS_EBUSY || rc == BLE_HS_ENOMEM) {
+                vTaskDelay(pdMS_TO_TICKS(kNotifyRetryMs));
+                continue;
+            }
+            if (rc != 0) {
+                ESP_LOGE(kTag, "Notification enqueue failed at offset %zu: %d", offset, rc);
+                return connected_ ? TransportError::kIoError : TransportError::kDisconnected;
+            }
+
+            if (xSemaphoreTake(static_cast<SemaphoreHandle_t>(txSemaphore_),
+                               pdMS_TO_TICKS(kNotifyTimeoutMs)) != pdTRUE) {
+                ESP_LOGE(kTag, "Notification completion timed out at offset %zu", offset);
+                // Delivery is ambiguous after enqueue. Poison and terminate this
+                // connection so a late callback cannot complete a later send.
+                txPoisoned_.store(true, std::memory_order_release);
+                const int terminateRc = ble_gap_terminate(connHandle, BLE_ERR_REM_USER_CONN_TERM);
+                if (terminateRc != 0) {
+                    ESP_LOGW(kTag, "Failed to terminate poisoned connection %u: %d", connHandle,
+                             terminateRc);
+                }
+                return TransportError::kTimeout;
+            }
+
+            if (!connected_.load(std::memory_order_acquire) ||
+                txPoisoned_.load(std::memory_order_acquire) ||
+                connectionEpoch_.load(std::memory_order_acquire) != connectionEpoch) {
+                return TransportError::kDisconnected;
+            }
+
+            const int txStatus = lastTxStatus_.load(std::memory_order_acquire);
+            if (txStatus == 0) {
+                sent = true;
+                break;
+            }
+
+            if (!connected_.load(std::memory_order_acquire)) {
+                return TransportError::kDisconnected;
+            }
+            ESP_LOGW(kTag, "Notification TX failed at offset %zu: %d", offset, txStatus);
+            vTaskDelay(pdMS_TO_TICKS(kNotifyRetryMs));
+        }
+
+        if (!sent) {
+            ESP_LOGE(kTag, "Notification retries exhausted at offset %zu", offset);
+            return connected_.load(std::memory_order_acquire) &&
+                           !txPoisoned_.load(std::memory_order_acquire) &&
+                           connectionEpoch_.load(std::memory_order_acquire) == connectionEpoch
+                       ? TransportError::kIoError
+                       : TransportError::kDisconnected;
+        }
+
+        offset += chunkLen;
     }
 
-    int rc = ble_gatts_notify_custom(connHandle_, charHandle, om);
-    if (rc != 0) {
-        ESP_LOGE(kTag, "Failed to send notification: %d", rc);
-        return TransportError::kIoError;
-    }
-
-    ESP_LOGD(kTag, "Sent %zu bytes via notification", len);
+    ESP_LOGD(kTag, "Sent %zu bytes via notification stream", len);
     return TransportError::kOk;
 }
 
 TransportError BleOtaService::receive(uint8_t* buf, size_t* len, uint32_t timeoutMs) {
-    TRACE_SCOPE(TRACE_ID("Ble.Receive"), domes::trace::Category::kBle);
     if (!initialized_) {
         return TransportError::kNotInitialized;
     }
@@ -449,15 +552,22 @@ TransportError BleOtaService::receive(uint8_t* buf, size_t* len, uint32_t timeou
 }
 
 bool BleOtaService::isConnected() const {
-    return initialized_ && connected_;
+    return initialized_.load(std::memory_order_acquire) &&
+           connected_.load(std::memory_order_acquire) &&
+           !txPoisoned_.load(std::memory_order_acquire);
 }
 
 void BleOtaService::disconnect() {
-    if (connected_ && connHandle_ != 0) {
-        ble_gap_terminate(connHandle_, BLE_ERR_REM_USER_CONN_TERM);
+    txPoisoned_.store(true, std::memory_order_release);
+    const bool wasConnected = connected_.exchange(false, std::memory_order_acq_rel);
+    const uint16_t connHandle = connHandle_.exchange(kInvalidConnHandle, std::memory_order_acq_rel);
+    connectionEpoch_.fetch_add(1, std::memory_order_acq_rel);
+    xSemaphoreGive(static_cast<SemaphoreHandle_t>(txSemaphore_));
+
+    if (wasConnected) {
+        ble_gap_terminate(connHandle, BLE_ERR_REM_USER_CONN_TERM);
     }
-    connected_ = false;
-    connHandle_ = 0;
+    currentMtu_ = 23;
 }
 
 void BleOtaService::startAdvertising() {
@@ -466,6 +576,13 @@ void BleOtaService::startAdvertising() {
 
     if (!isInit) {
         ESP_LOGW(kTag, "Not initialized, skipping advertising");
+        return;
+    }
+    if (!advertisingEnabled_.load(std::memory_order_acquire)) {
+        ESP_LOGI(kTag, "BLE advertising disabled by runtime feature state");
+        return;
+    }
+    if (ble_gap_adv_active()) {
         return;
     }
 
@@ -520,7 +637,23 @@ void BleOtaService::startAdvertising() {
 }
 
 void BleOtaService::stopAdvertising() {
-    ble_gap_adv_stop();
+    if (ble_gap_adv_active()) {
+        ble_gap_adv_stop();
+    }
+}
+
+void BleOtaService::setAdvertisingEnabled(bool enabled) {
+    advertisingEnabled_.store(enabled, std::memory_order_release);
+    if (!initialized_.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (enabled) {
+        if (!connected_.load(std::memory_order_acquire)) {
+            startAdvertising();
+        }
+    } else {
+        stopAdvertising();
+    }
 }
 
 void BleOtaService::setDeviceName(const char* name) {
@@ -556,20 +689,44 @@ void BleOtaService::onConnectionStateChanged(bool connected, uint16_t connHandle
     } else {
         TRACE_INSTANT(TRACE_ID("Ble.Disconnected"), domes::trace::Category::kBle);
     }
-    connected_ = connected;
-    connHandle_ = connHandle;
+    connected_.store(false, std::memory_order_release);
+    currentMtu_.store(23, std::memory_order_release);
+    connectionEpoch_.fetch_add(1, std::memory_order_acq_rel);
 
-    if (!connected) {
-        // Clear receive buffer on disconnect
-        xSemaphoreTake(static_cast<SemaphoreHandle_t>(rxMutex_), portMAX_DELAY);
-        rxHead_ = 0;
-        rxTail_ = 0;
-        xSemaphoreGive(static_cast<SemaphoreHandle_t>(rxMutex_));
+    if (connected) {
+        connHandle_.store(connHandle, std::memory_order_release);
+        lastTxStatus_.store(0, std::memory_order_release);
+        txPoisoned_.store(false, std::memory_order_release);
+        connected_.store(true, std::memory_order_release);
+        return;
     }
+
+    connHandle_.store(kInvalidConnHandle, std::memory_order_release);
+    txPoisoned_.store(true, std::memory_order_release);
+    lastTxStatus_.store(BLE_HS_ENOTCONN, std::memory_order_release);
+    xSemaphoreGive(static_cast<SemaphoreHandle_t>(txSemaphore_));
+
+    // Clear receive buffer on disconnect.
+    xSemaphoreTake(static_cast<SemaphoreHandle_t>(rxMutex_), portMAX_DELAY);
+    rxHead_ = 0;
+    rxTail_ = 0;
+    xSemaphoreGive(static_cast<SemaphoreHandle_t>(rxMutex_));
 }
 
 void BleOtaService::onMtuChanged(uint16_t mtu) {
-    currentMtu_ = mtu;
+    currentMtu_ = (mtu >= 23 && mtu <= kMaxMtu) ? mtu : 23;
+}
+
+void BleOtaService::onNotificationComplete(uint16_t connHandle, uint16_t attrHandle, int status) {
+    if (attrHandle != g_statusCharHandle ||
+        connHandle != connHandle_.load(std::memory_order_acquire) ||
+        !connected_.load(std::memory_order_acquire) ||
+        txPoisoned_.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    lastTxStatus_.store(status, std::memory_order_release);
+    xSemaphoreGive(static_cast<SemaphoreHandle_t>(txSemaphore_));
 }
 
 }  // namespace domes

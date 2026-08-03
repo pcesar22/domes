@@ -1,159 +1,94 @@
-# ESP-IDF Configuration Reference
+# DOMES ESP-IDF Configuration Reference
 
-## Common sdkconfig Options
+This reference describes the checked-in development configuration. The live authorities are
+`firmware/domes/sdkconfig.defaults`, `firmware/domes/partitions.csv`,
+`firmware/domes/main/Kconfig.projbuild`, and `firmware/domes/main/config.hpp`. Do not paste generic
+ESP-IDF example layouts or options here.
 
-### Console Configuration
+## Active Development Profile
 
-```
-# USB Serial/JTAG console (ESP32-S3/C3/C6)
-CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+| Setting | Checked-in value |
+| --- | --- |
+| ESP-IDF | v5.4.4, matching CI and the component dependency lock |
+| Target | ESP32-S3 |
+| Active board | Sole NFF carrier profile compiled directly in `main/config.hpp` |
+| Flash | 8 MB, QIO, 80 MHz |
+| Console | Native USB Serial/JTAG |
+| Runtime serial | UART0 through the DevKit CP2102N bridge, 115200 8N1 |
+| Bluetooth | NimBLE peripheral/broadcaster, one connection, preferred MTU 517 |
+| App slots | Two `0x1E0000` OTA slots |
 
-# UART console (default)
-CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+There is no board selector or alternate profile in `config.hpp`. In particular, the production
+16 MB layout is not represented by the active 8 MB partition table. Adding a target requires a
+complete pin/config/partition profile, an explicit selection mechanism, and hardware verification.
 
-# USB CDC console
-CONFIG_ESP_CONSOLE_USB_CDC=y
-```
+## USB And UART
 
-### Flash Configuration
+`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y` sends ESP-IDF logs to native USB (`/dev/ttyACM*`). Framed
+config and serial OTA use UART0 through CP2102N (`/dev/ttyUSB*`, preferably its
+`/dev/serial/by-id/` link). Do not enable the UART console while the framed runtime transport owns
+UART0.
 
-```
-# Flash size
-CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
-CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
-CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+## Partition Table
 
-# Flash mode
-CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
-CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+The current 8 MB table is:
 
-# Flash frequency
-CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
-CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
-```
+| Partition | Offset | Size | Purpose |
+| --- | --- | --- | --- |
+| `nvs` | `0x9000` | `0x6000` | Persistent configuration and statistics |
+| `otadata` | `0xf000` | `0x2000` | OTA boot selection |
+| `phy_init` | `0x11000` | `0x1000` | PHY calibration data |
+| `ota_0` | `0x20000` | `0x1E0000` | First application slot |
+| `ota_1` | `0x200000` | `0x1E0000` | Second application slot |
+| `spiffs` | `0x3E0000` | `0x400000` | Reserved data partition; not mounted or consumed by current firmware |
+| `coredump` | `0x7E0000` | `0x20000` | ESP-IDF flash panic dumps |
 
-### PSRAM Configuration
+There is no factory application partition. A standalone `domes.bin` written at `0x20000` is only
+the application image; it is not a complete factory installation. Use `idf.py flash` or the merged
+factory image produced by the release workflow for a blank device so the bootloader, partition
+table, OTA metadata, and app are written consistently.
 
-```
-# Enable PSRAM
-CONFIG_SPIRAM=y
+Core-dump-to-flash and ELF output are enabled in `sdkconfig.defaults`, and the partition table
+reserves space for the dump. Decode a panic with `idf.py coredump-info` or `idf.py coredump-debug`
+from the exact build that produced the running image. The CLI `system crash-dump` command remains a
+separate clean-restart snapshot; it is not a panic core dump.
 
-# PSRAM mode (ESP32-S3)
-CONFIG_SPIRAM_MODE_OCT=y
-CONFIG_SPIRAM_MODE_QUAD=y
+## Active NFF Pins
 
-# PSRAM speed
-CONFIG_SPIRAM_SPEED_80M=y
-```
+`firmware/domes/main/config.hpp` is authoritative. The reviewed table is also maintained in
+`docs/PIN_REFERENCE.md`; do not duplicate additional pin tables in runbooks.
 
-### FreeRTOS Configuration
+## Commands
 
-```
-# Tick rate
-CONFIG_FREERTOS_HZ=1000
-
-# Enable FreeRTOS stats
-CONFIG_FREERTOS_USE_TRACE_FACILITY=y
-CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
-```
-
-### Logging Configuration
-
-```
-# Default log level
-CONFIG_LOG_DEFAULT_LEVEL_NONE=y
-CONFIG_LOG_DEFAULT_LEVEL_ERROR=y
-CONFIG_LOG_DEFAULT_LEVEL_WARN=y
-CONFIG_LOG_DEFAULT_LEVEL_INFO=y
-CONFIG_LOG_DEFAULT_LEVEL_DEBUG=y
-CONFIG_LOG_DEFAULT_LEVEL_VERBOSE=y
-
-# Log colors
-CONFIG_LOG_COLORS=y
-```
-
-### WiFi Configuration
-
-```
-# Enable WiFi
-CONFIG_ESP_WIFI_ENABLED=y
-```
-
-STA, AP, and APSTA are runtime modes selected with `esp_wifi_set_mode()`; ESP-IDF v5.4 does not
-provide `CONFIG_ESP_WIFI_MODE_*` Kconfig symbols.
-
-### Bluetooth Configuration
-
-```
-# Enable Bluetooth
-CONFIG_BT_ENABLED=y
-
-# BLE only
-CONFIG_BT_NIMBLE_ENABLED=y
-
-# Classic + BLE
-CONFIG_BT_BLUEDROID_ENABLED=y
-```
-
-## Partition Tables
-
-### Default (single OTA)
-
-```csv
-# Name,   Type, SubType, Offset,  Size,    Flags
-nvs,      data, nvs,     0x9000,  0x6000,
-phy_init, data, phy,     0xf000,  0x1000,
-factory,  app,  factory, 0x10000, 1M,
-```
-
-### With OTA Support
-
-```csv
-# Name,   Type, SubType, Offset,  Size,    Flags
-nvs,      data, nvs,     0x9000,  0x4000,
-otadata,  data, ota,     0xd000,  0x2000,
-phy_init, data, phy,     0xf000,  0x1000,
-ota_0,    app,  ota_0,   0x10000, 1856K,
-ota_1,    app,  ota_1,   ,        1856K,
-```
-
-## Pin Mappings (ESP32-S3-WROOM-1)
-
-| Function | GPIO |
-|----------|------|
-| USB D+ | GPIO20 (internal) |
-| USB D- | GPIO19 (internal) |
-| UART0 TX | GPIO43 |
-| UART0 RX | GPIO44 |
-| I2C SDA | GPIO8 (typical) |
-| I2C SCL | GPIO9 (typical) |
-| SPI MOSI | GPIO11 |
-| SPI MISO | GPIO13 |
-| SPI CLK | GPIO12 |
-
-## Common idf.py Commands
+Run from the repository root:
 
 ```bash
-# Build and flash
-idf.py build
-idf.py -p PORT flash
-idf.py -p PORT flash monitor
-
-# Configuration
-idf.py menuconfig
-idf.py set-target esp32s3
-idf.py reconfigure
-
-# Cleaning
-idf.py clean
-idf.py fullclean
-
-# Information
-idf.py size
-idf.py size-components
-idf.py size-files
-
-# Debugging
-idf.py openocd
-idf.py gdb
+CONFIG_ROOT="$(mktemp -d)"
+(cd firmware/domes && . ~/esp/esp-idf/export.sh && \
+  idf.py -B "$CONFIG_ROOT/build" -D "IDF_TARGET=esp32s3" \
+    -D "SDKCONFIG=$CONFIG_ROOT/sdkconfig" build)
+(cd firmware/domes && . ~/esp/esp-idf/export.sh && \
+  idf.py -B "$CONFIG_ROOT/build" -D "SDKCONFIG=$CONFIG_ROOT/sdkconfig" size)
+(cd firmware/domes && . ~/esp/esp-idf/export.sh && \
+  idf.py -B "$CONFIG_ROOT/build" -D "SDKCONFIG=$CONFIG_ROOT/sdkconfig" size-components)
 ```
+
+Use an isolated `menuconfig` invocation only when deliberately reviewing generated options, then
+move the intended durable settings into `sdkconfig.defaults` and repeat the clean build:
+
+```bash
+(cd firmware/domes && . ~/esp/esp-idf/export.sh && \
+  idf.py -B "$CONFIG_ROOT/build" -D "SDKCONFIG=$CONFIG_ROOT/sdkconfig" menuconfig)
+```
+
+Flash through the CP2102N programming port:
+
+```bash
+PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+tools/firmware/flash_and_verify.sh firmware/domes "$PORT"
+```
+
+After changing `sdkconfig.defaults`, use an isolated SDKCONFIG before claiming the defaults were
+tested. After changing a protobuf schema, run `tools/generate_protocols.sh`; an ordinary firmware
+build does not regenerate committed bindings.

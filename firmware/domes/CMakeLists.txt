@@ -1,29 +1,50 @@
 cmake_minimum_required(VERSION 3.16)
 
-# Get version from git describe
-execute_process(
-    COMMAND git describe --tags --always --dirty
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE GIT_VERSION
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-    RESULT_VARIABLE GIT_RESULT
+set(DOMES_FORCE_OTA_VERIFY_FAILURE OFF CACHE BOOL
+    "Force pending OTA verification to fail for destructive rollback testing")
+
+include(cmake/ResolveFirmwareVersion.cmake)
+domes_resolve_firmware_version(
+    GIT_VERSION
+    "${CMAKE_SOURCE_DIR}"
+    "${DOMES_VERSION_OVERRIDE}"
 )
 
-if(NOT GIT_RESULT EQUAL 0 OR NOT GIT_VERSION)
-    set(GIT_VERSION "v0.0.0-unknown")
+# Reconfigure incremental builds when the checked-out commit changes. Without
+# this dependency, PROJECT_VER remains whatever commit first created build/.
+execute_process(
+    COMMAND git rev-parse --git-path HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_HEAD_PATH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if(GIT_HEAD_PATH)
+    get_filename_component(GIT_HEAD_PATH "${GIT_HEAD_PATH}" ABSOLUTE
+                           BASE_DIR "${CMAKE_SOURCE_DIR}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${GIT_HEAD_PATH}")
 endif()
 
-# Parse version components
-string(REGEX MATCH "^v?([0-9]+)\\.([0-9]+)\\.([0-9]+)" VERSION_MATCH "${GIT_VERSION}")
-if(VERSION_MATCH)
-    set(VERSION_MAJOR ${CMAKE_MATCH_1})
-    set(VERSION_MINOR ${CMAKE_MATCH_2})
-    set(VERSION_PATCH ${CMAKE_MATCH_3})
-else()
-    set(VERSION_MAJOR 0)
-    set(VERSION_MINOR 0)
-    set(VERSION_PATCH 0)
+execute_process(
+    COMMAND git symbolic-ref -q HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_HEAD_REF
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if(GIT_HEAD_REF)
+    execute_process(
+        COMMAND git rev-parse --git-path ${GIT_HEAD_REF}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_HEAD_REF_PATH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(GIT_HEAD_REF_PATH)
+        get_filename_component(GIT_HEAD_REF_PATH "${GIT_HEAD_REF_PATH}" ABSOLUTE
+                               BASE_DIR "${CMAKE_SOURCE_DIR}")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${GIT_HEAD_REF_PATH}")
+    endif()
 endif()
 
 # Set project version for ESP-IDF
@@ -39,11 +60,3 @@ set(EXTRA_COMPONENT_DIRS
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(domes)
-
-# Make version available to code via compile definitions
-add_compile_definitions(
-    DOMES_VERSION_MAJOR=${VERSION_MAJOR}
-    DOMES_VERSION_MINOR=${VERSION_MINOR}
-    DOMES_VERSION_PATCH=${VERSION_PATCH}
-    DOMES_VERSION_STRING="${GIT_VERSION}"
-)

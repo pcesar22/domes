@@ -1,31 +1,21 @@
-# DOMES Pod udev rules - stable serial port symlinks
+# DOMES serial-device access rules
 #
-# ESP32-S3 USB-JTAG/serial devices get non-deterministic /dev/ttyACMx names.
-# These rules create stable symlinks based on USB port topology so that
-# devices plugged into the same physical USB port always get the same name.
-#
-# Installation:
+# Install with:
 #   sudo cp tools/udev/99-domes-pods.rules /etc/udev/rules.d/
 #   sudo udevadm control --reload-rules
 #   sudo udevadm trigger
 #
-# After installation, devices appear as:
-#   /dev/domes-pod-usb0  (first device)
-#   /dev/domes-pod-usb1  (second device)
-#   ... plus the original /dev/ttyACMx still works
-#
-# To find your USB topology paths:
-#   udevadm info -a /dev/ttyACM0 | grep KERNELS
-#
-# ESP32-S3 USB-JTAG/serial: VID=303a PID=1001
-# ESP32-S3 USB-OTG (CDC):   VID=303a PID=1002
+# Use /dev/serial/by-id/ links for persistent device identity. Kernel names such
+# as ttyUSB0 and ttyACM0 depend on enumeration order and are not stable aliases.
 
-# Match all ESP32-S3 USB-JTAG/serial devices
+# Silicon Labs CP2102N bridge: flash, framed UART config, and serial OTA.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", \
+    MODE="0660", TAG+="uaccess"
+
+# Native ESP32-S3 USB Serial/JTAG: console and JTAG.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", \
-    MODE="0666", GROUP="dialout", \
-    SYMLINK+="domes-pod-usb%n"
+    MODE="0660", TAG+="uaccess"
 
-# Match ESP32-S3 USB-OTG CDC devices
+# ESP32-S3 USB-OTG CDC, when enabled by a board profile.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1002", \
-    MODE="0666", GROUP="dialout", \
-    SYMLINK+="domes-pod-usb%n"
+    MODE="0660", TAG+="uaccess"

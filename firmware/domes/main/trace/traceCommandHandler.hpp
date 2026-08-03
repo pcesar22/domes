@@ -11,6 +11,7 @@
 #include "interfaces/iTransport.hpp"
 #include "traceProtocol.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -57,18 +58,18 @@ private:
     /**
      * @brief Send session info (protobuf TraceSessionInfo)
      */
-    void sendSessionInfo(uint32_t eventCount, uint32_t droppedCount,
-                         uint32_t startTs, uint32_t endTs);
+    bool sendSessionInfo(uint32_t eventCount, uint32_t droppedCount, uint32_t startTs,
+                         uint32_t endTs);
 
     /**
      * @brief Send a chunk of trace events (protobuf TraceDataChunk)
      */
-    void sendDataChunk(uint32_t offset, const TraceEvent* events, size_t count);
+    bool sendDataChunk(uint32_t offset, const TraceEvent* events, size_t count);
 
     /**
      * @brief Send end of dump marker (protobuf TraceDumpComplete)
      */
-    void sendDumpComplete(uint32_t totalEvents, uint32_t checksum);
+    bool sendDumpComplete(uint32_t totalEvents, uint32_t checksum);
 
     /**
      * @brief Send status response (protobuf TraceStatusResponse)

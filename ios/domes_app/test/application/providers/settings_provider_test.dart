@@ -22,8 +22,10 @@ void main() {
     });
 
     test('defaults to BLE transport', () {
-      expect(container.read(settingsProvider).transportPreference,
-          TransportPreference.ble);
+      expect(
+        container.read(settingsProvider).transportPreference,
+        TransportPreference.ble,
+      );
     });
 
     test('auto-connect is false by default', () {
@@ -46,14 +48,18 @@ void main() {
   group('SettingsNotifier.setTransportPreference', () {
     test('changes transport to WiFi', () {
       notifier.setTransportPreference(TransportPreference.wifi);
-      expect(container.read(settingsProvider).transportPreference,
-          TransportPreference.wifi);
+      expect(
+        container.read(settingsProvider).transportPreference,
+        TransportPreference.wifi,
+      );
     });
 
     test('changes transport to serial', () {
       notifier.setTransportPreference(TransportPreference.serial);
-      expect(container.read(settingsProvider).transportPreference,
-          TransportPreference.serial);
+      expect(
+        container.read(settingsProvider).transportPreference,
+        TransportPreference.serial,
+      );
     });
   });
 

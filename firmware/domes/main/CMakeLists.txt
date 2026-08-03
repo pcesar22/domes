@@ -8,9 +8,11 @@ idf_component_register(
         "infra/crashDumpHandler.cpp"
         "infra/memoryProfiler.cpp"
         "services/wifiManager.cpp"
+        "services/firmwareVersion.cpp"
+        "services/releaseMetadata.cpp"
         "services/githubClient.cpp"
         "services/otaManager.cpp"
-        "transport/usbCdcTransport.cpp"
+        "transport/uartTransport.cpp"
         "transport/serialOtaReceiver.cpp"
         "transport/bleOtaService.cpp"
         "transport/tcpTransport.cpp"
@@ -18,8 +20,8 @@ idf_component_register(
         "transport/espNowTransport.cpp"
         "services/espNowService.cpp"
         "trace/traceBuffer.cpp"
+        "trace/traceDumpSnapshot.cpp"
         "trace/traceRecorder.cpp"
-        "trace/traceHooks.cpp"
         "trace/traceCommandHandler.cpp"
         "trace/traceStreamServer.cpp"
         "config/featureManager.cpp"
@@ -43,6 +45,7 @@ idf_component_register(
         led_strip
         nvs_flash
         esp_system
+        esp_app_format
         esp_wifi
         esp_netif
         esp_http_client
@@ -54,3 +57,7 @@ idf_component_register(
         bt
         mdns
 )
+
+if(DOMES_FORCE_OTA_VERIFY_FAILURE)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE DOMES_FORCE_OTA_VERIFY_FAILURE=1)
+endif()

@@ -10,10 +10,9 @@
  * Datasheet: https://www.st.com/resource/en/datasheet/lis2dw12.pdf
  */
 
-#include "interfaces/iImuDriver.hpp"
-
 #include "driver/i2c_master.h"
 #include "esp_log.h"
+#include "interfaces/iImuDriver.hpp"
 
 #include <cstdint>
 
@@ -29,13 +28,13 @@ constexpr uint8_t kRegWhoAmI = 0x0F;
 constexpr uint8_t kWhoAmIValue = 0x44;  // Expected WHO_AM_I response
 
 // Control registers
-constexpr uint8_t kRegCtrl1 = 0x20;    // ODR, mode, LP mode
-constexpr uint8_t kRegCtrl2 = 0x21;    // Boot, soft reset, CS options
-constexpr uint8_t kRegCtrl3 = 0x22;    // Self-test, PP/OD, H_LACTIVE, LIR, SLP_MODE
-constexpr uint8_t kRegCtrl4Int1 = 0x23; // INT1 routing
-constexpr uint8_t kRegCtrl5Int2 = 0x24; // INT2 routing
-constexpr uint8_t kRegCtrl6 = 0x25;    // BW, FS, low noise
-constexpr uint8_t kRegCtrl7 = 0x3F;    // Interrupt enable, usr_off, HP
+constexpr uint8_t kRegCtrl1 = 0x20;      // ODR, mode, LP mode
+constexpr uint8_t kRegCtrl2 = 0x21;      // Boot, soft reset, CS options
+constexpr uint8_t kRegCtrl3 = 0x22;      // Self-test, PP/OD, H_LACTIVE, LIR, SLP_MODE
+constexpr uint8_t kRegCtrl4Int1 = 0x23;  // INT1 routing
+constexpr uint8_t kRegCtrl5Int2 = 0x24;  // INT2 routing
+constexpr uint8_t kRegCtrl6 = 0x25;      // BW, FS, low noise
+constexpr uint8_t kRegCtrl7 = 0x3F;      // Interrupt enable, usr_off, HP
 
 // Status and data registers
 constexpr uint8_t kRegStatus = 0x27;
@@ -47,44 +46,44 @@ constexpr uint8_t kRegOutZL = 0x2C;
 constexpr uint8_t kRegOutZH = 0x2D;
 
 // Tap detection registers
-constexpr uint8_t kRegTapThsX = 0x30;  // X-axis tap threshold
-constexpr uint8_t kRegTapThsY = 0x31;  // Y-axis tap threshold
-constexpr uint8_t kRegTapThsZ = 0x32;  // Z-axis tap threshold + priority
-constexpr uint8_t kRegIntDur = 0x33;   // Tap duration, latency, quiet
-constexpr uint8_t kRegWakeUpThs = 0x34; // Single/double tap, wake-up threshold
-constexpr uint8_t kRegWakeUpDur = 0x35; // Wake-up duration, sleep duration
-constexpr uint8_t kRegFreeFall = 0x36;  // Free-fall configuration
+constexpr uint8_t kRegTapThsX = 0x30;    // X-axis tap threshold
+constexpr uint8_t kRegTapThsY = 0x31;    // Y-axis tap threshold
+constexpr uint8_t kRegTapThsZ = 0x32;    // Z-axis tap threshold + priority
+constexpr uint8_t kRegIntDur = 0x33;     // Tap duration, latency, quiet
+constexpr uint8_t kRegWakeUpThs = 0x34;  // Single/double tap, wake-up threshold
+constexpr uint8_t kRegWakeUpDur = 0x35;  // Wake-up duration, sleep duration
+constexpr uint8_t kRegFreeFall = 0x36;   // Free-fall configuration
 
 // Interrupt source registers
-constexpr uint8_t kRegStatusDup = 0x37; // Status duplicate
-constexpr uint8_t kRegWakeUpSrc = 0x38; // Wake-up interrupt source
-constexpr uint8_t kRegTapSrc = 0x39;    // Tap interrupt source
-constexpr uint8_t kReg6dSrc = 0x3A;     // 6D orientation source
-constexpr uint8_t kRegAllIntSrc = 0x3B; // All interrupt sources
+constexpr uint8_t kRegStatusDup = 0x37;  // Status duplicate
+constexpr uint8_t kRegWakeUpSrc = 0x38;  // Wake-up interrupt source
+constexpr uint8_t kRegTapSrc = 0x39;     // Tap interrupt source
+constexpr uint8_t kReg6dSrc = 0x3A;      // 6D orientation source
+constexpr uint8_t kRegAllIntSrc = 0x3B;  // All interrupt sources
 
 // Control register 1 bits
-constexpr uint8_t kOdr100Hz = 0x04;     // ODR = 100 Hz
-constexpr uint8_t kModeHighPerf = 0x04; // High-performance mode (in LP_MODE bits)
-constexpr uint8_t kLpMode1 = 0x00;      // Low-power mode 1
+constexpr uint8_t kOdr100Hz = 0x04;      // ODR = 100 Hz
+constexpr uint8_t kModeHighPerf = 0x04;  // High-performance mode (in LP_MODE bits)
+constexpr uint8_t kLpMode1 = 0x00;       // Low-power mode 1
 
 // Control register 4 (INT1 routing)
 constexpr uint8_t kInt1SingleTap = 0x40;  // Route single-tap to INT1
 constexpr uint8_t kInt1DoubleTap = 0x08;  // Route double-tap to INT1
 
 // Control register 7 bits
-constexpr uint8_t kInterruptsEnable = 0x20; // Enable interrupts
+constexpr uint8_t kInterruptsEnable = 0x20;  // Enable interrupts
 
 // Tap threshold (0-31 range, ~62.5mg per LSB at FS=2g)
 constexpr uint8_t kDefaultTapThs = 0x03;  // ~0.19g threshold (very sensitive)
 
 // Tap configuration
-constexpr uint8_t kTapXYZEnable = 0x0E;   // Enable tap on X, Y, Z (bits 1-3)
-constexpr uint8_t kTapPriorityZYX = 0x00; // Priority: Z > Y > X
+constexpr uint8_t kTapXYZEnable = 0x0E;    // Enable tap on X, Y, Z (bits 1-3)
+constexpr uint8_t kTapPriorityZYX = 0x00;  // Priority: Z > Y > X
 
 // Tap source bits
-constexpr uint8_t kTapIa = 0x40;          // Tap event detected
-constexpr uint8_t kSingleTap = 0x20;      // Single-tap detected
-constexpr uint8_t kDoubleTap = 0x10;      // Double-tap detected
+constexpr uint8_t kTapIa = 0x40;      // Tap event detected
+constexpr uint8_t kSingleTap = 0x20;  // Single-tap detected
+constexpr uint8_t kDoubleTap = 0x10;  // Double-tap detected
 
 }  // namespace lis2dw12
 
@@ -154,8 +153,8 @@ public:
         }
 
         if (whoAmI != lis2dw12::kWhoAmIValue) {
-            ESP_LOGE(kTag, "Unexpected WHO_AM_I: 0x%02X (expected 0x%02X)",
-                     whoAmI, lis2dw12::kWhoAmIValue);
+            ESP_LOGE(kTag, "Unexpected WHO_AM_I: 0x%02X (expected 0x%02X)", whoAmI,
+                     lis2dw12::kWhoAmIValue);
             return ESP_ERR_NOT_FOUND;
         }
 
@@ -190,44 +189,56 @@ public:
 
         // CTRL3: Enable latched interrupt (LIR=1)
         err = writeRegister(lis2dw12::kRegCtrl3, 0x10);  // LIR=1
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         // TAP_THS_X: Threshold + enable X
-        err = writeRegister(lis2dw12::kRegTapThsX, 0x40 | lis2dw12::kDefaultTapThs);  // 4D=0, 6D_THS[1:0]=0, TAP_THSX
-        if (err != ESP_OK) return err;
+        err = writeRegister(lis2dw12::kRegTapThsX,
+                            0x40 | lis2dw12::kDefaultTapThs);  // 4D=0, 6D_THS[1:0]=0, TAP_THSX
+        if (err != ESP_OK)
+            return err;
 
         // TAP_THS_Y: Threshold + enable Y
         err = writeRegister(lis2dw12::kRegTapThsY, 0x00 | lis2dw12::kDefaultTapThs);  // TAP_THSY
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         // TAP_THS_Z: Threshold + enable Z + priority + enable axes
         // Bits 7:5 = TAP_X_EN, TAP_Y_EN, TAP_Z_EN
         // Bits 4:0 = TAP_THS_Z
-        err = writeRegister(lis2dw12::kRegTapThsZ, 0xE0 | lis2dw12::kDefaultTapThs);  // Enable X,Y,Z + threshold
-        if (err != ESP_OK) return err;
+        err = writeRegister(lis2dw12::kRegTapThsZ,
+                            0xE0 | lis2dw12::kDefaultTapThs);  // Enable X,Y,Z + threshold
+        if (err != ESP_OK)
+            return err;
 
         // INT_DUR: Tap timing configuration
         // SHOCK[1:0] (bits 1:0) = 0b11 = 4/ODR = 40ms shock duration (more lenient)
         // QUIET[1:0] (bits 3:2) = 0b10 = 3/ODR = 30ms quiet duration
         // LATENCY[3:0] (bits 7:4) = 0b0011 = double-tap latency
         err = writeRegister(lis2dw12::kRegIntDur, 0x3B);  // More lenient timing
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         // WAKE_UP_THS: SINGLE_DOUBLE_TAP bit + wake-up threshold
         uint8_t wakeUpThs = doubleTap ? 0x80 : 0x00;  // Bit 7 = SINGLE_DOUBLE_TAP (0=single only)
         err = writeRegister(lis2dw12::kRegWakeUpThs, wakeUpThs);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         // CTRL4_INT1: Route tap to INT1
         uint8_t int1Config = 0;
-        if (singleTap) int1Config |= lis2dw12::kInt1SingleTap;
-        if (doubleTap) int1Config |= lis2dw12::kInt1DoubleTap;
+        if (singleTap)
+            int1Config |= lis2dw12::kInt1SingleTap;
+        if (doubleTap)
+            int1Config |= lis2dw12::kInt1DoubleTap;
         err = writeRegister(lis2dw12::kRegCtrl4Int1, int1Config);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         // CTRL7: Enable interrupts
         err = writeRegister(lis2dw12::kRegCtrl7, lis2dw12::kInterruptsEnable);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         ESP_LOGI(kTag, "Tap detection enabled (single=%d, double=%d)", singleTap, doubleTap);
 
@@ -283,8 +294,7 @@ public:
         if (tapDetected) {
             bool isSingle = (tapSrc & lis2dw12::kSingleTap) != 0;
             bool isDouble = (tapSrc & lis2dw12::kDoubleTap) != 0;
-            ESP_LOGI(kTag, "TAP! single=%d, double=%d, src=0x%02X",
-                     isSingle, isDouble, tapSrc);
+            ESP_LOGI(kTag, "TAP! single=%d, double=%d, src=0x%02X", isSingle, isDouble, tapSrc);
         }
 
         return tapDetected;

@@ -8,14 +8,14 @@
 
 use crate::proto::config::{
     CheckUpdateResponse, ClearCrashDumpResponse, Color, CrashDumpResponse, EspNowBenchRequest,
-    EspNowBenchResponse, Feature, GetEspNowStatusResponse, GetHealthResponse,
-    GetLedPatternResponse, GetMemoryProfileResponse, GetModeResponse, GetSystemInfoResponse,
-    LedPattern, LedPatternType, ListFeaturesResponse, SelfTestResponse, SetAutoUpdateRequest,
-    SetAutoUpdateResponse, SetFeatureRequest, SetFeatureResponse,
-    SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest, SetLedPatternResponse,
-    SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse,
-    SetSimModeRequest, SetSimModeResponse, SimulateTouchRequest, SimulateTouchResponse,
-    Status, SystemMode,
+    EspNowBenchResponse, Feature, FeatureState, GetEspNowStatusResponse, GetFeatureRequest,
+    GetFeatureResponse, GetHealthResponse, GetLedPatternResponse, GetMemoryProfileResponse,
+    GetModeResponse, GetSystemInfoResponse, LedPattern, LedPatternType, ListFeaturesResponse,
+    ResetReason, SelfTestResponse, SetAutoUpdateRequest, SetAutoUpdateResponse, SetFeatureRequest,
+    SetFeatureResponse, SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest,
+    SetLedPatternResponse, SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse,
+    SetSimModeRequest, SetSimModeResponse, SimulateTouchRequest, SimulateTouchResponse, Status,
+    SystemMode,
 };
 use prost::Message;
 use thiserror::Error;
@@ -23,69 +23,40 @@ use thiserror::Error;
 // Re-export config MsgType with clearer name for use in commands
 pub use crate::proto::config::MsgType as ConfigMsgType;
 
-impl TryFrom<u8> for ConfigMsgType {
-    type Error = ProtocolError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0x20 => Ok(Self::ListFeaturesReq),
-            0x21 => Ok(Self::ListFeaturesRsp),
-            0x22 => Ok(Self::SetFeatureReq),
-            0x23 => Ok(Self::SetFeatureRsp),
-            0x24 => Ok(Self::GetFeatureReq),
-            0x25 => Ok(Self::GetFeatureRsp),
-            0x26 => Ok(Self::SetLedPatternReq),
-            0x27 => Ok(Self::SetLedPatternRsp),
-            0x28 => Ok(Self::GetLedPatternReq),
-            0x29 => Ok(Self::GetLedPatternRsp),
-            0x2A => Ok(Self::SetImuTriageReq),
-            0x2B => Ok(Self::SetImuTriageRsp),
-            0x30 => Ok(Self::GetModeReq),
-            0x31 => Ok(Self::GetModeRsp),
-            0x32 => Ok(Self::SetModeReq),
-            0x33 => Ok(Self::SetModeRsp),
-            0x34 => Ok(Self::GetSystemInfoReq),
-            0x35 => Ok(Self::GetSystemInfoRsp),
-            0x36 => Ok(Self::SetPodIdReq),
-            0x37 => Ok(Self::SetPodIdRsp),
-            0x38 => Ok(Self::GetHealthReq),
-            0x39 => Ok(Self::GetHealthRsp),
-            0x3A => Ok(Self::GetEspnowStatusReq),
-            0x3B => Ok(Self::GetEspnowStatusRsp),
-            0x3C => Ok(Self::EspnowBenchReq),
-            0x3D => Ok(Self::EspnowBenchRsp),
-            0x3E => Ok(Self::GetCrashDumpReq),
-            0x3F => Ok(Self::GetCrashDumpRsp),
-            0x40 => Ok(Self::ClearCrashDumpReq),
-            0x41 => Ok(Self::ClearCrashDumpRsp),
-            0x42 => Ok(Self::GetMemoryProfileReq),
-            0x43 => Ok(Self::GetMemoryProfileRsp),
-            0x44 => Ok(Self::SelfTestReq),
-            0x45 => Ok(Self::SelfTestRsp),
-            0x46 => Ok(Self::CheckUpdateReq),
-            0x47 => Ok(Self::CheckUpdateRsp),
-            0x48 => Ok(Self::SetAutoUpdateReq),
-            0x49 => Ok(Self::SetAutoUpdateRsp),
-            0x4C => Ok(Self::SimulateTouchReq),
-            0x4D => Ok(Self::SimulateTouchRsp),
-            0x4E => Ok(Self::SetSimModeReq),
-            0x4F => Ok(Self::SetSimModeRsp),
-            _ => Err(ProtocolError::UnknownMessageType(value)),
-        }
-    }
-}
-
 /// Protocol errors
 #[derive(Debug, Error)]
 pub enum ProtocolError {
-    #[error("Unknown message type: 0x{0:02X}")]
-    UnknownMessageType(u8),
-
     #[error("Unknown feature ID: {0}")]
     UnknownFeature(i32),
 
     #[error("Unknown status code: {0}")]
     UnknownStatus(i32),
+
+    #[error("Unknown system mode: {0}")]
+    UnknownSystemMode(i32),
+
+    #[error("Unknown LED pattern type: {0}")]
+    UnknownLedPatternType(i32),
+
+    #[error("{field} value {value} exceeds maximum {max}")]
+    FieldOutOfRange {
+        field: &'static str,
+        value: u32,
+        max: u32,
+    },
+
+    #[error("ESP-NOW peer MAC must contain exactly 6 bytes, got {actual}")]
+    InvalidMacLength { actual: usize },
+
+    #[error(
+        "Inconsistent self-test response: tests_run={tests_run}, tests_passed={tests_passed}, results={results_count}, passing_results={passing_results}"
+    )]
+    InconsistentSelfTest {
+        tests_run: u32,
+        tests_passed: u32,
+        results_count: usize,
+        passing_results: usize,
+    },
 
     #[error("Payload too short: expected {expected}, got {actual}")]
     PayloadTooShort { expected: usize, actual: usize },
@@ -113,14 +84,22 @@ pub fn serialize_set_feature(feature: Feature, enabled: bool) -> Vec<u8> {
     req.encode_to_vec()
 }
 
+/// Serialize GetFeatureRequest using protobuf encoding.
+pub fn serialize_get_feature(feature: Feature) -> Vec<u8> {
+    GetFeatureRequest {
+        feature: feature as i32,
+    }
+    .encode_to_vec()
+}
+
 /// Parse ListFeaturesResponse payload (protobuf encoded)
 pub fn parse_list_features_response(payload: &[u8]) -> Result<Vec<CliFeatureState>, ProtocolError> {
     let resp = ListFeaturesResponse::decode(payload)?;
 
     let mut features = Vec::with_capacity(resp.features.len());
     for fs in resp.features {
-        let feature = Feature::try_from(fs.feature)
-            .map_err(|_| ProtocolError::UnknownFeature(fs.feature))?;
+        let feature =
+            Feature::try_from(fs.feature).map_err(|_| ProtocolError::UnknownFeature(fs.feature))?;
         features.push(CliFeatureState {
             feature,
             enabled: fs.enabled,
@@ -130,9 +109,7 @@ pub fn parse_list_features_response(payload: &[u8]) -> Result<Vec<CliFeatureStat
     Ok(features)
 }
 
-/// Parse SetFeatureResponse or GetFeatureResponse payload
-/// Format: [status_byte][protobuf_SetFeatureResponse]
-pub fn parse_feature_response(payload: &[u8]) -> Result<CliFeatureState, ProtocolError> {
+fn parse_ok_status(payload: &[u8]) -> Result<&[u8], ProtocolError> {
     if payload.is_empty() {
         return Err(ProtocolError::PayloadTooShort {
             expected: 1,
@@ -140,30 +117,45 @@ pub fn parse_feature_response(payload: &[u8]) -> Result<CliFeatureState, Protoco
         });
     }
 
-    // First byte is status
-    let status_val = payload[0] as i32;
+    let status_val = i32::from(payload[0]);
     let status =
         Status::try_from(status_val).map_err(|_| ProtocolError::UnknownStatus(status_val))?;
-
     if status != Status::Ok {
         return Err(ProtocolError::DeviceError(status));
     }
 
-    // Rest is protobuf-encoded SetFeatureResponse
-    let resp = SetFeatureResponse::decode(&payload[1..])?;
+    Ok(&payload[1..])
+}
 
-    let fs = resp.feature.ok_or(ProtocolError::PayloadTooShort {
+fn cli_feature_state(
+    state: Option<FeatureState>,
+    payload_len: usize,
+) -> Result<CliFeatureState, ProtocolError> {
+    let state = state.ok_or(ProtocolError::PayloadTooShort {
         expected: 3,
-        actual: payload.len(),
+        actual: payload_len,
     })?;
-
-    let feature =
-        Feature::try_from(fs.feature).map_err(|_| ProtocolError::UnknownFeature(fs.feature))?;
+    let feature = Feature::try_from(state.feature)
+        .map_err(|_| ProtocolError::UnknownFeature(state.feature))?;
 
     Ok(CliFeatureState {
         feature,
-        enabled: fs.enabled,
+        enabled: state.enabled,
     })
+}
+
+/// Parse a SetFeatureResponse payload.
+/// Format: [status_byte][protobuf_SetFeatureResponse]
+pub fn parse_set_feature_response(payload: &[u8]) -> Result<CliFeatureState, ProtocolError> {
+    let response = SetFeatureResponse::decode(parse_ok_status(payload)?)?;
+    cli_feature_state(response.feature, payload.len())
+}
+
+/// Parse a GetFeatureResponse payload.
+/// Format: [status_byte][protobuf_GetFeatureResponse]
+pub fn parse_get_feature_response(payload: &[u8]) -> Result<CliFeatureState, ProtocolError> {
+    let response = GetFeatureResponse::decode(parse_ok_status(payload)?)?;
+    cli_feature_state(response.feature, payload.len())
 }
 
 /// LED pattern state for CLI use
@@ -292,29 +284,40 @@ pub fn parse_led_pattern_response(payload: &[u8]) -> Result<CliLedPattern, Proto
     })?;
 
     let pattern_type = LedPatternType::try_from(pattern.r#type)
-        .unwrap_or(LedPatternType::LedPatternOff);
+        .map_err(|_| ProtocolError::UnknownLedPatternType(pattern.r#type))?;
 
-    let color = pattern.color.map(|c| {
-        (
-            c.r as u8,
-            c.g as u8,
-            c.b as u8,
-            c.w as u8,
-        )
-    });
+    let color = pattern.color.as_ref().map(parse_color).transpose()?;
 
-    let colors: Vec<_> = pattern
+    let colors = pattern
         .colors
         .iter()
-        .map(|c| (c.r as u8, c.g as u8, c.b as u8, c.w as u8))
-        .collect();
+        .map(parse_color)
+        .collect::<Result<Vec<_>, _>>()?;
+    let brightness = bounded_u8("LED brightness", pattern.brightness)?;
 
     Ok(CliLedPattern {
         pattern_type,
         color,
         colors,
         period_ms: pattern.period_ms,
-        brightness: pattern.brightness as u8,
+        brightness,
+    })
+}
+
+fn parse_color(color: &Color) -> Result<(u8, u8, u8, u8), ProtocolError> {
+    Ok((
+        bounded_u8("LED color red channel", color.r)?,
+        bounded_u8("LED color green channel", color.g)?,
+        bounded_u8("LED color blue channel", color.b)?,
+        bounded_u8("LED color white channel", color.w)?,
+    ))
+}
+
+fn bounded_u8(field: &'static str, value: u32) -> Result<u8, ProtocolError> {
+    u8::try_from(value).map_err(|_| ProtocolError::FieldOutOfRange {
+        field,
+        value,
+        max: u8::MAX as u32,
     })
 }
 
@@ -366,13 +369,12 @@ pub struct CliSystemInfo {
     pub mode: SystemMode,
     pub feature_mask: u32,
     pub pod_id: u32,
+    pub reset_reason: ResetReason,
 }
 
 /// Serialize SetModeRequest using protobuf encoding
 pub fn serialize_set_mode(mode: SystemMode) -> Vec<u8> {
-    let req = SetModeRequest {
-        mode: mode as i32,
-    };
+    let req = SetModeRequest { mode: mode as i32 };
     req.encode_to_vec()
 }
 
@@ -395,7 +397,8 @@ pub fn parse_get_mode_response(payload: &[u8]) -> Result<CliModeInfo, ProtocolEr
     }
 
     let resp = GetModeResponse::decode(&payload[1..])?;
-    let mode = SystemMode::try_from(resp.mode).unwrap_or(SystemMode::Booting);
+    let mode =
+        SystemMode::try_from(resp.mode).map_err(|_| ProtocolError::UnknownSystemMode(resp.mode))?;
 
     Ok(CliModeInfo {
         mode,
@@ -422,7 +425,8 @@ pub fn parse_set_mode_response(payload: &[u8]) -> Result<(SystemMode, bool), Pro
     }
 
     let resp = SetModeResponse::decode(&payload[1..])?;
-    let mode = SystemMode::try_from(resp.mode).unwrap_or(SystemMode::Booting);
+    let mode =
+        SystemMode::try_from(resp.mode).map_err(|_| ProtocolError::UnknownSystemMode(resp.mode))?;
 
     Ok((mode, resp.transition_ok))
 }
@@ -446,7 +450,8 @@ pub fn parse_get_system_info_response(payload: &[u8]) -> Result<CliSystemInfo, P
     }
 
     let resp = GetSystemInfoResponse::decode(&payload[1..])?;
-    let mode = SystemMode::try_from(resp.mode).unwrap_or(SystemMode::Booting);
+    let mode =
+        SystemMode::try_from(resp.mode).map_err(|_| ProtocolError::UnknownSystemMode(resp.mode))?;
 
     Ok(CliSystemInfo {
         firmware_version: resp.firmware_version,
@@ -456,6 +461,7 @@ pub fn parse_get_system_info_response(payload: &[u8]) -> Result<CliSystemInfo, P
         mode,
         feature_mask: resp.feature_mask,
         pod_id: resp.pod_id,
+        reset_reason: ResetReason::try_from(resp.reset_reason).unwrap_or(ResetReason::Unknown),
     })
 }
 
@@ -573,9 +579,7 @@ pub fn parse_get_health_response(payload: &[u8]) -> Result<CliHealthInfo, Protoc
 
 /// Parse GetEspNowStatusResponse payload
 /// Format: [status_byte][protobuf_GetEspNowStatusResponse]
-pub fn parse_get_espnow_status_response(
-    payload: &[u8],
-) -> Result<CliEspNowStatus, ProtocolError> {
+pub fn parse_get_espnow_status_response(payload: &[u8]) -> Result<CliEspNowStatus, ProtocolError> {
     if payload.is_empty() {
         return Err(ProtocolError::PayloadTooShort {
             expected: 1,
@@ -597,16 +601,20 @@ pub fn parse_get_espnow_status_response(
         .peers
         .iter()
         .map(|p| {
-            let mut mac = [0u8; 6];
-            let len = p.mac.len().min(6);
-            mac[..len].copy_from_slice(&p.mac[..len]);
-            CliEspNowPeer {
+            let mac: [u8; 6] =
+                p.mac
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| ProtocolError::InvalidMacLength {
+                        actual: p.mac.len(),
+                    })?;
+            Ok(CliEspNowPeer {
                 mac,
                 rssi: p.rssi,
                 last_seen_ms: p.last_seen_ms,
-            }
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, ProtocolError>>()?;
 
     Ok(CliEspNowStatus {
         peer_count: resp.peer_count,
@@ -666,11 +674,31 @@ pub fn parse_self_test_response(payload: &[u8]) -> Result<CliSelfTestInfo, Proto
         })
         .collect();
 
-    Ok(CliSelfTestInfo {
+    let info = CliSelfTestInfo {
         tests_run: resp.tests_run,
         tests_passed: resp.tests_passed,
         results,
-    })
+    };
+    validate_self_test_consistency(&info)?;
+    Ok(info)
+}
+
+pub fn validate_self_test_consistency(info: &CliSelfTestInfo) -> Result<(), ProtocolError> {
+    let passing_results = info.results.iter().filter(|result| result.passed).count();
+    let consistent = info.tests_passed <= info.tests_run
+        && usize::try_from(info.tests_run).ok() == Some(info.results.len())
+        && usize::try_from(info.tests_passed).ok() == Some(passing_results);
+
+    if !consistent {
+        return Err(ProtocolError::InconsistentSelfTest {
+            tests_run: info.tests_run,
+            tests_passed: info.tests_passed,
+            results_count: info.results.len(),
+            passing_results,
+        });
+    }
+
+    Ok(())
 }
 
 // ============================================================================
@@ -758,10 +786,10 @@ pub struct CliBenchResult {
 }
 
 // ============================================================================
-// Crash dump types and parsers
+// Clean-restart snapshot types and parsers (legacy crash-dump message names)
 // ============================================================================
 
-/// Crash dump info for CLI use
+/// Clean-restart snapshot for CLI use
 #[derive(Debug, Clone)]
 pub struct CliCrashDump {
     pub has_dump: bool,
@@ -770,7 +798,10 @@ pub struct CliCrashDump {
     pub uptime_s: u32,
     pub free_heap: u32,
     pub backtrace: Vec<u32>,
-    pub timestamp: u32,
+    pub boot_count: u32,
+    pub firmware_version: String,
+    pub format_version: u32,
+    pub elf_sha256: String,
 }
 
 /// Parse CrashDumpResponse payload
@@ -800,7 +831,10 @@ pub fn parse_crash_dump_response(payload: &[u8]) -> Result<CliCrashDump, Protoco
         uptime_s: resp.uptime_s,
         free_heap: resp.free_heap,
         backtrace: resp.backtrace,
-        timestamp: resp.timestamp,
+        boot_count: resp.boot_count,
+        firmware_version: resp.firmware_version,
+        format_version: resp.format_version,
+        elf_sha256: resp.elf_sha256,
     })
 }
 
@@ -955,8 +989,8 @@ pub fn parse_simulate_touch_response(payload: &[u8]) -> Result<(), ProtocolError
         return Err(ProtocolError::DeviceError(status));
     }
 
-    // Decode protobuf body for consistency (catches encoding errors)
-    let _resp = SimulateTouchResponse::decode(&payload[1..])?;
+    // Decode the empty protobuf body for consistency (catches encoding errors).
+    SimulateTouchResponse::decode(&payload[1..])?;
 
     Ok(())
 }
@@ -998,10 +1032,225 @@ pub fn parse_set_sim_mode_response(payload: &[u8]) -> Result<CliSimModeState, Pr
     }
 
     let resp = SetSimModeResponse::decode(&payload[1..])?;
-
     Ok(CliSimModeState {
         enabled: resp.enabled,
         delay_ms: resp.delay_ms,
         pad_index: resp.pad_index,
     })
+}
+
+#[cfg(test)]
+mod feature_contract_tests {
+    use super::*;
+
+    fn ok_payload(message: impl Message) -> Vec<u8> {
+        let mut payload = vec![Status::Ok as u8];
+        payload.extend(message.encode_to_vec());
+        payload
+    }
+
+    #[test]
+    fn get_feature_request_uses_generated_message() {
+        let encoded = serialize_get_feature(Feature::EspNow);
+        let decoded = GetFeatureRequest::decode(encoded.as_slice()).unwrap();
+        assert_eq!(decoded.feature, Feature::EspNow as i32);
+    }
+
+    #[test]
+    fn get_feature_response_uses_its_distinct_generated_message() {
+        let response = GetFeatureResponse {
+            feature: Some(FeatureState {
+                feature: Feature::Touch as i32,
+                enabled: true,
+            }),
+        };
+        let mut payload = vec![Status::Ok as u8];
+        payload.extend(response.encode_to_vec());
+
+        let state = parse_get_feature_response(&payload).unwrap();
+        assert_eq!(state.feature, Feature::Touch);
+        assert!(state.enabled);
+    }
+
+    #[test]
+    fn unknown_system_modes_are_protocol_errors() {
+        let get_mode = ok_payload(GetModeResponse {
+            mode: 99,
+            time_in_mode_ms: 0,
+        });
+        assert!(matches!(
+            parse_get_mode_response(&get_mode),
+            Err(ProtocolError::UnknownSystemMode(99))
+        ));
+
+        let set_mode = ok_payload(SetModeResponse {
+            mode: 99,
+            transition_ok: true,
+        });
+        assert!(matches!(
+            parse_set_mode_response(&set_mode),
+            Err(ProtocolError::UnknownSystemMode(99))
+        ));
+
+        let system_info = ok_payload(GetSystemInfoResponse {
+            mode: 99,
+            ..Default::default()
+        });
+        assert!(matches!(
+            parse_get_system_info_response(&system_info),
+            Err(ProtocolError::UnknownSystemMode(99))
+        ));
+    }
+
+    #[test]
+    fn unknown_or_out_of_range_led_fields_are_protocol_errors() {
+        let unknown_pattern = ok_payload(SetLedPatternResponse {
+            pattern: Some(LedPattern {
+                r#type: 99,
+                ..Default::default()
+            }),
+        });
+        assert!(matches!(
+            parse_led_pattern_response(&unknown_pattern),
+            Err(ProtocolError::UnknownLedPatternType(99))
+        ));
+
+        let invalid_color = ok_payload(SetLedPatternResponse {
+            pattern: Some(LedPattern {
+                r#type: LedPatternType::LedPatternSolid as i32,
+                color: Some(Color {
+                    r: 256,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        });
+        assert!(matches!(
+            parse_led_pattern_response(&invalid_color),
+            Err(ProtocolError::FieldOutOfRange {
+                field: "LED color red channel",
+                value: 256,
+                ..
+            })
+        ));
+
+        let invalid_brightness = ok_payload(SetLedPatternResponse {
+            pattern: Some(LedPattern {
+                r#type: LedPatternType::LedPatternOff as i32,
+                brightness: 256,
+                ..Default::default()
+            }),
+        });
+        assert!(matches!(
+            parse_led_pattern_response(&invalid_brightness),
+            Err(ProtocolError::FieldOutOfRange {
+                field: "LED brightness",
+                value: 256,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn espnow_peer_mac_requires_exact_wire_length() {
+        let response = ok_payload(GetEspNowStatusResponse {
+            peers: vec![crate::proto::config::EspNowPeer {
+                mac: vec![1, 2, 3, 4, 5],
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+
+        assert!(matches!(
+            parse_get_espnow_status_response(&response),
+            Err(ProtocolError::InvalidMacLength { actual: 5 })
+        ));
+    }
+
+    #[test]
+    fn self_test_counts_must_match_result_records() {
+        let info = CliSelfTestInfo {
+            tests_run: 2,
+            tests_passed: 2,
+            results: vec![CliSelfTestResult {
+                name: "heap".to_string(),
+                passed: true,
+                message: String::new(),
+            }],
+        };
+        assert!(matches!(
+            validate_self_test_consistency(&info),
+            Err(ProtocolError::InconsistentSelfTest {
+                tests_run: 2,
+                tests_passed: 2,
+                results_count: 1,
+                passing_results: 1,
+            })
+        ));
+
+        let response = ok_payload(SelfTestResponse {
+            tests_run: 1,
+            tests_passed: 1,
+            results: vec![crate::proto::config::SelfTestResult {
+                name: "heap".to_string(),
+                passed: false,
+                message: String::new(),
+            }],
+        });
+        assert!(matches!(
+            parse_self_test_response(&response),
+            Err(ProtocolError::InconsistentSelfTest { .. })
+        ));
+    }
+
+    #[test]
+    fn restart_snapshot_maps_boot_count_and_diagnostics() {
+        let response = ok_payload(CrashDumpResponse {
+            has_dump: true,
+            reason: "shutdown/restart".to_string(),
+            task_name: "serial_ota".to_string(),
+            uptime_s: 42,
+            free_heap: 49_152,
+            backtrace: vec![0x4200_1234, 0x4200_5678],
+            boot_count: 17,
+            firmware_version: "v1.2.3".to_string(),
+            format_version: 2,
+            elf_sha256: "a".repeat(64),
+        });
+
+        let snapshot = parse_crash_dump_response(&response).unwrap();
+        assert!(snapshot.has_dump);
+        assert_eq!(snapshot.reason, "shutdown/restart");
+        assert_eq!(snapshot.task_name, "serial_ota");
+        assert_eq!(snapshot.uptime_s, 42);
+        assert_eq!(snapshot.free_heap, 49_152);
+        assert_eq!(snapshot.backtrace, vec![0x4200_1234, 0x4200_5678]);
+        assert_eq!(snapshot.boot_count, 17);
+        assert_eq!(snapshot.firmware_version, "v1.2.3");
+        assert_eq!(snapshot.format_version, 2);
+        assert_eq!(snapshot.elf_sha256, "a".repeat(64));
+    }
+
+    #[test]
+    fn restart_snapshot_parser_handles_empty_error_and_truncated_payloads() {
+        let no_snapshot = parse_crash_dump_response(&ok_payload(CrashDumpResponse::default()))
+            .expect("empty snapshot response should decode");
+        assert!(!no_snapshot.has_dump);
+
+        assert!(matches!(
+            parse_crash_dump_response(&[]),
+            Err(ProtocolError::PayloadTooShort {
+                expected: 1,
+                actual: 0
+            })
+        ));
+        assert!(matches!(
+            parse_crash_dump_response(&[Status::Error as u8]),
+            Err(ProtocolError::DeviceError(Status::Error))
+        ));
+        assert!(matches!(
+            parse_crash_dump_response(&[Status::Ok as u8, 0x80]),
+            Err(ProtocolError::DecodeError(_))
+        ));
+    }
 }

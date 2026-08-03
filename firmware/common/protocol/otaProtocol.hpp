@@ -9,9 +9,9 @@
  * Flow:
  *   Host → ESP32: OTA_BEGIN (size, sha256, version)
  *   ESP32 → Host: OTA_ACK (status=OK, nextOffset=0)
- *   Host → ESP32: OTA_DATA (offset=0, data[0..1023])
- *   ESP32 → Host: OTA_ACK (status=OK, nextOffset=1024)
- *   Host → ESP32: OTA_DATA (offset=1024, data[1024..2047])
+ *   Host → ESP32: OTA_DATA (offset=0, data[0..1015])
+ *   ESP32 → Host: OTA_ACK (status=OK, nextOffset=1016)
+ *   Host → ESP32: OTA_DATA (offset=1016, data[1016..2031])
  *   ...
  *   Host → ESP32: OTA_END
  *   ESP32 → Host: OTA_ACK (status=OK) → reboot
@@ -110,7 +110,7 @@ static_assert(sizeof(OtaAbortPayload) == 1, "OtaAbortPayload size mismatch");
  * @brief Serialize OTA_BEGIN message
  *
  * @param firmwareSize Total firmware size
- * @param sha256 SHA256 hash of firmware
+ * @param sha256 SHA256 hash of firmware; must not be null
  * @param version Version string
  * @param buf Output buffer
  * @param bufSize Buffer size
@@ -199,6 +199,9 @@ TransportError deserializeOtaBegin(const uint8_t* payload, size_t payloadLen,
  */
 TransportError deserializeOtaData(const uint8_t* payload, size_t payloadLen, uint32_t* offset,
                                   const uint8_t** data, size_t* dataLen);
+
+/** Validate the empty OTA_END payload. */
+TransportError deserializeOtaEnd(const uint8_t* payload, size_t payloadLen);
 
 /**
  * @brief Deserialize OTA_ACK payload

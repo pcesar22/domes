@@ -9,6 +9,7 @@
  */
 
 #include "esp_err.h"
+#include "services/firmwareVersion.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -33,53 +34,6 @@ struct GithubRelease {
     GithubAsset firmware;  ///< Firmware binary asset
     bool found;            ///< True if release was found
 };
-
-/**
- * @brief Parsed firmware version from tag
- */
-struct FirmwareVersion {
-    uint8_t major;
-    uint8_t minor;
-    uint8_t patch;
-    char gitHash[12];  ///< Short git hash (e.g., "a1b2c3d")
-    bool dirty;        ///< True if built from dirty working tree
-
-    /**
-     * @brief Compare versions (ignores gitHash and dirty)
-     *
-     * @param other Version to compare against
-     * @return negative if this < other, 0 if equal, positive if this > other
-     */
-    int compare(const FirmwareVersion& other) const {
-        if (major != other.major)
-            return static_cast<int>(major) - static_cast<int>(other.major);
-        if (minor != other.minor)
-            return static_cast<int>(minor) - static_cast<int>(other.minor);
-        return static_cast<int>(patch) - static_cast<int>(other.patch);
-    }
-
-    /**
-     * @brief Check if update is available
-     *
-     * @param other Available version
-     * @return true if other is newer than this
-     */
-    bool isUpdateAvailable(const FirmwareVersion& other) const { return compare(other) < 0; }
-};
-
-/**
- * @brief Parse version string to FirmwareVersion struct
- *
- * Handles formats:
- * - "v1.2.3"
- * - "v1.2.3-dirty"
- * - "v1.2.3-5-ga1b2c3d"
- * - "v1.2.3-5-ga1b2c3d-dirty"
- *
- * @param versionStr Version string to parse
- * @return Parsed version (zeros if parsing fails)
- */
-FirmwareVersion parseVersion(const char* versionStr);
 
 /**
  * @brief GitHub Releases API client
@@ -112,7 +66,7 @@ public:
      * @brief Fetch latest release information
      *
      * Queries the GitHub Releases API for the latest release.
-     * Looks for a firmware asset named "domes.bin" or "domes-*.bin".
+     * Requires the versioned OTA asset `domes-<tag>.bin` and its SHA-256.
      *
      * @param release Output struct with release info
      * @return ESP_OK on success, error code on failure

@@ -5,10 +5,14 @@
  * Uses mock esp_timer_get_time() to control time for timeout tests.
  */
 
-#include <gtest/gtest.h>
-#include "esp_timer.h"  // Stub - provides test_stubs::mock_time_us
-#include "config/modeManager.hpp"
 #include "config/featureManager.hpp"
+#include "config/modeManager.hpp"
+#include "esp_timer.h"  // Stub - provides test_stubs::mock_time_us
+
+#include <atomic>
+#include <thread>
+
+#include <gtest/gtest.h>
 
 using namespace domes::config;
 
@@ -24,17 +28,11 @@ protected:
         mgr_ = std::make_unique<ModeManager>(*features_);
     }
 
-    void advanceTimeUs(int64_t us) {
-        test_stubs::mock_time_us.fetch_add(us);
-    }
+    void advanceTimeUs(int64_t us) { test_stubs::mock_time_us.fetch_add(us); }
 
-    void advanceTimeMs(int64_t ms) {
-        advanceTimeUs(ms * 1000);
-    }
+    void advanceTimeMs(int64_t ms) { advanceTimeUs(ms * 1000); }
 
-    void advanceTimeS(int64_t s) {
-        advanceTimeUs(s * 1'000'000);
-    }
+    void advanceTimeS(int64_t s) { advanceTimeUs(s * 1'000'000); }
 
     std::unique_ptr<FeatureManager> features_;
     std::unique_ptr<ModeManager> mgr_;
@@ -62,20 +60,20 @@ TEST_F(ModeManagerTest, IdleMaskIsLedAndBle) {
     EXPECT_EQ(mask, (1u << 1) | (1u << 2));
 }
 
-TEST_F(ModeManagerTest, TriageMaskExcludesEspNow) {
+TEST_F(ModeManagerTest, TriageMaskExcludesEspNowAndWifiPolicy) {
     uint32_t mask = ModeManager::featureMaskForMode(SystemMode::kTriage);
-    // Should have LED(1), BLE(2), WiFi(3), Touch(5), Haptic(6), Audio(7)
+    // Should have LED(1), BLE(2), Touch(5), Haptic(6), Audio(7)
     // Should NOT have ESP-NOW(4)
     EXPECT_NE(mask & (1u << 1), 0u);  // LED
     EXPECT_NE(mask & (1u << 2), 0u);  // BLE
-    EXPECT_NE(mask & (1u << 3), 0u);  // WiFi
+    EXPECT_EQ(mask & (1u << 3), 0u);  // WiFi is not mode-controlled
     EXPECT_EQ(mask & (1u << 4), 0u);  // NO ESP-NOW
     EXPECT_NE(mask & (1u << 5), 0u);  // Touch
     EXPECT_NE(mask & (1u << 6), 0u);  // Haptic
     EXPECT_NE(mask & (1u << 7), 0u);  // Audio
 }
 
-TEST_F(ModeManagerTest, ConnectedMaskExcludesWifi) {
+TEST_F(ModeManagerTest, ConnectedMaskExcludesWifiPolicy) {
     uint32_t mask = ModeManager::featureMaskForMode(SystemMode::kConnected);
     EXPECT_NE(mask & (1u << 1), 0u);  // LED
     EXPECT_NE(mask & (1u << 2), 0u);  // BLE
@@ -180,6 +178,69 @@ TEST_F(ModeManagerTest, SameModeTransitionSucceeds) {
     EXPECT_EQ(mgr_->currentMode(), SystemMode::kIdle);
 }
 
+TEST_F(ModeManagerTest, PeerGameNormalizesBootingThroughConnected) {
+    EXPECT_TRUE(mgr_->transitionToPeerGame());
+    EXPECT_EQ(mgr_->currentMode(), SystemMode::kGame);
+    EXPECT_EQ(mgr_->gameEnteredFrom(), SystemMode::kConnected);
+}
+
+TEST_F(ModeManagerTest, PeerGameNormalizesTriageThroughConnected) {
+    mgr_->transitionTo(SystemMode::kIdle);
+    mgr_->transitionTo(SystemMode::kTriage);
+
+    EXPECT_TRUE(mgr_->transitionToPeerGame());
+    EXPECT_EQ(mgr_->currentMode(), SystemMode::kGame);
+    EXPECT_EQ(mgr_->gameEnteredFrom(), SystemMode::kConnected);
+}
+
+TEST_F(ModeManagerTest, PeerGameRecoversErrorThroughConnected) {
+    mgr_->transitionTo(SystemMode::kError);
+
+    EXPECT_TRUE(mgr_->transitionToPeerGame());
+    EXPECT_EQ(mgr_->currentMode(), SystemMode::kGame);
+    EXPECT_EQ(mgr_->gameEnteredFrom(), SystemMode::kConnected);
+}
+
+TEST_F(ModeManagerTest, PeerGameIsIdempotent) {
+    EXPECT_TRUE(mgr_->transitionToPeerGame());
+    EXPECT_TRUE(mgr_->transitionToPeerGame());
+    EXPECT_EQ(mgr_->currentMode(), SystemMode::kGame);
+    EXPECT_EQ(mgr_->gameEnteredFrom(), SystemMode::kConnected);
+}
+
+TEST_F(ModeManagerTest, ConcurrentTransitionsKeepModeAndFeatureMaskConsistent) {
+    ASSERT_TRUE(mgr_->transitionTo(SystemMode::kIdle));
+    std::atomic<bool> start{false};
+
+    auto recover = [&] {
+        while (!start.load(std::memory_order_acquire)) {
+        }
+        for (int i = 0; i < 50; ++i) {
+            mgr_->transitionTo(SystemMode::kError);
+            mgr_->transitionTo(SystemMode::kIdle);
+        }
+    };
+    auto play = [&] {
+        while (!start.load(std::memory_order_acquire)) {
+        }
+        for (int i = 0; i < 50; ++i) {
+            mgr_->transitionToPeerGame();
+            mgr_->transitionTo(SystemMode::kIdle);
+        }
+    };
+
+    std::thread first(recover);
+    std::thread second(play);
+    start.store(true, std::memory_order_release);
+    first.join();
+    second.join();
+
+    ASSERT_TRUE(mgr_->transitionTo(SystemMode::kIdle));
+    const uint32_t expected = ModeManager::featureMaskForMode(SystemMode::kIdle) |
+                              (1U << static_cast<uint8_t>(Feature::kWifi));
+    EXPECT_EQ(features_->getMask() & FeatureManager::kAllFeaturesMask, expected);
+}
+
 // =============================================================================
 // Invalid Transition Tests
 // =============================================================================
@@ -224,29 +285,30 @@ TEST_F(ModeManagerTest, GameToTriageInvalid) {
 // Feature Mask Application Tests
 // =============================================================================
 
-TEST_F(ModeManagerTest, TransitionAppliesFeatureMask) {
+TEST_F(ModeManagerTest, TransitionAppliesFeatureMaskAndPreservesWifiPolicy) {
     mgr_->transitionTo(SystemMode::kIdle);
 
     // IDLE mask: LED(1) + BLE(2)
     EXPECT_TRUE(features_->isEnabled(Feature::kLedEffects));
     EXPECT_TRUE(features_->isEnabled(Feature::kBleAdvertising));
-    EXPECT_FALSE(features_->isEnabled(Feature::kWifi));
-    EXPECT_FALSE(features_->isEnabled(Feature::kEspNow));
-}
-
-TEST_F(ModeManagerTest, TriageMaskEnablesWifi) {
-    mgr_->transitionTo(SystemMode::kIdle);
-    mgr_->transitionTo(SystemMode::kTriage);
-
     EXPECT_TRUE(features_->isEnabled(Feature::kWifi));
     EXPECT_FALSE(features_->isEnabled(Feature::kEspNow));
 }
 
-TEST_F(ModeManagerTest, ConnectedMaskEnablesEspNow) {
+TEST_F(ModeManagerTest, TriagePreservesDisabledWifiPolicy) {
+    features_->setEnabled(Feature::kWifi, false);
+    mgr_->transitionTo(SystemMode::kIdle);
+    mgr_->transitionTo(SystemMode::kTriage);
+
+    EXPECT_FALSE(features_->isEnabled(Feature::kWifi));
+    EXPECT_FALSE(features_->isEnabled(Feature::kEspNow));
+}
+
+TEST_F(ModeManagerTest, ConnectedMaskEnablesEspNowAndPreservesWifiPolicy) {
     mgr_->transitionTo(SystemMode::kIdle);
     mgr_->transitionTo(SystemMode::kConnected);
 
-    EXPECT_FALSE(features_->isEnabled(Feature::kWifi));
+    EXPECT_TRUE(features_->isEnabled(Feature::kWifi));
     EXPECT_TRUE(features_->isEnabled(Feature::kEspNow));
 }
 
@@ -400,9 +462,7 @@ TEST_F(ModeManagerTest, TransitionCallbackInvoked) {
 
 TEST_F(ModeManagerTest, TransitionCallbackCalledOnEachTransition) {
     int callCount = 0;
-    mgr_->onTransition([&](SystemMode, SystemMode) {
-        callCount++;
-    });
+    mgr_->onTransition([&](SystemMode, SystemMode) { callCount++; });
 
     mgr_->transitionTo(SystemMode::kIdle);
     mgr_->transitionTo(SystemMode::kConnected);
@@ -413,9 +473,7 @@ TEST_F(ModeManagerTest, TransitionCallbackCalledOnEachTransition) {
 
 TEST_F(ModeManagerTest, TransitionCallbackNotCalledOnInvalid) {
     int callCount = 0;
-    mgr_->onTransition([&](SystemMode, SystemMode) {
-        callCount++;
-    });
+    mgr_->onTransition([&](SystemMode, SystemMode) { callCount++; });
 
     // BOOTING -> GAME is invalid
     mgr_->transitionTo(SystemMode::kGame);
@@ -427,9 +485,7 @@ TEST_F(ModeManagerTest, TransitionCallbackNotCalledOnSameMode) {
     mgr_->transitionTo(SystemMode::kIdle);
 
     int callCount = 0;
-    mgr_->onTransition([&](SystemMode, SystemMode) {
-        callCount++;
-    });
+    mgr_->onTransition([&](SystemMode, SystemMode) { callCount++; });
 
     // Same-mode transition returns true but doesn't fire callback
     EXPECT_TRUE(mgr_->transitionTo(SystemMode::kIdle));

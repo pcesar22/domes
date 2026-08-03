@@ -35,13 +35,12 @@ class DrillConfig {
     Duration? minDelay,
     Duration? maxDelay,
     List<String>? podAddresses,
-  }) =>
-      DrillConfig(
-        type: type ?? this.type,
-        roundCount: roundCount ?? this.roundCount,
-        timeout: timeout ?? this.timeout,
-        minDelay: minDelay ?? this.minDelay,
-        maxDelay: maxDelay ?? this.maxDelay,
-        podAddresses: podAddresses ?? this.podAddresses,
-      );
+  }) => DrillConfig(
+    type: type ?? this.type,
+    roundCount: roundCount ?? this.roundCount,
+    timeout: timeout ?? this.timeout,
+    minDelay: minDelay ?? this.minDelay,
+    maxDelay: maxDelay ?? this.maxDelay,
+    podAddresses: podAddresses ?? this.podAddresses,
+  );
 }

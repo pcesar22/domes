@@ -1,11 +1,32 @@
-# DOMES Pod - System Architecture Document
-## Hardware & Firmware Design Specification
+# DOMES Product System Architecture
+
+> **Lifecycle: target design.** This document defines product goals and candidate production
+> architecture. It is not the source of truth for current firmware behavior, current NFF wiring,
+> delivery status, or verification. Use [`docs/README.md`](../docs/README.md) for document ownership,
+> [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) for delivery status,
+> [`research/SOFTWARE_ARCHITECTURE.md`](SOFTWARE_ARCHITECTURE.md) for the as-built software, and
+> [`docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md) for active board mappings.
+
+## Current And Target Baselines
+
+| Concern | Current NFF development baseline | Product target in this document |
+| --- | --- | --- |
+| Board | NFF carrier populated with an ESP32-S3 development module | Integrated production PCB |
+| LED ring | 16 addressable LEDs driven in RGB mode | 16 SK6812 RGBW LEDs |
+| Flash layout | 8 MB, two `0x1E0000` OTA app slots | 16 MB production layout, still to be finalized |
+| Pod orchestration | Deterministic MAC roles and a fixed two-pod drill | App-directed master and multi-pod drills |
+| Host control | Rust `domes-cli` over CP2102N UART, BLE, or build-gated WiFi/TCP config | Mobile application plus service tooling |
+| OTA | Serial and BLE raw-image paths verify SHA-256 and require the declared version to equal the embedded image version; raw WiFi/TCP transfer is rejected | Authenticated, integrity-checked field updates |
+
+Proposed part choices, performance figures, prices, and certification notes require validation
+before they become release requirements.
 
 ---
 
 ## 1. SYSTEM OVERVIEW
 
 ### 1.1 Design Philosophy
+
 - **Single PCB**: All components on one board
 - **Simple Assembly**: Connect battery, close case, done
 - **Full Debugability**: Prototype must be an excellent development platform
@@ -62,39 +83,36 @@ graph TB
 
 ## 1.3 Development Board Variants
 
-The firmware supports multiple hardware platforms during development:
+The source contains one compiled board profile: the NFF carrier. The bare DevKit and production
+variants below are documentation-only historical or target descriptions, not source stubs or build
+targets.
 
 | Platform | Form Factor | Features | Primary Use |
-|----------|-------------|----------|-------------|
-| **ESP32-S3-DevKitC-1** | Bare dev board | 1x WS2812 LED, USB, GPIO access | Initial bring-up, CI testing |
-| **NFF Development Board** | Custom PCB + DevKit | 16x SK6812 RGBW, LIS2DW12 IMU, DRV2605L haptics, MAX98357A audio, speaker | Full feature development |
+| ---------- | ------------- | ---------- | ------------- |
+| **ESP32-S3-DevKitC-1** | Bare dev board | 1x WS2812 LED, USB, GPIO access | Historical initial bring-up; not a current CI target |
+| **NFF Development Board** | Custom carrier + DevKit | 16 addressable LEDs in RGB mode, LIS2DW12 IMU, DRV2605L haptics, MAX98357A audio, speaker | Current full-feature development |
 | **Production PCB** | Integrated (planned) | All features in final enclosure | End-user devices |
 
 ### NFF Development Board
 
-The NFF devboard is the primary platform for feature development. It provides all sensors and actuators from the production design in a development-friendly form factor.
+The NFF devboard is the primary platform for feature development. Its carrier header labels are
+physical connector positions, not ESP32 GPIO numbers. The EDA files own physical connectivity and
+`firmware/domes/main/config.hpp` owns the compiled mapping.
 
 **Key Differences from DevKitC-1:**
-- 16x SK6812MINI-E RGBW LEDs (vs 1x WS2812 on DevKit)
-- LED data on GPIO48 via level shifter (vs GPIO38 direct on DevKit v1.1)
+
+- 16 addressable LEDs driven in RGB mode (vs 1x WS2812 on DevKit)
+- LED data on GPIO16 through a level shifter (H1 physical position 9)
 - LIS2DW12 accelerometer on I2C bus
 - DRV2605L haptic driver on I2C bus
 - MAX98357A I2S audio amplifier with 23mm speaker
 - GPIO breakouts at corners for expansion
 
-**Pin Mapping (NFF Devboard):**
-| Function | GPIO | Notes |
-|----------|------|-------|
-| LED Data | 48 | Via SN74AHCT1G125 level shifter |
-| I2C SDA | 8 | Shared: LIS2DW12, DRV2605L |
-| I2C SCL | 9 | Shared: LIS2DW12, DRV2605L |
-| IMU INT1 | 3 | Accelerometer interrupt |
-| I2S BCLK | 12 | Audio bit clock |
-| I2S LRCLK | 11 | Audio word select |
-| I2S DATA | 10 | Audio data out |
-| Audio SD | 13 | Amplifier shutdown |
-
-See [`hardware/nff-devboard/README.md`](../hardware/nff-devboard/README.md) for full specifications and fabrication files.
+Use [`docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md) for the reviewed mapping and
+[`firmware/domes/main/config.hpp`](../firmware/domes/main/config.hpp) for the compiled values. See
+[`hardware/nff-devboard/README.md`](../hardware/nff-devboard/README.md) for the available design
+source and bring-up material; manufacturing Gerbers, placement data, and a board-specific BOM are
+not currently checked in.
 
 ---
 
@@ -103,13 +121,13 @@ See [`hardware/nff-devboard/README.md`](../hardware/nff-devboard/README.md) for 
 ### 2.1 Protocol Options Analysis
 
 | Protocol | Latency | Range | Max Nodes | Power | Phone Compat | Complexity |
-|----------|---------|-------|-----------|-------|--------------|------------|
-| **ESP-NOW** | <1ms | 100m+ | 20 peers | Low | ❌ Needs bridge | Low |
+| ---------- | --------- | ------- | ----------- | ------- | -------------- | ------------ |
+| **ESP-NOW** | Target: &lt;1 ms, not yet demonstrated | 100m+ target | 20 peers | Low | ❌ Needs bridge | Low |
 | **BLE Point-to-Point** | 15-40ms | 40m | 7 connections | Medium | ✅ Native | Low |
 | **BLE Mesh** | 50-200ms+ | Unlimited (hops) | 32,767 | High | ⚠️ Proxy needed | High |
 | **WiFi Direct** | 5-10ms | 50m | ~8 | High | ⚠️ Complex | Medium |
 
-### 2.2 Recommended Architecture: Hybrid ESP-NOW + BLE
+### 2.2 Target Architecture: Hybrid ESP-NOW + BLE
 
 ```mermaid
 graph LR
@@ -127,21 +145,29 @@ graph LR
     end
 
     APP <-->|BLE| MASTER
-    MASTER <-->|ESP-NOW<br/><1ms| POD2
+    MASTER <-->|ESP-NOW<br/>target: &lt;1 ms| POD2
     MASTER <-->|ESP-NOW| POD3
     MASTER <-->|ESP-NOW| POD4
     MASTER <-->|ESP-NOW| POD5
     MASTER <-->|ESP-NOW| POD6
 ```
 
-**Rationale:**
+**Target rationale:**
+
 - Phone connects via standard BLE to one "master" pod
 - Master pod relays commands to other pods via ESP-NOW
-- ESP-NOW delivers <1ms latency for synchronized lighting/timing
+- Product target: ESP-NOW should deliver sub-millisecond latency for synchronized lighting/timing.
+  This is not a current verification result; see the firmware milestone evidence for measured
+  two-pod behavior.
 - Any pod can be master (user selects in app, or auto-elect)
 - Fallback: All pods can connect directly via BLE if needed
 
-### 2.3 Communication Protocol Design
+### 2.3 Target Communication Protocol
+
+The diagram below is an early product proposal and is not the implemented wire contract. Current
+config and trace contracts come from `firmware/common/proto/*.proto`. Current OTA and internal
+ESP-NOW packets are bounded fixed-binary exceptions documented in the as-built software
+architecture.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -160,9 +186,10 @@ graph LR
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 2.4 Synchronization Strategy
+### 2.4 Target Synchronization Strategy
 
 For reaction time accuracy:
+
 - Master broadcasts `SYNC_CLOCK` every 100ms
 - Pods maintain local offset from master
 - Touch events include microsecond timestamps
@@ -175,12 +202,13 @@ For reaction time accuracy:
 ### 3.1 Battery Selection
 
 | Option | Capacity | Size | Weight | Replaceability | Cost | Recommendation |
-|--------|----------|------|--------|----------------|------|----------------|
+| -------- | ---------- | ------ | -------- | ---------------- | ------ | ---------------- |
 | **LiPo Pouch 103040** | 1200mAh | 40x30x10mm | 25g | ❌ Soldered | $3-5 | ✅ **Selected** |
 | **LiPo Pouch 804030** | 1000mAh | 40x30x8mm | 20g | ❌ Soldered | $3-5 | Alternative |
 | **18650 Cell** | 2500-3000mAh | 65x18mm | 45g | ✅ User-swap | $3-5 | Too tall |
 
 **Selected: 103040 LiPo (1200mAh)**
+
 - Fits form factor (40x30x10mm in 110mm hex puck)
 - 8+ hours runtime achievable
 - Thin enough for low-profile design
@@ -188,7 +216,7 @@ For reaction time accuracy:
 ### 3.2 Power Budget Analysis
 
 | Component | Active (mA) | Sleep (µA) | Duty Cycle | Avg (mA) |
-|-----------|-------------|------------|------------|----------|
+| ----------- | ------------- | ------------ | ------------ | ---------- |
 | ESP32-S3 (CPU active) | 80 | - | 10% | 8.0 |
 | ESP32-S3 (radio TX) | 240 | - | 5% | 12.0 |
 | ESP32-S3 (light sleep) | 2000µA | 130 | 85% | 1.7 |
@@ -203,6 +231,7 @@ For reaction time accuracy:
 | **TOTAL (Idle/Armed)** | - | - | - | **~5 mA** |
 
 **Runtime Estimates:**
+
 - Active training: 1200mAh / 87mA ≈ **14 hours**
 - Idle/armed: 1200mAh / 5mA ≈ **240 hours** (10 days)
 - Deep sleep: 1200mAh / 0.15mA ≈ **8000 hours** (333 days)
@@ -243,7 +272,7 @@ graph LR
 ### 3.4 Voltage Rails Summary
 
 | Rail | Voltage | Max Current | Source | Components |
-|------|---------|-------------|--------|------------|
+| ------ | --------- | ------------- | -------- | ------------ |
 | VBAT | 3.0-4.2V | 1A peak | Battery | LED data (level shifted), charging |
 | 3V3 | 3.3V | 500mA | LDO | MCU, sensors, haptic driver |
 | 5V | 5V | 2A | Pogo input | Charging IC input |
@@ -253,7 +282,7 @@ graph LR
 **Recommended IC: TP4056 (simple) or BQ24072 (feature-rich)**
 
 | Feature | TP4056 | BQ24072 |
-|---------|--------|---------|
+| --------- | -------- | --------- |
 | Cost | $0.10 | $1.50 |
 | Charge Current | Fixed 1A | Programmable |
 | Status Pins | 2 (STDBY, CHRG) | More options |
@@ -269,7 +298,7 @@ graph LR
 ### 4.1 LED Options Analysis
 
 | LED Type | Data Rate | PWM Freq | Protocol | RGBW | Cost/LED | Latency |
-|----------|-----------|----------|----------|------|----------|---------|
+| ---------- | ----------- | ---------- | ---------- | ------ | ---------- | --------- |
 | **WS2812B** | 800kbps | 400Hz | 1-wire | ❌ | $0.05 | ~30µs/LED |
 | **SK6812** | 800kbps | 1.1kHz | 1-wire | ✅ | $0.08 | ~30µs/LED |
 | **SK6812-E** | 800kbps | 4.7kHz | 1-wire | ✅ | $0.10 | ~30µs/LED |
@@ -278,6 +307,7 @@ graph LR
 ### 4.2 Recommendation: SK6812 RGBW (Mini 3535)
 
 **Rationale:**
+
 - RGBW for true white diffusion (not mixing RGB)
 - Higher PWM than WS2812B (less flicker at low brightness)
 - 1-wire protocol = fewer GPIOs needed
@@ -297,6 +327,7 @@ graph LR
 ```
 
 **Specifications:**
+
 - 16x SK6812 RGBW Mini (3535 package)
 - Ring diameter: ~80mm
 - Power: 16 LEDs × 60mA max = 960mA peak (full white)
@@ -316,7 +347,7 @@ graph LR
 ### 5.1 Approach Options Analysis
 
 | Method | Sensitivity | Force Sensing | Power | Complexity | Reliability |
-|--------|-------------|---------------|-------|------------|-------------|
+| -------- | ------------- | --------------- | ------- | ------------ | ------------- |
 | **Capacitive Touch (ESP32 native)** | High | ❌ No | Ultra-low | Low | ✅ Very high |
 | **Capacitive Touch (Dedicated IC)** | Very High | ❌ No | Low | Medium | ✅ Very high |
 | **IMU Tap Detection** | Medium | ⚠️ Indirect | Low | Low | ⚠️ Tuning needed |
@@ -349,6 +380,7 @@ graph TB
 ```
 
 **Rationale:**
+
 - Capacitive for primary detection (instant, reliable)
 - IMU confirms physical impact (rejects false triggers)
 - OR logic: Either sensor = valid touch (no missed touches)
@@ -357,6 +389,7 @@ graph TB
 ### 5.3 Capacitive Touch Implementation
 
 **Option A: ESP32-S3 Native Touch**
+
 - ESP32-S3 has 14 touch-capable GPIOs
 - Use multiple pads under diffuser, wired in parallel
 - Touch threshold tuning in firmware
@@ -365,7 +398,7 @@ graph TB
 **Option B: Dedicated IC (MPR121 or CAP1188)**
 
 | IC | Channels | Interface | Features | Cost |
-|----|----------|-----------|----------|------|
+| ---- | ---------- | ----------- | ---------- | ------ |
 | MPR121 | 12 | I2C | Auto-calibration, proximity | $1.50 |
 | CAP1188 | 8 | I2C/SPI | LED driver built-in | $1.20 |
 | AT42QT1070 | 7 | I2C | Low power, simple | $0.80 |
@@ -375,13 +408,14 @@ graph TB
 ### 5.4 IMU Selection
 
 | Accelerometer | Interface | Power (LP) | Tap Detection | Cost |
-|---------------|-----------|------------|---------------|------|
+| --------------- | ----------- | ------------ | --------------- | ------ |
 | **LIS2DW12** | I2C/SPI | 0.5µA | ✅ Single/Double | $0.90 |
 | LIS3DH | I2C/SPI | 2µA | ✅ Single/Double | $1.00 |
 | LIS2DH12 | I2C/SPI | 2µA | ⚠️ Less reliable | $0.85 |
 | ADXL345 | I2C/SPI | 23µA | ✅ Single/Double | $1.20 |
 
 **Recommendation: LIS2DW12**
+
 - Lowest power with reliable tap detection
 - Dedicated tap detection engine (offloads MCU)
 - I2C interface (shared bus)
@@ -394,7 +428,7 @@ graph TB
 ### 6.1 Haptic Motor Options
 
 | Motor Type | Response | Feel | Driver Needed | Cost | Size |
-|------------|----------|------|---------------|------|------|
+| ------------ | ---------- | ------ | --------------- | ------ | ------ |
 | **ERM (Eccentric)** | 50-100ms | Buzzy | Simple PWM or DRV2605L | $0.50 | 8-12mm |
 | **LRA (Linear)** | 5-15ms | Crisp, localized | DRV2605L required | $1.50 | 8-10mm |
 | **Piezo** | <1ms | Sharp click | High voltage driver | $2.00 | Flat |
@@ -402,16 +436,23 @@ graph TB
 ### 6.2 Recommendation: LRA + DRV2605L
 
 **Rationale:**
+
 - Crisp, satisfying haptic feel (not buzzy)
 - DRV2605L has 123 built-in effects
 - I2C control (simple integration)
-- Auto-resonance tracking for consistent feel
+- Supports either auto-resonance for compatible LRAs or fixed-frequency open-loop drive
 
 **DRV2605L Specifications:**
+
 - Interface: I2C (address 0x5A)
 - Supply: 2.0-5.2V
 - 6 effect libraries (1 for LRA)
 - Audio-to-vibe mode available
+
+The NFF EasyEDA source and exported schematic specify the LD0832AA-0099F (1.8 Vrms, 235 Hz). Current
+firmware selects LRA library 6 and a bounded manual-frequency open-loop profile for that actuator.
+The populated part and physical output still require verification. A future production motor change
+requires a new motor/driver profile and validation, not silent reuse of these register values.
 
 ### 6.3 Audio System
 
@@ -422,6 +463,7 @@ graph LR
 ```
 
 **MAX98357A I2S Amplifier:**
+
 - Digital input (I2S) = clean signal path
 - 3.2W into 4Ω, ~1.5W into 8Ω
 - No external DAC needed
@@ -430,6 +472,7 @@ graph LR
 - 3 I2S pins: BCLK, LRCLK, DIN
 
 **Speaker Selection:**
+
 - 23mm diameter, 8Ω impedance
 - 0.5-1W power handling
 - Frequency response: 300Hz - 10kHz minimum
@@ -445,12 +488,13 @@ graph LR
 ### 6.5 I2C Bus Summary
 
 | Device | Address | Function |
-|--------|---------|----------|
+| -------- | --------- | ---------- |
 | LIS2DW12 | 0x18/0x19 | Accelerometer |
 | DRV2605L | 0x5A | Haptic driver |
 | MPR121 (optional) | 0x5A-0x5D | Touch controller |
 
 ⚠️ **Address Conflict**: DRV2605L and MPR121 can conflict at 0x5A.
+
 - Solution: Use different MPR121 address (AD pin) or ESP32 native touch
 
 ---
@@ -460,7 +504,7 @@ graph LR
 ### 7.1 Options Analysis
 
 | MCU | CPU | Flash | RAM | BLE | WiFi | GPIOs | USB | I2S | Touch | Price |
-|-----|-----|-------|-----|-----|------|-------|-----|-----|-------|-------|
+| ----- | ----- | ------- | ----- | ----- | ------ | ------- | ----- | ----- | ------- | ------- |
 | **ESP32-S3-WROOM-1 (N16R8)** | 240MHz Dual | 16MB | 8MB | 5.0 | ✅ | 45 | ✅ Native | ✅ | ✅ 14ch | $3.50 |
 | ESP32-S3-WROOM-1 (N8R2) | 240MHz Dual | 8MB | 2MB | 5.0 | ✅ | 45 | ✅ Native | ✅ | ✅ 14ch | $2.80 |
 | ESP32-C3-WROOM | 160MHz Single | 4MB | 400KB | 5.0 | ✅ | 22 | ✅ | ❌ | ❌ | $1.80 |
@@ -470,20 +514,21 @@ graph LR
 ### 7.2 Recommendation: ESP32-S3-WROOM-1-N16R8
 
 **Rationale:**
+
 - **16MB Flash**: Ample space for OTA (dual partition), audio samples, firmware
 - **8MB PSRAM**: Room for audio buffers, future features
-- **Native USB**: Debug/programming without UART chip
+- **Native USB**: Product-target debug/programming without an external UART chip
 - **I2S**: Direct digital audio to MAX98357A
 - **Touch Sensing**: Built-in capacitive touch
 - **ESP-NOW**: Ultra-low latency pod-to-pod communication
-- **WiFi**: Required for ESP-NOW (P2P radio mode); not used for networking
+- **WiFi**: Shared radio for ESP-NOW and optional TCP configuration
 - **Dual Core**: Audio/haptics on one core, comms on other
 - **Community**: Extensive libraries, documentation, examples
 
 ### 7.3 Pin Allocation (Preliminary)
 
 | Function | GPIO(s) | Notes |
-|----------|---------|-------|
+| ---------- | --------- | ------- |
 | USB D+/D- | 19, 20 | Native USB |
 | I2C SDA/SCL | 8, 9 | Shared bus (IMU, haptic) |
 | I2S BCLK | 12 | Audio to MAX98357A |
@@ -507,6 +552,7 @@ graph LR
 ### 8.1 Debug Port Philosophy
 
 For prototype = development platform, include:
+
 1. **USB-C**: Programming, serial debug, power
 2. **JTAG**: Full hardware debug with breakpoints
 3. **Serial**: Backup if USB issues
@@ -529,14 +575,18 @@ For prototype = development platform, include:
 ```
 
 **ESP32-S3 Native USB Features:**
+
 - USB CDC: Virtual COM port for serial
 - USB JTAG: Debug without external adapter (OpenOCD compatible)
-- DFU: Device Firmware Upgrade mode
 - No external USB-UART chip needed!
+
+This is the integrated-product target. The active NFF DevKit instead uses its CP2102N bridge for
+flashing and framed UART config/OTA, with native USB Serial/JTAG reserved for console and JTAG.
 
 ### 8.3 JTAG Debug Port
 
 **Option A: TagConnect TC2030-CTX-NL (Recommended)**
+
 ```
      ┌──┬──┬──┐
      │ 1│ 2│ 3│    6-pin footprint
@@ -553,6 +603,7 @@ Pin 6: TDI (GPIO41)
 ```
 
 **Option B: 0.1" Header (1x6 or 2x5)**
+
 - More accessible for development
 - Takes more board space
 - Can be depopulated for production
@@ -560,7 +611,7 @@ Pin 6: TDI (GPIO41)
 ### 8.4 Test Points
 
 | Signal | Purpose |
-|--------|---------|
+| -------- | --------- |
 | 3V3 | Power rail verification |
 | GND | Ground reference |
 | VBAT | Battery voltage |
@@ -592,6 +643,7 @@ graph LR
 ```
 
 **Debugging Options:**
+
 1. **USB only**: Serial logs + built-in JTAG (slower but simple)
 2. **USB + External JTAG**: Full speed debugging via J-Link/ESP-Prog
 3. **Serial fallback**: If USB stack crashes
@@ -600,31 +652,33 @@ graph LR
 
 ## 9. OTA & PRODUCTION PROGRAMMING
 
-### 9.1 Partition Scheme
+### 9.1 Target Partition Scheme
 
-```
-┌────────────────────────────────────────────────┐
-│              16MB Flash Layout                  │
-├────────────────────────────────────────────────┤
-│ Bootloader (0x1000)              │    32KB     │
-├────────────────────────────────────────────────┤
-│ Partition Table (0x8000)         │     4KB     │
-├────────────────────────────────────────────────┤
-│ NVS (config storage)             │    24KB     │
-├────────────────────────────────────────────────┤
-│ OTA Data (boot selection)        │     8KB     │
-├────────────────────────────────────────────────┤
-│ OTA_0 (Firmware Slot A)          │    4MB      │
-├────────────────────────────────────────────────┤
-│ OTA_1 (Firmware Slot B)          │    4MB      │
-├────────────────────────────────────────────────┤
-│ Audio Samples (SPIFFS/LittleFS)  │    6MB      │
-├────────────────────────────────────────────────┤
-│ Factory Reset Image              │    2MB      │
-└────────────────────────────────────────────────┘
-```
+The current NFF firmware uses the checked-in 8 MB layout in
+`firmware/domes/partitions.csv`, with two `0x1E0000` app slots. A production layout has not been
+implemented. The following address budget is a feasible 16 MB target for design review:
 
-### 9.2 OTA Update Flow
+| Region | Address range | Size |
+| --- | --- | --- |
+| Bootloader region | `0x000000-0x007FFF` | 32 KiB |
+| Partition table | `0x008000-0x008FFF` | 4 KiB |
+| NVS | `0x009000-0x00EFFF` | 24 KiB |
+| OTA data | `0x00F000-0x010FFF` | 8 KiB |
+| PHY initialization data | `0x011000-0x011FFF` | 4 KiB |
+| Panic core dump | `0x012000-0x031FFF` | 128 KiB |
+| Alignment and reserved system space | `0x032000-0x03FFFF` | 56 KiB |
+| OTA slot A | `0x040000-0x43FFFF` | 4 MiB |
+| OTA slot B | `0x440000-0x83FFFF` | 4 MiB |
+| Audio sample filesystem | `0x840000-0xD3FFFF` | 5 MiB |
+| Factory recovery application | `0xD40000-0xF3FFFF` | 2 MiB |
+| Reserved growth space | `0xF40000-0xFFFFFF` | 768 KiB |
+
+The ranges cover exactly 16 MiB, keep application offsets aligned to `0x10000`, and reserve both
+panic storage and growth space. Before adoption, the production profile still requires a checked-in
+partition CSV plus bootloader-size, secure-boot, flash-encryption, migration, OTA, and recovery
+verification.
+
+### 9.2 Target OTA Update Flow
 
 ```mermaid
 sequenceDiagram
@@ -648,10 +702,19 @@ sequenceDiagram
     Pod->>Pod: Reboot to new firmware
 ```
 
-### 9.3 OTA Security Features
+### 9.3 Target OTA Security Features
 
-| Feature | Implementation |
-|---------|----------------|
+These are product requirements, not claims that the complete security model exists today. The
+serial and BLE raw-image receivers verify the transmitted SHA-256 digest and require the declared
+version to match the version embedded in the image before selecting the new boot partition. Raw
+WiFi OTA remains unimplemented in the TCP config server and is rejected by the CLI.
+
+The GitHub update-check service is not a verified release path: automatic checks are disabled by
+default, and the clean-board CLI workflow does not provision WiFi credentials. Do not describe
+background or automatic WiFi update as current behavior.
+
+| Feature | Product target |
+| --------- | ---------------- |
 | **Signed Firmware** | RSA-3072 or ECDSA signature verification |
 | **Encrypted Transport** | BLE encryption + app-level encryption |
 | **Rollback Protection** | Version number check, anti-rollback fuse (optional) |
@@ -661,15 +724,22 @@ sequenceDiagram
 ### 9.4 Production Programming
 
 **Initial Flash (Factory):**
+
 1. Jig with pogo pins connects to USB-C or JTAG pads
-2. esptool.py flashes bootloader, partition table, factory firmware
+2. ESP-IDF/esptool flashes the bootloader, partition table, OTA metadata, and application image
 3. NVS pre-loaded with serial number, calibration data
 4. Takes ~30 seconds per unit
 
 **Field Updates:**
-- OTA via BLE from phone app
-- Cascade: App → Master Pod → All Pods
-- Background download, confirm, then apply
+
+- Target: OTA via BLE from the phone app
+- Target: cascade from the app through a master pod
+- Target: background download, confirmation, then apply
+
+The current 8 MB development layout has no factory app partition. The Software CI
+`domes-factory.bin` and tagged `domes-<tag>-factory.bin` artifacts are merged blank-device installers,
+not factory app partitions. `domes.bin` is app-only; use a matching merged factory image at address
+`0x0`, or `idf.py flash` from a matching checkout, for initial programming.
 
 ---
 
@@ -678,11 +748,13 @@ sequenceDiagram
 ### 10.1 Antenna Design
 
 **ESP32-S3-WROOM-1 has onboard PCB antenna**
+
 - Keep-out zone required around module
 - Ground plane clearance: 15mm from antenna end
 - No metal/battery near antenna
 
 **Alternative: WROOM-1U with external antenna**
+
 - Better range if enclosure is RF-blocking
 - U.FL connector for external antenna
 - Adds cost and assembly step
@@ -692,7 +764,7 @@ sequenceDiagram
 ### 10.2 ESD Protection
 
 | Interface | Protection |
-|-----------|------------|
+| ----------- | ------------ |
 | USB-C | TVS diode array (TPD2EUSB30) |
 | Pogo Pins | TVS diode on VBUS |
 | Touch Surface | Built into ESP32 touch pins |
@@ -714,7 +786,7 @@ sequenceDiagram
 ### 10.5 Manufacturing Considerations
 
 | Aspect | Recommendation |
-|--------|----------------|
+| -------- | ---------------- |
 | PCB Layers | 4-layer (signal, GND, power, signal) |
 | PCB Size | ~80mm diameter (fits hex form) |
 | SMD Components | 0603 minimum (0402 for dense areas) |
@@ -725,7 +797,7 @@ sequenceDiagram
 ### 10.6 Regulatory Considerations
 
 | Certification | Scope | Notes |
-|---------------|-------|-------|
+| --------------- | ------- | ------- |
 | FCC Part 15 | USA RF emissions | Required for WiFi/BLE |
 | CE RED | EU RF | Required for EU sales |
 | IC | Canada | Similar to FCC |
@@ -739,7 +811,7 @@ sequenceDiagram
 ## 11. BILL OF MATERIALS (PRELIMINARY)
 
 | Component | Part Number | Qty | Unit Cost | Ext Cost |
-|-----------|-------------|-----|-----------|----------|
+| ----------- | ------------- | ----- | ----------- | ---------- |
 | ESP32-S3-WROOM-1-N16R8 | - | 1 | $3.50 | $3.50 |
 | SK6812 Mini RGBW | - | 16 | $0.10 | $1.60 |
 | LIS2DW12 Accelerometer | - | 1 | $0.90 | $0.90 |
@@ -766,7 +838,7 @@ sequenceDiagram
 ### 12.1 Needs Further Analysis
 
 | Question | Options | Recommendation |
-|----------|---------|----------------|
+| ---------- | --------- | ---------------- |
 | Touch: Native vs IC? | ESP32 native vs MPR121 | Start native, add MPR121 if issues |
 | Audio amp location? | On main PCB vs flex PCB | Main PCB (simpler assembly) |
 | Antenna: Onboard vs external? | WROOM-1 vs WROOM-1U | Start with onboard, test |
@@ -775,6 +847,7 @@ sequenceDiagram
 ### 12.2 Prototype Variants
 
 Consider building 2-3 prototype variants:
+
 1. **Full feature**: All sensors, haptics, audio
 2. **Minimal**: Touch + LEDs only (baseline validation)
 3. **Audio focus**: Better speaker, test sound quality
@@ -784,15 +857,18 @@ Consider building 2-3 prototype variants:
 ## APPENDIX A: REFERENCE DESIGNS
 
 ### Relevant ESP32-S3 Reference Designs
+
 - Adafruit ESP32-S3 Feather (power management)
 - ESP32-S3-DevKitC (basic layout)
 - LilyGo T-Display S3 (battery management)
 
 ### Audio Reference
+
 - Adafruit MAX98357A breakout
 - ESP32-audioI2S library examples
 
 ### Touch Reference
+
 - ESP-IDF touch sensor examples
 - MPR121 Arduino library
 
@@ -801,26 +877,32 @@ Consider building 2-3 prototype variants:
 ## APPENDIX B: RESEARCH SOURCES
 
 ### Connectivity
+
 - [ESP-NOW vs BLE Comparison](https://coolplaydev.com/esp-now-vs-bluetooth-which-wireless-protocol-is-best-for-your-iot-projects)
 - [Wireless Latency Benchmarks](https://hackaday.com/2024/02/11/benchmarking-latency-across-common-wireless-links-for-mcus/)
 - [ESP-BLE-MESH Documentation](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/esp-ble-mesh/ble-mesh-index.html)
 
 ### Power
+
 - [LiPo vs 18650 Comparison](https://www.grepow.com/blog/lipo-vs-18650-battery.html)
 - [ESP32 LDO Selection](https://www.esp32.com/viewtopic.php?t=34952)
 
 ### LEDs
+
 - [Addressable LED Comparison](https://www.espboards.dev/blog/addressable-led-strips-esp32/)
 - [SK6812 vs WS2812B](https://www.shiji-leds.com/blog/sk6812-vs-ws2812b-which-led-strip-offers-better-performance/)
 
 ### Touch & IMU
+
 - [LIS2DW12 vs LIS2DH12](https://medium.com/@8829426/lis2dw12-vs-lis2dh12-choosing-the-ideal-accelerometer-07d2687d01b0)
 
 ### Haptics & Audio
+
 - [DRV2605L Datasheet](https://www.ti.com/lit/ds/symlink/drv2605l.pdf)
 - [MAX98357A with ESP32](https://dronebotworkshop.com/esp32-i2s/)
 
 ### Debug & OTA
+
 - [ESP32 JTAG Debugging](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/jtag-debugging/index.html)
 - [ESP32 OTA Updates](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/ota.html)
 
@@ -828,4 +910,4 @@ Consider building 2-3 prototype variants:
 
 *Document Created: 2026-01-03*
 *Project: DOMES*
-*Status: Draft for Review*
+*Lifecycle: Target design*

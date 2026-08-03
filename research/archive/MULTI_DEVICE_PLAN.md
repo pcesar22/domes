@@ -1,5 +1,9 @@
 # Multi-Device Support Overhaul
 
+> **Archived planning record.** Paths, device naming, discovery claims, and completed checkboxes in
+> this file are historical. Use [`../../.codex/PLATFORM.md`](../../.codex/PLATFORM.md),
+> [`../../tools/domes-cli/README.md`](../../tools/domes-cli/README.md), and current CLI help.
+
 **Branch:** `claude/feat/multi-device-support`
 **Goal:** Scale from single-device to two+ connected devices. Enable full ESP-NOW testing and all multi-pod features.
 **Last audit:** 2026-02-08
@@ -123,6 +127,7 @@ Every file below assumed **one ESP32 device** connected to the host. This docume
 **Blocked by:** ESP-NOW firmware implementation (section 7).
 
 **Task:** New test step after both devices are flashed:
+
 1. Flash pod-1 and pod-2
 2. Assign pod IDs
 3. Trigger ESP-NOW peer discovery
@@ -215,6 +220,7 @@ Every file below assumed **one ESP32 device** connected to the host. This docume
 | `research/architecture/12-multi-pod-orchestration.md` | Multi-pod orchestration architecture exists |
 
 **Task (large, separate feature):** Implement ESP-NOW per architecture docs:
+
 1. `CommService` singleton — send/recv ESP-NOW messages
 2. Peer discovery via broadcast beacons
 3. Peer roster management (add/remove MACs)
@@ -235,6 +241,7 @@ Every file below assumed **one ESP32 device** connected to the host. This docume
 ### 8.2 :white_check_mark: Multi-Device Serial Port Auto-Detection
 
 **Done:** `domes-cli devices scan` now:
+
 - Enumerates `/dev/ttyACM*` and `/dev/domes-pod-*` ports
 - Probes each with `system_info` for DOMES identity
 - Shows pod_id, firmware version, mode for discovered devices
@@ -246,12 +253,14 @@ Every file below assumed **one ESP32 device** connected to the host. This docume
 ## Implementation Priority (Updated)
 
 ### Phase 1: Firmware Identity (enables distinguishing devices)
+
 - [x] 1.1 Dynamic BLE name from pod_id/MAC
 - [x] 1.2 Pod ID read at boot + `set-pod-id` command
 - [x] 1.4 config.proto `pod_id` fields in responses
 - [x] 1.5 GameEvent `podId` field
 
 ### Phase 2: CLI Multi-Device Core (enables controlling both devices)
+
 - [x] 2.1 Multi-value `--port` / `--wifi` / `--ble` args
 - [x] 2.2 Transport pool (`DeviceConnection` list)
 - [x] 2.3 Command dispatch loop with per-device output
@@ -259,22 +268,26 @@ Every file below assumed **one ESP32 device** connected to the host. This docume
 - [x] 2.7 `devices` subcommand (scan, list, add, remove)
 
 ### Phase 3: CLI Commands (each command works across devices)
+
 - [x] 2.4 BLE scan → connect-all (`--connect-all-ble`)
 - [x] 2.5 Multi-device OTA with per-device progress
 
 ### Phase 4: CI/CD (automated multi-device testing)
+
 - [x] 3.1 Multi-port workflow inputs
 - [x] 3.2 Loop-based test steps
 - [x] 3.3 Per-device concurrency groups (in workflow, needs real testing)
 - [ ] 3.4 ESP-NOW CI test (blocked by ESP-NOW implementation)
 
 ### Phase 5: Scripts & Skills (developer workflow)
+
 - [x] 4.1 trace_dump.py multi-port
 - [x] 4.2 flash_and_verify.sh multi-port
 - [x] 4.3 monitor_serial.py multi-port with colored output
 - [x] 5.1–5.3 Skill updates (/flash, esp32-firmware, debug-esp32)
 
 ### Phase 6: Documentation (everything updated)
+
 - [x] 6.1 CLAUDE.md
 - [x] 6.2 DEVELOPER_QUICKSTART.md
 - [x] 6.3 README.md
@@ -285,6 +298,7 @@ Every file below assumed **one ESP32 device** connected to the host. This docume
 - [x] 6.8 firmware/CLAUDE.md (expanded multi-device section)
 
 ### Phase 7: Infrastructure (stable multi-device setup) :new:
+
 - [x] 8.1 udev rules for stable serial port naming
 - [x] 8.2 Auto-detection in `domes-cli devices scan`
 - [x] 1.6 mDNS service advertisement
@@ -347,6 +361,7 @@ Every file below assumed **one ESP32 device** connected to the host. This docume
 | `tools/trace/trace_dump.py` | `--ports` support |
 
 ### New files (2)
+
 | File | What |
 |------|------|
 | `tools/domes-cli/src/device.rs` | Device registry, connection resolver |

@@ -27,7 +27,9 @@ class BleScannerNotifier extends StateNotifier<List<PodDevice>> {
   BleScannerNotifier() : super([]);
 
   /// Start scanning for DOMES pods.
-  Future<void> startScan({Duration timeout = const Duration(seconds: 10)}) async {
+  Future<void> startScan({
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
     // Check adapter state before scanning
     final adapterState = await FlutterBluePlus.adapterState.first;
     if (adapterState != BluetoothAdapterState.on) {
@@ -46,14 +48,18 @@ class BleScannerNotifier extends StateNotifier<List<PodDevice>> {
       for (final r in results) {
         final name = r.device.platformName;
         // Accept devices with DOMES in name or advertising our service
-        if (name.contains('DOMES') || r.advertisementData.serviceUuids
-            .any((u) => u == Guid(kServiceUuid))) {
-          pods.add(PodDevice(
-            name: name.isNotEmpty ? name : 'Unknown DOMES',
-            address: r.device.remoteId.str,
-            rssi: r.rssi,
-            bleDevice: r.device,
-          ));
+        if (name.contains('DOMES') ||
+            r.advertisementData.serviceUuids.any(
+              (u) => u == Guid(kServiceUuid),
+            )) {
+          pods.add(
+            PodDevice(
+              name: name.isNotEmpty ? name : 'Unknown DOMES',
+              address: r.device.remoteId.str,
+              rssi: r.rssi,
+              bleDevice: r.device,
+            ),
+          );
         }
       }
       state = pods;
@@ -76,6 +82,8 @@ class BleScannerNotifier extends StateNotifier<List<PodDevice>> {
 
 /// Provider for the BLE scanner.
 final bleScannerProvider =
-    StateNotifierProvider.autoDispose<BleScannerNotifier, List<PodDevice>>((ref) {
-  return BleScannerNotifier();
-});
+    StateNotifierProvider.autoDispose<BleScannerNotifier, List<PodDevice>>((
+      ref,
+    ) {
+      return BleScannerNotifier();
+    });

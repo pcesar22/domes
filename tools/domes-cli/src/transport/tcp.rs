@@ -22,8 +22,12 @@ impl TcpTransport {
     ///
     /// Address format: "ip:port" (e.g., "192.168.1.100:5000")
     pub fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self> {
-        let stream = TcpStream::connect(&addr)
-            .with_context(|| format!("Failed to connect to {:?}", addr.to_socket_addrs().ok().and_then(|mut a| a.next())))?;
+        let stream = TcpStream::connect(&addr).with_context(|| {
+            format!(
+                "Failed to connect to {:?}",
+                addr.to_socket_addrs().ok().and_then(|mut a| a.next())
+            )
+        })?;
 
         // Set timeouts
         stream
@@ -42,11 +46,6 @@ impl TcpTransport {
             stream,
             decoder: FrameDecoder::new(),
         })
-    }
-
-    /// Get the peer address
-    pub fn peer_addr(&self) -> Result<String> {
-        Ok(self.stream.peer_addr()?.to_string())
     }
 
     /// Send a frame to the device

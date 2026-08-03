@@ -1,8 +1,6 @@
 //! Touch injection commands
 
-use crate::protocol::{
-    parse_simulate_touch_response, serialize_simulate_touch, ConfigMsgType,
-};
+use crate::protocol::{parse_simulate_touch_response, serialize_simulate_touch, ConfigMsgType};
 use crate::transport::Transport;
 use anyhow::{Context, Result};
 

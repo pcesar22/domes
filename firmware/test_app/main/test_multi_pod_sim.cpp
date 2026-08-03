@@ -6,9 +6,10 @@
  * working together with real GameEngine/FeatureManager/ModeManager.
  */
 
-#include <gtest/gtest.h>
 #include "esp_timer.h"
 #include "sim/simOrchestrator.hpp"
+
+#include <gtest/gtest.h>
 
 using namespace sim;
 using namespace domes::game;
@@ -16,9 +17,7 @@ using namespace domes::config;
 
 class MultiPodSimTest : public ::testing::Test {
 protected:
-    void SetUp() override {
-        test_stubs::mock_time_us.store(0);
-    }
+    void SetUp() override { test_stubs::mock_time_us.store(0); }
 
     // Helper: transition a pod through BOOTING->IDLE->CONNECTED->GAME
     void transitionToGame(PodInstance& pod) {
@@ -134,7 +133,8 @@ TEST_F(MultiPodSimTest, SimLog_CapturesAudioEvents) {
 
     bool hasStart = false;
     for (const auto& e : audioEntries) {
-        if (e.message == "start") hasStart = true;
+        if (e.message == "start")
+            hasStart = true;
     }
     EXPECT_TRUE(hasStart);
 }
@@ -224,8 +224,10 @@ TEST_F(MultiPodSimTest, PodInstance_FeedbackCallbacksLogged) {
     bool hasFlashWhite = false;
     bool hasPlaySound = false;
     for (const auto& e : feedbackEntries) {
-        if (e.message.find("flashWhite") != std::string::npos) hasFlashWhite = true;
-        if (e.message.find("playSound") != std::string::npos) hasPlaySound = true;
+        if (e.message.find("flashWhite") != std::string::npos)
+            hasFlashWhite = true;
+        if (e.message.find("playSound") != std::string::npos)
+            hasPlaySound = true;
     }
     EXPECT_TRUE(hasFlashWhite);
     EXPECT_TRUE(hasPlaySound);
@@ -264,8 +266,8 @@ TEST_F(MultiPodSimTest, Orchestrator_TicksAllPods) {
 // ESP-NOW Bus Tests
 // =============================================================================
 
-#include "sim/simEspNowBus.hpp"
 #include "sim/podCommandHandler.hpp"
+#include "sim/simEspNowBus.hpp"
 
 TEST_F(MultiPodSimTest, Bus_UnicastDelivery) {
     SimLog log;
@@ -274,12 +276,8 @@ TEST_F(MultiPodSimTest, Bus_UnicastDelivery) {
     std::vector<SimMessageType> pod1Received;
     std::vector<SimMessageType> pod2Received;
 
-    bus.registerPod(1, [&](const SimMessage& msg) {
-        pod1Received.push_back(getHeader(msg).type);
-    });
-    bus.registerPod(2, [&](const SimMessage& msg) {
-        pod2Received.push_back(getHeader(msg).type);
-    });
+    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(getHeader(msg).type); });
+    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(getHeader(msg).type); });
 
     // Send unicast from pod 0 to pod 1
     SetColorCommand cmd;
@@ -309,15 +307,9 @@ TEST_F(MultiPodSimTest, Bus_BroadcastDelivery) {
     std::vector<SimMessageType> pod1Received;
     std::vector<SimMessageType> pod2Received;
 
-    bus.registerPod(0, [&](const SimMessage& msg) {
-        pod0Received.push_back(getHeader(msg).type);
-    });
-    bus.registerPod(1, [&](const SimMessage& msg) {
-        pod1Received.push_back(getHeader(msg).type);
-    });
-    bus.registerPod(2, [&](const SimMessage& msg) {
-        pod2Received.push_back(getHeader(msg).type);
-    });
+    bus.registerPod(0, [&](const SimMessage& msg) { pod0Received.push_back(getHeader(msg).type); });
+    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(getHeader(msg).type); });
+    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(getHeader(msg).type); });
 
     // Broadcast from pod 0
     JoinGameCommand cmd;
@@ -367,7 +359,8 @@ TEST_F(MultiPodSimTest, PodCommandHandler_JoinGame) {
     ASSERT_GE(cmdEntries.size(), 1u);
     bool hasJoinGame = false;
     for (const auto& e : cmdEntries) {
-        if (e.message.find("JOIN_GAME") != std::string::npos) hasJoinGame = true;
+        if (e.message.find("JOIN_GAME") != std::string::npos)
+            hasJoinGame = true;
     }
     EXPECT_TRUE(hasJoinGame);
 }
@@ -408,9 +401,7 @@ TEST_F(MultiPodSimTest, PodCommandHandler_ArmAndTouch) {
 
     // Register pod 0 (master) to receive events
     std::vector<SimMessage> masterReceived;
-    bus.registerPod(0, [&](const SimMessage& msg) {
-        masterReceived.push_back(msg);
-    });
+    bus.registerPod(0, [&](const SimMessage& msg) { masterReceived.push_back(msg); });
 
     // Master (pod 0) sends ArmTouch to pod 1
     ArmTouchCommand cmd;

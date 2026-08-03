@@ -45,9 +45,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-          find.text(
-              'No pods connected. Connect pods from the home screen first.'),
-          findsOneWidget);
+        find.text(
+          'No pods connected. Connect pods from the home screen first.',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('start button disabled when no pods selected', (tester) async {
@@ -56,30 +58,34 @@ void main() {
 
       // Scroll to make start button visible
       await tester.scrollUntilVisible(
-          find.text('Start Drill'), 200,
-          scrollable: find.byType(Scrollable).first);
+        find.text('Start Drill'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Start Drill'), findsOneWidget);
     });
 
-    testWidgets('simulate button shown when no pods connected',
-        (tester) async {
+    testWidgets('simulate button shown when no pods connected', (tester) async {
       await tester.pumpWidget(_wrap(const DrillSetupScreen()));
       await tester.pumpAndSettle();
 
       await tester.scrollUntilVisible(
-          find.text('Simulate Drill (no pods)'), 200,
-          scrollable: find.byType(Scrollable).first);
+        find.text('Simulate Drill (no pods)'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Simulate Drill (no pods)'), findsOneWidget);
     });
 
-    testWidgets('drill type description updates on selection',
-        (tester) async {
+    testWidgets('drill type description updates on selection', (tester) async {
       await tester.pumpWidget(_wrap(const DrillSetupScreen()));
       await tester.pumpAndSettle();
 
       // Default is reaction type
-      expect(find.text('Touch the lit pod as fast as possible'),
-          findsOneWidget);
+      expect(
+        find.text('Touch the lit pod as fast as possible'),
+        findsOneWidget,
+      );
     });
   });
 }

@@ -9,16 +9,17 @@
 #include "esp_https_ota.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "infra/appMetadata.hpp"
 #include "infra/logging.hpp"
 #include "mbedtls/sha256.h"
+#include "services/otaSessionCoordinator.hpp"
+#include "services/otaStateMachine.hpp"
+#include "services/releaseMetadata.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstring>
-
-// Version macros from CMakeLists.txt
-#ifndef DOMES_VERSION_STRING
-#define DOMES_VERSION_STRING "v0.0.0-unknown"
-#endif
 
 namespace domes {
 
@@ -57,9 +58,15 @@ esp_err_t OtaManager::init() {
              runningPartition_->address);
 
     // Parse current version
-    currentVersion_ = parseVersion(DOMES_VERSION_STRING);
-    ESP_LOGI(kTag, "Current version: %d.%d.%d", currentVersion_.major, currentVersion_.minor,
-             currentVersion_.patch);
+    currentVersion_ = parseVersion(infra::firmwareVersion());
+    if (!currentVersion_.valid) {
+        ESP_LOGE(kTag, "Firmware version is not parseable: %s", infra::firmwareVersion());
+        return ESP_ERR_INVALID_VERSION;
+    }
+    ESP_LOGI(kTag, "Current version: %lu.%lu.%lu",
+             static_cast<unsigned long>(currentVersion_.major),
+             static_cast<unsigned long>(currentVersion_.minor),
+             static_cast<unsigned long>(currentVersion_.patch));
 
     // Check OTA state
     if (isPendingVerification()) {
@@ -78,12 +85,11 @@ esp_err_t OtaManager::checkForUpdate(OtaCheckResult& result) {
     result = {};
     result.currentVersion = currentVersion_;
 
-    if (state_ != OtaState::kIdle) {
+    if (!tryBeginOtaOperation(state_, OtaState::kCheckingVersion)) {
         ESP_LOGW(kTag, "OTA already in progress");
         return ESP_ERR_INVALID_STATE;
     }
 
-    state_ = OtaState::kCheckingVersion;
     ESP_LOGI(kTag, "Checking for updates...");
 
     GithubRelease release;
@@ -104,13 +110,27 @@ esp_err_t OtaManager::checkForUpdate(OtaCheckResult& result) {
     // Parse available version
     result.availableVersion = parseVersion(release.tagName);
 
-    ESP_LOGI(kTag, "Available version: %d.%d.%d", result.availableVersion.major,
-             result.availableVersion.minor, result.availableVersion.patch);
+    if (!result.availableVersion.valid) {
+        ESP_LOGE(kTag, "Release tag is not a supported version: %s", release.tagName);
+        state_ = OtaState::kIdle;
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    ESP_LOGI(kTag, "Available version: %lu.%lu.%lu",
+             static_cast<unsigned long>(result.availableVersion.major),
+             static_cast<unsigned long>(result.availableVersion.minor),
+             static_cast<unsigned long>(result.availableVersion.patch));
 
     // Check if update is available
     result.updateAvailable = currentVersion_.isUpdateAvailable(result.availableVersion);
 
     if (result.updateAvailable) {
+        if (release.firmware.size == 0 || release.firmware.downloadUrl[0] == '\0' ||
+            !isSha256Hex(release.sha256)) {
+            ESP_LOGE(kTag, "Release metadata is incomplete");
+            state_ = OtaState::kIdle;
+            return ESP_ERR_INVALID_RESPONSE;
+        }
         ESP_LOGI(kTag, "Update available!");
         result.firmwareSize = release.firmware.size;
         std::strncpy(result.downloadUrl, release.firmware.downloadUrl,
@@ -130,14 +150,29 @@ esp_err_t OtaManager::startUpdate(const char* downloadUrl, const char* expectedS
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (state_ != OtaState::kIdle) {
+    if (!isSha256Hex(expectedSha256)) {
+        ESP_LOGE(kTag, "A 64-character SHA-256 is required for HTTPS OTA");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!tryBeginOtaOperation(state_, OtaState::kDownloading)) {
         ESP_LOGW(kTag, "OTA already in progress");
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (!OtaSessionCoordinator::tryAcquire(this)) {
+        ESP_LOGW(kTag, "Another OTA transport owns the update partition");
+        state_.store(OtaState::kIdle, std::memory_order_release);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    struct SessionRelease {
+        const void* owner;
+        ~SessionRelease() { OtaSessionCoordinator::release(owner); }
+    } sessionRelease{this};
+
     ESP_LOGI(kTag, "Starting OTA from: %s", downloadUrl);
 
-    state_ = OtaState::kDownloading;
     bytesReceived_ = 0;
     totalBytes_ = 0;
     abortRequested_ = false;
@@ -241,25 +276,27 @@ esp_err_t OtaManager::startUpdate(const char* downloadUrl, const char* expectedS
         return err;
     }
 
+    const int finalImageLength = esp_https_ota_get_image_len_read(otaHandle);
+    if (finalImageLength > 0) {
+        bytesReceived_ = static_cast<size_t>(finalImageLength);
+    }
+
     ESP_LOGI(kTag, "Download complete, verifying...");
     state_ = OtaState::kVerifying;
 
-    // Verify SHA-256 if provided
-    if (expectedSha256 && strlen(expectedSha256) == 64) {
-        const esp_partition_t* updatePartition = esp_ota_get_next_update_partition(nullptr);
-        err = verifyFirmwareHash(updatePartition, expectedSha256);
-        if (err != ESP_OK) {
-            ESP_LOGE(kTag, "Hash verification failed");
-            std::snprintf(lastError_, sizeof(lastError_), "Hash verification failed");
-            esp_https_ota_abort(otaHandle);
-            state_ = OtaState::kError;
-            if (completeCallback_) {
-                completeCallback_(false, lastError_);
-            }
-            return err;
+    const esp_partition_t* updatePartition = esp_ota_get_next_update_partition(nullptr);
+    err = verifyFirmwareHash(updatePartition, bytesReceived_.load(), expectedSha256);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Hash verification failed");
+        std::snprintf(lastError_, sizeof(lastError_), "Hash verification failed");
+        esp_https_ota_abort(otaHandle);
+        state_ = OtaState::kError;
+        if (completeCallback_) {
+            completeCallback_(false, lastError_);
         }
-        ESP_LOGI(kTag, "Hash verified successfully");
+        return err;
     }
+    ESP_LOGI(kTag, "Hash verified successfully");
 
     // Check if update is valid
     if (!esp_https_ota_is_complete_data_received(otaHandle)) {
@@ -381,21 +418,50 @@ const char* OtaManager::getCurrentPartition() const {
     return runningPartition_ ? runningPartition_->label : "unknown";
 }
 
-esp_err_t OtaManager::verifyFirmwareHash(const esp_partition_t* partition,
+esp_err_t OtaManager::verifyFirmwareHash(const esp_partition_t* partition, size_t imageSize,
                                          const char* expectedSha256) {
-    if (!partition || !expectedSha256 || strlen(expectedSha256) != 64) {
+    if (!partition || imageSize == 0 || imageSize > partition->size || !expectedSha256 ||
+        strlen(expectedSha256) != 64) {
         return ESP_ERR_INVALID_ARG;
     }
 
     ESP_LOGI(kTag, "Verifying firmware hash...");
 
-    // Get SHA-256 of partition
+    // GitHub release metadata uses sha256sum of the complete application .bin.
+    // esp_partition_get_sha256() returns the embedded application digest for
+    // hashed ESP images, so hash exactly the downloaded byte count here.
     uint8_t sha256[32];
-    esp_err_t err = esp_partition_get_sha256(partition, sha256);
-    if (err != ESP_OK) {
-        ESP_LOGE(kTag, "Failed to get partition SHA-256: %s", esp_err_to_name(err));
-        return err;
+    std::array<uint8_t, 1024> buffer{};
+    mbedtls_sha256_context context;
+    mbedtls_sha256_init(&context);
+
+    if (mbedtls_sha256_starts(&context, 0) != 0) {
+        mbedtls_sha256_free(&context);
+        ESP_LOGE(kTag, "Failed to initialize SHA-256 context");
+        return ESP_FAIL;
     }
+
+    for (size_t offset = 0; offset < imageSize; offset += buffer.size()) {
+        const size_t chunkSize = std::min(buffer.size(), imageSize - offset);
+        esp_err_t err = esp_partition_read(partition, offset, buffer.data(), chunkSize);
+        if (err != ESP_OK) {
+            mbedtls_sha256_free(&context);
+            ESP_LOGE(kTag, "Failed to read OTA partition at %zu: %s", offset, esp_err_to_name(err));
+            return err;
+        }
+        if (mbedtls_sha256_update(&context, buffer.data(), chunkSize) != 0) {
+            mbedtls_sha256_free(&context);
+            ESP_LOGE(kTag, "Failed to update SHA-256 at offset %zu", offset);
+            return ESP_FAIL;
+        }
+    }
+
+    if (mbedtls_sha256_finish(&context, sha256) != 0) {
+        mbedtls_sha256_free(&context);
+        ESP_LOGE(kTag, "Failed to finalize SHA-256");
+        return ESP_FAIL;
+    }
+    mbedtls_sha256_free(&context);
 
     // Convert to hex string
     char actualSha256[65];

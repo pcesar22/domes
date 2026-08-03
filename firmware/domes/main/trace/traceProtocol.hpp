@@ -27,35 +27,34 @@ namespace domes::trace {
  * @brief Trace protocol message types (sourced from trace.proto)
  */
 enum class MsgType : uint8_t {
-    kUnknown     = domes_trace_MsgType_MSG_TYPE_UNKNOWN,
-    kStart       = domes_trace_MsgType_MSG_TYPE_START,
-    kStop        = domes_trace_MsgType_MSG_TYPE_STOP,
-    kDump        = domes_trace_MsgType_MSG_TYPE_DUMP,
-    kData        = domes_trace_MsgType_MSG_TYPE_DATA,
-    kEnd         = domes_trace_MsgType_MSG_TYPE_END,
-    kClear       = domes_trace_MsgType_MSG_TYPE_CLEAR,
-    kStatusReq   = domes_trace_MsgType_MSG_TYPE_STATUS_REQ,
-    kStatusResp  = domes_trace_MsgType_MSG_TYPE_STATUS_RESP,
-    kStreamCfg   = domes_trace_MsgType_MSG_TYPE_STREAM_CFG,
-    kStreamData  = domes_trace_MsgType_MSG_TYPE_STREAM_DATA,
+    kUnknown = domes_trace_MsgType_MSG_TYPE_UNKNOWN,
+    kStart = domes_trace_MsgType_MSG_TYPE_START,
+    kStop = domes_trace_MsgType_MSG_TYPE_STOP,
+    kDump = domes_trace_MsgType_MSG_TYPE_DUMP,
+    kData = domes_trace_MsgType_MSG_TYPE_DATA,
+    kEnd = domes_trace_MsgType_MSG_TYPE_END,
+    kClear = domes_trace_MsgType_MSG_TYPE_CLEAR,
+    kStatusReq = domes_trace_MsgType_MSG_TYPE_STATUS_REQ,
+    kStatusResp = domes_trace_MsgType_MSG_TYPE_STATUS_RESP,
+    kStreamData = domes_trace_MsgType_MSG_TYPE_STREAM_DATA,
     kSessionInfo = domes_trace_MsgType_MSG_TYPE_SESSION_INFO,
-    kAck         = domes_trace_MsgType_MSG_TYPE_ACK,
+    kAck = domes_trace_MsgType_MSG_TYPE_ACK,
 };
 
 /**
  * @brief Trace status codes (sourced from trace.proto)
  */
 enum class Status : uint8_t {
-    kOk          = domes_trace_Status_STATUS_OK,
-    kNotInit     = domes_trace_Status_STATUS_NOT_INIT,
-    kAlreadyOn   = domes_trace_Status_STATUS_ALREADY_ON,
-    kAlreadyOff  = domes_trace_Status_STATUS_ALREADY_OFF,
+    kOk = domes_trace_Status_STATUS_OK,
+    kNotInit = domes_trace_Status_STATUS_NOT_INIT,
+    kAlreadyOn = domes_trace_Status_STATUS_ALREADY_ON,
+    kAlreadyOff = domes_trace_Status_STATUS_ALREADY_OFF,
     kBufferEmpty = domes_trace_Status_STATUS_BUFFER_EMPTY,
-    kError       = domes_trace_Status_STATUS_ERROR,
+    kError = domes_trace_Status_STATUS_ERROR,
 };
 
 /**
- * @brief Check if a message type is a trace command (0x10-0x1F range)
+ * @brief Check if a message type is in the trace family (0x10-0x1B, including reserved 0x18)
  */
 inline bool isTraceMessage(uint8_t type) {
     return (type >= static_cast<uint8_t>(MsgType::kStart) &&
@@ -67,13 +66,20 @@ inline bool isTraceMessage(uint8_t type) {
  */
 inline const char* statusToString(Status status) {
     switch (status) {
-        case Status::kOk:          return "ok";
-        case Status::kNotInit:     return "not-initialized";
-        case Status::kAlreadyOn:   return "already-on";
-        case Status::kAlreadyOff:  return "already-off";
-        case Status::kBufferEmpty: return "buffer-empty";
-        case Status::kError:       return "error";
-        default:                   return "unknown";
+        case Status::kOk:
+            return "ok";
+        case Status::kNotInit:
+            return "not-initialized";
+        case Status::kAlreadyOn:
+            return "already-on";
+        case Status::kAlreadyOff:
+            return "already-off";
+        case Status::kBufferEmpty:
+            return "buffer-empty";
+        case Status::kError:
+            return "error";
+        default:
+            return "unknown";
     }
 }
 

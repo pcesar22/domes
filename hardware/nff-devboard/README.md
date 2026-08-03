@@ -1,111 +1,81 @@
 # NFF Development Board
 
-ESP32-S3 sensor development board for the DOMES (Distributed Open-source Motion & Exercise System) project.
+The NFF board is the current full-peripheral DOMES development carrier. An ESP32-S3-DevKitC-1
+plugs into its dual headers and drives a 16-device LED ring, LIS2DW12 accelerometer, DRV2605L haptic
+driver, and MAX98357A audio amplifier.
 
-![3D View](docs/images/3d-view.png)
+![NFF board 3D view](docs/images/3d-view.png)
 
-## Overview
+## Repository Artifacts
 
-This development board provides a platform for prototyping the DOMES reaction training pod firmware. It features:
-
-- **ESP32-S3 DevKit** compatibility (plugs in via dual 22-pin headers)
-- **16x SK6812MINI-E** RGBW addressable LEDs in a circular array
-- **LIS2DW12** 3-axis accelerometer with tap detection
-- **DRV2605L** haptic driver for LRA motors
-- **MAX98357A** I2S audio amplifier with 23mm speaker
-- **GPIO breakouts** at corners for additional sensors/actuators
-
-## Directory Structure
-
-```
+```text
 nff-devboard/
-├── README.md              # This file
-├── production/            # Manufacturing files
-│   ├── gerbers/           # Gerber files for PCB fabrication
-│   ├── assembly/          # Pick-and-place files for SMT assembly
-│   └── bom.csv            # Bill of materials with LCSC part numbers
-├── docs/                  # Documentation
-│   ├── schematic.pdf      # Full schematic
-│   └── images/            # Board renders and photos
-└── source/                # EDA source files
-    └── *.epro             # EasyEDA Pro project file
+  BRING_UP_CHECKLIST.md   Repeatable electrical and firmware validation
+  docs/
+    schematic.pdf        Exported one-page schematic
+    images/              Board renders
+  source/
+    *.epro               EasyEDA Pro project archive
 ```
 
-## Specifications
+Gerbers, placement files, and a board-specific manufacturing BOM are not checked into this
+directory. Generate and review them from the EasyEDA source before ordering. The repository-level
+component list is [`../BOM.csv`](../BOM.csv), not a release-ready assembly BOM.
 
-| Parameter | Value |
-|-----------|-------|
-| Dimensions | ~85mm x 70mm |
-| Layers | 2 |
-| MCU | ESP32-S3-WROOM-1-N16R8 (via DevKit) |
-| LEDs | 16x SK6812MINI-E (RGBW, 3.5x3.5mm) |
-| Accelerometer | LIS2DW12 (I2C, LGA-12) |
-| Haptic Driver | DRV2605L (I2C, DFN-10) |
-| Audio Amp | MAX98357A (I2S, QFN-16) |
-| Speaker | 23mm, 8Ω, 1W |
+## Hardware
 
-## Pin Assignments
+| Peripheral | Device | Interface |
+| --- | --- | --- |
+| LED ring | 16x SK6812MINI-E | One-wire data through SN74AHCT1G125 level shifter |
+| Accelerometer | LIS2DW12 | I2C, address `0x19`, INT1 |
+| Haptic | DRV2605L + LD0832AA-0099F | I2C, address `0x5A`, fixed-frequency 235 Hz LRA drive |
+| Audio | MAX98357A | I2S, 23 mm 8 ohm / 1 W speaker target |
+| Touch | Four carrier pads | ESP32-S3 capacitive touch inputs |
 
-| Function | GPIO | Notes |
-|----------|------|-------|
-| LED Data | GPIO48 | WS2812B protocol, active via level shifter |
-| I2C SDA | GPIO8 | Shared: accelerometer + haptic driver |
-| I2C SCL | GPIO9 | Shared: accelerometer + haptic driver |
-| IMU INT1 | GPIO3 | Accelerometer interrupt (active low) |
-| I2S BCLK | GPIO12 | Audio bit clock |
-| I2S LRCLK | GPIO11 | Audio word select |
-| I2S DATA | GPIO10 | Audio data out |
-| Audio SD | GPIO13 | Amplifier shutdown (active low) |
+The populated LED part is sold as RGBW-capable, but the current firmware drives this board in RGB
+mode based on bring-up behavior. See [`../../docs/PIN_REFERENCE.md`](../../docs/PIN_REFERENCE.md).
 
-## Manufacturing
+## Current Firmware Mapping
 
-### PCB Fabrication
+Schematic header positions and ESP32 GPIO numbers are different namespaces. The current mapping is:
 
-The `production/gerbers/` folder contains Gerber files ready for upload to PCB manufacturers:
+| Signal | DevKit header | ESP32 GPIO |
+| --- | --- | --- |
+| CP2102N UART TX / RX | DevKit onboard bridge | 43 / 44 |
+| LED data | H1 pin 9 | 16 |
+| IMU INT1 | H1 pin 5 | 5 |
+| Audio shutdown | H1 pin 7 | 7 |
+| I2S BCLK | H1 pin 18 | 12 |
+| I2S LRCLK | H1 pin 17 | 11 |
+| I2S data | H1 pin 19 | 13 |
+| I2C SDA / SCL | - | 8 / 9 |
+| Touch K1 / K2 / K3 / K4 | - | 1 / 2 / 4 / 6 |
 
-- **JLCPCB**: Upload `Gerber_PCB1_2026-01-14.zip` directly
-- **PCBWay**: Upload the zip or individual Gerber files
-- **OSH Park**: Upload the zip file
+`firmware/domes/main/config.hpp` is authoritative for compiled values. The EasyEDA source and
+schematic are authoritative for physical carrier nets.
 
-Recommended specifications:
-- Layers: 2
-- Thickness: 1.6mm
-- Surface finish: HASL or ENIG
-- Solder mask: Blue (matches renders)
+The EasyEDA source and exported schematic both name `LD0832AA-0099F` for U5. Confirm the actual
+populated actuator before haptic testing; substituting a different LRA requires a matching voltage
+and frequency profile in the firmware.
 
-### Assembly
+## Build And Bring Up
 
-For SMT assembly at JLCPCB:
-1. Upload Gerbers
-2. Upload `production/bom.csv`
-3. Upload `production/assembly/pick-and-place.csv`
-4. Select "Economic" assembly (top side only)
+```bash
+PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
+tools/firmware/flash_and_verify.sh firmware/domes "$PORT"
+```
 
-**Note**: The ESP32-S3 DevKit module is not included in assembly—it plugs into the female headers.
+The DevKit CP2102N bridge (`/dev/ttyUSB*`) is the programming, framed UART config, and serial OTA
+interface. Use its serial-number link under `/dev/serial/by-id/`. Native ESP32-S3 USB Serial/JTAG
+(`/dev/ttyACM*`) is a second, optional console/JTAG connection and is not a config transport.
+The helper uses an isolated build directory and fresh `SDKCONFIG`, then verifies the runtime UART.
 
-## Getting Started
+Continue with [`BRING_UP_CHECKLIST.md`](BRING_UP_CHECKLIST.md). The reusable repository verification
+policy is [`../../docs/TESTING.md`](../../docs/TESTING.md).
 
-1. Order the PCB and have it assembled (or hand-solder)
-2. Plug in an ESP32-S3-DevKitC-1 (N16R8 variant recommended)
-3. Flash the DOMES firmware:
-   ```bash
-   cd firmware/domes
-   idf.py build flash monitor
-   ```
+## Design Source
 
-## Design Files
-
-- **Schematic**: `docs/schematic.pdf`
-- **EasyEDA Pro source**: `source/ProPrj_ESP32-S3-DEVKIT_Sensor_Project_2026-01-14.epro`
-
-To modify the design, import the `.epro` file into [EasyEDA Pro](https://pro.easyeda.com/).
-
-## Images
-
-| Top 3D View | Bottom View |
-|-------------|-------------|
-| ![3D](docs/images/3d-render.png) | ![Bottom](docs/images/bottom-view.png) |
-
-## License
-
-Hardware design files are provided for the DOMES project. See repository root for license information.
+Import `source/ProPrj_ESP32-S3-DEVKIT_Sensor_Project_2026-01-14.epro` into EasyEDA Pro to inspect or
+modify the board. Regenerate the PDF schematic and manufacturing outputs after design changes, and
+reconcile any changed net with `config.hpp` and the pin reference in the same change.

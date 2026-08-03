@@ -9,7 +9,6 @@
  */
 
 #include "interfaces/iTransport.hpp"
-
 #include "lwip/sockets.h"
 
 #include <atomic>

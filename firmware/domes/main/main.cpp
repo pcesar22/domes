@@ -6,37 +6,39 @@
 #include "config.hpp"
 #include "sdkconfig.h"
 
+#include "config/featureManager.hpp"
+#include "config/modeManager.hpp"
 #include "drivers/drv2605l.hpp"
+#include "drivers/injectableTouchDriver.hpp"
 #include "drivers/ledStrip.hpp"
 #include "drivers/lis2dw12.hpp"
 #include "drivers/max98357a.hpp"
-#include "drivers/injectableTouchDriver.hpp"
 #include "drivers/touchDriver.hpp"
+#include "game/gameEngine.hpp"
+#include "infra/appMetadata.hpp"
 #include "infra/crashDumpHandler.hpp"
 #include "infra/diagnostics.hpp"
+#include "infra/hardwareStatus.hpp"
 #include "infra/logging.hpp"
 #include "infra/memoryProfiler.hpp"
 #include "infra/nvsConfig.hpp"
 #include "infra/taskManager.hpp"
 #include "infra/watchdog.hpp"
 #include "services/audioService.hpp"
+#include "services/espNowService.hpp"
 #include "services/githubClient.hpp"
 #include "services/imuService.hpp"
 #include "services/ledService.hpp"
 #include "services/otaManager.hpp"
 #include "services/touchService.hpp"
 #include "trace/traceApi.hpp"
-#include "config/featureManager.hpp"
-#include "config/modeManager.hpp"
-#include "game/gameEngine.hpp"
 #include "trace/traceRecorder.hpp"
 #include "trace/traceStreamServer.hpp"
 #include "transport/bleOtaService.hpp"
 #include "transport/espNowTransport.hpp"
 #include "transport/serialOtaReceiver.hpp"
 #include "transport/tcpConfigServer.hpp"
-#include "transport/usbCdcTransport.hpp"
-#include "services/espNowService.hpp"
+#include "transport/uartTransport.hpp"
 
 // WiFi manager and secrets are only needed when WiFi auto-connect is enabled
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
@@ -46,22 +48,18 @@
 
 #include "driver/i2c_master.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_netif.h"
 #include "esp_mac.h"
+#include "esp_netif.h"
 #include "esp_wifi.h"
-#include "mdns.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "mdns.h"
 
 #include <array>
 #include <cstdint>
 #include <cstring>
-
-// Version string from CMake
-#ifndef DOMES_VERSION_STRING
-#define DOMES_VERSION_STRING "v0.0.0-unknown"
-#endif
 
 static constexpr const char* kTag = domes::infra::tag::kMain;
 
@@ -75,34 +73,44 @@ static constexpr const char* kGithubRepo = "domes";
 static domes::LedStripDriver<pins::kLedCount>* ledDriver = nullptr;
 static domes::infra::TaskManager taskManager;
 static domes::infra::NvsConfig configStorage;
-static domes::infra::NvsConfig statsStorage;
 static domes::GithubClient* githubClient = nullptr;
 static domes::OtaManager* otaManager = nullptr;
-static domes::UsbCdcTransport* usbCdcTransport = nullptr;
+static domes::UartTransport* uartTransport = nullptr;
 static domes::SerialOtaReceiver* serialOtaReceiver = nullptr;
 static domes::BleOtaService* bleOtaService = nullptr;
-static domes::SerialOtaReceiver* bleOtaReceiver = nullptr;  // Reuses SerialOtaReceiver with BLE transport
+static domes::SerialOtaReceiver* bleOtaReceiver =
+    nullptr;  // Reuses SerialOtaReceiver with BLE transport
 static domes::EspNowTransport* espNowTransport = nullptr;
 static domes::EspNowService* espNowService = nullptr;
-static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
-static domes::config::ModeManager* modeManager = nullptr;  // System mode manager
-static domes::LedService* ledService = nullptr;  // LED pattern service
-static i2c_master_bus_handle_t i2cBus = nullptr;  // I2C master bus
-static domes::Lis2dw12Driver* imuDriver = nullptr;  // LIS2DW12 IMU driver
-static domes::ImuService* imuService = nullptr;  // IMU triage service
-static domes::Drv2605lDriver* hapticDriver = nullptr;  // DRV2605L haptic driver
-static domes::Max98357aDriver* audioDriver = nullptr;  // MAX98357A audio driver
-static domes::AudioService* audioService = nullptr;  // Audio playback service
+static domes::config::FeatureManager* featureManager = nullptr;          // Runtime feature toggles
+static domes::config::ModeManager* modeManager = nullptr;                // System mode manager
+static domes::LedService* ledService = nullptr;                          // LED pattern service
+static i2c_master_bus_handle_t i2cBus = nullptr;                         // I2C master bus
+static domes::Lis2dw12Driver* imuDriver = nullptr;                       // LIS2DW12 IMU driver
+static domes::ImuService* imuService = nullptr;                          // IMU triage service
+static domes::Drv2605lDriver* hapticDriver = nullptr;                    // DRV2605L haptic driver
+static domes::Max98357aDriver* audioDriver = nullptr;                    // MAX98357A audio driver
+static domes::AudioService* audioService = nullptr;                      // Audio playback service
 static domes::TouchDriver<pins::kTouchPadCount>* touchDriver = nullptr;  // Touch pad driver
 static domes::InjectableTouchDriver* injectableTouchDriver = nullptr;  // Touch injection decorator
-static domes::TouchService* touchService = nullptr;  // Touch monitoring service
-static domes::game::GameEngine* gameEngine = nullptr;  // Game logic FSM
+static domes::TouchService* touchService = nullptr;                    // Touch monitoring service
+static domes::game::GameEngine* gameEngine = nullptr;                  // Game logic FSM
+static uint8_t runtimePodId = 0;
 
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
 static domes::TcpConfigServer* tcpConfigServer = nullptr;  // WiFi config server
 static domes::WifiManager* wifiManager = nullptr;
 static domes::infra::NvsConfig wifiStorage;
 #endif
+
+static void publishBleTouchEvent(void*, uint8_t padIndex, uint64_t timestampUs) {
+    if (!bleOtaService || !bleOtaService->isConnected() || !bleOtaReceiver) {
+        return;
+    }
+    if (!bleOtaReceiver->sendTouchEvent(runtimePodId, padIndex, timestampUs)) {
+        ESP_LOGW(kTag, "Failed to publish BLE touch event for pad %u", padIndex);
+    }
+}
 
 /**
  * @brief Read pod_id from NVS and log it at boot
@@ -129,6 +137,28 @@ static uint8_t readPodId() {
     return podId;
 }
 
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+static bool readAutoUpdateEnabled() {
+#ifdef CONFIG_DOMES_OTA_AUTO_CHECK
+    constexpr uint8_t kBuildDefault = 1;
+#else
+    constexpr uint8_t kBuildDefault = 0;
+#endif
+
+    domes::infra::NvsConfig config;
+    if (config.open(domes::infra::nvs_ns::kConfig) != ESP_OK) {
+        ESP_LOGW(kTag, "Failed to read auto-update setting; using build default");
+        return kBuildDefault != 0;
+    }
+
+    const bool enabled =
+        config.getOrDefault<uint8_t>(domes::infra::config_key::kAutoUpdate, kBuildDefault) != 0;
+    config.close();
+    return enabled;
+}
+#endif
+
+#ifndef DOMES_FORCE_OTA_VERIFY_FAILURE
 /**
  * @brief Perform post-OTA self-test
  *
@@ -157,28 +187,56 @@ static esp_err_t performSelfTest() {
     testNvs.close();
     ESP_LOGI(kTag, "  [PASS] NVS accessible");
 
-    // Test 3: Heap is reasonable (>50KB free)
-    size_t freeHeap = esp_get_free_heap_size();
-    if (freeHeap < 50000) {
+    // Test 3: safety-critical internal heap remains available. External PSRAM
+    // must not mask exhaustion of memory needed by task stacks and DMA.
+    constexpr uint32_t kInternalHeapCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    size_t freeHeap = heap_caps_get_free_size(kInternalHeapCaps);
+    if (freeHeap < 30 * 1024) {
         ESP_LOGE(kTag, "Self-test FAIL: Heap too low (%zu bytes)", freeHeap);
         return ESP_FAIL;
     }
     ESP_LOGI(kTag, "  [PASS] Heap OK (%zu bytes free)", freeHeap);
 
-    // Test 4: LED driver (if initialized)
-    if (ledDriver) {
-        err = ledDriver->setPixel(0, domes::Color::green());
-        if (err != ESP_OK) {
-            ESP_LOGE(kTag, "Self-test FAIL: LED driver error");
+    // Test 4: every active-board peripheral completed initialization.
+    constexpr std::array requiredHardware = {
+        domes::infra::HardwareSubsystem::kLed,    domes::infra::HardwareSubsystem::kImu,
+        domes::infra::HardwareSubsystem::kHaptic, domes::infra::HardwareSubsystem::kAudio,
+        domes::infra::HardwareSubsystem::kTouch,
+    };
+    for (auto subsystem : requiredHardware) {
+        if (!domes::infra::HardwareStatus::isReady(subsystem)) {
+            ESP_LOGE(kTag, "Self-test FAIL: required hardware was not initialized");
             return ESP_FAIL;
         }
-        ledDriver->refresh();
-        ESP_LOGI(kTag, "  [PASS] LED driver OK");
     }
+    ESP_LOGI(kTag, "  [PASS] Required hardware initialized");
+
+    // Test 5: LED output path accepts and transmits a frame.
+    if (!ledDriver) {
+        ESP_LOGE(kTag, "Self-test FAIL: LED driver unavailable");
+        return ESP_FAIL;
+    }
+    err = ledDriver->setPixel(0, domes::Color::green());
+    if (err == ESP_OK) {
+        err = ledDriver->refresh();
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Self-test FAIL: LED output error: %s", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(kTag, "  [PASS] LED output path OK");
+
+    // Test 6: host-facing transports and runtime control services are live.
+    if (!modeManager || !serialOtaReceiver || !bleOtaReceiver || !espNowService) {
+        ESP_LOGE(kTag, "Self-test FAIL: required runtime service unavailable");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(kTag, "  [PASS] Runtime services initialized");
 
     ESP_LOGI(kTag, "Self-test PASSED");
     return ESP_OK;
 }
+#endif
 
 /**
  * @brief Handle OTA verification after boot
@@ -198,7 +256,12 @@ static void handleOtaVerification() {
 
     ESP_LOGW(kTag, "New OTA firmware - running verification");
 
+#ifdef DOMES_FORCE_OTA_VERIFY_FAILURE
+    ESP_LOGE(kTag, "Injecting OTA verification failure for rollback test image");
+    esp_err_t selfTestResult = ESP_FAIL;
+#else
     esp_err_t selfTestResult = performSelfTest();
+#endif
 
     if (selfTestResult == ESP_OK) {
         // Confirm new firmware is good
@@ -249,12 +312,15 @@ static esp_err_t initOta() {
     esp_err_t err = otaManager->init();
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "OTA init failed: %s", esp_err_to_name(err));
+        otaManager = nullptr;
+        githubClient = nullptr;
         return err;
     }
 
     domes::FirmwareVersion ver = otaManager->getCurrentVersion();
-    ESP_LOGI(kTag, "Firmware version: %d.%d.%d (partition: %s)", ver.major, ver.minor, ver.patch,
-             otaManager->getCurrentPartition());
+    ESP_LOGI(kTag, "Firmware version: %lu.%lu.%lu (partition: %s)",
+             static_cast<unsigned long>(ver.major), static_cast<unsigned long>(ver.minor),
+             static_cast<unsigned long>(ver.patch), otaManager->getCurrentPartition());
 
     return ESP_OK;
 }
@@ -266,8 +332,32 @@ static esp_err_t initOta() {
  * as both use the feature manager.
  */
 static void initFeatureManager() {
-    static domes::config::FeatureManager features;
+    uint32_t supportedFeatures = domes::config::FeatureManager::kAllFeaturesMask;
+#ifndef CONFIG_DOMES_WIFI_AUTO_CONNECT
+    supportedFeatures &= ~(1U << static_cast<uint8_t>(domes::config::Feature::kWifi));
+#endif
+    static domes::config::FeatureManager features(supportedFeatures);
     featureManager = &features;
+    featureManager->onChange([](domes::config::Feature feature, bool enabled) {
+        if (feature == domes::config::Feature::kBleAdvertising && bleOtaService) {
+            bleOtaService->setAdvertisingEnabled(enabled);
+        }
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+        if (feature == domes::config::Feature::kWifi && wifiManager) {
+            if (enabled) {
+                const esp_err_t err = wifiManager->connect();
+                if (err != ESP_OK) {
+                    ESP_LOGE(kTag, "Failed to enable WiFi client: %s", esp_err_to_name(err));
+                }
+            } else {
+                const esp_err_t err = wifiManager->disconnect();
+                if (err != ESP_OK) {
+                    ESP_LOGE(kTag, "Failed to disable WiFi client: %s", esp_err_to_name(err));
+                }
+            }
+        }
+#endif
+    });
     ESP_LOGI(kTag, "Feature manager initialized");
 }
 
@@ -277,18 +367,16 @@ static void initFeatureManager() {
  * Creates ModeManager and starts a 10Hz tick task for timeout monitoring.
  * Must be called after initFeatureManager().
  */
-static void initModeManager() {
+static esp_err_t initModeManager() {
     if (!featureManager) {
         ESP_LOGE(kTag, "Cannot init mode manager: featureManager not initialized");
-        return;
+        return ESP_ERR_INVALID_STATE;
     }
 
     static domes::config::ModeManager manager(*featureManager);
-    modeManager = &manager;
-    ESP_LOGI(kTag, "Mode manager initialized (BOOTING)");
 
     // Create tick task for timeout monitoring (10Hz)
-    xTaskCreate(
+    BaseType_t taskCreated = xTaskCreate(
         [](void* param) {
             auto* mgr = static_cast<domes::config::ModeManager*>(param);
             while (true) {
@@ -296,7 +384,16 @@ static void initModeManager() {
                 vTaskDelay(pdMS_TO_TICKS(100));  // 10Hz
             }
         },
-        "mode_tick", 2048, modeManager, domes::infra::priority::kLow, nullptr);
+        "mode_tick", domes::infra::stack::kStandard, &manager, domes::infra::priority::kLow,
+        nullptr);
+    if (taskCreated != pdPASS) {
+        ESP_LOGE(kTag, "Failed to create mode manager tick task");
+        return ESP_ERR_NO_MEM;
+    }
+
+    modeManager = &manager;
+    ESP_LOGI(kTag, "Mode manager initialized (BOOTING)");
+    return ESP_OK;
 }
 
 /**
@@ -331,8 +428,8 @@ static esp_err_t initLedService() {
  * Sets up the I2C bus for IMU and haptic driver communication.
  */
 static esp_err_t initI2c() {
-    ESP_LOGI(kTag, "Initializing I2C bus (SDA=%d, SCL=%d)...",
-             static_cast<int>(pins::kI2cSda), static_cast<int>(pins::kI2cScl));
+    ESP_LOGI(kTag, "Initializing I2C bus (SDA=%d, SCL=%d)...", static_cast<int>(pins::kI2cSda),
+             static_cast<int>(pins::kI2cScl));
 
     i2c_master_bus_config_t busConfig = {};
     busConfig.i2c_port = I2C_NUM_0;
@@ -377,6 +474,7 @@ static esp_err_t initImu() {
     }
 
     ESP_LOGI(kTag, "LIS2DW12 IMU initialized");
+    domes::infra::HardwareStatus::markReady(domes::infra::HardwareSubsystem::kImu);
     return ESP_OK;
 }
 
@@ -405,9 +503,15 @@ static esp_err_t initHaptic() {
     }
 
     // Play a short click to confirm haptic is working
-    hapticDriver->playEffect(domes::HapticEffect::kSharpClick100);
+    err = hapticDriver->playEffect(domes::HapticEffect::kSharpClick100);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Haptic output test failed: %s", esp_err_to_name(err));
+        hapticDriver = nullptr;
+        return err;
+    }
 
     ESP_LOGI(kTag, "DRV2605L haptic driver initialized");
+    domes::infra::HardwareStatus::markReady(domes::infra::HardwareSubsystem::kHaptic);
     return ESP_OK;
 }
 
@@ -418,12 +522,12 @@ static esp_err_t initHaptic() {
  * Requires IMU driver and LED service to be initialized first.
  */
 static esp_err_t initImuService() {
-    if (!imuDriver || !ledService) {
+    if (!imuDriver || !ledService || !featureManager) {
         ESP_LOGE(kTag, "Cannot init IMU service: dependencies not ready");
         return ESP_FAIL;
     }
 
-    static domes::ImuService service(*imuDriver, *ledService);
+    static domes::ImuService service(*imuDriver, *ledService, *featureManager);
     imuService = &service;
 
     esp_err_t err = imuService->start();
@@ -444,14 +548,12 @@ static esp_err_t initImuService() {
  */
 static esp_err_t initAudioDriver() {
     ESP_LOGI(kTag, "Initializing MAX98357A audio driver...");
-    ESP_LOGI(kTag, "  BCLK=%d, LRCLK=%d, DOUT=%d, SD=%d",
-             static_cast<int>(pins::kI2sBclk),
-             static_cast<int>(pins::kI2sLrclk),
-             static_cast<int>(pins::kI2sDout),
+    ESP_LOGI(kTag, "  BCLK=%d, LRCLK=%d, DOUT=%d, SD=%d", static_cast<int>(pins::kI2sBclk),
+             static_cast<int>(pins::kI2sLrclk), static_cast<int>(pins::kI2sDout),
              static_cast<int>(pins::kAudioSd));
 
-    static domes::Max98357aDriver driver(
-        pins::kI2sBclk, pins::kI2sLrclk, pins::kI2sDout, pins::kAudioSd);
+    static domes::Max98357aDriver driver(pins::kI2sBclk, pins::kI2sLrclk, pins::kI2sDout,
+                                         pins::kAudioSd);
     audioDriver = &driver;
 
     esp_err_t err = audioDriver->init();
@@ -462,6 +564,7 @@ static esp_err_t initAudioDriver() {
     }
 
     ESP_LOGI(kTag, "MAX98357A audio driver initialized");
+    domes::infra::HardwareStatus::markReady(domes::infra::HardwareSubsystem::kAudio);
     return ESP_OK;
 }
 
@@ -508,9 +611,8 @@ static esp_err_t initTouch() {
     ESP_LOGI(kTag, "Initializing touch driver...");
 
     // Create touch driver with pin configuration from config.hpp
-    static std::array<gpio_num_t, pins::kTouchPadCount> touchPins = {
-        pins::kTouch1, pins::kTouch2, pins::kTouch3, pins::kTouch4
-    };
+    static std::array<gpio_num_t, pins::kTouchPadCount> touchPins = {pins::kTouch1, pins::kTouch2,
+                                                                     pins::kTouch3, pins::kTouch4};
     static domes::TouchDriver<pins::kTouchPadCount> driver(touchPins);
     touchDriver = &driver;
 
@@ -530,9 +632,13 @@ static esp_err_t initTouch() {
         ESP_LOGE(kTag, "Touch service start failed: %s", esp_err_to_name(err));
         return err;
     }
+    if (bleOtaReceiver) {
+        touchService->setEventCallback(publishBleTouchEvent, nullptr);
+    }
 
     // Enable touch feature by default
     featureManager->setEnabled(domes::config::Feature::kTouch, true);
+    domes::infra::HardwareStatus::markReady(domes::infra::HardwareSubsystem::kTouch);
     ESP_LOGI(kTag, "Touch service started, feature enabled");
     return ESP_OK;
 }
@@ -552,7 +658,8 @@ static esp_err_t initGameEngine() {
     }
 
     // Wrap touch driver with injectable decorator for sim touch injection
-    static domes::InjectableTouchDriver injectableTouch(*touchDriver);
+    // TouchService owns physical polling; GameEngine consumes its synchronized snapshot.
+    static domes::InjectableTouchDriver injectableTouch(*touchDriver, false);
     injectableTouchDriver = &injectableTouch;
 
     static domes::game::GameEngine engine(injectableTouch);
@@ -561,26 +668,32 @@ static esp_err_t initGameEngine() {
     // Wire feedback callbacks to real services
     domes::game::FeedbackCallbacks cbs;
     if (ledService) {
-        cbs.flashWhite = [](uint32_t ms) { ledService->requestFlash(ms); };
-        cbs.flashColor = [](domes::Color c, uint32_t /*ms*/) { ledService->setSolidColor(c); };
+        cbs.flashWhite = [](uint32_t ms) {
+            ledService->requestFlash(ms);
+        };
+        cbs.flashColor = [](domes::Color c, uint32_t /*ms*/) {
+            ledService->setSolidColor(c);
+        };
     }
     if (audioService) {
-        cbs.playSound = [](const char* name) { audioService->playAsset(name); };
+        cbs.playSound = [](const char* name) {
+            audioService->playAsset(name);
+        };
     }
     gameEngine->setFeedbackCallbacks(std::move(cbs));
 
     // Wire event callback for logging
     gameEngine->setEventCallback([](const domes::game::GameEvent& event) {
         if (event.type == domes::game::GameEvent::Type::kHit) {
-            ESP_LOGI(kTag, "Game: HIT pad=%u reaction=%lu us",
-                     event.padIndex, static_cast<unsigned long>(event.reactionTimeUs));
+            ESP_LOGI(kTag, "Game: HIT pad=%u reaction=%lu us", event.padIndex,
+                     static_cast<unsigned long>(event.reactionTimeUs));
         } else {
             ESP_LOGI(kTag, "Game: MISS (timeout)");
         }
     });
 
     // Create game tick task on Core 1 at ~100Hz (10ms period)
-    xTaskCreatePinnedToCore(
+    const BaseType_t gameTaskCreated = xTaskCreatePinnedToCore(
         [](void* param) {
             auto* ge = static_cast<domes::game::GameEngine*>(param);
             while (true) {
@@ -591,10 +704,14 @@ static esp_err_t initGameEngine() {
                 vTaskDelay(pdMS_TO_TICKS(10));  // 100Hz
             }
         },
-        "game_tick", 4096, gameEngine,
-        domes::infra::priority::kMedium,
-        nullptr,
+        "game_tick", 4096, gameEngine, domes::infra::priority::kMedium, nullptr,
         domes::infra::core::kApplication);
+    if (gameTaskCreated != pdPASS) {
+        gameEngine = nullptr;
+        injectableTouchDriver = nullptr;
+        ESP_LOGE(kTag, "Failed to create game tick task");
+        return ESP_ERR_NO_MEM;
+    }
 
     ESP_LOGI(kTag, "Game engine initialized");
     return ESP_OK;
@@ -622,7 +739,7 @@ static esp_err_t initEspNow() {
     }
 
     // Start ESP-NOW service (discovery + role negotiation + game loop)
-    static domes::EspNowService service(*espNowTransport);
+    static domes::EspNowService service(*espNowTransport, *featureManager);
     espNowService = &service;
 
     // Wire dependencies for game protocol
@@ -638,17 +755,16 @@ static esp_err_t initEspNow() {
     if (injectableTouchDriver) {
         service.setInjectableTouchDriver(injectableTouchDriver);
     }
-    domes::infra::TaskConfig serviceConfig = {
-        .name = "espnow_svc",
-        .stackSize = 6144,  // Larger stack for game protocol
-        .priority = domes::infra::priority::kMedium,
-        .coreAffinity = domes::infra::core::kProtocol,
-        .subscribeToWatchdog = false
-    };
+    domes::infra::TaskConfig serviceConfig = {.name = "espnow_svc",
+                                              .stackSize = 6144,  // Larger stack for game protocol
+                                              .priority = domes::infra::priority::kMedium,
+                                              .coreAffinity = domes::infra::core::kProtocol,
+                                              .subscribeToWatchdog = false};
 
     esp_err_t espErr = taskManager.createTask(serviceConfig, service);
     if (espErr != ESP_OK) {
         ESP_LOGE(kTag, "Failed to create ESP-NOW service task: %s", esp_err_to_name(espErr));
+        espNowService = nullptr;
         return espErr;
     }
 
@@ -659,25 +775,24 @@ static esp_err_t initEspNow() {
 /**
  * @brief Initialize serial OTA receiver
  *
- * Sets up USB-CDC transport and starts the serial OTA receiver task.
- * This allows OTA updates via USB serial from the host tool.
+ * Sets up UART0 through the DevKit's CP2102N bridge and starts the serial
+ * protocol receiver task. Native USB remains dedicated to console logging.
  */
 static esp_err_t initSerialOta(uint8_t podId = 0) {
     ESP_LOGI(kTag, "Initializing serial OTA receiver...");
 
-    // Create USB-CDC transport
-    static domes::UsbCdcTransport transport;
-    usbCdcTransport = &transport;
+    static domes::UartTransport transport(UART_NUM_0, pins::kUartTx, pins::kUartRx);
+    uartTransport = &transport;
 
-    domes::TransportError err = usbCdcTransport->init();
+    domes::TransportError err = uartTransport->init();
     if (!domes::isOk(err)) {
-        ESP_LOGE(kTag, "USB-CDC transport init failed: %s", domes::transportErrorToString(err));
+        ESP_LOGE(kTag, "UART transport init failed: %s", domes::transportErrorToString(err));
         return ESP_FAIL;
     }
-    ESP_LOGI(kTag, "USB-CDC transport initialized");
+    ESP_LOGI(kTag, "UART protocol transport initialized");
 
     // Create serial OTA receiver with config support
-    static domes::SerialOtaReceiver receiver(*usbCdcTransport, featureManager, podId);
+    static domes::SerialOtaReceiver receiver(*uartTransport, featureManager, podId);
     serialOtaReceiver = &receiver;
 
     // Wire up services for config commands
@@ -715,6 +830,7 @@ static esp_err_t initSerialOta(uint8_t podId = 0) {
     esp_err_t espErr = taskManager.createTask(config, receiver);
     if (espErr != ESP_OK) {
         ESP_LOGE(kTag, "Failed to create serial OTA task: %s", esp_err_to_name(espErr));
+        serialOtaReceiver = nullptr;
         return espErr;
     }
 
@@ -729,6 +845,11 @@ static esp_err_t initSerialOta(uint8_t podId = 0) {
  * This allows OTA updates via Bluetooth from a phone or host tool.
  */
 static esp_err_t initBleOta(uint8_t podId = 0) {
+    if (!featureManager) {
+        ESP_LOGE(kTag, "Cannot init BLE OTA: featureManager not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     ESP_LOGI(kTag, "Initializing BLE OTA service...");
 
     // Create BLE OTA service (GATT server)
@@ -742,10 +863,12 @@ static esp_err_t initBleOta(uint8_t podId = 0) {
     }
     ESP_LOGI(kTag, "BLE OTA service initialized, advertising started");
 
-    // Create BLE OTA receiver (reuses SerialOtaReceiver with BLE transport)
-    // Note: featureManager may be nullptr if serial OTA wasn't initialized first
+    // Create BLE OTA receiver (reuses SerialOtaReceiver with BLE transport).
     static domes::SerialOtaReceiver receiver(*bleOtaService, featureManager, podId);
     bleOtaReceiver = &receiver;
+    if (touchService) {
+        touchService->setEventCallback(publishBleTouchEvent, nullptr);
+    }
 
     // Create receiver task (needs 8KB stack for config command processing and protobuf)
     domes::infra::TaskConfig config = {
@@ -759,6 +882,9 @@ static esp_err_t initBleOta(uint8_t podId = 0) {
     esp_err_t espErr = taskManager.createTask(config, receiver);
     if (espErr != ESP_OK) {
         ESP_LOGE(kTag, "Failed to create BLE OTA task: %s", esp_err_to_name(espErr));
+        bleOtaService->setAdvertisingEnabled(false);
+        bleOtaReceiver = nullptr;
+        bleOtaService = nullptr;
         return espErr;
     }
 
@@ -779,8 +905,7 @@ static esp_err_t initTcpConfigServer() {
         return ESP_FAIL;
     }
 
-    ESP_LOGI(kTag, "Initializing TCP config server on port %u...",
-             domes::kConfigServerPort);
+    ESP_LOGI(kTag, "Initializing TCP config server on port %u...", domes::kConfigServerPort);
 
     // Create TCP config server
     static domes::TcpConfigServer server(*featureManager, domes::kConfigServerPort);
@@ -815,13 +940,12 @@ static esp_err_t initTcpConfigServer() {
         .stackSize = 4096,
         .priority = domes::infra::priority::kMedium,
         .coreAffinity = domes::infra::core::kProtocol,  // Core 0 with WiFi
-        .subscribeToWatchdog = false  // Server may block on accept
+        .subscribeToWatchdog = false                    // Server may block on accept
     };
 
     esp_err_t err = taskManager.createTask(config, server);
     if (err != ESP_OK) {
-        ESP_LOGE(kTag, "Failed to create TCP config server task: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(kTag, "Failed to create TCP config server task: %s", esp_err_to_name(err));
         return err;
     }
 
@@ -853,10 +977,15 @@ static esp_err_t initWifi() {
         return err;
     }
 
-    // Connect with credentials from secrets.hpp
-    ESP_LOGI(kTag, "Connecting to WiFi: %s", domes::secrets::kWifiSsid);
-    err = wifiManager->connect(domes::secrets::kWifiSsid, domes::secrets::kWifiPassword,
-                               true);  // Save to NVS
+    // Provisioned credentials are authoritative. Compile-time secrets seed NVS
+    // only on the first boot of a WiFi-enabled development build.
+    if (wifiManager->hasStoredCredentials()) {
+        ESP_LOGI(kTag, "Connecting with provisioned WiFi credentials");
+        err = wifiManager->connect();
+    } else {
+        ESP_LOGI(kTag, "No provisioned WiFi credentials; seeding from secrets.hpp");
+        err = wifiManager->connect(domes::secrets::kWifiSsid, domes::secrets::kWifiPassword, true);
+    }
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "WiFi connect failed: %s", esp_err_to_name(err));
         return err;
@@ -912,7 +1041,7 @@ static esp_err_t initMdns(uint8_t podId) {
     char podIdStr[8] = {};
     snprintf(podIdStr, sizeof(podIdStr), "%u", podId);
     mdns_service_txt_item_set("_domes", "_tcp", "pod_id", podIdStr);
-    mdns_service_txt_item_set("_domes", "_tcp", "version", DOMES_VERSION_STRING);
+    mdns_service_txt_item_set("_domes", "_tcp", "version", domes::infra::firmwareVersion());
 
     ESP_LOGI(kTag, "mDNS: %s.local (_domes._tcp:5000)", hostname);
     return ESP_OK;
@@ -977,6 +1106,14 @@ static esp_err_t initWifiForEspNow() {
         return err;
     }
 
+    // A disconnected station may enter modem sleep and miss peer broadcasts.
+    // ESP-NOW discovery requires the radio to remain continuously receptive.
+    err = esp_wifi_set_ps(WIFI_PS_NONE);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "esp_wifi_set_ps(WIFI_PS_NONE) failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
     // Pin to channel 1 so all pods use the same channel for ESP-NOW.
     // Without this, STA mode without an AP connection has an undefined channel,
     // and pods may fail to discover each other.
@@ -997,10 +1134,8 @@ static esp_err_t initWifiForEspNow() {
 }
 
 static esp_err_t initLedStrip() {
-    ESP_LOGI(kTag, "LED init: GPIO=%d, count=%d, RGBW=%s",
-             static_cast<int>(pins::kLedData),
-             pins::kLedCount,
-             pins::kLedIsRgbw ? "yes" : "no");
+    ESP_LOGI(kTag, "LED init: GPIO=%d, count=%d, RGBW=%s", static_cast<int>(pins::kLedData),
+             pins::kLedCount, pins::kLedIsRgbw ? "yes" : "no");
 
     static domes::LedStripDriver<pins::kLedCount> driver(pins::kLedData, pins::kLedIsRgbw);
     ledDriver = &driver;
@@ -1011,119 +1146,92 @@ static esp_err_t initLedStrip() {
         return err;
     }
     ESP_LOGI(kTag, "LED strip init OK");
-
-    // Use maximum brightness for bringup test
-    constexpr uint8_t kTestBrightness = 255;
-    ledDriver->setBrightness(kTestBrightness);
-    ESP_LOGI(kTag, "LED brightness set to %d (max)", kTestBrightness);
-
-    // Test pattern: cycle through R, G, B, W multiple times at full brightness
-    constexpr uint32_t kColorDurationMs = 2000;  // 2 seconds per color
-    constexpr int kTestCycles = 3;  // Run test 3 times
-
-    for (int cycle = 0; cycle < kTestCycles; ++cycle) {
-        ESP_LOGI(kTag, "LED test cycle %d/%d", cycle + 1, kTestCycles);
-
-        ESP_LOGI(kTag, "LED test: RED");
-        err = ledDriver->setAll(domes::Color::red());
-        if (err != ESP_OK) {
-            ESP_LOGE(kTag, "LED setAll(red) FAILED: %s", esp_err_to_name(err));
-            return err;
-        }
+    ledDriver->setBrightness(led::kDefaultBrightness);
+    err = ledDriver->clear();
+    if (err == ESP_OK) {
         err = ledDriver->refresh();
-        if (err != ESP_OK) {
-            ESP_LOGE(kTag, "LED refresh FAILED: %s", esp_err_to_name(err));
-            return err;
-        }
-        vTaskDelay(pdMS_TO_TICKS(kColorDurationMs));
-
-        ESP_LOGI(kTag, "LED test: GREEN");
-        ledDriver->setAll(domes::Color::green());
-        err = ledDriver->refresh();
-        if (err != ESP_OK) {
-            ESP_LOGE(kTag, "LED refresh FAILED: %s", esp_err_to_name(err));
-            return err;
-        }
-        vTaskDelay(pdMS_TO_TICKS(kColorDurationMs));
-
-        ESP_LOGI(kTag, "LED test: BLUE");
-        ledDriver->setAll(domes::Color::blue());
-        err = ledDriver->refresh();
-        if (err != ESP_OK) {
-            ESP_LOGE(kTag, "LED refresh FAILED: %s", esp_err_to_name(err));
-            return err;
-        }
-        vTaskDelay(pdMS_TO_TICKS(kColorDurationMs));
-
-        if (pins::kLedIsRgbw) {
-            ESP_LOGI(kTag, "LED test: WHITE (W channel)");
-            ledDriver->setAll(domes::Color::white());
-            err = ledDriver->refresh();
-            if (err != ESP_OK) {
-                ESP_LOGE(kTag, "LED refresh FAILED: %s", esp_err_to_name(err));
-                return err;
-            }
-            vTaskDelay(pdMS_TO_TICKS(kColorDurationMs));
-        }
     }
-
-    // Clear LEDs after test
-    ESP_LOGI(kTag, "LED test complete (%d cycles), clearing", kTestCycles);
-    ledDriver->clear();
-    ledDriver->refresh();
-
-    return ESP_OK;
+    if (err == ESP_OK) {
+        domes::infra::HardwareStatus::markReady(domes::infra::HardwareSubsystem::kLed);
+    }
+    return err;
 }
 
-static esp_err_t initInfrastructure() {
+static esp_err_t initInfrastructure(uint32_t& bootCount) {
+    bootCount = 0;
     esp_err_t err = domes::infra::NvsConfig::initFlash();
     if (err != ESP_OK)
         return err;
 
-    configStorage.open(domes::infra::nvs_ns::kConfig);
+    err = configStorage.open(domes::infra::nvs_ns::kConfig);
+    if (err != ESP_OK)
+        return err;
 
     err = domes::infra::Watchdog::init(timing::kWatchdogTimeoutS, true);
     if (err != ESP_OK)
         return err;
 
-    if (statsStorage.open(domes::infra::nvs_ns::kStats) == ESP_OK) {
-        uint32_t bootCount =
-            statsStorage.getOrDefault<uint32_t>(domes::infra::stats_key::kBootCount, 0) + 1;
-        statsStorage.setU32(domes::infra::stats_key::kBootCount, bootCount);
-        statsStorage.commit();
-        ESP_LOGI(kTag, "Boot #%lu", static_cast<unsigned long>(bootCount));
+    domes::infra::NvsConfig stats;
+    err = stats.open(domes::infra::nvs_ns::kStats);
+    if (err != ESP_OK)
+        return err;
+
+    uint32_t previousBootCount = 0;
+    err = stats.getU32(domes::infra::stats_key::kBootCount, previousBootCount);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        previousBootCount = 0;
+    } else if (err != ESP_OK) {
+        stats.close();
+        return err;
     }
+    if (previousBootCount == UINT32_MAX) {
+        bootCount = UINT32_MAX;
+        ESP_LOGW(kTag, "Boot count saturated at %lu", static_cast<unsigned long>(bootCount));
+    } else {
+        bootCount = previousBootCount + 1;
+    }
+    err = stats.setU32(domes::infra::stats_key::kBootCount, bootCount);
+    if (err == ESP_OK) {
+        err = stats.commit();
+    }
+    stats.close();
+    if (err != ESP_OK)
+        return err;
+
+    ESP_LOGI(kTag, "Boot #%lu", static_cast<unsigned long>(bootCount));
 
     return ESP_OK;
 }
 
 extern "C" void app_main() {
-    ESP_LOGI(kTag, "DOMES Firmware %s", DOMES_VERSION_STRING);
+    ESP_LOGI(kTag, "DOMES Firmware %s", domes::infra::firmwareVersion());
 
     // Initialize trace system early
     esp_err_t traceErr = domes::trace::Recorder::init();
     if (traceErr == ESP_OK) {
-        domes::trace::Recorder::setEnabled(true);
+        domes::trace::Recorder::setEnabled(false);
         domes::trace::Recorder::registerTask(xTaskGetCurrentTaskHandle(), "main");
-        ESP_LOGI(kTag, "Trace system initialized and enabled");
+        ESP_LOGI(kTag, "Trace system initialized (recording disabled until requested)");
     } else {
         ESP_LOGW(kTag, "Trace init failed: %s", esp_err_to_name(traceErr));
     }
 
     // Initialize infrastructure first
-    if (initInfrastructure() != ESP_OK) {
+    uint32_t bootCount = 0;
+    if (initInfrastructure(bootCount) != ESP_OK) {
         ESP_LOGE(kTag, "Infrastructure init failed, halting");
         return;
     }
     ESP_LOGI(kTag, "Infrastructure initialized");
 
     // Initialize shutdown dump handler (captures diagnostics on clean esp_restart() only)
-    if (domes::infra::ShutdownDumpHandler::init() != ESP_OK) {
+    if (domes::infra::ShutdownDumpHandler::init(bootCount) != ESP_OK) {
         ESP_LOGW(kTag, "Shutdown dump handler init failed");
     }
 
     // Read pod ID from NVS (used for BLE naming and multi-pod identification)
     [[maybe_unused]] uint8_t podId = readPodId();
+    runtimePodId = podId;
 
     // Initialize hardware drivers
     if (initLedStrip() != ESP_OK) {
@@ -1163,24 +1271,29 @@ extern "C" void app_main() {
     // Initialize OTA subsystem
     if (initOta() != ESP_OK) {
         ESP_LOGW(kTag, "OTA init failed, continuing without OTA support");
-    } else {
-        // Handle OTA verification (self-test + confirm/rollback)
-        handleOtaVerification();
     }
 
     // Initialize feature manager FIRST (needed by BLE, TCP config server, and serial OTA)
     initFeatureManager();
 
     // Initialize mode manager (after feature manager, before services)
-    initModeManager();
+    if (initModeManager() != ESP_OK) {
+        ESP_LOGE(kTag, "Mode manager init failed");
+        if (otaManager && otaManager->isPendingVerification()) {
+            otaManager->rollback();
+        }
+        return;
+    }
 
     // Initialize diagnostics (after trace, before services)
     domes::infra::Diagnostics::init();
-    domes::infra::Diagnostics::startTask();
+    if (domes::infra::Diagnostics::startTask() != ESP_OK) {
+        ESP_LOGW(kTag, "Diagnostics task start failed");
+    }
 
     // Initialize memory profiler (periodic heap sampling + trace counters)
-    if (domes::infra::MemoryProfiler::init() == ESP_OK) {
-        domes::infra::MemoryProfiler::startTask();
+    if (domes::infra::MemoryProfiler::init() == ESP_OK &&
+        domes::infra::MemoryProfiler::startTask() == ESP_OK) {
         ESP_LOGI(kTag, "Memory profiler initialized (5s interval)");
     } else {
         ESP_LOGW(kTag, "Memory profiler init failed");
@@ -1232,6 +1345,8 @@ extern "C" void app_main() {
     if (initBleOta(podId) != ESP_OK) {
         ESP_LOGW(kTag, "BLE OTA init failed, continuing without BLE OTA");
     } else {
+        bleOtaService->setAdvertisingEnabled(
+            featureManager->isEnabled(domes::config::Feature::kBleAdvertising));
         size_t heapAfterBle = esp_get_free_heap_size();
         ESP_LOGI(kTag, "BLE stack initialized (NimBLE + advertising)");
         ESP_LOGI(kTag, "BLE heap usage: %zu bytes", heapBeforeBle - heapAfterBle);
@@ -1266,6 +1381,11 @@ extern "C" void app_main() {
     // Initialize ESP-NOW transport (after WiFi init, after BLE)
     if (initEspNow() != ESP_OK) {
         ESP_LOGW(kTag, "ESP-NOW init failed, continuing without ESP-NOW");
+    } else if (bleOtaReceiver) {
+        // BLE is initialized first, so its config handler could not receive
+        // ESP-NOW dependencies during the initial wiring pass.
+        bleOtaReceiver->setEspNowTransport(espNowTransport);
+        bleOtaReceiver->setEspNowService(espNowService);
     }
 
     // Initialize TCP config server (WiFi-based config) - BEFORE serial OTA takes console
@@ -1280,19 +1400,23 @@ extern "C" void app_main() {
 
         // Start trace stream server (port 5001 for live trace streaming)
         static domes::trace::TraceStreamServer traceStreamServer;
-        xTaskCreate(
+        const BaseType_t traceTaskCreated = xTaskCreate(
             [](void* param) {
                 static_cast<domes::trace::TraceStreamServer*>(param)->run();
                 vTaskDelete(nullptr);
             },
             "trace_stream", 4096, &traceStreamServer, domes::infra::priority::kLow, nullptr);
-        ESP_LOGI(kTag, "Trace stream server started on port 5001");
+        if (traceTaskCreated == pdPASS) {
+            ESP_LOGI(kTag, "Trace stream server started on port 5001");
+        } else {
+            ESP_LOGW(kTag, "Failed to create trace stream task");
+        }
     } else {
         ESP_LOGI(kTag, "TCP config server not started (WiFi not connected)");
     }
 #endif
 
-    // Initialize serial OTA receiver (USB-CDC based) - this takes over console
+    // Initialize the CP2102N/UART protocol receiver. Console logs stay on native USB.
     if (initSerialOta(podId) != ESP_OK) {
         ESP_LOGW(kTag, "Serial OTA init failed, continuing without serial OTA");
     }
@@ -1303,6 +1427,9 @@ extern "C" void app_main() {
         ESP_LOGI(kTag, "System mode: BOOTING → IDLE");
     }
 
+    // Confirm a new image only after the complete runtime is initialized.
+    handleOtaVerification();
+
     // Green LED = boot success
     if (ledDriver) {
         ledDriver->setAll(domes::Color::green());
@@ -1312,34 +1439,36 @@ extern "C" void app_main() {
     ESP_LOGI(kTag, "Init complete. Tasks: %zu, Heap: %lu", taskManager.getActiveTaskCount(),
              static_cast<unsigned long>(esp_get_free_heap_size()));
 
-    // Check for OTA updates in a separate task (needs large stack for TLS)
-    // Disabled by default - enable with: idf.py menuconfig -> DOMES -> Enable OTA auto-check
-#if defined(CONFIG_DOMES_OTA_AUTO_CHECK) && defined(CONFIG_DOMES_WIFI_AUTO_CONNECT)
-    if (wifiManager && wifiManager->isConnected() && otaManager) {
+    // The persisted setting overrides the Kconfig build default on subsequent boots.
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+    const bool autoUpdateEnabled = readAutoUpdateEnabled();
+    if (autoUpdateEnabled && wifiManager && wifiManager->isConnected() && otaManager) {
         ESP_LOGI(kTag, "Creating OTA check task...");
 
-        xTaskCreate(
+        const BaseType_t otaTaskCreated = xTaskCreate(
             [](void* param) {
+                auto* manager = static_cast<domes::OtaManager*>(param);
                 ESP_LOGI(kTag, "OTA check task started");
                 ESP_LOGI(kTag, "Checking for firmware updates...");
 
                 domes::OtaCheckResult updateResult;
-                esp_err_t err = otaManager->checkForUpdate(updateResult);
+                esp_err_t err = manager->checkForUpdate(updateResult);
 
                 if (err == ESP_OK) {
                     if (updateResult.updateAvailable) {
-                        ESP_LOGI(
-                            kTag, "Update available: v%d.%d.%d -> v%d.%d.%d",
-                            updateResult.currentVersion.major, updateResult.currentVersion.minor,
-                            updateResult.currentVersion.patch, updateResult.availableVersion.major,
-                            updateResult.availableVersion.minor,
-                            updateResult.availableVersion.patch);
+                        ESP_LOGI(kTag, "Update available: v%lu.%lu.%lu -> v%lu.%lu.%lu",
+                                 static_cast<unsigned long>(updateResult.currentVersion.major),
+                                 static_cast<unsigned long>(updateResult.currentVersion.minor),
+                                 static_cast<unsigned long>(updateResult.currentVersion.patch),
+                                 static_cast<unsigned long>(updateResult.availableVersion.major),
+                                 static_cast<unsigned long>(updateResult.availableVersion.minor),
+                                 static_cast<unsigned long>(updateResult.availableVersion.patch));
                         ESP_LOGI(kTag, "Download URL: %s", updateResult.downloadUrl);
                         ESP_LOGI(kTag, "Firmware size: %zu bytes", updateResult.firmwareSize);
 
                         // Start OTA update
                         ESP_LOGI(kTag, "Starting OTA update...");
-                        err = otaManager->startUpdate(
+                        err = manager->startUpdate(
                             updateResult.downloadUrl,
                             updateResult.sha256[0] ? updateResult.sha256 : nullptr);
                         if (err != ESP_OK) {
@@ -1347,10 +1476,10 @@ extern "C" void app_main() {
                         }
                         // If successful, device will reboot
                     } else {
-                        ESP_LOGI(kTag, "Firmware is up to date (v%d.%d.%d)",
-                                 updateResult.currentVersion.major,
-                                 updateResult.currentVersion.minor,
-                                 updateResult.currentVersion.patch);
+                        ESP_LOGI(kTag, "Firmware is up to date (v%lu.%lu.%lu)",
+                                 static_cast<unsigned long>(updateResult.currentVersion.major),
+                                 static_cast<unsigned long>(updateResult.currentVersion.minor),
+                                 static_cast<unsigned long>(updateResult.currentVersion.patch));
                     }
                 } else {
                     ESP_LOGW(kTag, "Update check failed: %s", esp_err_to_name(err));
@@ -1359,7 +1488,14 @@ extern "C" void app_main() {
                 ESP_LOGI(kTag, "OTA check task done, deleting self");
                 vTaskDelete(nullptr);
             },
-            "ota_check", 16384, nullptr, domes::infra::priority::kLow, nullptr);
+            "ota_check", 16384, otaManager, domes::infra::priority::kLow, nullptr);
+        if (otaTaskCreated != pdPASS) {
+            ESP_LOGE(kTag, "Failed to create OTA check task");
+        }
+    } else if (autoUpdateEnabled) {
+        ESP_LOGW(kTag, "Auto-update enabled but WiFi or OTA manager is unavailable");
+    } else {
+        ESP_LOGI(kTag, "Automatic OTA check disabled by persisted setting");
     }
-#endif  // CONFIG_DOMES_OTA_AUTO_CHECK
+#endif  // CONFIG_DOMES_WIFI_AUTO_CONNECT
 }

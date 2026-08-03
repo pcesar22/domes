@@ -17,10 +17,7 @@ class FeatureNotifier extends StateNotifier<AsyncValue<List<AppFeatureState>>> {
   Future<void> loadFeatures() async {
     final repo = _ref.read(podRepositoryProvider);
     if (repo == null) {
-      state = AsyncValue.error(
-        'Not connected to a pod',
-        StackTrace.current,
-      );
+      state = AsyncValue.error('Not connected to a pod', StackTrace.current);
       return;
     }
 
@@ -48,7 +45,9 @@ class FeatureNotifier extends StateNotifier<AsyncValue<List<AppFeatureState>>> {
 }
 
 final featureProvider =
-    StateNotifierProvider.autoDispose<FeatureNotifier, AsyncValue<List<AppFeatureState>>>(
-        (ref) {
-  return FeatureNotifier(ref);
-});
+    StateNotifierProvider.autoDispose<
+      FeatureNotifier,
+      AsyncValue<List<AppFeatureState>>
+    >((ref) {
+      return FeatureNotifier(ref);
+    });

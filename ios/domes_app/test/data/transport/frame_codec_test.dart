@@ -144,8 +144,7 @@ void main() {
 
     test('reset allows decoding another frame', () {
       final frame1 = encodeFrame(0x20, Uint8List(0));
-      final frame2 =
-          encodeFrame(0x21, Uint8List.fromList([0xAB, 0xCD]));
+      final frame2 = encodeFrame(0x21, Uint8List.fromList([0xAB, 0xCD]));
 
       final decoder = FrameDecoder();
 

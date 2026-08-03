@@ -17,8 +17,7 @@ namespace domes {
  *
  * @tparam kNumLeds Number of LEDs in the strip (compile-time constant)
  *
- * @note Uses RMT backend by default. For boards with Octal PSRAM (like
- *       DevKitC-1 v1.1), consider using SPI backend directly instead.
+ * @note Uses the RMT backend verified on the active NFF N8R8 board.
  */
 template <uint8_t kNumLeds>
 class LedStripDriver : public ILedDriver {

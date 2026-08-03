@@ -14,7 +14,8 @@ pub use tcp::TcpTransport;
 
 use anyhow::Result;
 
-/// Default OTA chunk size for serial/TCP (matches firmware kOtaChunkSize)
+/// Default OTA chunk size for non-BLE OTA transports (matches firmware kOtaChunkSize).
+/// Serial uses this value; raw TCP OTA is rejected before a transport is opened.
 pub const OTA_CHUNK_SIZE_DEFAULT: usize = 1016;
 
 /// BLE OTA chunk size - smaller to fit within BLE MTU limits

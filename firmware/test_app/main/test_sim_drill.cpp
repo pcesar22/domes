@@ -6,16 +6,17 @@
  * and Perfetto trace export with flow events.
  */
 
-#include <gtest/gtest.h>
 #include "esp_timer.h"
 #include "sim/drillOrchestrator.hpp"
 #include "sim/perfettoExporter.hpp"
+#include "sim/podCommandHandler.hpp"
 #include "sim/simEspNowBus.hpp"
 #include "sim/simOrchestrator.hpp"
-#include "sim/podCommandHandler.hpp"
 
-#include <fstream>
 #include <cstdio>
+#include <fstream>
+
+#include <gtest/gtest.h>
 
 using namespace sim;
 using namespace domes::game;
@@ -40,9 +41,8 @@ protected:
                 auto& pod = sim.addPod(static_cast<uint16_t>(i));
                 handlers.push_back(std::make_unique<PodCommandHandler>(pod, *bus, sim.log()));
                 auto* handler = handlers.back().get();
-                bus->registerPod(pod.podId(), [handler](const SimMessage& msg) {
-                    handler->onMessage(msg);
-                });
+                bus->registerPod(pod.podId(),
+                                 [handler](const SimMessage& msg) { handler->onMessage(msg); });
             }
             drill = std::make_unique<DrillOrchestrator>(sim, *bus, sim.log());
         }
@@ -240,9 +240,8 @@ TEST_F(SimDrillTest, PerfettoExport_ProducesValidJson) {
 
     env.drill->execute(steps, touches);
 
-    std::string json = PerfettoExporter::exportJson(
-        sim::globalTraceEvents(), env.sim.log(),
-        env.bus->flowEvents(), env.sim.podCount());
+    std::string json = PerfettoExporter::exportJson(sim::globalTraceEvents(), env.sim.log(),
+                                                    env.bus->flowEvents(), env.sim.podCount());
 
     // Must start with {"traceEvents":[ and end with ]}
     EXPECT_EQ(json.find("{\"traceEvents\":["), 0u);
@@ -266,9 +265,8 @@ TEST_F(SimDrillTest, PerfettoExport_ContainsFlowEvents) {
     // There should be flow events from the bus
     ASSERT_GT(env.bus->flowEvents().size(), 0u);
 
-    std::string json = PerfettoExporter::exportJson(
-        sim::globalTraceEvents(), env.sim.log(),
-        env.bus->flowEvents(), env.sim.podCount());
+    std::string json = PerfettoExporter::exportJson(sim::globalTraceEvents(), env.sim.log(),
+                                                    env.bus->flowEvents(), env.sim.podCount());
 
     // Flow start and finish events
     EXPECT_NE(json.find("\"ph\":\"s\""), std::string::npos);
@@ -287,9 +285,8 @@ TEST_F(SimDrillTest, PerfettoExport_WritesToFile) {
 
     std::string tmpPath = "/tmp/domes_test_perfetto.json";
 
-    bool success = PerfettoExporter::exportToFile(
-        tmpPath, sim::globalTraceEvents(), env.sim.log(),
-        env.bus->flowEvents(), env.sim.podCount());
+    bool success = PerfettoExporter::exportToFile(tmpPath, sim::globalTraceEvents(), env.sim.log(),
+                                                  env.bus->flowEvents(), env.sim.podCount());
 
     EXPECT_TRUE(success);
 

@@ -48,24 +48,22 @@ class DrillResult {
     final hitList = hitRounds;
     if (hitList.isEmpty) return null;
     final totalMs = hitList.fold<int>(
-        0, (sum, r) => sum + r.reactionTime!.inMilliseconds);
+      0,
+      (sum, r) => sum + r.reactionTime!.inMilliseconds,
+    );
     return Duration(milliseconds: totalMs ~/ hitList.length);
   }
 
   Duration? get bestReactionTime {
     final hitList = hitRounds;
     if (hitList.isEmpty) return null;
-    return hitList
-        .map((r) => r.reactionTime!)
-        .reduce((a, b) => a < b ? a : b);
+    return hitList.map((r) => r.reactionTime!).reduce((a, b) => a < b ? a : b);
   }
 
   Duration? get worstReactionTime {
     final hitList = hitRounds;
     if (hitList.isEmpty) return null;
-    return hitList
-        .map((r) => r.reactionTime!)
-        .reduce((a, b) => a > b ? a : b);
+    return hitList.map((r) => r.reactionTime!).reduce((a, b) => a > b ? a : b);
   }
 
   /// Per-pod breakdown.
@@ -86,7 +84,9 @@ class DrillResult {
       ..writeln('Date: ${startTime.toIso8601String().substring(0, 19)}')
       ..writeln('Duration: ${totalDuration.inSeconds}s')
       ..writeln()
-      ..writeln('Hit Rate: ${(hitRate * 100).toStringAsFixed(0)}% ($hits/$totalRounds)')
+      ..writeln(
+        'Hit Rate: ${(hitRate * 100).toStringAsFixed(0)}% ($hits/$totalRounds)',
+      )
       ..writeln('Avg Reaction: ${avgReactionTime?.inMilliseconds ?? "N/A"}ms')
       ..writeln('Best: ${bestReactionTime?.inMilliseconds ?? "N/A"}ms')
       ..writeln('Worst: ${worstReactionTime?.inMilliseconds ?? "N/A"}ms')
@@ -96,7 +96,8 @@ class DrillResult {
     for (final r in rounds) {
       final ms = r.reactionTime?.inMilliseconds;
       buf.writeln(
-          '  ${r.roundIndex + 1}. ${r.hit ? "HIT" : "MISS"} ${ms != null ? "${ms}ms" : ""}');
+        '  ${r.roundIndex + 1}. ${r.hit ? "HIT" : "MISS"} ${ms != null ? "${ms}ms" : ""}',
+      );
     }
 
     return buf.toString();
@@ -118,12 +119,14 @@ class DrillResult {
       'bestReactionMs': bestReactionTime?.inMilliseconds,
       'worstReactionMs': worstReactionTime?.inMilliseconds,
       'rounds': rounds
-          .map((r) => {
-                'round': r.roundIndex + 1,
-                'pod': r.podAddress,
-                'hit': r.hit,
-                'reactionMs': r.reactionTime?.inMilliseconds,
-              })
+          .map(
+            (r) => {
+              'round': r.roundIndex + 1,
+              'pod': r.podAddress,
+              'hit': r.hit,
+              'reactionMs': r.reactionTime?.inMilliseconds,
+            },
+          )
           .toList(),
     };
   }

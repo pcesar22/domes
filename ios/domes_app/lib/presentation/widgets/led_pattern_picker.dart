@@ -84,47 +84,74 @@ class _LedPatternPickerState extends State<LedPatternPicker> {
             height: 40,
             decoration: BoxDecoration(
               color: Color.fromRGBO(
-                  _red.round(), _green.round(), _blue.round(), 1.0),
+                _red.round(),
+                _green.round(),
+                _blue.round(),
+                1.0,
+              ),
               borderRadius: BorderRadius.circular(8),
             ),
           ),
           const SizedBox(height: 12),
 
           // RGB sliders
-          _colorSlider('R', _red, const Color.fromRGBO(255, 0, 0, 1),
-              (v) => setState(() => _red = v)),
-          _colorSlider('G', _green, const Color.fromRGBO(0, 255, 0, 1),
-              (v) => setState(() => _green = v)),
-          _colorSlider('B', _blue, const Color.fromRGBO(0, 0, 255, 1),
-              (v) => setState(() => _blue = v)),
+          _colorSlider(
+            'R',
+            _red,
+            const Color.fromRGBO(255, 0, 0, 1),
+            (v) => setState(() => _red = v),
+          ),
+          _colorSlider(
+            'G',
+            _green,
+            const Color.fromRGBO(0, 255, 0, 1),
+            (v) => setState(() => _green = v),
+          ),
+          _colorSlider(
+            'B',
+            _blue,
+            const Color.fromRGBO(0, 0, 255, 1),
+            (v) => setState(() => _blue = v),
+          ),
 
           // Brightness slider
-          _labeledSlider('Brightness', _brightness, 0, 255,
-              (v) => setState(() => _brightness = v)),
+          _labeledSlider(
+            'Brightness',
+            _brightness,
+            0,
+            255,
+            (v) => setState(() => _brightness = v),
+          ),
         ],
 
         // Period slider for animated patterns
         if (_selectedType == LedPatternType.LED_PATTERN_BREATHING ||
             _selectedType == LedPatternType.LED_PATTERN_COLOR_CYCLE)
-          _labeledSlider('Period (ms)', _periodMs, 100, 10000,
-              (v) => setState(() => _periodMs = v)),
+          _labeledSlider(
+            'Period (ms)',
+            _periodMs,
+            100,
+            10000,
+            (v) => setState(() => _periodMs = v),
+          ),
 
         const SizedBox(height: 12),
 
         // Apply button
         SizedBox(
           width: double.infinity,
-          child: FilledButton(
-            onPressed: _apply,
-            child: const Text('Apply'),
-          ),
+          child: FilledButton(onPressed: _apply, child: const Text('Apply')),
         ),
       ],
     );
   }
 
   Widget _colorSlider(
-      String label, double value, Color color, ValueChanged<double> onChanged) {
+    String label,
+    double value,
+    Color color,
+    ValueChanged<double> onChanged,
+  ) {
     return Row(
       children: [
         SizedBox(width: 16, child: Text(label)),
@@ -142,8 +169,13 @@ class _LedPatternPickerState extends State<LedPatternPicker> {
     );
   }
 
-  Widget _labeledSlider(String label, double value, double min, double max,
-      ValueChanged<double> onChanged) {
+  Widget _labeledSlider(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -172,14 +204,11 @@ class _LedPatternPickerState extends State<LedPatternPicker> {
           periodMs: _periodMs.round(),
         );
       case LedPatternType.LED_PATTERN_COLOR_CYCLE:
-        pattern = AppLedPattern.colorCycle(
-          [
-            (255, 0, 0, 0),
-            (0, 255, 0, 0),
-            (0, 0, 255, 0),
-          ],
-          _periodMs.round(),
-        );
+        pattern = AppLedPattern.colorCycle([
+          (255, 0, 0, 0),
+          (0, 255, 0, 0),
+          (0, 0, 255, 0),
+        ], _periodMs.round());
     }
     widget.onPatternChanged(pattern);
   }

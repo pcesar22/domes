@@ -3,11 +3,12 @@
  * @brief Unit tests for frame encoding/decoding
  */
 
-#include <gtest/gtest.h>
 #include "protocol/frameCodec.hpp"
 
 #include <array>
 #include <cstring>
+
+#include <gtest/gtest.h>
 
 using namespace domes;
 
@@ -35,7 +36,8 @@ TEST(EncodeFrame, WithPayload) {
     size_t frameLen = 0;
     uint8_t payload[] = {0xDE, 0xAD, 0xBE, 0xEF};
 
-    TransportError err = encodeFrame(0x42, payload, sizeof(payload), buf.data(), buf.size(), &frameLen);
+    TransportError err =
+        encodeFrame(0x42, payload, sizeof(payload), buf.data(), buf.size(), &frameLen);
 
     EXPECT_EQ(TransportError::kOk, err);
     EXPECT_EQ(13u, frameLen);
@@ -61,7 +63,8 @@ TEST(EncodeFrame, PayloadTooLargeReturnsError) {
     size_t frameLen = 0;
     uint8_t payload[kMaxPayloadSize + 1] = {0};
 
-    TransportError err = encodeFrame(0x01, payload, sizeof(payload), buf.data(), buf.size(), &frameLen);
+    TransportError err =
+        encodeFrame(0x01, payload, sizeof(payload), buf.data(), buf.size(), &frameLen);
 
     EXPECT_EQ(TransportError::kInvalidArg, err);
 }
@@ -72,7 +75,8 @@ TEST(EncodeFrame, MaxPayloadSizeSucceeds) {
     uint8_t payload[kMaxPayloadSize];
     std::memset(payload, 0xAA, sizeof(payload));
 
-    TransportError err = encodeFrame(0x01, payload, sizeof(payload), buf.data(), buf.size(), &frameLen);
+    TransportError err =
+        encodeFrame(0x01, payload, sizeof(payload), buf.data(), buf.size(), &frameLen);
 
     EXPECT_EQ(TransportError::kOk, err);
     EXPECT_EQ(kMaxFrameSize, frameLen);
@@ -169,7 +173,8 @@ TEST(FrameRoundTrip, EncodeThenDecode) {
     uint8_t payload[] = {0x11, 0x22, 0x33, 0x44};
     uint8_t type = 0x07;
 
-    TransportError err = encodeFrame(type, payload, sizeof(payload), frameBuf.data(), frameBuf.size(), &frameLen);
+    TransportError err =
+        encodeFrame(type, payload, sizeof(payload), frameBuf.data(), frameBuf.size(), &frameLen);
     EXPECT_EQ(TransportError::kOk, err);
 
     FrameDecoder decoder;
@@ -215,7 +220,8 @@ TEST(FrameRoundTrip, MaxPayload) {
         payload[i] = static_cast<uint8_t>(i & 0xFF);
     }
 
-    TransportError err = encodeFrame(0x01, payload.data(), payload.size(), frameBuf.data(), frameBuf.size(), &frameLen);
+    TransportError err = encodeFrame(0x01, payload.data(), payload.size(), frameBuf.data(),
+                                     frameBuf.size(), &frameLen);
     EXPECT_EQ(TransportError::kOk, err);
 
     FrameDecoder decoder;

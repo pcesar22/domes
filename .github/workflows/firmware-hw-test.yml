@@ -1,63 +1,82 @@
 name: Hardware Tests
 
 on:
-  # Trigger when 'hw-test' label is added to a PR
   pull_request:
-    types: [labeled]
+    types: [labeled, synchronize, reopened]
 
-  # Also run on push to main (post-merge verification)
-  push:
-    branches: [main]
-    paths:
-      - 'firmware/**'
-      - 'tools/domes-cli/**'
-
-  # Keep manual trigger as backup
   workflow_dispatch:
     inputs:
       ports:
-        description: 'Comma-separated serial ports (e.g., /dev/ttyACM0,/dev/ttyACM1)'
+        description: 'Exactly two comma-separated ports; leave empty to auto-detect NFF CP2102N/ttyUSB runtime ports'
         required: false
-        default: '/dev/ttyACM0'
-      device_count:
-        description: 'Number of devices to test (1 or 2)'
-        required: false
-        default: '1'
-        type: choice
-        options:
-          - '1'
-          - '2'
+        default: ''
 
-# Only one hardware test can run at a time on the self-hosted runner.
-# New runs cancel queued/stale runs to prevent infinite queue buildup.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+# The self-hosted runner must be Actions Runner v2.327.1 or newer for the
+# pinned Node 24 actions used below. Only one hardware test can run at a time.
+# Never interrupt a flash or OTA that is already in progress.
 concurrency:
   group: hardware-test-queue
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
-  # Comma-separated list of serial ports
-  SERIAL_PORTS: ${{ github.event.inputs.ports || '/dev/ttyACM0' }}
-  DEVICE_COUNT: ${{ github.event.inputs.device_count || '1' }}
+  EXPECTED_IDF_VERSION: ESP-IDF v5.4.4
+  EXPECTED_RUST_VERSION: rustc 1.92.0
+  MINIMUM_ACTIONS_RUNNER_VERSION: 2.327.1
+  SERIAL_PORTS: ${{ github.event.inputs.ports || '' }}
 
 jobs:
   hardware-test:
     name: On-Device Tests
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 120
 
-    # Only run if:
-    # - Label trigger AND label is 'hw-test', OR
-    # - Push to main, OR
-    # - Manual dispatch
     if: |
-      (github.event_name == 'pull_request' && github.event.label.name == 'hw-test') ||
-      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       ((github.event.action == 'labeled' && github.event.label.name == 'hw-test') ||
+        ((github.event.action == 'synchronize' || github.event.action == 'reopened') &&
+         contains(github.event.pull_request.labels.*.name, 'hw-test')))) ||
       github.event_name == 'workflow_dispatch'
 
     steps:
+      - name: Verify Actions Runner version
+        run: |
+          runner_root=$(cd "$RUNNER_TEMP/../.." && pwd)
+          runner_binary="$runner_root/bin/Runner.Listener"
+          if [[ ! -x "$runner_binary" ]]; then
+            echo "::error::Cannot determine the self-hosted Actions Runner version"
+            exit 1
+          fi
+
+          runner_version=$(
+            "$runner_binary" --version 2>/dev/null |
+              tr -d '\r' |
+              grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' |
+              tail -n 1 || true
+          )
+          if [[ -z "$runner_version" ]]; then
+            echo "::error::Actions Runner returned an invalid version"
+            exit 1
+          fi
+          if [[ $(printf '%s\n' "$MINIMUM_ACTIONS_RUNNER_VERSION" "$runner_version" |
+            sort -V | head -n 1) != "$MINIMUM_ACTIONS_RUNNER_VERSION" ]]; then
+            echo "::error::Actions Runner $runner_version is too old; install $MINIMUM_ACTIONS_RUNNER_VERSION or newer"
+            exit 1
+          fi
+          echo "Actions Runner $runner_version satisfies the minimum version"
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
           submodules: recursive
 
       - name: Detect devices
@@ -65,77 +84,278 @@ jobs:
         run: |
           echo "=== Detecting connected DOMES devices ==="
 
-          # Parse comma-separated ports into array
-          IFS=',' read -ra PORTS <<< "$SERIAL_PORTS"
-
-          # Auto-detect if only default port specified
-          if [ "${#PORTS[@]}" -eq 1 ] && [ "${PORTS[0]}" = "/dev/ttyACM0" ]; then
-            DETECTED=()
-            for port in /dev/ttyACM*; do
-              if [ -e "$port" ]; then
-                DETECTED+=("$port")
-              fi
+          PORTS=()
+          if [[ -n "$SERIAL_PORTS" ]]; then
+            IFS=',' read -ra requested_ports <<< "$SERIAL_PORTS"
+            for port in "${requested_ports[@]}"; do
+              port="${port#"${port%%[![:space:]]*}"}"
+              port="${port%"${port##*[![:space:]]}"}"
+              [[ -n "$port" ]] && PORTS+=("$port")
             done
-            if [ ${#DETECTED[@]} -gt 0 ]; then
-              PORTS=("${DETECTED[@]}")
-            fi
+          else
+            shopt -s nullglob
+            # NFF boards use CP2102N for flashing, config, and serial OTA.
+            # Native ESP32-S3 ttyACM ports are console/JTAG and are intentionally excluded.
+            candidates=(
+              /dev/serial/by-id/*CP2102N*
+              /dev/ttyUSB*
+            )
+            declare -A seen_devices=()
+            for port in "${candidates[@]}"; do
+              canonical=$(readlink -f -- "$port")
+              if [[ ! -c "$canonical" || -n "${seen_devices[$canonical]+present}" ]]; then
+                continue
+              fi
+
+              properties=$(udevadm info --query=property --name "$canonical" 2>/dev/null || true)
+              if ! grep -qx 'ID_VENDOR_ID=10c4' <<< "$properties" ||
+                 ! grep -qx 'ID_MODEL_ID=ea60' <<< "$properties" ||
+                 ! grep -Eq '^ID_MODEL=.*CP2102N' <<< "$properties"; then
+                echo "Skipping non-NFF tty device: $port -> $canonical"
+                continue
+              fi
+
+              seen_devices[$canonical]=1
+              PORTS+=("$port")
+            done
+          fi
+
+          if ((${#PORTS[@]} != 2)); then
+            echo "::error::Hardware validation requires exactly two selected NFF CP2102N runtime ports; found ${#PORTS[@]}"
+            ls -la /dev/serial/by-id/*CP2102N* /dev/ttyUSB* 2>/dev/null || true
+            exit 1
           fi
 
           echo "Detected ${#PORTS[@]} device(s):"
+          declare -A validated_devices=()
           for port in "${PORTS[@]}"; do
-            if [ -e "$port" ]; then
-              echo "  OK: $port"
-            else
-              echo "  MISSING: $port"
+            if [[ ! -c "$port" ]]; then
+              echo "::error::Serial port is missing or is not a character device: $port"
+              exit 1
             fi
+            canonical=$(readlink -f -- "$port")
+            if [[ -n "${validated_devices[$canonical]+present}" ]]; then
+              echo "::error::Duplicate serial device selected through multiple paths: $port"
+              exit 1
+            fi
+
+            properties=$(udevadm info --query=property --name "$canonical" 2>/dev/null || true)
+            if ! grep -qx 'ID_VENDOR_ID=10c4' <<< "$properties" ||
+               ! grep -qx 'ID_MODEL_ID=ea60' <<< "$properties" ||
+               ! grep -Eq '^ID_MODEL=.*CP2102N' <<< "$properties"; then
+              echo "::error::Unsupported serial device; expected an NFF CP2102N bridge: $port"
+              exit 1
+            fi
+
+            validated_devices[$canonical]=1
+            echo "  OK: $port -> $canonical"
           done
 
           # Export for subsequent steps
           PORT_LIST=$(IFS=','; echo "${PORTS[*]}")
-          echo "ports=$PORT_LIST" >> $GITHUB_OUTPUT
-          echo "count=${#PORTS[@]}" >> $GITHUB_OUTPUT
-          echo "primary=${PORTS[0]}" >> $GITHUB_OUTPUT
-
-          if [ ${#PORTS[@]} -ge 2 ]; then
-            echo "secondary=${PORTS[1]}" >> $GITHUB_OUTPUT
-            echo "multi=true" >> $GITHUB_OUTPUT
-          else
-            echo "secondary=" >> $GITHUB_OUTPUT
-            echo "multi=false" >> $GITHUB_OUTPUT
-          fi
-
-          # Fail if no devices found
-          if [ ! -e "${PORTS[0]}" ]; then
-            echo "::error::No devices found. Available serial ports:"
-            ls -la /dev/ttyACM* /dev/ttyUSB* 2>/dev/null || echo "None"
-            exit 1
-          fi
+          {
+            echo "ports=$PORT_LIST"
+            echo "count=${#PORTS[@]}"
+            echo "primary=${PORTS[0]}"
+            if ((${#PORTS[@]} >= 2)); then
+              echo "secondary=${PORTS[1]}"
+              echo "multi=true"
+            else
+              echo "secondary="
+              echo "multi=false"
+            fi
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build firmware
+        id: firmware_build
         working-directory: firmware/domes
         run: |
-          . ~/esp/esp-idf/export.sh
-          idf.py build
+          # shellcheck source=/dev/null
+          . "$HOME/esp/esp-idf/export.sh"
+          actual_idf_version=$(idf.py --version)
+          echo "$actual_idf_version"
+          if [[ "$actual_idf_version" != "$EXPECTED_IDF_VERSION" ]]; then
+            echo "::error::Expected $EXPECTED_IDF_VERSION, found $actual_idf_version"
+            exit 1
+          fi
+          normal_sdkconfig="${RUNNER_TEMP:-/tmp}/domes-hw-sdkconfig"
+          ota_sdkconfig="${RUNNER_TEMP:-/tmp}/domes-hw-ota-sdkconfig"
+          rollback_sdkconfig="${RUNNER_TEMP:-/tmp}/domes-hw-rollback-sdkconfig"
+          rm -rf build build-ota build-rollback
+          rm -f "$normal_sdkconfig" "$ota_sdkconfig" "$rollback_sdkconfig"
+
+          baseline_version="v0.0.0-0-g${GITHUB_SHA:0:12}"
+          idf.py -B build \
+            -D "IDF_TARGET=esp32s3" \
+            -D "SDKCONFIG=$normal_sdkconfig" \
+            -D DOMES_VERSION_OVERRIDE="$baseline_version" \
+            build
+          ota_version="v0.0.0-1-g${GITHUB_SHA:0:12}"
+          idf.py -B build-ota \
+            -D "IDF_TARGET=esp32s3" \
+            -D "SDKCONFIG=$ota_sdkconfig" \
+            -D DOMES_VERSION_OVERRIDE="$ota_version" \
+            build
+          rollback_version="v0.0.0-2-g${GITHUB_SHA:0:12}"
+          idf.py -B build-rollback \
+            -D "IDF_TARGET=esp32s3" \
+            -D "SDKCONFIG=$rollback_sdkconfig" \
+            -D DOMES_VERSION_OVERRIDE="$rollback_version" \
+            -D DOMES_FORCE_OTA_VERIFY_FAILURE=ON \
+            build
+          python - "$baseline_version" "$ota_version" "$rollback_version" <<'PY'
+          import json
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          expected_versions = dict(
+              zip(("build", "build-ota", "build-rollback"), sys.argv[1:], strict=True)
+          )
+          assert len(set(expected_versions.values())) == 3, expected_versions
+
+          for build_dir, expected_version in expected_versions.items():
+              assert 0 < len(expected_version.encode("ascii")) <= 31, expected_version
+              description = json.loads(
+                  Path(build_dir, "project_description.json").read_text()
+              )
+              assert description["project_version"] == expected_version, description
+
+              config = json.loads(Path(build_dir, "config", "sdkconfig.json").read_text())
+              if config.get("BOOTLOADER_APP_ROLLBACK_ENABLE") is not True:
+                  raise SystemExit(
+                      f"{build_dir} does not enable bootloader app rollback"
+                  )
+
+              image_info = subprocess.run(
+                  [
+                      sys.executable,
+                      "-m",
+                      "esptool",
+                      "--chip",
+                      "esp32s3",
+                      "image_info",
+                      "--version",
+                      "2",
+                      str(Path(build_dir, "domes.bin")),
+                  ],
+                  check=True,
+                  text=True,
+                  capture_output=True,
+              ).stdout
+              app_versions = [
+                  line.removeprefix("App version: ")
+                  for line in image_info.splitlines()
+                  if line.startswith("App version: ")
+              ]
+              assert app_versions == [expected_version], (build_dir, app_versions)
+
+          flash_args = Path("build", "flash_args").read_text().splitlines()
+          assert "0x20000 domes.bin" in flash_args, flash_args
+          PY
+          if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+            echo "::error::ESP-IDF rewrote firmware/domes/dependencies.lock"
+            git diff -- dependencies.lock
+            exit 1
+          fi
+          (
+            cd build
+            python -m esptool --chip esp32s3 merge_bin \
+              -o domes-factory.bin @flash_args
+            python -m esptool --chip esp32s3 image_info domes-factory.bin
+          )
           echo "Firmware built successfully"
           echo "Binary size: $(stat -c%s build/domes.bin) bytes"
+          echo "OTA test binary size: $(stat -c%s build-ota/domes.bin) bytes"
+          echo "Rollback test binary size: $(stat -c%s build-rollback/domes.bin) bytes"
+          {
+            echo "baseline_version=$baseline_version"
+            echo "ota_version=$ota_version"
+            echo "rollback_version=$rollback_version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: 1.92.0
 
       - name: Build domes-cli
+        id: cli_build
         working-directory: tools/domes-cli
         run: |
-          cargo build --release
+          actual_rust_version=$(rustc --version)
+          echo "$actual_rust_version"
+          if [[ "$actual_rust_version" != "$EXPECTED_RUST_VERSION "* ]]; then
+            echo "::error::Expected $EXPECTED_RUST_VERSION, found $actual_rust_version"
+            exit 1
+          fi
+          cargo build --locked --release
           echo "CLI built successfully"
 
-      - name: Flash all devices
-        working-directory: firmware/domes
+      - name: Configure bounded BLE diagnostic retry
         run: |
-          . ~/esp/esp-idf/export.sh
+          helper="$RUNNER_TEMP/domes-ble-read"
+          cat > "$helper" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
 
-          IFS=',' read -ra PORTS <<< "${{ steps.detect.outputs.ports }}"
+          if (($# == 0)); then
+            echo "BLE retry helper requires a command" >&2
+            exit 2
+          fi
+
+          output_file=$(mktemp "${RUNNER_TEMP:-/tmp}/domes-ble-read.XXXXXX")
+          trap 'rm -f "$output_file"' EXIT
+
+          for attempt in 1 2; do
+            if "$@" > "$output_file" 2>&1; then
+              cat "$output_file"
+              exit 0
+            else
+              status=$?
+            fi
+
+            cat "$output_file" >&2
+            if ((attempt == 1)) &&
+               grep -Fq "Failed to connect to BLE device" "$output_file" &&
+               grep -Fqi "le-connection-abort-by-local" "$output_file"; then
+              echo "Transient BlueZ local connection abort; retrying once in 3 seconds." >&2
+              sleep 3
+            else
+              exit "$status"
+            fi
+          done
+          EOF
+          chmod 0700 "$helper"
+          echo "BLE_READ_RETRY=$helper" >> "$GITHUB_ENV"
+
+      - name: Flash all devices
+        id: flash
+        working-directory: firmware/domes
+        env:
+          PORT_LIST: ${{ steps.detect.outputs.ports }}
+        run: |
+          # shellcheck source=/dev/null
+          . "$HOME/esp/esp-idf/export.sh"
+
+          IFS=',' read -ra PORTS <<< "$PORT_LIST"
           FAILED=0
 
-          for port in "${PORTS[@]}"; do
-            echo "=== Flashing $port ==="
-            if idf.py -p "$port" flash; then
+          for index in "${!PORTS[@]}"; do
+            port="${PORTS[$index]}"
+            echo "=== Erasing and flashing $port ==="
+            if ! python -m esptool --chip esp32s3 --port "$port" erase_flash; then
+              echo "::error::Failed to erase $port"
+              FAILED=$((FAILED + 1))
+              continue
+            fi
+            if ((index == 0)); then
+              flash_command=(python -m esptool --chip esp32s3 --port "$port" \
+                write_flash 0x0 build/domes-factory.bin)
+            else
+              flash_command=(idf.py -p "$port" flash)
+            fi
+            if "${flash_command[@]}"; then
               echo "Flashed $port successfully"
             else
               echo "::error::Failed to flash $port"
@@ -151,16 +371,92 @@ jobs:
             exit 1
           fi
 
-      - name: Test - Feature List (all devices)
+      - name: Provision deterministic pod identities
+        id: identity
+        env:
+          BASELINE_VERSION: ${{ steps.firmware_build.outputs.baseline_version }}
+          PORT_LIST: ${{ steps.detect.outputs.ports }}
         run: |
-          IFS=',' read -ra PORTS <<< "${{ steps.detect.outputs.ports }}"
+          # shellcheck source=/dev/null
+          . "$HOME/esp/esp-idf/export.sh"
+          CLI=tools/domes-cli/target/release/domes-cli
+          IFS=',' read -ra PORTS <<< "$PORT_LIST"
+
+          # A factory-programming test is only meaningful when prior NVS state
+          # cannot leak into the result.
+          before_boot_counts=()
+          for port in "${PORTS[@]}"; do
+            info=$("$CLI" --port "$port" system info)
+            printf '%s\n' "$info"
+            if ! grep -Fq "Firmware:   $BASELINE_VERSION" <<< "$info"; then
+              echo "::error::Factory image version does not match $BASELINE_VERSION on $port"
+              exit 1
+            fi
+            if ! grep -Eq 'Pod ID:[[:space:]]+not set$' <<< "$info"; then
+              echo "::error::Factory erase did not clear the persisted pod ID on $port"
+              exit 1
+            fi
+            boot_count=$(awk '/Boot count:/ {print $3}' <<< "$info")
+            if [[ ! "$boot_count" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::Factory image reported an invalid boot count on $port"
+              exit 1
+            fi
+            before_boot_counts+=("$boot_count")
+
+            self_test=$("$CLI" --port "$port" system self-test)
+            printf '%s\n' "$self_test"
+            if ! grep -Eq 'Running App.*PASS.*ota_0,' <<< "$self_test"; then
+              echo "::error::Factory image is not running from ota_0 on $port"
+              exit 1
+            fi
+          done
+
+          for index in "${!PORTS[@]}"; do
+            port="${PORTS[$index]}"
+            pod_id=$((index + 1))
+            "$CLI" --port "$port" system set-pod-id "$pod_id"
+            python -m esptool --chip esp32s3 --port "$port" run
+          done
+          sleep 10
+
+          provisioned_boot_counts=()
+          for index in "${!PORTS[@]}"; do
+            port="${PORTS[$index]}"
+            expected_id=$((index + 1))
+            info=$("$CLI" --port "$port" system info)
+            printf '%s\n' "$info"
+            if ! grep -Fq "Firmware:   $BASELINE_VERSION" <<< "$info"; then
+              echo "::error::Provisioning changed the running firmware on $port"
+              exit 1
+            fi
+            if ! grep -Eq "Pod ID:[[:space:]]+$expected_id$" <<< "$info"; then
+              echo "::error::Expected pod ID $expected_id on $port"
+              exit 1
+            fi
+            boot_count=$(awk '/Boot count:/ {print $3}' <<< "$info")
+            if [[ ! "$boot_count" =~ ^[1-9][0-9]*$ ]] ||
+               ((boot_count <= before_boot_counts[index])); then
+              echo "::error::Pod identity reboot did not advance the boot count on $port"
+              exit 1
+            fi
+            provisioned_boot_counts+=("$boot_count")
+          done
+          echo "primary_boot_count=${provisioned_boot_counts[0]}" >> "$GITHUB_OUTPUT"
+          echo "secondary_boot_count=${provisioned_boot_counts[1]}" >> "$GITHUB_OUTPUT"
+
+      - name: Test - Feature List (all devices)
+        id: feature_list
+        env:
+          PORT_LIST: ${{ steps.detect.outputs.ports }}
+        run: |
+          IFS=',' read -ra PORTS <<< "$PORT_LIST"
           CLI=tools/domes-cli/target/release/domes-cli
 
           for port in "${PORTS[@]}"; do
             echo "=== Feature list: $port ==="
-            # Retry up to 3 times with 5s delay — USB-CDC can take extra time
+            # Retry while the runtime serial transport settles after reboot.
             for attempt in 1 2 3; do
-              if $CLI --port "$port" feature list; then
+              if "$CLI" --port "$port" feature list; then
                 break
               fi
               if [ $attempt -lt 3 ]; then
@@ -175,116 +471,826 @@ jobs:
           done
           echo "Feature list test passed on all devices"
 
-      - name: Test - Serial OTA (primary device)
-        continue-on-error: true
+      - name: Test - BLE Discovery and Diagnostics (all devices)
+        id: ble
+        env:
+          PORT_LIST: ${{ steps.detect.outputs.ports }}
+          SECONDARY: ${{ steps.detect.outputs.secondary }}
         run: |
-          PRIMARY="${{ steps.detect.outputs.primary }}"
+          CLI=tools/domes-cli/target/release/domes-cli
+          IFS=',' read -ra PORTS <<< "$PORT_LIST"
+          declare -A serial_ids=()
+
+          for port in "${PORTS[@]}"; do
+            info=$("$CLI" --port "$port" system info)
+            printf '%s\n' "$info"
+            pod_id=$(awk '/Pod ID:/ {print $3}' <<< "$info")
+            if [[ ! "$pod_id" =~ ^[1-9][0-9]*$ ]] || ((pod_id > 255)); then
+              echo "::error::BLE identity matching requires a configured pod ID on $port"
+              exit 1
+            fi
+            if [[ -n "${serial_ids[$pod_id]+present}" ]]; then
+              echo "::error::Duplicate pod ID $pod_id on $port and ${serial_ids[$pod_id]}"
+              exit 1
+            fi
+            serial_ids[$pod_id]=$port
+          done
+
+          scan_output=$("$CLI" devices scan)
+          printf '%s\n' "$scan_output"
+          mapfile -t ble_addresses < <(awk '/<-- DOMES/ {print $2}' <<< "$scan_output")
+          if ((${#ble_addresses[@]} < 2)); then
+            echo "::error::Expected at least two DOMES BLE advertisements"
+            exit 1
+          fi
+
+          declare -A ble_by_id=()
+          for address in "${ble_addresses[@]}"; do
+            if ! info=$("$BLE_READ_RETRY" "$CLI" --ble "$address" system info); then
+              printf '%s\n' "$info"
+              continue
+            fi
+            printf '%s\n' "$info"
+            pod_id=$(awk '/Pod ID:/ {print $3}' <<< "$info")
+            if [[ ! "$pod_id" =~ ^[1-9][0-9]*$ ]] || ((pod_id > 255)); then
+              echo "Ignoring DOMES BLE device with invalid pod ID: $address"
+              continue
+            fi
+            if [[ -z "${serial_ids[$pod_id]+present}" ]]; then
+              echo "Ignoring unrelated DOMES BLE device $address (pod ID $pod_id)"
+              continue
+            fi
+            if [[ -n "${ble_by_id[$pod_id]+present}" ]]; then
+              echo "::error::Multiple BLE addresses matched selected pod ID $pod_id: ${ble_by_id[$pod_id]} and $address"
+              exit 1
+            fi
+            ble_by_id[$pod_id]=$address
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" system self-test
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" system health
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" system memory
+            "$BLE_READ_RETRY" "$CLI" --ble "$address" feature list
+
+            # Exercise BLE writes without retrying a mutating command.
+            "$CLI" --ble "$address" led solid --color 0000ff --brightness 32
+            "$CLI" --ble "$address" led off
+            "$CLI" --ble "$address" feature disable haptic
+            haptic_status=$("$BLE_READ_RETRY" "$CLI" --ble "$address" feature status haptic)
+            printf '%s\n' "$haptic_status"
+            grep -Fq "Feature 'haptic' is disabled" <<< "$haptic_status"
+            "$CLI" --ble "$address" feature enable haptic
+            haptic_status=$("$BLE_READ_RETRY" "$CLI" --ble "$address" feature status haptic)
+            printf '%s\n' "$haptic_status"
+            grep -Fq "Feature 'haptic' is enabled" <<< "$haptic_status"
+          done
+
+          for pod_id in "${!serial_ids[@]}"; do
+            if [[ -z "${ble_by_id[$pod_id]+present}" ]]; then
+              echo "::error::No BLE device matched serial pod ID $pod_id"
+              exit 1
+            fi
+          done
+
+          secondary_info=$("$CLI" --port "$SECONDARY" system info)
+          secondary_id=$(awk '/Pod ID:/ {print $3}' <<< "$secondary_info")
+          echo "secondary_address=${ble_by_id[$secondary_id]}" >> "$GITHUB_OUTPUT"
+
+      - name: Test - Invalid OTA Rejection and Recovery
+        id: invalid_ota
+        env:
+          BASELINE_VERSION: ${{ steps.firmware_build.outputs.baseline_version }}
+          CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
+          PRIMARY: ${{ steps.detect.outputs.primary }}
+        run: |
+          CLI=tools/domes-cli/target/release/domes-cli
+          invalid_image="${RUNNER_TEMP:-/tmp}/domes-invalid-${GITHUB_RUN_ID}.bin"
+          head -c 4096 firmware/domes/build-ota/domes.bin > "$invalid_image"
+
+          if invalid_output=$("$CLI" --port "$PRIMARY" ota flash \
+            "$invalid_image" --version "$CI_VERSION" 2>&1); then
+            printf '%s\n' "$invalid_output"
+            echo "::error::Device accepted a truncated OTA image"
+            exit 1
+          fi
+          printf '%s\n' "$invalid_output"
+          if ! grep -Fq "Verification failed" <<< "$invalid_output"; then
+            echo "::error::Truncated serial OTA failed for an unexpected reason"
+            exit 1
+          fi
+          sleep 2
+          "$CLI" --port "$PRIMARY" system health
+          "$CLI" --port "$PRIMARY" system self-test
+          "$CLI" --port "$PRIMARY" feature list
+
+          # A valid image must still be rejected when the host declaration does
+          # not exactly match the embedded ESP app descriptor.
+          if mismatch_output=$("$CLI" --port "$PRIMARY" ota flash \
+            firmware/domes/build-ota/domes.bin --version "$BASELINE_VERSION" 2>&1); then
+            printf '%s\n' "$mismatch_output"
+            echo "::error::Device accepted an OTA image with mismatched declared version"
+            exit 1
+          fi
+          printf '%s\n' "$mismatch_output"
+          if ! grep -Fq "Version error" <<< "$mismatch_output"; then
+            echo "::error::Version-mismatched serial OTA failed for an unexpected reason"
+            exit 1
+          fi
+          mismatch_info=$("$CLI" --port "$PRIMARY" system info)
+          printf '%s\n' "$mismatch_info"
+          if ! grep -Fq "Firmware:   $BASELINE_VERSION" <<< "$mismatch_info"; then
+            echo "::error::Version-mismatch rejection changed the running image"
+            exit 1
+          fi
+
+      - name: Test - Interrupted OTA Session Recovery
+        id: interrupted_ota
+        env:
+          BASELINE_VERSION: ${{ steps.firmware_build.outputs.baseline_version }}
+          CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
+          SECONDARY: ${{ steps.detect.outputs.secondary }}
+        run: |
+          CLI=tools/domes-cli/target/release/domes-cli
+          interrupt_log="${RUNNER_TEMP:-/tmp}/domes-interrupted-serial-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
+          set +e
+          timeout --signal=TERM --kill-after=5s 5s \
+            "$CLI" --port "$SECONDARY" ota flash \
+            firmware/domes/build-ota/domes.bin --version "$CI_VERSION" \
+            > "$interrupt_log" 2>&1
+          status=$?
+          set -e
+          cat "$interrupt_log"
+          if [[ $status -ne 124 && $status -ne 137 && $status -ne 143 ]]; then
+            echo "::error::OTA interruption returned unexpected status $status"
+            exit 1
+          fi
+          if ! grep -Fq "Device accepted OTA_BEGIN." "$interrupt_log"; then
+            echo "::error::Serial OTA client stopped before the device accepted OTA_BEGIN"
+            exit 1
+          fi
+
+          echo "Waiting for device-side OTA inactivity cleanup..."
+          sleep 20
+          "$CLI" --port "$SECONDARY" system health
+          recovery_info=$("$CLI" --port "$SECONDARY" system info)
+          printf '%s\n' "$recovery_info"
+          if ! grep -Fq "Firmware:   $BASELINE_VERSION" <<< "$recovery_info"; then
+            echo "::error::Interrupted serial OTA changed the running image"
+            exit 1
+          fi
+
+      - name: Test - Serial OTA (primary device)
+        id: serial_ota
+        env:
+          CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
+          PRIMARY: ${{ steps.detect.outputs.primary }}
+        run: |
           echo "Testing Serial OTA on $PRIMARY..."
 
           tools/domes-cli/target/release/domes-cli \
             --port "$PRIMARY" \
-            ota flash firmware/domes/build/domes.bin \
-            --version "v0.0.0-ci-${{ github.sha }}"
+            ota flash firmware/domes/build-ota/domes.bin \
+            --version "$CI_VERSION"
 
           echo "OTA complete, waiting for reboot..."
           sleep 15
 
       - name: Test - Post-OTA Verification (primary device)
-        continue-on-error: true
+        id: post_ota
+        env:
+          BASELINE_BOOT_COUNT: ${{ steps.identity.outputs.primary_boot_count }}
+          BASELINE_VERSION: ${{ steps.firmware_build.outputs.baseline_version }}
+          CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
+          PRIMARY: ${{ steps.detect.outputs.primary }}
         run: |
-          PRIMARY="${{ steps.detect.outputs.primary }}"
           echo "Verifying $PRIMARY responds after OTA..."
-          tools/domes-cli/target/release/domes-cli --port "$PRIMARY" feature list
+          # shellcheck source=/dev/null
+          . "$HOME/esp/esp-idf/export.sh"
+          CLI=tools/domes-cli/target/release/domes-cli
+          info=$("$CLI" --port "$PRIMARY" system info)
+          printf '%s\n' "$info"
+          if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$info"; then
+            echo "::error::OTA test image did not boot; expected version $CI_VERSION"
+            exit 1
+          fi
+          first_boot_count=$(awk '/Boot count:/ {print $3}' <<< "$info")
+          if [[ ! "$first_boot_count" =~ ^[1-9][0-9]*$ ]] ||
+             ((first_boot_count <= BASELINE_BOOT_COUNT)); then
+            echo "::error::Serial OTA did not advance the primary boot count"
+            exit 1
+          fi
+          "$CLI" --port "$PRIMARY" system health
+          self_test=$("$CLI" --port "$PRIMARY" system self-test)
+          printf '%s\n' "$self_test"
+          if ! grep -Eq 'Running App.*PASS.*ota_1,' <<< "$self_test"; then
+            echo "::error::Accepted serial OTA image is not running from ota_1"
+            exit 1
+          fi
+          tools/firmware/verify_restart_snapshot.sh \
+            "$PRIMARY" "$BASELINE_BOOT_COUNT" "$BASELINE_VERSION" \
+            firmware/domes/build/domes.elf "$CLI"
+          "$CLI" --port "$PRIMARY" system crash-dump --clear
+          "$CLI" --port "$PRIMARY" feature list
+
+          echo "Resetting $PRIMARY again to verify the accepted OTA image is durable..."
+          python -m esptool --chip esp32s3 --port "$PRIMARY" run
+          sleep 10
+          second_boot_info=$("$CLI" --port "$PRIMARY" system info)
+          printf '%s\n' "$second_boot_info"
+          if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$second_boot_info"; then
+            echo "::error::OTA test image did not survive a second reboot"
+            exit 1
+          fi
+          second_boot_count=$(awk '/Boot count:/ {print $3}' <<< "$second_boot_info")
+          if [[ ! "$second_boot_count" =~ ^[1-9][0-9]*$ ]] ||
+             ((second_boot_count <= first_boot_count)); then
+            echo "::error::Accepted serial OTA image did not record its second boot"
+            exit 1
+          fi
+          "$CLI" --port "$PRIMARY" system health
+          second_self_test=$("$CLI" --port "$PRIMARY" system self-test)
+          printf '%s\n' "$second_self_test"
+          if ! grep -Eq 'Running App.*PASS.*ota_1,' <<< "$second_self_test"; then
+            echo "::error::Accepted serial OTA image changed partitions after reboot"
+            exit 1
+          fi
+          hard_reset_snapshot=$("$CLI" --port "$PRIMARY" system crash-dump)
+          printf '%s\n' "$hard_reset_snapshot"
+          if ! grep -Fq "No restart snapshot stored." <<< "$hard_reset_snapshot"; then
+            echo "::error::ROM reset unexpectedly produced a clean-restart snapshot"
+            exit 1
+          fi
           echo "Post-OTA verification passed"
 
-      - name: Test - Multi-Device Feature List
-        if: steps.detect.outputs.multi == 'true'
+      - name: Test - BLE OTA Failure Recovery (secondary device)
+        id: ble_ota_recovery
+        env:
+          BASELINE_VERSION: ${{ steps.firmware_build.outputs.baseline_version }}
+          CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
+          SECONDARY: ${{ steps.detect.outputs.secondary }}
+          SECONDARY_BLE: ${{ steps.ble.outputs.secondary_address }}
         run: |
-          echo "Testing multi-device feature list..."
+          CLI=tools/domes-cli/target/release/domes-cli
+          invalid_image="${RUNNER_TEMP:-/tmp}/domes-invalid-ble-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.bin"
+          interrupt_log="${RUNNER_TEMP:-/tmp}/domes-interrupted-ble-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
+          head -c 4096 firmware/domes/build-ota/domes.bin > "$invalid_image"
+
+          verify_secondary_recovery() {
+            local ble_info
+            local serial_info
+
+            serial_info=$("$CLI" --port "$SECONDARY" system info)
+            printf '%s\n' "$serial_info"
+            if ! grep -Fq "Firmware:   $BASELINE_VERSION" <<< "$serial_info"; then
+              echo "::error::BLE OTA failure changed the running image"
+              return 1
+            fi
+            "$CLI" --port "$SECONDARY" system health
+
+            ble_info=$("$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system info)
+            printf '%s\n' "$ble_info"
+            if ! grep -Fq "Firmware:   $BASELINE_VERSION" <<< "$ble_info"; then
+              echo "::error::Secondary BLE did not recover the baseline image"
+              return 1
+            fi
+            "$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system health
+          }
+
+          if invalid_output=$("$CLI" --ble "$SECONDARY_BLE" ota flash \
+            "$invalid_image" --version "$CI_VERSION" 2>&1); then
+            printf '%s\n' "$invalid_output"
+            echo "::error::Device accepted a truncated BLE OTA image"
+            exit 1
+          fi
+          printf '%s\n' "$invalid_output"
+          if ! grep -Fq "Verification failed" <<< "$invalid_output"; then
+            echo "::error::Truncated BLE OTA failed for an unexpected reason"
+            exit 1
+          fi
+          sleep 2
+          verify_secondary_recovery
+
+          set +e
+          timeout --signal=TERM --kill-after=5s 30s \
+            "$CLI" --ble "$SECONDARY_BLE" ota flash \
+            firmware/domes/build-ota/domes.bin --version "$CI_VERSION" \
+            > "$interrupt_log" 2>&1
+          status=$?
+          set -e
+          cat "$interrupt_log"
+          if [[ $status -ne 124 && $status -ne 137 && $status -ne 143 ]]; then
+            echo "::error::BLE OTA interruption returned unexpected status $status"
+            exit 1
+          fi
+          if ! grep -Fq "Device accepted OTA_BEGIN." "$interrupt_log"; then
+            echo "::error::BLE OTA client stopped before the device accepted OTA_BEGIN"
+            exit 1
+          fi
+
+          echo "Waiting for interrupted BLE OTA cleanup..."
+          sleep 20
+          verify_secondary_recovery
+
+      - name: Test - BLE OTA (secondary device)
+        id: ble_ota
+        env:
+          CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
+          SECONDARY_BLE: ${{ steps.ble.outputs.secondary_address }}
+        run: |
+          echo "Testing BLE OTA on $SECONDARY_BLE..."
+          tools/domes-cli/target/release/domes-cli \
+            --ble "$SECONDARY_BLE" \
+            ota flash firmware/domes/build-ota/domes.bin \
+            --version "$CI_VERSION"
+          echo "BLE OTA complete, waiting for reboot..."
+          sleep 15
+
+      - name: Test - Post-BLE-OTA Verification (secondary device)
+        id: post_ble_ota
+        env:
+          BASELINE_BOOT_COUNT: ${{ steps.identity.outputs.secondary_boot_count }}
+          BASELINE_VERSION: ${{ steps.firmware_build.outputs.baseline_version }}
+          CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
+          SECONDARY: ${{ steps.detect.outputs.secondary }}
+          SECONDARY_BLE: ${{ steps.ble.outputs.secondary_address }}
+        run: |
+          # shellcheck source=/dev/null
+          . "$HOME/esp/esp-idf/export.sh"
+          CLI=tools/domes-cli/target/release/domes-cli
+          info=$("$CLI" --port "$SECONDARY" system info)
+          printf '%s\n' "$info"
+          if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$info"; then
+            echo "::error::BLE OTA test image did not boot; expected version $CI_VERSION"
+            exit 1
+          fi
+          first_boot_count=$(awk '/Boot count:/ {print $3}' <<< "$info")
+          if [[ ! "$first_boot_count" =~ ^[1-9][0-9]*$ ]] ||
+             ((first_boot_count <= BASELINE_BOOT_COUNT)); then
+            echo "::error::BLE OTA did not advance the secondary boot count"
+            exit 1
+          fi
+          "$CLI" --port "$SECONDARY" system health
+          self_test=$("$CLI" --port "$SECONDARY" system self-test)
+          printf '%s\n' "$self_test"
+          if ! grep -Eq 'Running App.*PASS.*ota_1,' <<< "$self_test"; then
+            echo "::error::Accepted BLE OTA image is not running from ota_1"
+            exit 1
+          fi
+          tools/firmware/verify_restart_snapshot.sh \
+            "$SECONDARY" "$BASELINE_BOOT_COUNT" "$BASELINE_VERSION" \
+            firmware/domes/build/domes.elf "$CLI"
+          "$CLI" --port "$SECONDARY" system crash-dump --clear
+
+          ble_info=$("$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system info)
+          printf '%s\n' "$ble_info"
+          if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$ble_info"; then
+            echo "::error::Secondary device did not recover BLE after OTA"
+            exit 1
+          fi
+
+          echo "Resetting $SECONDARY again to verify the accepted BLE OTA image is durable..."
+          python -m esptool --chip esp32s3 --port "$SECONDARY" run
+          sleep 10
+          second_boot_info=$("$CLI" --port "$SECONDARY" system info)
+          printf '%s\n' "$second_boot_info"
+          if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$second_boot_info"; then
+            echo "::error::BLE OTA test image did not survive a second reboot"
+            exit 1
+          fi
+          second_boot_count=$(awk '/Boot count:/ {print $3}' <<< "$second_boot_info")
+          if [[ ! "$second_boot_count" =~ ^[1-9][0-9]*$ ]] ||
+             ((second_boot_count <= first_boot_count)); then
+            echo "::error::Accepted BLE OTA image did not record its second boot"
+            exit 1
+          fi
+          "$CLI" --port "$SECONDARY" system health
+          second_self_test=$("$CLI" --port "$SECONDARY" system self-test)
+          printf '%s\n' "$second_self_test"
+          if ! grep -Eq 'Running App.*PASS.*ota_1,' <<< "$second_self_test"; then
+            echo "::error::Accepted BLE OTA image changed partitions after reboot"
+            exit 1
+          fi
+          hard_reset_snapshot=$("$CLI" --port "$SECONDARY" system crash-dump)
+          printf '%s\n' "$hard_reset_snapshot"
+          if ! grep -Fq "No restart snapshot stored." <<< "$hard_reset_snapshot"; then
+            echo "::error::ROM reset unexpectedly produced a clean-restart snapshot"
+            exit 1
+          fi
+
+          second_boot_ble_info=$("$BLE_READ_RETRY" "$CLI" --ble "$SECONDARY_BLE" system info)
+          printf '%s\n' "$second_boot_ble_info"
+          if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$second_boot_ble_info"; then
+            echo "::error::Secondary device did not recover BLE after a second reboot"
+            exit 1
+          fi
+
+      - name: Test - Forced OTA Rollback (primary device)
+        id: forced_rollback
+        env:
+          CI_VERSION: ${{ steps.firmware_build.outputs.ota_version }}
+          PRIMARY: ${{ steps.detect.outputs.primary }}
+          ROLLBACK_VERSION: ${{ steps.firmware_build.outputs.rollback_version }}
+        run: |
+          # shellcheck source=/dev/null
+          . "$HOME/esp/esp-idf/export.sh"
           CLI=tools/domes-cli/target/release/domes-cli
 
-          # Test with multiple --port flags
-          $CLI \
-            --port "${{ steps.detect.outputs.primary }}" \
-            --port "${{ steps.detect.outputs.secondary }}" \
+          before_info=$("$CLI" --port "$PRIMARY" system info)
+          printf '%s\n' "$before_info"
+          before_boot_count=$(awk '/Boot count:/ {print $3}' <<< "$before_info")
+          if [[ ! "$before_boot_count" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Primary reported an invalid boot count before rollback test"
+            exit 1
+          fi
+          if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$before_info"; then
+            echo "::error::Primary is not running the accepted OTA image before rollback test"
+            exit 1
+          fi
+          before_self_test=$("$CLI" --port "$PRIMARY" system self-test)
+          printf '%s\n' "$before_self_test"
+          if ! grep -Eq 'Running App.*PASS.*ota_1,' <<< "$before_self_test"; then
+            echo "::error::Primary is not on ota_1 before rollback test"
+            exit 1
+          fi
+
+          "$CLI" --port "$PRIMARY" ota flash \
+            firmware/domes/build-rollback/domes.bin \
+            --version "$ROLLBACK_VERSION"
+          echo "Failing image sent; waiting for boot-time self-test and rollback..."
+          sleep 20
+
+          after_info=""
+          for attempt in 1 2 3 4 5 6; do
+            echo "Rollback verification attempt $attempt/6..."
+            if after_info=$("$CLI" --port "$PRIMARY" system info 2>&1) &&
+               grep -Fq "Firmware:   $CI_VERSION" <<< "$after_info"; then
+              break
+            fi
+            printf '%s\n' "$after_info"
+            sleep 5
+          done
+          printf '%s\n' "$after_info"
+          if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$after_info"; then
+            echo "::error::Bootloader did not roll back to $CI_VERSION"
+            exit 1
+          fi
+          if grep -Fq "Firmware:   $ROLLBACK_VERSION" <<< "$after_info"; then
+            echo "::error::Purpose-built failing image was incorrectly accepted"
+            exit 1
+          fi
+
+          after_boot_count=$(awk '/Boot count:/ {print $3}' <<< "$after_info")
+          if [[ ! "$after_boot_count" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Primary reported an invalid boot count after rollback"
+            exit 1
+          fi
+          if ((after_boot_count < before_boot_count + 2)); then
+            echo "::error::Rollback did not produce both failing-image and restored-image boots"
+            exit 1
+          fi
+          "$CLI" --port "$PRIMARY" system health
+          after_self_test=$("$CLI" --port "$PRIMARY" system self-test)
+          printf '%s\n' "$after_self_test"
+          if ! grep -Eq 'Running App.*PASS.*ota_1,' <<< "$after_self_test"; then
+            echo "::error::Rollback did not restore the accepted ota_1 partition"
+            exit 1
+          fi
+          tools/firmware/verify_restart_snapshot.sh \
+            "$PRIMARY" "$((before_boot_count + 1))" "$ROLLBACK_VERSION" \
+            firmware/domes/build-rollback/domes.elf "$CLI"
+          "$CLI" --port "$PRIMARY" system crash-dump --clear
+
+          echo "Resetting restored image once more..."
+          python -m esptool --chip esp32s3 --port "$PRIMARY" run
+          sleep 10
+          durable_info=$("$CLI" --port "$PRIMARY" system info)
+          printf '%s\n' "$durable_info"
+          if ! grep -Fq "Firmware:   $CI_VERSION" <<< "$durable_info"; then
+            echo "::error::Restored image did not survive a subsequent reboot"
+            exit 1
+          fi
+          durable_boot_count=$(awk '/Boot count:/ {print $3}' <<< "$durable_info")
+          if [[ ! "$durable_boot_count" =~ ^[1-9][0-9]*$ ]] ||
+             ((durable_boot_count <= after_boot_count)); then
+            echo "::error::Restored image did not record its durability reboot"
+            exit 1
+          fi
+          "$CLI" --port "$PRIMARY" system health
+          durable_self_test=$("$CLI" --port "$PRIMARY" system self-test)
+          printf '%s\n' "$durable_self_test"
+          if ! grep -Eq 'Running App.*PASS.*ota_1,' <<< "$durable_self_test"; then
+            echo "::error::Restored image changed partitions after durability reboot"
+            exit 1
+          fi
+          hard_reset_snapshot=$("$CLI" --port "$PRIMARY" system crash-dump)
+          printf '%s\n' "$hard_reset_snapshot"
+          if ! grep -Fq "No restart snapshot stored." <<< "$hard_reset_snapshot"; then
+            echo "::error::ROM reset unexpectedly produced a clean-restart snapshot"
+            exit 1
+          fi
+
+      - name: Start trace capture
+        id: trace_start
+        env:
+          PORT_LIST: ${{ steps.detect.outputs.ports }}
+        run: |
+          IFS=',' read -ra PORTS <<< "$PORT_LIST"
+          CLI=tools/domes-cli/target/release/domes-cli
+
+          for port in "${PORTS[@]}"; do
+            echo "=== Starting trace capture: $port ==="
+            "$CLI" --port "$port" trace clear
+            "$CLI" --port "$port" trace start
+          done
+
+      - name: Test - Device Registry and Multi-Device Fan-Out
+        id: multi_feature_list
+        if: steps.detect.outputs.multi == 'true'
+        env:
+          PRIMARY: ${{ steps.detect.outputs.primary }}
+          SECONDARY: ${{ steps.detect.outputs.secondary }}
+        run: |
+          CLI=tools/domes-cli/target/release/domes-cli
+          REGISTRY_HOME=$(mktemp -d "${RUNNER_TEMP:-/tmp}/domes-registry.XXXXXX")
+          trap 'rm -rf "$REGISTRY_HOME"' EXIT
+
+          echo "Testing direct multi-device fan-out..."
+          "$CLI" \
+            --port "$PRIMARY" \
+            --port "$SECONDARY" \
             feature list
 
-          echo "Multi-device feature list passed"
+          echo "Testing an isolated device registry..."
+          HOME="$REGISTRY_HOME" "$CLI" devices add pod1 serial "$PRIMARY"
+          HOME="$REGISTRY_HOME" "$CLI" devices add pod2 serial "$SECONDARY"
+
+          registry_list=$(HOME="$REGISTRY_HOME" "$CLI" devices list)
+          printf '%s\n' "$registry_list"
+          if ! grep -Eq '^pod1[[:space:]]+serial[[:space:]]+' <<< "$registry_list" ||
+             ! grep -Eq '^pod2[[:space:]]+serial[[:space:]]+' <<< "$registry_list"; then
+            echo "::error::Device registry did not list both selected pods"
+            exit 1
+          fi
+
+          HOME="$REGISTRY_HOME" "$CLI" \
+            --target pod1 --target pod2 feature list
+
+          memory_json=$(HOME="$REGISTRY_HOME" "$CLI" --all system memory --json)
+          printf '%s\n' "$memory_json"
+          python3 - "$memory_json" <<'PY'
+          import json
+          import sys
+
+          document = json.loads(sys.argv[1])
+          profiles = document.get("devices") if isinstance(document, dict) else None
+          if not isinstance(profiles, dict) or set(profiles) != {"pod1", "pod2"}:
+              raise SystemExit(f"unexpected --all memory result: {document!r}")
+          PY
+
+          canonical_primary=$(readlink -f -- "$PRIMARY")
+          if duplicate_output=$(HOME="$REGISTRY_HOME" "$CLI" devices add \
+            pod1-alias serial "$canonical_primary" 2>&1); then
+            printf '%s\n' "$duplicate_output"
+            echo "::error::Registry accepted a duplicate canonical serial endpoint"
+            exit 1
+          fi
+          printf '%s\n' "$duplicate_output"
+          if ! grep -Fq "already registered as 'pod1'" <<< "$duplicate_output"; then
+            echo "::error::Duplicate registry endpoint failed for an unexpected reason"
+            exit 1
+          fi
+
+          if selector_output=$(HOME="$REGISTRY_HOME" "$CLI" \
+            --all --port "$PRIMARY" feature list 2>&1); then
+            printf '%s\n' "$selector_output"
+            echo "::error::CLI accepted --all with an explicit serial selector"
+            exit 1
+          fi
+          printf '%s\n' "$selector_output"
+          if ! grep -Fq "cannot be used with '--port" <<< "$selector_output"; then
+            echo "::error::Selector conflict failed for an unexpected reason"
+            exit 1
+          fi
+
+          HOME="$REGISTRY_HOME" "$CLI" devices remove pod1
+          HOME="$REGISTRY_HOME" "$CLI" devices remove pod2
+          empty_registry=$(HOME="$REGISTRY_HOME" "$CLI" devices list)
+          printf '%s\n' "$empty_registry"
+          if ! grep -Fxq "No devices registered." <<< "$empty_registry"; then
+            echo "::error::Registry was not empty after removing both pods"
+            exit 1
+          fi
+
+          echo "Device registry and multi-device fan-out passed"
 
       - name: Test - ESP-NOW Communication
         id: espnow
         if: steps.detect.outputs.multi == 'true'
-        continue-on-error: true
+        env:
+          PRIMARY: ${{ steps.detect.outputs.primary }}
+          SECONDARY: ${{ steps.detect.outputs.secondary }}
         run: |
           echo "Testing ESP-NOW between devices..."
           CLI=tools/domes-cli/target/release/domes-cli
-          PRIMARY="${{ steps.detect.outputs.primary }}"
-          SECONDARY="${{ steps.detect.outputs.secondary }}"
 
-          # Enable ESP-NOW on both devices
-          echo "=== Enabling ESP-NOW on both devices ==="
-          $CLI --port "$PRIMARY" feature enable esp-now || { echo "::warning::ESP-NOW not available on primary"; exit 0; }
-          $CLI --port "$SECONDARY" feature enable esp-now || { echo "::warning::ESP-NOW not available on secondary"; exit 0; }
+          wait_for_peers() {
+            local phase=$1
+            local peers_ready=false
 
-          # Wait for peer discovery
-          echo "Waiting 10s for ESP-NOW peer discovery..."
-          sleep 10
+            echo "Waiting for ESP-NOW peer discovery ($phase)..."
+            for attempt in {1..30}; do
+              primary_status=$("$CLI" --port "$PRIMARY" espnow status)
+              secondary_status=$("$CLI" --port "$SECONDARY" espnow status)
+              primary_role=$(awk '/State:/ {print $2; exit}' <<< "$primary_status")
+              secondary_role=$(awk '/State:/ {print $2; exit}' <<< "$secondary_status")
+              if [[ "$primary_role:$secondary_role" == "master:slave" ||
+                    "$primary_role:$secondary_role" == "slave:master" ]] &&
+                 grep -Eq 'Peers:[[:space:]]+1' <<< "$primary_status" &&
+                 grep -Eq 'Peers:[[:space:]]+1' <<< "$secondary_status"; then
+                if [[ "$primary_role" == "master" ]]; then
+                  MASTER_PORT=$PRIMARY
+                  SLAVE_PORT=$SECONDARY
+                else
+                  MASTER_PORT=$SECONDARY
+                  SLAVE_PORT=$PRIMARY
+                fi
+                peers_ready=true
+                break
+              fi
+              echo "Peer discovery attempt $attempt/30 is not ready ($phase)"
+              sleep 1
+            done
+            if [[ "$peers_ready" != "true" ]]; then
+              printf '%s\n%s\n' "$primary_status" "$secondary_status"
+              echo "::error::ESP-NOW requires exactly one master and one slave with one peer each"
+              return 1
+            fi
+            printf '%s\n%s\n' "$primary_status" "$secondary_status"
+          }
 
-          # Check ESP-NOW status on both devices
-          echo "=== ESP-NOW status: primary ==="
-          $CLI --port "$PRIMARY" espnow status || true
-          echo ""
-          echo "=== ESP-NOW status: secondary ==="
-          $CLI --port "$SECONDARY" espnow status || true
-          echo ""
+          wait_for_disabled() {
+            local phase=$1
 
-          # Run latency benchmark (short: 20 rounds for CI)
-          echo "=== ESP-NOW latency benchmark (20 rounds) ==="
-          BENCH_OUTPUT=$($CLI --port "$PRIMARY" espnow bench --rounds 20 2>&1) || true
-          echo "$BENCH_OUTPUT"
+            for attempt in {1..20}; do
+              primary_status=$("$CLI" --port "$PRIMARY" espnow status)
+              secondary_status=$("$CLI" --port "$SECONDARY" espnow status)
+              if grep -Eq 'State:[[:space:]]+disabled' <<< "$primary_status" &&
+                 grep -Eq 'State:[[:space:]]+disabled' <<< "$secondary_status"; then
+                return 0
+              fi
+              echo "ESP-NOW shutdown attempt $attempt/20 is not complete ($phase)"
+              sleep 1
+            done
 
-          # Parse benchmark result for summary
-          if echo "$BENCH_OUTPUT" | grep -q "avg"; then
-            echo "espnow_bench_passed=true" >> $GITHUB_OUTPUT
-            echo "$BENCH_OUTPUT" > /tmp/espnow-bench.txt
-          else
-            echo "espnow_bench_passed=false" >> $GITHUB_OUTPUT
-            echo "Benchmark did not produce results (ESP-NOW may not have peers)"
-          fi
+            printf '%s\n%s\n' "$primary_status" "$secondary_status"
+            echo "::error::ESP-NOW did not stop on both pods ($phase)"
+            return 1
+          }
+
+          echo "=== Starting benchmark-only ESP-NOW session ==="
+          "$CLI" --port "$PRIMARY" feature disable esp-now
+          "$CLI" --port "$SECONDARY" feature disable esp-now
+          wait_for_disabled "initial benchmark state"
+          "$CLI" --port "$PRIMARY" espnow sim-mode off
+          "$CLI" --port "$SECONDARY" espnow sim-mode off
+
+          echo "=== Exercising discovery cancellation before a peer appears ==="
+          "$CLI" --port "$PRIMARY" feature enable esp-now
+          sleep 1
+          "$CLI" --port "$PRIMARY" feature disable esp-now
+          wait_for_disabled "single-pod discovery cancellation"
+
+          run_benchmark() {
+            local port=$1
+            local output
+
+            echo "=== ESP-NOW latency benchmark from $port (100 rounds) ==="
+            if ! output=$("$CLI" --port "$port" espnow bench --rounds 100 2>&1); then
+              printf '%s\n' "$output"
+              echo "::error::ESP-NOW benchmark command failed on $port"
+              return 1
+            fi
+            printf '%s\n' "$output"
+
+            if ! grep -Eq 'Rounds:[[:space:]]+100/100 completed \(0 failed\)' <<< "$output" ||
+               ! grep -q 'Mean RTT:' <<< "$output"; then
+              echo "::error::ESP-NOW benchmark did not complete 100/100 rounds on $port"
+              return 1
+            fi
+          }
+
+          # Exercise fresh role-assignment startup repeatedly. Benchmarking the
+          # slave first at the first visible role state covers the master settle
+          # window where an early PING was previously discarded.
+          for session in 1 2 3; do
+            echo "=== ESP-NOW benchmark session $session/3 ==="
+            "$CLI" --port "$PRIMARY" feature enable esp-now
+            "$CLI" --port "$SECONDARY" feature enable esp-now
+            wait_for_peers "benchmark session $session"
+            run_benchmark "$SLAVE_PORT"
+            run_benchmark "$MASTER_PORT"
+            "$CLI" --port "$PRIMARY" feature disable esp-now
+            "$CLI" --port "$SECONDARY" feature disable esp-now
+            wait_for_disabled "benchmark session $session"
+          done
+          echo "espnow_bench_passed=true" >> "$GITHUB_OUTPUT"
+
+          echo "=== Restarting ESP-NOW for the simulated drill ==="
+          for port in "$PRIMARY" "$SECONDARY"; do
+            "$CLI" --port "$port" trace stop
+            "$CLI" --port "$port" trace clear
+            "$CLI" --port "$port" trace start
+            "$CLI" --port "$port" espnow sim-mode on --delay-ms 100 --pad 0
+          done
+          "$CLI" --port "$PRIMARY" feature enable esp-now
+          "$CLI" --port "$SECONDARY" feature enable esp-now
+          wait_for_peers "simulated drill"
+
+          echo "Waiting for the complete ten-round simulated drill..."
+          sleep 35
+
+          for port in "$PRIMARY" "$SECONDARY"; do
+            status=$("$CLI" --port "$port" espnow status)
+            printf '%s\n' "$status"
+            if ! grep -Eq 'State:[[:space:]]+disabled' <<< "$status" ||
+               ! grep -Eq 'Peers:[[:space:]]+1' <<< "$status" ||
+               ! grep -Eq 'TX fails:[[:space:]]+0' <<< "$status"; then
+              echo "::error::ESP-NOW drill did not finish cleanly on $port"
+              exit 1
+            fi
+          done
 
           echo "ESP-NOW test complete"
 
-      - name: Test - WiFi Status (if enabled)
-        continue-on-error: true
+      - name: Test - Default Build Omits WiFi Client Control
+        id: wifi_capability
+        env:
+          PORT_LIST: ${{ steps.detect.outputs.ports }}
         run: |
-          IFS=',' read -ra PORTS <<< "${{ steps.detect.outputs.ports }}"
+          IFS=',' read -ra PORTS <<< "$PORT_LIST"
           CLI=tools/domes-cli/target/release/domes-cli
 
           for port in "${PORTS[@]}"; do
-            echo "Checking WiFi status on $port..."
-            $CLI --port "$port" wifi status || true
+            echo "Checking WiFi client capability on $port..."
+            for command in \
+              'wifi status' \
+              'wifi enable' \
+              'wifi disable' \
+              'feature enable wifi' \
+              'feature disable wifi' \
+              'ota check' \
+              'ota auto-update --enable'; do
+              read -ra args <<< "$command"
+              if output=$("$CLI" --port "$port" "${args[@]}" 2>&1); then
+                printf '%s\n' "$output"
+                echo "::error::Default firmware unexpectedly accepted: $command"
+                exit 1
+              fi
+              printf '%s\n' "$output"
+              if ! grep -q 'does not expose the WiFi feature flag' <<< "$output"; then
+                echo "::error::WiFi capability command failed for an unexpected reason: $command"
+                exit 1
+              fi
+            done
+
+            "$CLI" --port "$port" ota auto-update --disable
+          done
+
+      - name: Test - Automated Initialization Self-Test (all devices)
+        id: self_test
+        env:
+          PORT_LIST: ${{ steps.detect.outputs.ports }}
+        run: |
+          IFS=',' read -ra PORTS <<< "$PORT_LIST"
+          CLI=tools/domes-cli/target/release/domes-cli
+
+          for port in "${PORTS[@]}"; do
+            echo "=== On-device self-test: $port ==="
+            "$CLI" --port "$port" system self-test
+            echo ""
           done
 
       - name: Test - System Health (all devices)
-        continue-on-error: true
+        id: system_health
+        env:
+          PORT_LIST: ${{ steps.detect.outputs.ports }}
         run: |
-          IFS=',' read -ra PORTS <<< "${{ steps.detect.outputs.ports }}"
+          IFS=',' read -ra PORTS <<< "$PORT_LIST"
           CLI=tools/domes-cli/target/release/domes-cli
 
           for port in "${PORTS[@]}"; do
             echo "=== System health: $port ==="
-            $CLI --port "$port" system health || true
+            "$CLI" --port "$port" system health
             echo ""
           done
 
       - name: Collect traces (all devices)
         id: traces
-        if: always()
-        continue-on-error: true
+        if: ${{ always() && steps.trace_start.outcome == 'success' }}
+        env:
+          PORT_LIST: ${{ steps.detect.outputs.ports }}
         run: |
           CLI=tools/domes-cli/target/release/domes-cli
-          IFS=',' read -ra PORTS <<< "${{ steps.detect.outputs.ports }}"
-          TRACE_DIR=/tmp/hw-test-traces
+          IFS=',' read -ra PORTS <<< "$PORT_LIST"
+          TRACE_DIR="${RUNNER_TEMP:-/tmp}/hw-test-traces-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           mkdir -p "$TRACE_DIR"
 
           TRACE_FILES=()
@@ -294,90 +1300,240 @@ jobs:
             port="${PORTS[$i]}"
             outfile="$TRACE_DIR/trace-pod${i}.json"
             echo "=== Dumping traces from $port ==="
-            if $CLI --port "$port" trace dump --output "$outfile" --names tools/trace/trace_names.json 2>&1; then
-              echo "Trace saved: $outfile"
-              TRACE_FILES+=("$outfile")
-              POD_ARGS+=("--pod" "$outfile" "--pod-name" "Pod $i ($port)")
-            else
-              echo "No traces available from $port (buffer empty or not initialized)"
+            "$CLI" --port "$port" trace stop
+            if ! dump_output=$("$CLI" --port "$port" trace dump \
+              --output "$outfile" \
+              --names tools/trace/trace_names.json 2>&1); then
+              printf '%s\n' "$dump_output"
+              echo "::error::Trace dump failed on $port"
+              exit 1
             fi
+            printf '%s\n' "$dump_output"
+
+            if ! grep -Eq 'Dump complete: [1-9][0-9]* events' <<< "$dump_output"; then
+              echo "::error::Trace dump from $port contained no events"
+              exit 1
+            fi
+            if grep -Eq 'Dropped: [1-9][0-9]* events' <<< "$dump_output"; then
+              echo "::error::Trace capture from $port dropped events"
+              exit 1
+            fi
+            if [[ ! -s "$outfile" ]]; then
+              echo "::error::Trace output is missing or empty: $outfile"
+              exit 1
+            fi
+
+            echo "Trace saved: $outfile"
+            TRACE_FILES+=("$outfile")
+            POD_ARGS+=("--pod" "$outfile" "--pod-name" "Pod $i ($port)")
           done
 
           # Merge traces if we have multiple pod dumps
-          if [ ${#TRACE_FILES[@]} -ge 2 ]; then
+          if ((${#TRACE_FILES[@]} >= 2)); then
             echo "=== Merging ${#TRACE_FILES[@]} pod traces ==="
             python3 tools/trace/trace_merge.py \
               "${POD_ARGS[@]}" \
               --names tools/trace/trace_names.json \
-              --align beacon \
-              -o "$TRACE_DIR/merged-trace.json" || \
-            python3 tools/trace/trace_merge.py \
-              "${POD_ARGS[@]}" \
-              --names tools/trace/trace_names.json \
               --align zero \
-              -o "$TRACE_DIR/merged-trace.json" || true
+              -o "$TRACE_DIR/merged-trace.json"
+            test -s "$TRACE_DIR/merged-trace.json"
+            python3 - "$TRACE_DIR/merged-trace.json" <<'PY'
+          import collections
+          import json
+          import sys
+
+          events = json.load(open(sys.argv[1], encoding="utf-8"))["traceEvents"]
+          counts = collections.Counter(event.get("name") for event in events)
+          required = {
+              "Game.TouchHit": 10,
+              "EspNow.SendTouchEvent": 5,
+              "EspNow.RxTouchEvent": 5,
+              "EspNow.DrillComplete": 1,
+          }
+          missing = {
+              name: (counts[name], minimum)
+              for name, minimum in required.items()
+              if counts[name] < minimum
+          }
+          if missing:
+              raise SystemExit(f"incomplete simulated two-pod drill trace: {missing}")
+          PY
             echo "Merged trace: $TRACE_DIR/merged-trace.json"
           fi
 
-          # Set output for artifact upload
-          echo "trace_dir=$TRACE_DIR" >> $GITHUB_OUTPUT
-          if [ ${#TRACE_FILES[@]} -gt 0 ]; then
-            echo "has_traces=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_traces=false" >> $GITHUB_OUTPUT
-          fi
+          echo "trace_dir=$TRACE_DIR" >> "$GITHUB_OUTPUT"
+          echo "has_traces=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload trace artifacts
-        continue-on-error: true
-        if: steps.traces.outputs.has_traces == 'true'
-        uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.traces.outputs.has_traces == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: hw-test-traces-${{ github.sha }}
           path: ${{ steps.traces.outputs.trace_dir }}/*.json
+          if-no-files-found: error
           retention-days: 14
+
+      - name: Restore deterministic idle state
+        id: cleanup
+        if: always()
+        env:
+          PORT_LIST: ${{ steps.detect.outputs.ports }}
+        run: |
+          CLI=tools/domes-cli/target/release/domes-cli
+          if [[ -z "$PORT_LIST" || ! -x "$CLI" ]]; then
+            echo "Hardware was not initialized; cleanup is not required."
+            exit 0
+          fi
+
+          IFS=',' read -ra PORTS <<< "$PORT_LIST"
+          cleanup_failed=0
+          for port in "${PORTS[@]}"; do
+            echo "=== Restoring idle state: $port ==="
+            for command in \
+              'trace stop' \
+              'espnow sim-mode off' \
+              'feature disable esp-now' \
+              'feature enable haptic' \
+              'led off' \
+              'system set-mode idle'; do
+              read -ra args <<< "$command"
+              if ! "$CLI" --port "$port" "${args[@]}"; then
+                echo "::error::Cleanup command failed on $port: $command"
+                cleanup_failed=1
+              fi
+            done
+
+            disabled=false
+            for attempt in {1..20}; do
+              status=$("$CLI" --port "$port" espnow status 2>&1) || true
+              if grep -Eq 'State:[[:space:]]+disabled' <<< "$status"; then
+                disabled=true
+                break
+              fi
+              echo "ESP-NOW cleanup poll $attempt/20 is not disabled on $port"
+              sleep 1
+            done
+            if [[ "$disabled" != "true" ]]; then
+              printf '%s\n' "$status"
+              echo "::error::ESP-NOW cleanup did not reach disabled on $port"
+              cleanup_failed=1
+            fi
+
+            echo "=== Capturing final health and feature state: $port ==="
+            for command in \
+              'system health' \
+              'system memory' \
+              'system self-test' \
+              'feature list' \
+              'led off' \
+              'system set-mode idle'; do
+              read -ra args <<< "$command"
+              if ! "$CLI" --port "$port" "${args[@]}"; then
+                echo "::error::Final verification command failed on $port: $command"
+                cleanup_failed=1
+              fi
+            done
+
+            if ! final_info=$("$CLI" --port "$port" system info); then
+              echo "::error::Final system information failed on $port"
+              cleanup_failed=1
+            else
+              printf '%s\n' "$final_info"
+              if ! grep -Eq 'Mode:[[:space:]]+idle' <<< "$final_info"; then
+                echo "::error::Final device mode is not idle on $port"
+                cleanup_failed=1
+              fi
+            fi
+          done
+
+          exit "$cleanup_failed"
 
       - name: Summary
         if: always()
+        env:
+          CLI_BUILD_OUTCOME: ${{ steps.cli_build.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+          DEVICE_COUNT: ${{ steps.detect.outputs.count }}
+          ESPNOW_OUTCOME: ${{ steps.espnow.outcome }}
+          FEATURE_LIST_OUTCOME: ${{ steps.feature_list.outcome }}
+          FIRMWARE_BUILD_OUTCOME: ${{ steps.firmware_build.outcome }}
+          FLASH_OUTCOME: ${{ steps.flash.outcome }}
+          FORCED_ROLLBACK_OUTCOME: ${{ steps.forced_rollback.outcome }}
+          IDENTITY_OUTCOME: ${{ steps.identity.outcome }}
+          INTERRUPTED_OTA_OUTCOME: ${{ steps.interrupted_ota.outcome }}
+          INVALID_OTA_OUTCOME: ${{ steps.invalid_ota.outcome }}
+          IS_MULTI: ${{ steps.detect.outputs.multi }}
+          MULTI_FEATURE_OUTCOME: ${{ steps.multi_feature_list.outcome }}
+          PORT_LIST: ${{ steps.detect.outputs.ports }}
+          POST_OTA_OUTCOME: ${{ steps.post_ota.outcome }}
+          POST_BLE_OTA_OUTCOME: ${{ steps.post_ble_ota.outcome }}
+          SERIAL_OTA_OUTCOME: ${{ steps.serial_ota.outcome }}
+          BLE_OUTCOME: ${{ steps.ble.outcome }}
+          BLE_OTA_RECOVERY_OUTCOME: ${{ steps.ble_ota_recovery.outcome }}
+          BLE_OTA_OUTCOME: ${{ steps.ble_ota.outcome }}
+          SELF_TEST_OUTCOME: ${{ steps.self_test.outcome }}
+          SUMMARY_BRANCH: ${{ github.head_ref || github.ref_name }}
+          SUMMARY_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SUMMARY_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          SYSTEM_HEALTH_OUTCOME: ${{ steps.system_health.outcome }}
+          TRACE_OUTCOME: ${{ steps.traces.outcome }}
+          TRACE_DIR: ${{ steps.traces.outputs.trace_dir }}
+          WIFI_CAPABILITY_OUTCOME: ${{ steps.wifi_capability.outcome }}
         run: |
-          echo "## Hardware Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Devices | ${{ steps.detect.outputs.count }} (${{ steps.detect.outputs.ports }}) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Multi-device | ${{ steps.detect.outputs.multi }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Branch | ${{ github.head_ref || github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Firmware build" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] CLI build" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Flash all devices" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Feature list (all devices)" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Serial OTA (primary)" >> $GITHUB_STEP_SUMMARY
-          echo "- [x] Post-OTA verification" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.detect.outputs.multi }}" = "true" ]; then
-            echo "- [x] Multi-device feature list" >> $GITHUB_STEP_SUMMARY
-            if [ "${{ steps.espnow.outcome }}" = "success" ]; then
-              echo "- [x] ESP-NOW communication" >> $GITHUB_STEP_SUMMARY
+          exec >> "$GITHUB_STEP_SUMMARY"
+          echo "## Hardware Test Results"
+          echo ""
+          echo "| Property | Value |"
+          echo "|----------|-------|"
+          echo "| Devices | $DEVICE_COUNT ($PORT_LIST) |"
+          echo "| Multi-device | $IS_MULTI |"
+          echo "| Tested merge/dispatch commit | \`$GITHUB_SHA\` |"
+          echo "| Source commit | \`$SUMMARY_HEAD_SHA\` |"
+          echo "| Pull request base commit | \`${SUMMARY_BASE_SHA:-n/a}\` |"
+          echo "| Branch | $SUMMARY_BRANCH |"
+          echo ""
+          echo "### Test Results"
+          report() {
+            if [ "$2" = "success" ]; then
+              echo "- [x] $1"
             else
-              echo "- [ ] ESP-NOW communication (skipped or failed)" >> $GITHUB_STEP_SUMMARY
+              echo "- [ ] $1 ($2)"
             fi
+          }
+          report "Firmware build" "$FIRMWARE_BUILD_OUTCOME"
+          report "CLI build" "$CLI_BUILD_OUTCOME"
+          report "Flash all devices" "$FLASH_OUTCOME"
+          report "Provision deterministic pod identities" "$IDENTITY_OUTCOME"
+          report "Feature list (all devices)" "$FEATURE_LIST_OUTCOME"
+          report "BLE discovery and diagnostics (all devices)" "$BLE_OUTCOME"
+          report "Invalid OTA rejection and recovery" "$INVALID_OTA_OUTCOME"
+          report "Interrupted OTA session recovery" "$INTERRUPTED_OTA_OUTCOME"
+          report "Serial OTA (primary)" "$SERIAL_OTA_OUTCOME"
+          report "Post-OTA verification" "$POST_OTA_OUTCOME"
+          report "BLE OTA failure recovery (secondary)" "$BLE_OTA_RECOVERY_OUTCOME"
+          report "BLE OTA (secondary)" "$BLE_OTA_OUTCOME"
+          report "Post-BLE-OTA verification" "$POST_BLE_OTA_OUTCOME"
+          report "Forced failed-self-test rollback" "$FORCED_ROLLBACK_OUTCOME"
+          report "Default-build WiFi capability contract" "$WIFI_CAPABILITY_OUTCOME"
+          report "Automated initialization self-test" "$SELF_TEST_OUTCOME"
+          if [ "$IS_MULTI" = "true" ]; then
+            report "Device registry and multi-device fan-out" "$MULTI_FEATURE_OUTCOME"
+            report "ESP-NOW communication" "$ESPNOW_OUTCOME"
           fi
-          echo "- [x] System health check" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.traces.outputs.has_traces }}" = "true" ]; then
-            echo "- [x] Trace collection (artifacts uploaded)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- [ ] Trace collection (no traces available)" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Trace Artifacts" >> $GITHUB_STEP_SUMMARY
-          if ls trace-artifacts/*.json 1>/dev/null 2>&1; then
-            for f in trace-artifacts/*.json; do
+          report "System health check" "$SYSTEM_HEALTH_OUTCOME"
+          report "Non-empty trace collection" "$TRACE_OUTCOME"
+          report "Restore idle state" "$CLEANUP_OUTCOME"
+          echo ""
+          echo "Physical LED, touch, haptic, and audio output still require human confirmation."
+          echo ""
+          echo "### Trace Artifacts"
+          if [ -n "$TRACE_DIR" ] && compgen -G "$TRACE_DIR/*.json" > /dev/null; then
+            for f in "$TRACE_DIR"/*.json; do
               SIZE=$(stat -c%s "$f" 2>/dev/null || echo "0")
-              echo "- \`$(basename $f)\` (${SIZE} bytes)" >> $GITHUB_STEP_SUMMARY
+              echo "- \`$(basename "$f")\` (${SIZE} bytes)"
             done
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Download trace files from the **Artifacts** section and open at [ui.perfetto.dev](https://ui.perfetto.dev)" >> $GITHUB_STEP_SUMMARY
+            echo ""
+            echo "Download trace files from the **Artifacts** section and open at [ui.perfetto.dev](https://ui.perfetto.dev)"
           else
-            echo "No traces collected (buffer empty or tracing not initialized)" >> $GITHUB_STEP_SUMMARY
+            echo "No traces collected (buffer empty or tracing not initialized)"
           fi

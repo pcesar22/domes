@@ -14,11 +14,10 @@
  * - SD: Shutdown (HIGH=enabled, LOW=shutdown)
  */
 
-#include "interfaces/iAudioDriver.hpp"
-
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
 #include "esp_log.h"
+#include "interfaces/iAudioDriver.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -96,13 +95,10 @@ public:
         gpio_set_level(sdPin_, 0);
 
         // Configure I2S channel
-        i2s_chan_config_t chanConfig = {
-            .id = I2S_NUM_0,
-            .role = I2S_ROLE_MASTER,
-            .dma_desc_num = kDmaBufferCount,
-            .dma_frame_num = kDmaBufferFrames,
-            .auto_clear = true,  // Clear DMA buffer on underrun
-        };
+        i2s_chan_config_t chanConfig = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+        chanConfig.dma_desc_num = kDmaBufferCount;
+        chanConfig.dma_frame_num = kDmaBufferFrames;
+        chanConfig.auto_clear = true;  // Clear DMA buffer on underrun
 
         err = i2s_new_channel(&chanConfig, &txHandle_, nullptr);
         if (err != ESP_OK) {
@@ -112,27 +108,29 @@ public:
 
         // Configure I2S standard mode (Philips I2S format)
         i2s_std_config_t stdConfig = {
-            .clk_cfg = {
-                .sample_rate_hz = kSampleRate,
-                .clk_src = I2S_CLK_SRC_DEFAULT,
-                .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-            },
-            .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(
-                I2S_DATA_BIT_WIDTH_16BIT,
-                I2S_SLOT_MODE_MONO
-            ),
-            .gpio_cfg = {
-                .mclk = I2S_GPIO_UNUSED,
-                .bclk = bclkPin_,
-                .ws = lrclkPin_,
-                .dout = doutPin_,
-                .din = I2S_GPIO_UNUSED,
-                .invert_flags = {
-                    .mclk_inv = false,
-                    .bclk_inv = false,
-                    .ws_inv = false,
+            .clk_cfg =
+                {
+                    .sample_rate_hz = kSampleRate,
+                    .clk_src = I2S_CLK_SRC_DEFAULT,
+                    .ext_clk_freq_hz = 0,
+                    .mclk_multiple = I2S_MCLK_MULTIPLE_256,
                 },
-            },
+            .slot_cfg =
+                I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+            .gpio_cfg =
+                {
+                    .mclk = I2S_GPIO_UNUSED,
+                    .bclk = bclkPin_,
+                    .ws = lrclkPin_,
+                    .dout = doutPin_,
+                    .din = I2S_GPIO_UNUSED,
+                    .invert_flags =
+                        {
+                            .mclk_inv = false,
+                            .bclk_inv = false,
+                            .ws_inv = false,
+                        },
+                },
         };
 
         err = i2s_channel_init_std_mode(txHandle_, &stdConfig);
@@ -144,8 +142,8 @@ public:
         }
 
         initialized_ = true;
-        ESP_LOGI(kTag, "MAX98357A initialized (BCLK=%d, LRCLK=%d, DOUT=%d, SD=%d)",
-                 bclkPin_, lrclkPin_, doutPin_, sdPin_);
+        ESP_LOGI(kTag, "MAX98357A initialized (BCLK=%d, LRCLK=%d, DOUT=%d, SD=%d)", bclkPin_,
+                 lrclkPin_, doutPin_, sdPin_);
         return ESP_OK;
     }
 
@@ -191,13 +189,14 @@ public:
         return ESP_OK;
     }
 
-    esp_err_t write(const int16_t* samples, size_t count,
-                    size_t* written, uint32_t timeoutMs = 1000) override {
+    esp_err_t write(const int16_t* samples, size_t count, size_t* written,
+                    uint32_t timeoutMs = 1000) override {
         if (!started_) {
             return ESP_ERR_INVALID_STATE;
         }
         if (!samples || count == 0) {
-            if (written) *written = 0;
+            if (written)
+                *written = 0;
             return ESP_OK;
         }
 
@@ -218,16 +217,14 @@ public:
             for (size_t i = 0; i < chunkSamples; ++i) {
                 int32_t scaled = (static_cast<int32_t>(src[i]) * volume_) / 100;
                 scaledBuffer[i] = static_cast<int16_t>(
-                    std::clamp(scaled, static_cast<int32_t>(-32768), static_cast<int32_t>(32767))
-                );
+                    std::clamp(scaled, static_cast<int32_t>(-32768), static_cast<int32_t>(32767)));
             }
 
             // Write to I2S
             size_t bytesWritten = 0;
-            esp_err_t err = i2s_channel_write(txHandle_, scaledBuffer,
-                                              chunkSamples * sizeof(int16_t),
-                                              &bytesWritten,
-                                              pdMS_TO_TICKS(timeoutMs));
+            esp_err_t err =
+                i2s_channel_write(txHandle_, scaledBuffer, chunkSamples * sizeof(int16_t),
+                                  &bytesWritten, pdMS_TO_TICKS(timeoutMs));
 
             size_t samplesWritten = bytesWritten / sizeof(int16_t);
             totalWritten += samplesWritten;
@@ -240,12 +237,14 @@ public:
             }
             if (err != ESP_OK) {
                 ESP_LOGE(kTag, "I2S write failed: %s", esp_err_to_name(err));
-                if (written) *written = totalWritten;
+                if (written)
+                    *written = totalWritten;
                 return err;
             }
         }
 
-        if (written) *written = totalWritten;
+        if (written)
+            *written = totalWritten;
         return ESP_OK;
     }
 

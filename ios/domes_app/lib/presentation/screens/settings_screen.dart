@@ -35,7 +35,10 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Default Transport'),
             subtitle: Text(_transportLabel(settings.transportPreference)),
             onTap: () => _showTransportPicker(
-                context, ref, settings.transportPreference),
+              context,
+              ref,
+              settings.transportPreference,
+            ),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.link),
@@ -78,7 +81,10 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   void _showThemePicker(
-      BuildContext context, WidgetRef ref, ThemeMode current) {
+    BuildContext context,
+    WidgetRef ref,
+    ThemeMode current,
+  ) {
     showDialog(
       context: context,
       builder: (context) => SimpleDialog(
@@ -92,9 +98,11 @@ class SettingsScreen extends ConsumerWidget {
               },
               child: Row(
                 children: [
-                  Icon(mode == current
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_unchecked),
+                  Icon(
+                    mode == current
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                  ),
                   const SizedBox(width: 12),
                   Text(_themeModeLabel(mode)),
                 ],
@@ -106,7 +114,10 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   void _showTransportPicker(
-      BuildContext context, WidgetRef ref, TransportPreference current) {
+    BuildContext context,
+    WidgetRef ref,
+    TransportPreference current,
+  ) {
     showDialog(
       context: context,
       builder: (context) => SimpleDialog(
@@ -122,9 +133,11 @@ class SettingsScreen extends ConsumerWidget {
               },
               child: Row(
                 children: [
-                  Icon(pref == current
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_unchecked),
+                  Icon(
+                    pref == current
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                  ),
                   const SizedBox(width: 12),
                   Text(_transportLabel(pref)),
                 ],
@@ -147,8 +160,8 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }

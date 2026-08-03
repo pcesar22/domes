@@ -10,16 +10,13 @@
  * Features:
  * - 123 built-in haptic effects
  * - Effect sequencing (up to 8 effects)
- * - Auto-calibration for LRA motors
+ * - Open-loop drive tuned for the NFF schematic's LD0832AA-0099F LRA
  * - Real-time playback mode
  */
 
-#include "interfaces/iHapticDriver.hpp"
-
 #include "driver/i2c_master.h"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include "interfaces/iHapticDriver.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -44,11 +41,7 @@ public:
      * @param addr I2C address (typically 0x5A)
      */
     Drv2605lDriver(i2c_master_bus_handle_t i2cBus, uint8_t addr)
-        : i2cBus_(i2cBus),
-          addr_(addr),
-          devHandle_(nullptr),
-          intensity_(100),
-          initialized_(false) {}
+        : i2cBus_(i2cBus), addr_(addr), devHandle_(nullptr), intensity_(100), initialized_(false) {}
 
     ~Drv2605lDriver() override {
         if (devHandle_) {
@@ -96,22 +89,22 @@ public:
             return err;
         }
 
-        // Configure for ERM motor (more common, more forgiving)
-        err = configureErm();
+        // The NFF design source specifies an LD0832AA-0099F rated for 1.8 Vrms at 235 Hz.
+        // Keep this profile bounded and deterministic until it is verified on populated hardware.
+        err = configureLra();
         if (err != ESP_OK) {
-            ESP_LOGE(kTag, "ERM configuration failed: %s", esp_err_to_name(err));
+            ESP_LOGE(kTag, "LRA configuration failed: %s", esp_err_to_name(err));
             return err;
         }
 
-        // Select ROM library 7 (ERM 4.5V/5V - strongest effects)
-        err = writeReg(Reg::kLibrarySelection, kErmLibraryStrong);
+        err = writeReg(Reg::kLibrarySelection, kLraLibrary);
         if (err != ESP_OK) {
             ESP_LOGE(kTag, "Failed to select library: %s", esp_err_to_name(err));
             return err;
         }
 
         initialized_ = true;
-        ESP_LOGI(kTag, "DRV2605L initialized (addr=0x%02X, ERM mode)", addr_);
+        ESP_LOGI(kTag, "DRV2605L initialized (addr=0x%02X, LRA open-loop at 236 Hz)", addr_);
         return ESP_OK;
     }
 
@@ -176,24 +169,28 @@ public:
 
         // Set mode to internal trigger
         esp_err_t err = writeReg(Reg::kMode, Mode::kInternalTrigger);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         // Load effects into waveform registers
         for (size_t i = 0; i < count; ++i) {
             err = writeReg(static_cast<Reg>(static_cast<uint8_t>(Reg::kWaveformSeq0) + i),
-                          effectIds[i]);
-            if (err != ESP_OK) return err;
+                           effectIds[i]);
+            if (err != ESP_OK)
+                return err;
         }
 
         // End sequence marker (if room)
         if (count < kMaxSequenceLen) {
             err = writeReg(static_cast<Reg>(static_cast<uint8_t>(Reg::kWaveformSeq0) + count), 0);
-            if (err != ESP_OK) return err;
+            if (err != ESP_OK)
+                return err;
         }
 
         // Trigger playback
         err = writeReg(Reg::kGo, 1);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
 
         ESP_LOGD(kTag, "Playing sequence of %zu effects", count);
         return ESP_OK;
@@ -220,67 +217,30 @@ public:
     bool isInitialized() const override { return initialized_; }
 
     bool isPlaying() const override {
-        if (!initialized_) return false;
+        if (!initialized_)
+            return false;
 
         uint8_t go = 0;
-        if (readReg(Reg::kGo, &go) != ESP_OK) return false;
+        if (readReg(Reg::kGo, &go) != ESP_OK)
+            return false;
         return (go & 0x01) != 0;
     }
 
     /**
-     * @brief Run auto-calibration for LRA motor
+     * @brief Reject auto-calibration while using the fixed NFF actuator profile
      *
-     * Should be run once with motor mounted in final enclosure.
-     * Calibration values are NOT persisted - call this at init if needed.
+     * Calibration changes the operating model and requires motor-specific hardware validation.
+     * This driver intentionally remains in its bounded open-loop profile until that work is done.
      *
-     * @return ESP_OK on success
+     * @return ESP_ERR_NOT_SUPPORTED for this board configuration
      */
     esp_err_t runCalibration() {
         if (!initialized_) {
             return ESP_ERR_INVALID_STATE;
         }
 
-        ESP_LOGI(kTag, "Starting LRA auto-calibration...");
-
-        // Enter calibration mode
-        esp_err_t err = writeReg(Reg::kMode, Mode::kAutoCalibration);
-        if (err != ESP_OK) return err;
-
-        // Trigger calibration
-        err = writeReg(Reg::kGo, 1);
-        if (err != ESP_OK) return err;
-
-        // Wait for calibration to complete (typically 1-2 seconds)
-        for (int i = 0; i < 30; ++i) {
-            vTaskDelay(pdMS_TO_TICKS(100));
-            uint8_t go = 0;
-            err = readReg(Reg::kGo, &go);
-            if (err != ESP_OK) return err;
-            if ((go & 0x01) == 0) break;
-        }
-
-        // Check calibration result
-        uint8_t status = 0;
-        err = readReg(Reg::kStatus, &status);
-        if (err != ESP_OK) return err;
-
-        if (status & 0x08) {  // DIAG_RESULT bit
-            ESP_LOGE(kTag, "Auto-calibration failed (status=0x%02X)", status);
-            return ESP_FAIL;
-        }
-
-        // Read calibration results
-        uint8_t compensation = 0, backEmf = 0, backEmfGain = 0;
-        readReg(Reg::kAutoCalCompResult, &compensation);
-        readReg(Reg::kAutoCalBackEmfResult, &backEmf);
-        readReg(Reg::kFeedbackControl, &backEmfGain);
-
-        ESP_LOGI(kTag, "Calibration complete: comp=0x%02X, backEMF=0x%02X, gain=0x%02X",
-                 compensation, backEmf, backEmfGain & 0x03);
-
-        // Return to internal trigger mode
-        err = writeReg(Reg::kMode, Mode::kInternalTrigger);
-        return err;
+        ESP_LOGE(kTag, "Auto-calibration is unsupported by the fixed NFF LRA profile");
+        return ESP_ERR_NOT_SUPPORTED;
     }
 
 private:
@@ -288,12 +248,11 @@ private:
     static constexpr uint32_t kI2cFreqHz = 400000;  // 400 kHz
     static constexpr uint8_t kMaxEffectId = 123;
     static constexpr size_t kMaxSequenceLen = 8;
-    // Library selection (see datasheet Table 1):
-    // 1 = Empty, 2 = ERM 1.3V/3V, 3-5 = ERM 3V/3V, 6 = LRA, 7 = ERM 4.5V/5V (strongest)
-    static constexpr uint8_t kErmLibraryWeak = 2;    // ERM 1.3V rated, 3V overdrive
-    static constexpr uint8_t kErmLibraryMedium = 3;  // ERM 3V rated, 3V overdrive
-    static constexpr uint8_t kErmLibraryStrong = 7;  // ERM 4.5V rated, 5V overdrive (max!)
-    static constexpr uint8_t kLraLibrary = 6;        // LRA library
+    static constexpr uint8_t kLraLibrary = 6;
+    // 235 Hz period / 98.46 us per register step = 43.22, rounded to 43 (236.20 Hz).
+    static constexpr uint8_t kLraOpenLoopPeriod235Hz = 43;
+    // Datasheet equation 7 gives 1.786 Vrms at 236.20 Hz for OD_CLAMP=93.
+    static constexpr uint8_t kLraOverdriveClamp1_8Vrms = 93;
 
     // Register addresses
     enum class Reg : uint8_t {
@@ -343,52 +302,38 @@ private:
         static constexpr uint8_t kAudioToVibe = 0x04;
         static constexpr uint8_t kRealTimePlayback = 0x05;
         static constexpr uint8_t kDiagnostics = 0x06;
-        static constexpr uint8_t kAutoCalibration = 0x07;
         static constexpr uint8_t kStandby = 0x40;
     };
 
-    esp_err_t configureErm() {
+    esp_err_t configureLra() {
         esp_err_t err;
 
-        // Voltage formulas from datasheet:
-        // Rated: V = value * 5.44V / 255   (0xD3 = 4.5V for library 7)
-        // OD:    V = value * 5.6V / 255    (0xE4 = 5.0V for library 7)
-        // Using max values (0xFF) for strongest possible drive
+        // In LRA open-loop mode OD_CLAMP is the full-scale reference. This value follows
+        // DRV2605L equation 7 for the actuator's 1.8 Vrms rating at 235 Hz.
+        err = writeReg(Reg::kOverdriveClampVoltage, kLraOverdriveClamp1_8Vrms);
+        if (err != ESP_OK)
+            return err;
 
-        // Set rated voltage to max (5.44V)
-        err = writeReg(Reg::kRatedVoltage, 0xFF);
-        if (err != ESP_OK) return err;
+        // Select LRA mode while preserving the datasheet defaults for the feedback fields.
+        err = writeReg(Reg::kFeedbackControl, 0xB6);
+        if (err != ESP_OK)
+            return err;
 
-        // Set overdrive clamp to max (5.6V)
-        err = writeReg(Reg::kOverdriveClampVoltage, 0xFF);
-        if (err != ESP_OK) return err;
+        // Half-period at 235 Hz is 2.13 ms. DRIVE_TIME=16 selects 2.1 ms.
+        err = writeReg(Reg::kControl1, 0x90);
+        if (err != ESP_OK)
+            return err;
 
-        // Configure feedback control for ERM
-        // Bit 7 (N_ERM_LRA) = 0 (ERM mode)
-        // Bits 6:4 (FB_BRAKE_FACTOR) = 010 (2x brake for snappier stop)
-        // Bits 3:2 (LOOP_GAIN) = 10 (medium gain)
-        // Bits 1:0 (BEMF_GAIN) = 11 (highest for ERM)
-        err = writeReg(Reg::kFeedbackControl, 0x2B);  // 0010 1011
-        if (err != ESP_OK) return err;
+        err = writeReg(Reg::kLraOpenLoopPeriod, kLraOpenLoopPeriod235Hz);
+        if (err != ESP_OK)
+            return err;
 
-        // Control1: Drive time and AC couple
-        // Bit 7 = STARTUP_BOOST (1 = enable for faster start)
-        // Bits 6:5 = reserved
-        // Bit 4 = AC_COUPLE (0 = DC coupled)
-        // Bits 3:0 = DRIVE_TIME (max for ERM)
-        err = writeReg(Reg::kControl1, 0x93);
-        if (err != ESP_OK) return err;
+        // Preserve the default noise gate and enable LRA open-loop mode (bit 0).
+        err = writeReg(Reg::kControl3, 0xA1);
+        if (err != ESP_OK)
+            return err;
 
-        // Control2: Sample time, blanking, IDISS
-        err = writeReg(Reg::kControl2, 0xF5);
-        if (err != ESP_OK) return err;
-
-        // Control3: ERM open loop mode
-        // Bit 5 = ERM_OPEN_LOOP (1 = open loop for simpler operation)
-        err = writeReg(Reg::kControl3, 0x20);
-        if (err != ESP_OK) return err;
-
-        ESP_LOGI(kTag, "Configured for ERM (library 7, max voltage, open-loop)");
+        ESP_LOGI(kTag, "Configured LD0832AA-0099F LRA (1.79 Vrms, 236.20 Hz open-loop)");
         return ESP_OK;
     }
 
@@ -413,40 +358,40 @@ private:
 
 // Common DRV2605L effect IDs for convenience
 namespace HapticEffect {
-    constexpr uint8_t kStrongClick100 = 1;
-    constexpr uint8_t kStrongClick60 = 2;
-    constexpr uint8_t kStrongClick30 = 3;
-    constexpr uint8_t kSharpClick100 = 4;
-    constexpr uint8_t kSharpClick60 = 5;
-    constexpr uint8_t kSharpClick30 = 6;
-    constexpr uint8_t kSoftBump100 = 7;
-    constexpr uint8_t kSoftBump60 = 8;
-    constexpr uint8_t kSoftBump30 = 9;
-    constexpr uint8_t kDoubleClick100 = 10;
-    constexpr uint8_t kDoubleClick60 = 11;
-    constexpr uint8_t kTripleClick = 12;
-    constexpr uint8_t kSoftFuzz60 = 13;
-    constexpr uint8_t kStrongBuzz100 = 14;
-    constexpr uint8_t kAlert750ms = 15;
-    constexpr uint8_t kAlert1000ms = 16;
-    constexpr uint8_t kStrongClick1_100 = 17;
-    constexpr uint8_t kStrongClick2_80 = 18;
-    constexpr uint8_t kStrongClick3_60 = 19;
-    constexpr uint8_t kStrongClick4_30 = 20;
-    constexpr uint8_t kMediumClick1_100 = 21;
-    constexpr uint8_t kMediumClick2_80 = 22;
-    constexpr uint8_t kMediumClick3_60 = 23;
-    constexpr uint8_t kSharpTick1_100 = 24;
-    constexpr uint8_t kSharpTick2_80 = 25;
-    constexpr uint8_t kSharpTick3_60 = 26;
-    constexpr uint8_t kLongBuzz = 47;
-    constexpr uint8_t kBuzzShort = 49;
-    constexpr uint8_t kPulsing1 = 52;
-    constexpr uint8_t kPulsing2 = 58;
-    constexpr uint8_t kTransitionClick = 64;
-    constexpr uint8_t kTransitionHum = 70;
-    constexpr uint8_t kRampUp = 82;
-    constexpr uint8_t kRampDown = 86;
+constexpr uint8_t kStrongClick100 = 1;
+constexpr uint8_t kStrongClick60 = 2;
+constexpr uint8_t kStrongClick30 = 3;
+constexpr uint8_t kSharpClick100 = 4;
+constexpr uint8_t kSharpClick60 = 5;
+constexpr uint8_t kSharpClick30 = 6;
+constexpr uint8_t kSoftBump100 = 7;
+constexpr uint8_t kSoftBump60 = 8;
+constexpr uint8_t kSoftBump30 = 9;
+constexpr uint8_t kDoubleClick100 = 10;
+constexpr uint8_t kDoubleClick60 = 11;
+constexpr uint8_t kTripleClick = 12;
+constexpr uint8_t kSoftFuzz60 = 13;
+constexpr uint8_t kStrongBuzz100 = 14;
+constexpr uint8_t kAlert750ms = 15;
+constexpr uint8_t kAlert1000ms = 16;
+constexpr uint8_t kStrongClick1_100 = 17;
+constexpr uint8_t kStrongClick2_80 = 18;
+constexpr uint8_t kStrongClick3_60 = 19;
+constexpr uint8_t kStrongClick4_30 = 20;
+constexpr uint8_t kMediumClick1_100 = 21;
+constexpr uint8_t kMediumClick2_80 = 22;
+constexpr uint8_t kMediumClick3_60 = 23;
+constexpr uint8_t kSharpTick1_100 = 24;
+constexpr uint8_t kSharpTick2_80 = 25;
+constexpr uint8_t kSharpTick3_60 = 26;
+constexpr uint8_t kLongBuzz = 47;
+constexpr uint8_t kBuzzShort = 49;
+constexpr uint8_t kPulsing1 = 52;
+constexpr uint8_t kPulsing2 = 58;
+constexpr uint8_t kTransitionClick = 64;
+constexpr uint8_t kTransitionHum = 70;
+constexpr uint8_t kRampUp = 82;
+constexpr uint8_t kRampDown = 86;
 }  // namespace HapticEffect
 
 }  // namespace domes

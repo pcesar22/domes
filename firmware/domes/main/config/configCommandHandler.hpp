@@ -10,20 +10,20 @@
 
 #include "configProtocol.hpp"
 #include "featureManager.hpp"
-#include "modeManager.hpp"
 #include "interfaces/iTransport.hpp"
+#include "modeManager.hpp"
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 namespace domes {
-class LedService;            // Forward declaration
-class ImuService;            // Forward declaration
-class EspNowTransport;       // Forward declaration
-class EspNowService;         // Forward declaration
-class IOtaManager;           // Forward declaration
-class InjectableTouchDriver; // Forward declaration
-}
+class LedService;             // Forward declaration
+class ImuService;             // Forward declaration
+class EspNowTransport;        // Forward declaration
+class EspNowService;          // Forward declaration
+class IOtaManager;            // Forward declaration
+class InjectableTouchDriver;  // Forward declaration
+}  // namespace domes
 
 namespace domes::config {
 
@@ -94,6 +94,16 @@ public:
      */
     bool handleCommand(uint8_t type, const uint8_t* payload, size_t len);
 
+    /**
+     * @brief Publish a device-originated touch edge on this handler's transport.
+     *
+     * @param podId Source pod identity (0 if unset)
+     * @param padIndex Touched pad index
+     * @param timestampUs Source esp_timer timestamp
+     * @return true when the complete frame was sent
+     */
+    bool sendTouchEvent(uint8_t podId, uint8_t padIndex, uint64_t timestampUs);
+
 private:
     /**
      * @brief Handle LIST_FEATURES request
@@ -111,7 +121,7 @@ private:
     /**
      * @brief Handle GET_FEATURE request
      *
-     * @param payload Payload containing GetFeatureRequest
+     * @param payload Protobuf-encoded GetFeatureRequest
      * @param len Payload length
      */
     void handleGetFeature(const uint8_t* payload, size_t len);

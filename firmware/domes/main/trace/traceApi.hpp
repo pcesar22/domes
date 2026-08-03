@@ -128,12 +128,12 @@ private:
  * @param spanId Span identifier (use TRACE_ID("name"))
  * @param category Category enum value
  */
-#define TRACE_BEGIN(spanId, category)                                               \
-    do {                                                                            \
-        if (::domes::trace::Recorder::isEnabled()) {                                \
-            ::domes::trace::Recorder::record(::domes::trace::makeEvent(             \
+#define TRACE_BEGIN(spanId, category)                                          \
+    do {                                                                       \
+        if (::domes::trace::Recorder::isEnabled()) {                           \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(        \
                 ::domes::trace::EventType::kSpanBegin, (category), (spanId))); \
-        }                                                                           \
+        }                                                                      \
     } while (0)
 
 /**
@@ -144,12 +144,12 @@ private:
  * @param spanId Span identifier (use TRACE_ID("name"))
  * @param category Category enum value
  */
-#define TRACE_END(spanId, category)                                               \
-    do {                                                                          \
-        if (::domes::trace::Recorder::isEnabled()) {                              \
-            ::domes::trace::Recorder::record(::domes::trace::makeEvent(           \
+#define TRACE_END(spanId, category)                                          \
+    do {                                                                     \
+        if (::domes::trace::Recorder::isEnabled()) {                         \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(      \
                 ::domes::trace::EventType::kSpanEnd, (category), (spanId))); \
-        }                                                                         \
+        }                                                                    \
     } while (0)
 
 /**
@@ -160,12 +160,12 @@ private:
  * @param eventId Event identifier (use TRACE_ID("name"))
  * @param category Category enum value
  */
-#define TRACE_INSTANT(eventId, category)                                           \
-    do {                                                                           \
-        if (::domes::trace::Recorder::isEnabled()) {                               \
-            ::domes::trace::Recorder::record(::domes::trace::makeEvent(            \
+#define TRACE_INSTANT(eventId, category)                                      \
+    do {                                                                      \
+        if (::domes::trace::Recorder::isEnabled()) {                          \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(       \
                 ::domes::trace::EventType::kInstant, (category), (eventId))); \
-        }                                                                          \
+        }                                                                     \
     } while (0)
 
 /**
@@ -177,13 +177,13 @@ private:
  * @param value Current counter value
  * @param category Category enum value
  */
-#define TRACE_COUNTER(counterId, value, category)                                               \
-    do {                                                                                        \
-        if (::domes::trace::Recorder::isEnabled()) {                                            \
-            ::domes::trace::Recorder::record(                                                   \
+#define TRACE_COUNTER(counterId, value, category)                                          \
+    do {                                                                                   \
+        if (::domes::trace::Recorder::isEnabled()) {                                       \
+            ::domes::trace::Recorder::record(                                              \
                 ::domes::trace::makeEvent(::domes::trace::EventType::kCounter, (category), \
-                                          (counterId), static_cast<uint32_t>(value)));          \
-        }                                                                                       \
+                                          (counterId), static_cast<uint32_t>(value)));     \
+        }                                                                                  \
     } while (0)
 
 /**
@@ -204,13 +204,13 @@ private:
  *
  * @param mutexId Mutex identifier (use TRACE_ID("name"))
  */
-#define TRACE_MUTEX_LOCK(mutexId)                                                                \
-    do {                                                                                         \
-        if (::domes::trace::Recorder::isEnabled()) {                                             \
-            ::domes::trace::Recorder::record(::domes::trace::makeEvent(                          \
-                ::domes::trace::EventType::kMutexLock, ::domes::trace::Category::kSync,          \
-                (mutexId)));                                                                     \
-        }                                                                                        \
+#define TRACE_MUTEX_LOCK(mutexId)                                                       \
+    do {                                                                                \
+        if (::domes::trace::Recorder::isEnabled()) {                                    \
+            ::domes::trace::Recorder::record(                                           \
+                ::domes::trace::makeEvent(::domes::trace::EventType::kMutexLock,        \
+                                          ::domes::trace::Category::kSync, (mutexId))); \
+        }                                                                               \
     } while (0)
 
 /**
@@ -218,13 +218,13 @@ private:
  *
  * @param mutexId Mutex identifier (use TRACE_ID("name"))
  */
-#define TRACE_MUTEX_UNLOCK(mutexId)                                                              \
-    do {                                                                                         \
-        if (::domes::trace::Recorder::isEnabled()) {                                             \
-            ::domes::trace::Recorder::record(::domes::trace::makeEvent(                          \
-                ::domes::trace::EventType::kMutexUnlock, ::domes::trace::Category::kSync,        \
-                (mutexId)));                                                                     \
-        }                                                                                        \
+#define TRACE_MUTEX_UNLOCK(mutexId)                                                     \
+    do {                                                                                \
+        if (::domes::trace::Recorder::isEnabled()) {                                    \
+            ::domes::trace::Recorder::record(                                           \
+                ::domes::trace::makeEvent(::domes::trace::EventType::kMutexUnlock,      \
+                                          ::domes::trace::Category::kSync, (mutexId))); \
+        }                                                                               \
     } while (0)
 
 /**
@@ -233,13 +233,13 @@ private:
  * @param mutexId Mutex identifier (use TRACE_ID("name"))
  * @param waitTimeUs Time spent waiting in microseconds
  */
-#define TRACE_MUTEX_CONTENTION(mutexId, waitTimeUs)                                              \
-    do {                                                                                         \
-        if (::domes::trace::Recorder::isEnabled()) {                                             \
-            ::domes::trace::Recorder::record(::domes::trace::makeEvent(                          \
-                ::domes::trace::EventType::kMutexContention, ::domes::trace::Category::kSync,    \
-                (mutexId), static_cast<uint32_t>(waitTimeUs)));                                  \
-        }                                                                                        \
+#define TRACE_MUTEX_CONTENTION(mutexId, waitTimeUs)                                           \
+    do {                                                                                      \
+        if (::domes::trace::Recorder::isEnabled()) {                                          \
+            ::domes::trace::Recorder::record(::domes::trace::makeEvent(                       \
+                ::domes::trace::EventType::kMutexContention, ::domes::trace::Category::kSync, \
+                (mutexId), static_cast<uint32_t>(waitTimeUs)));                               \
+        }                                                                                     \
     } while (0)
 
 /**
@@ -251,8 +251,7 @@ private:
     do {                                                                                         \
         if (::domes::trace::Recorder::isEnabled()) {                                             \
             ::domes::trace::Recorder::record(::domes::trace::makeEvent(                          \
-                ::domes::trace::EventType::kSemTake, ::domes::trace::Category::kSync,            \
-                (semId)));                                                                       \
+                ::domes::trace::EventType::kSemTake, ::domes::trace::Category::kSync, (semId))); \
         }                                                                                        \
     } while (0)
 
@@ -265,7 +264,6 @@ private:
     do {                                                                                         \
         if (::domes::trace::Recorder::isEnabled()) {                                             \
             ::domes::trace::Recorder::record(::domes::trace::makeEvent(                          \
-                ::domes::trace::EventType::kSemGive, ::domes::trace::Category::kSync,            \
-                (semId)));                                                                       \
+                ::domes::trace::EventType::kSemGive, ::domes::trace::Category::kSync, (semId))); \
         }                                                                                        \
     } while (0)

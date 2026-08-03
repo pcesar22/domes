@@ -13,13 +13,18 @@ debugging.
 Before starting GDB, verify the build and capture serial output if possible:
 
 ```bash
-cd firmware/domes
-. ~/esp/esp-idf/export.sh
-idf.py build
+DEBUG_BUILD="$PWD/firmware/domes/build-debug"
+rm -rf "$DEBUG_BUILD"
+(cd firmware/domes && . ~/esp/esp-idf/export.sh && \
+  idf.py -B "$DEBUG_BUILD" -D "IDF_TARGET=esp32s3" \
+    -D "SDKCONFIG=$DEBUG_BUILD/sdkconfig" build)
 ```
 
 ```bash
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py /dev/ttyACM0 10
+CONSOLE="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Espressif_USB_JTAG_serial_debug_unit*' | sort | sed -n '1p')"
+test -n "$CONSOLE"
+python3 tools/firmware/monitor_serial.py "$CONSOLE" 10
 ```
 
 If symbols or breakpoints look wrong, rebuild and reflash before continuing.
@@ -27,10 +32,10 @@ If symbols or breakpoints look wrong, rebuild and reflash before continuing.
 ## Standard Workflow
 
 1. Source ESP-IDF.
-2. Build the firmware so `firmware/domes/build/domes.elf` matches the source.
+2. Build with a fresh isolated SDKCONFIG so `firmware/domes/build-debug/domes.elf` matches the source.
 3. Flash the same build if the device may be stale.
 4. Start OpenOCD from `firmware/domes`.
-5. Start GDB against `build/domes.elf`.
+5. Start GDB against `build-debug/domes.elf`.
 6. Reset and halt.
 7. Set a small number of breakpoints.
 8. Continue, interrupt, inspect stack/locals/tasks, then close sessions cleanly.
@@ -42,7 +47,7 @@ Detailed CLI commands are in `references/gdb-cli.md`.
 ```gdb
 monitor reset halt
 break app_main
-break main.cpp:94
+break initInfrastructure
 continue
 interrupt
 bt
@@ -59,9 +64,10 @@ delete
 | Item | Value |
 | --- | --- |
 | Project | `firmware/domes` |
-| ELF | `firmware/domes/build/domes.elf` |
-| First serial port | `/dev/ttyACM0` |
-| Second serial port | `/dev/ttyACM1` |
+| ESP-IDF | v5.4.4, matching the running firmware build and CI |
+| ELF | `firmware/domes/build-debug/domes.elf` from a fresh debug build |
+| Flash/config/OTA port | CP2102N `/dev/serial/by-id/...` (`/dev/ttyUSB*`) |
+| Console port | Native USB Serial/JTAG (`/dev/ttyACM*`) |
 | Debug transport | Built-in USB JTAG when available |
 
 ## Multi-Device Debugging
@@ -70,7 +76,10 @@ Debug one pod at a time unless separate JTAG adapters are configured. While one 
 monitor the second pod over serial:
 
 ```bash
-python3 .codex/skills/domes-esp32-firmware/scripts/monitor_serial.py /dev/ttyACM1 30
+PEER_CONSOLE="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Espressif_USB_JTAG_serial_debug_unit*' | sort | sed -n '2p')"
+test -n "$PEER_CONSOLE"
+python3 tools/firmware/monitor_serial.py "$PEER_CONSOLE" 30
 ```
 
 For ESP-NOW issues, set breakpoints in callbacks on the debugged pod and monitor the peer's serial

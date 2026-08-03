@@ -20,13 +20,16 @@ void main() {
       expect(find.text('OTA Update'), findsOneWidget);
     });
 
-    testWidgets('shows not connected warning when disconnected',
-        (tester) async {
+    testWidgets('shows not connected warning when disconnected', (
+      tester,
+    ) async {
       await tester.pumpWidget(_wrap(const OtaScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.text('Not connected to a pod. Connect first.'),
-          findsOneWidget);
+      expect(
+        find.text('Not connected to a pod. Connect first.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('renders firmware file picker section', (tester) async {
@@ -42,7 +45,26 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Version'), findsOneWidget);
-      expect(find.text('v1.0.0'), findsOneWidget);
+      expect(find.text('v1.0.0'), findsNothing);
+      expect(
+        find.text('Exact version embedded in the selected image'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('shows validation for a non-embedded version format', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_wrap(const OtaScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'release');
+      await tester.pump();
+
+      expect(
+        find.text('OTA version is not parser-valid: release'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('renders flash firmware button', (tester) async {
@@ -64,15 +86,17 @@ void main() {
     });
 
     testWidgets('shows progress section when transferring', (tester) async {
-      await tester.pumpWidget(_wrap(
-        const OtaScreen(),
-        overrides: [
-          otaProvider.overrideWith((ref) {
-            final notifier = OtaNotifier(ref);
-            return notifier;
-          }),
-        ],
-      ));
+      await tester.pumpWidget(
+        _wrap(
+          const OtaScreen(),
+          overrides: [
+            otaProvider.overrideWith((ref) {
+              final notifier = OtaNotifier(ref);
+              return notifier;
+            }),
+          ],
+        ),
+      );
       await tester.pumpAndSettle();
 
       // Default is idle - no progress shown

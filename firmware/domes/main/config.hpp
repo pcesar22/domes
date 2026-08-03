@@ -7,55 +7,21 @@
 namespace domes::config {
 
 // =============================================================================
-// Board Selection
+// Active Board Profile
 // =============================================================================
-// Uncomment ONE of these to select the target board
-// #define BOARD_DEVKITC1    // ESP32-S3-DevKitC-1 standalone (development)
-#define BOARD_NFF_DEVBOARD   // NFF devboard with DevKitC-1 plugged in
-// #define BOARD_DOMES_V1    // DOMES Pod v1 PCB (production)
-
-// =============================================================================
-// DevKitC-1 Pin Definitions
-// =============================================================================
-#ifdef BOARD_DEVKITC1
+// The NFF carrier with an ESP32-S3 N8R8 module is the only supported firmware
+// target. Add another complete, build-tested profile before introducing board
+// selection again.
+//
+// Pin mapping from schematic: ESP32-S3-DEVKIT_Sensor_Project V1.0.
 
 namespace pins {
-// Built-in RGB LED (WS2812)
-// NOTE: DevKitC-1 v1.0 uses GPIO48, v1.1 uses GPIO38
-constexpr gpio_num_t kLedData = GPIO_NUM_38;  // v1.1
-constexpr uint8_t kLedCount = 1;
-constexpr bool kLedIsRgbw = false;  // WS2812 is RGB only
+// UART0 to the DevKit CP2102N bridge. ESP-IDF does not route these pins when
+// the console is assigned to native USB Serial/JTAG, so the runtime transport
+// must configure both signals explicitly.
+constexpr gpio_num_t kUartTx = GPIO_NUM_43;
+constexpr gpio_num_t kUartRx = GPIO_NUM_44;
 
-// Boot button
-constexpr gpio_num_t kButtonBoot = GPIO_NUM_0;
-
-// Touch test pins (directly touchable on devkit)
-constexpr gpio_num_t kTouch1 = GPIO_NUM_1;
-constexpr gpio_num_t kTouch2 = GPIO_NUM_2;
-constexpr gpio_num_t kTouch3 = GPIO_NUM_3;
-constexpr gpio_num_t kTouch4 = GPIO_NUM_4;
-constexpr uint8_t kTouchPadCount = 4;
-
-// I2C (directly touchable on devkit)
-constexpr gpio_num_t kI2cSda = GPIO_NUM_8;
-constexpr gpio_num_t kI2cScl = GPIO_NUM_9;
-
-// I2S (directly touchable on devkit)
-constexpr gpio_num_t kI2sBclk = GPIO_NUM_12;
-constexpr gpio_num_t kI2sLrclk = GPIO_NUM_11;
-constexpr gpio_num_t kI2sDout = GPIO_NUM_13;
-}  // namespace pins
-
-#endif  // BOARD_DEVKITC1
-
-// =============================================================================
-// NFF Development Board Pin Definitions
-// =============================================================================
-// DevKitC-1 plugged into NFF board with SK6812 ring, IMU, haptic, audio
-// Pin mapping from schematic: ESP32-S3-DEVKIT_Sensor_Project V1.0
-#ifdef BOARD_NFF_DEVBOARD
-
-namespace pins {
 // LED Ring (16x SK6812MINI-E via SN74AHCT1G125 level shifter)
 // H1 pin 9 = LED_DATA_3V3 = ESP32 GPIO16
 // NOTE: The SK6812MINI-E on this board appears to be RGB, not RGBW
@@ -97,41 +63,6 @@ constexpr gpio_num_t kTouch3 = GPIO_NUM_4;
 constexpr gpio_num_t kTouch4 = GPIO_NUM_6;
 constexpr uint8_t kTouchPadCount = 4;
 }  // namespace pins
-
-#endif  // BOARD_NFF_DEVBOARD
-
-// =============================================================================
-// DOMES Pod v1 Pin Definitions (Future)
-// =============================================================================
-#ifdef BOARD_DOMES_V1
-
-namespace pins {
-// LED Ring (16x SK6812 RGBW)
-constexpr gpio_num_t kLedData = GPIO_NUM_14;
-constexpr uint8_t kLedCount = 16;
-constexpr bool kLedIsRgbw = true;  // SK6812 has white channel
-
-// Touch pads
-constexpr gpio_num_t kTouch1 = GPIO_NUM_1;
-constexpr gpio_num_t kTouch2 = GPIO_NUM_2;
-constexpr gpio_num_t kTouch3 = GPIO_NUM_3;
-constexpr gpio_num_t kTouch4 = GPIO_NUM_4;
-constexpr uint8_t kTouchPadCount = 4;
-
-// I2C bus (DRV2605L @ 0x5A, LIS2DW12 @ 0x18)
-constexpr gpio_num_t kI2cSda = GPIO_NUM_8;
-constexpr gpio_num_t kI2cScl = GPIO_NUM_9;
-
-// I2S audio (MAX98357A)
-constexpr gpio_num_t kI2sBclk = GPIO_NUM_12;
-constexpr gpio_num_t kI2sLrclk = GPIO_NUM_11;
-constexpr gpio_num_t kI2sDout = GPIO_NUM_13;
-
-// Battery ADC
-constexpr gpio_num_t kBatteryAdc = GPIO_NUM_5;
-}  // namespace pins
-
-#endif  // BOARD_DOMES_V1
 
 // =============================================================================
 // Timing Constants

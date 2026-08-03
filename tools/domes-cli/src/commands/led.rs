@@ -38,10 +38,45 @@ pub fn led_set(transport: &mut dyn Transport, pattern: &CliLedPattern) -> Result
         );
     }
 
-    parse_led_pattern_response(&frame.payload).context("Failed to parse set LED pattern response")
+    let applied = parse_led_pattern_response(&frame.payload)
+        .context("Failed to parse set LED pattern response")?;
+    validate_applied_pattern(pattern, &applied)?;
+    Ok(applied)
 }
 
 /// Turn LEDs off
 pub fn led_off(transport: &mut dyn Transport) -> Result<CliLedPattern> {
     led_set(transport, &CliLedPattern::off())
+}
+
+fn validate_applied_pattern(requested: &CliLedPattern, applied: &CliLedPattern) -> Result<()> {
+    use crate::proto::config::LedPatternType;
+
+    let matches = requested.pattern_type == applied.pattern_type
+        && match requested.pattern_type {
+            LedPatternType::LedPatternOff => true,
+            LedPatternType::LedPatternSolid => {
+                requested.color == applied.color && requested.brightness == applied.brightness
+            }
+            LedPatternType::LedPatternBreathing => {
+                requested.color == applied.color
+                    && requested.period_ms == applied.period_ms
+                    && requested.brightness == applied.brightness
+            }
+            LedPatternType::LedPatternColorCycle => {
+                requested.colors == applied.colors
+                    && requested.period_ms == applied.period_ms
+                    && requested.brightness == applied.brightness
+            }
+        };
+
+    if !matches {
+        anyhow::bail!(
+            "Applied LED pattern did not match request: requested {:?}, got {:?}",
+            requested,
+            applied
+        );
+    }
+
+    Ok(())
 }

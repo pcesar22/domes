@@ -7,14 +7,15 @@
  * GameEngine manages the state machine within SystemMode::GAME:
  *   Ready -> Armed -> Triggered -> Feedback -> Ready
  *
- * Pure logic class with no FreeRTOS dependencies. Uses polling-based
- * touch detection and std::function callbacks for feedback.
+ * Uses polling-based touch detection and std::function callbacks for feedback.
+ * Public operations are synchronized because protocol commands and the game
+ * tick task run on different cores.
  */
 
+#include "esp_timer.h"
 #include "interfaces/iLedDriver.hpp"
 #include "interfaces/iTouchDriver.hpp"
-
-#include "esp_timer.h"
+#include "utils/mutex.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -45,7 +46,7 @@ struct ArmConfig {
 };
 
 /// Feedback mode bitmask constants
-constexpr uint8_t kFeedbackLed   = 0x01;
+constexpr uint8_t kFeedbackLed = 0x01;
 constexpr uint8_t kFeedbackAudio = 0x02;
 
 /**
@@ -81,8 +82,7 @@ constexpr uint32_t kFeedbackDurationMs = 200;
  * @brief Per-pod game logic FSM
  *
  * Manages the arm-touch-feedback cycle. Call tick() at ~10ms intervals
- * from a game task. Pure logic — no FreeRTOS, no hardware dependencies
- * beyond ITouchDriver.
+ * from a game task. Hardware access is limited to ITouchDriver.
  *
  * @code
  * GameEngine engine(touchDriver);
@@ -127,14 +127,14 @@ public:
     /**
      * @brief Get current FSM state
      */
-    GameState currentState() const { return state_; }
+    GameState currentState() const;
 
     /**
      * @brief Get reaction time of last hit (microseconds)
      *
      * Only valid after a hit event. Returns 0 if no hit recorded.
      */
-    uint32_t lastReactionTimeUs() const { return lastReactionTimeUs_; }
+    uint32_t lastReactionTimeUs() const;
 
     /**
      * @brief Set feedback action callbacks
@@ -147,17 +147,27 @@ public:
     void setEventCallback(GameEventCallback callback);
 
 private:
-    void handleArmed();
-    void handleTriggered();
+    struct PendingDispatch {
+        bool active = false;
+        GameEvent event{GameEvent::Type::kMiss, 0, 0, 0};
+        uint8_t feedbackMode = 0;
+    };
+
+    void handleArmed(PendingDispatch& pending);
+    void handleTriggered(PendingDispatch& pending);
     void handleFeedback();
-    void enterFeedback(GameEvent::Type type, uint32_t reactionTimeUs, uint8_t padIndex);
+    void enterFeedback(GameEvent::Type type, uint32_t reactionTimeUs, uint8_t padIndex,
+                       PendingDispatch& pending);
+    void dispatch(const PendingDispatch& pending);
 
     ITouchDriver& touch_;
+    mutable utils::Mutex stateMutex_;
+    mutable utils::Mutex callbackMutex_;
     GameState state_ = GameState::kReady;
     ArmConfig config_;
 
-    int64_t armedAtUs_ = 0;       ///< esp_timer_get_time() when arm() called
-    int64_t feedbackAtUs_ = 0;    ///< esp_timer_get_time() when feedback started
+    int64_t armedAtUs_ = 0;     ///< esp_timer_get_time() when arm() called
+    int64_t feedbackAtUs_ = 0;  ///< esp_timer_get_time() when feedback started
     uint32_t lastReactionTimeUs_ = 0;
 
     // Pending triggered event (from kTriggered -> kFeedback)

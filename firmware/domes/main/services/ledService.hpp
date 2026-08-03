@@ -10,14 +10,14 @@
  * - Color cycle (automatic color transitions)
  */
 
-#include "trace/traceApi.hpp"
-
 #include "config.pb.h"
+
 #include "config/featureManager.hpp"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "interfaces/iLedDriver.hpp"
+#include "trace/traceApi.hpp"
 #include "utils/ledAnimator.hpp"
 
 #include <atomic>
@@ -114,44 +114,40 @@ public:
      * @return ESP_OK on success
      */
     esp_err_t setPattern(const domes_config_LedPattern& pattern) {
-        ESP_LOGI("LedService", "setPattern called: type=%d, has_color=%d, period=%lu, brightness=%lu",
+        ESP_LOGI("LedService",
+                 "setPattern called: type=%d, has_color=%d, period=%lu, brightness=%lu",
                  pattern.type, pattern.has_color, pattern.period_ms, pattern.brightness);
 
         if (pattern.has_color) {
-            ESP_LOGI("LedService", "  Color: R=%lu G=%lu B=%lu W=%lu",
-                     pattern.color.r, pattern.color.g, pattern.color.b, pattern.color.w);
+            ESP_LOGI("LedService", "  Color: R=%lu G=%lu B=%lu W=%lu", pattern.color.r,
+                     pattern.color.g, pattern.color.b, pattern.color.w);
         }
 
         LedPatternConfig config;
         config.type = pattern.type;
-        config.periodMs = pattern.period_ms > 0 ? pattern.period_ms : 2000;
-        config.brightness = pattern.brightness > 0 ? static_cast<uint8_t>(pattern.brightness) : 128;
+        config.periodMs = pattern.period_ms;
+        config.brightness = static_cast<uint8_t>(pattern.brightness);
 
         // Convert primary color - always try to get it even if has_color is false
         config.primaryColor = Color::rgbw(
-            static_cast<uint8_t>(pattern.color.r),
-            static_cast<uint8_t>(pattern.color.g),
-            static_cast<uint8_t>(pattern.color.b),
-            static_cast<uint8_t>(pattern.color.w)
-        );
+            static_cast<uint8_t>(pattern.color.r), static_cast<uint8_t>(pattern.color.g),
+            static_cast<uint8_t>(pattern.color.b), static_cast<uint8_t>(pattern.color.w));
 
-        ESP_LOGI("LedService", "  Config color: R=%d G=%d B=%d W=%d",
-                 config.primaryColor.r, config.primaryColor.g,
-                 config.primaryColor.b, config.primaryColor.w);
+        ESP_LOGI("LedService", "  Config color: R=%d G=%d B=%d W=%d", config.primaryColor.r,
+                 config.primaryColor.g, config.primaryColor.b, config.primaryColor.w);
 
         // Convert color array for color cycle
         config.colorCount = pattern.colors_count > 8 ? 8 : pattern.colors_count;
         for (uint8_t i = 0; i < config.colorCount; i++) {
-            config.colors[i] = Color::rgbw(
-                static_cast<uint8_t>(pattern.colors[i].r),
-                static_cast<uint8_t>(pattern.colors[i].g),
-                static_cast<uint8_t>(pattern.colors[i].b),
-                static_cast<uint8_t>(pattern.colors[i].w)
-            );
+            config.colors[i] = Color::rgbw(static_cast<uint8_t>(pattern.colors[i].r),
+                                           static_cast<uint8_t>(pattern.colors[i].g),
+                                           static_cast<uint8_t>(pattern.colors[i].b),
+                                           static_cast<uint8_t>(pattern.colors[i].w));
         }
 
         // Default colors for color cycle if none provided
-        if (config.type == domes_config_LedPatternType_LED_PATTERN_COLOR_CYCLE && config.colorCount == 0) {
+        if (config.type == domes_config_LedPatternType_LED_PATTERN_COLOR_CYCLE &&
+            config.colorCount == 0) {
             config.colors[0] = Color::red();
             config.colors[1] = Color::green();
             config.colors[2] = Color::blue();
@@ -285,7 +281,6 @@ private:
     }
 
     void updateAnimation() {
-        TRACE_SCOPE(TRACE_ID("LED.UpdateAnimation"), domes::trace::Category::kLed);
         switch (currentPattern_.type) {
             case domes_config_LedPatternType_LED_PATTERN_OFF:
                 driver_.clear();
@@ -294,8 +289,8 @@ private:
 
             case domes_config_LedPatternType_LED_PATTERN_SOLID: {
                 Color c = currentPattern_.primaryColor;
-                ESP_LOGD("LedService", "SOLID: setting all to R=%d G=%d B=%d W=%d",
-                         c.r, c.g, c.b, c.w);
+                ESP_LOGD("LedService", "SOLID: setting all to R=%d G=%d B=%d W=%d", c.r, c.g, c.b,
+                         c.w);
                 driver_.setAll(c);
                 driver_.refresh();
                 break;
@@ -315,7 +310,8 @@ private:
     }
 
     void updateColorCycle() {
-        if (currentPattern_.colorCount == 0) return;
+        if (currentPattern_.colorCount == 0)
+            return;
 
         uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
         uint32_t elapsed = now - lastColorChangeMs_;
@@ -334,8 +330,7 @@ private:
     esp_err_t applyPattern(const LedPatternConfig& config) {
         TRACE_INSTANT(TRACE_ID("LED.PatternChange"), domes::trace::Category::kLed);
         ESP_LOGI("LedService", "applyPattern: type=%d, brightness=%d, color=(%d,%d,%d,%d)",
-                 config.type, config.brightness,
-                 config.primaryColor.r, config.primaryColor.g,
+                 config.type, config.brightness, config.primaryColor.r, config.primaryColor.g,
                  config.primaryColor.b, config.primaryColor.w);
 
         currentPattern_ = config;
@@ -355,8 +350,8 @@ private:
 
             case domes_config_LedPatternType_LED_PATTERN_SOLID:
                 ESP_LOGI("LedService", "Applying SOLID pattern with color (%d,%d,%d,%d)",
-                         config.primaryColor.r, config.primaryColor.g,
-                         config.primaryColor.b, config.primaryColor.w);
+                         config.primaryColor.r, config.primaryColor.g, config.primaryColor.b,
+                         config.primaryColor.w);
                 driver_.setAll(config.primaryColor);
                 driver_.refresh();
                 break;
@@ -367,7 +362,8 @@ private:
                 break;
 
             case domes_config_LedPatternType_LED_PATTERN_COLOR_CYCLE:
-                ESP_LOGI("LedService", "Applying COLOR_CYCLE pattern with %d colors", config.colorCount);
+                ESP_LOGI("LedService", "Applying COLOR_CYCLE pattern with %d colors",
+                         config.colorCount);
                 if (config.colorCount > 0) {
                     animator_.transitionTo(config.colors[0], 0);
                 }

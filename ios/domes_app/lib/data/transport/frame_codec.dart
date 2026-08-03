@@ -256,7 +256,8 @@ class FrameDecoder {
           _state = _DecoderState.complete;
 
           // Verify CRC
-          final receivedCrc = _crcBytes[0] |
+          final receivedCrc =
+              _crcBytes[0] |
               (_crcBytes[1] << 8) |
               (_crcBytes[2] << 16) |
               (_crcBytes[3] << 24);
@@ -268,16 +269,12 @@ class FrameDecoder {
           final calculatedCrc = _crc32(crcInput);
 
           if (receivedCrc != calculatedCrc) {
-            return DecodeError(CrcMismatch(
-              expected: calculatedCrc,
-              actual: receivedCrc,
-            ));
+            return DecodeError(
+              CrcMismatch(expected: calculatedCrc, actual: receivedCrc),
+            );
           }
 
-          return DecodeSuccess(Frame(
-            msgType: _msgType,
-            payload: payloadData,
-          ));
+          return DecodeSuccess(Frame(msgType: _msgType, payload: payloadData));
         }
         return const DecodeNone();
 
