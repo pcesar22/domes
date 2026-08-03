@@ -43,8 +43,10 @@ The `domes.bin` application image, such as `$VERIFY_ROOT/build/domes.bin` from t
 above, is OTA-only. It does not contain the bootloader, partition table, or initial OTA metadata and
 must not be used alone to provision a blank board. Use the flash helper from a matching checkout for
 development. Software CI packages an unversioned `domes-factory.bin`; a tagged release publishes
-the corresponding `domes-<tag>-factory.bin`. Either is a merged image for initial installation when
-it matches the source and application image being verified:
+the corresponding `domes-<tag>-factory.bin`. Both packages retain the exact `domes.elf` and
+`project_description.json` needed to validate restart snapshots and symbolize panic dumps. The
+factory image is for initial installation only when it matches the source and application image
+being verified:
 
 ```bash
 FACTORY_BIN='domes-<tag>-factory.bin'  # or domes-factory.bin from Software CI

@@ -27,6 +27,7 @@ pub fn feature_list(transport: &mut dyn Transport) -> Result<Vec<CliFeatureState
 
 /// Enable a feature
 pub fn feature_enable(transport: &mut dyn Transport, feature: Feature) -> Result<CliFeatureState> {
+    require_mutation_capability(transport, feature)?;
     let payload = serialize_set_feature(feature, true);
     let frame = transport
         .send_command(ConfigMsgType::SetFeatureReq as u8, &payload)
@@ -47,6 +48,7 @@ pub fn feature_enable(transport: &mut dyn Transport, feature: Feature) -> Result
 
 /// Disable a feature
 pub fn feature_disable(transport: &mut dyn Transport, feature: Feature) -> Result<CliFeatureState> {
+    require_mutation_capability(transport, feature)?;
     let payload = serialize_set_feature(feature, false);
     let frame = transport
         .send_command(ConfigMsgType::SetFeatureReq as u8, &payload)
@@ -83,6 +85,13 @@ pub fn feature_status(transport: &mut dyn Transport, feature: Feature) -> Result
     let state = parse_get_feature_response(&frame.payload)
         .context("Failed to parse get feature response")?;
     validate_feature_response(feature, None, state)
+}
+
+fn require_mutation_capability(transport: &mut dyn Transport, feature: Feature) -> Result<()> {
+    if feature == Feature::Wifi {
+        super::wifi::require_wifi_capability(transport)?;
+    }
+    Ok(())
 }
 
 fn validate_feature_response(

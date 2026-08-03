@@ -83,6 +83,33 @@ class ReleaseContractTest(unittest.TestCase):
         self.assertIn("isSha256Hex(sha256Out)", self.github_client)
         self.assertIn("isSha256Hex(expectedSha256)", self.ota_manager)
 
+    def test_ci_and_release_packages_retain_exact_diagnostics(self) -> None:
+        release_fragments = (
+            'cp domes.elf "$release_dir/domes.elf"',
+            'cp project_description.json "$release_dir/project_description.json"',
+            "test -s domes.elf",
+            "test -s project_description.json",
+            "sha256sum -- *.bin *.elf *.json flash_args > SHA256SUMS",
+            'metadata.get("project_version") != os.environ["RELEASE_VERSION"]',
+        )
+        for fragment in release_fragments:
+            self.assertIn(fragment, self.workflow)
+
+        ci_fragments = (
+            'cp domes.elf "$release_dir/domes.elf"',
+            'cp project_description.json "$release_dir/project_description.json"',
+            "test -s domes.elf",
+            "test -s project_description.json",
+            "            domes.elf \\",
+            "            project_description.json \\",
+        )
+        for fragment in ci_fragments:
+            self.assertIn(fragment, self.software_workflow)
+
+        for workflow in (self.workflow, self.software_workflow):
+            self.assertIn('metadata.get("app_elf", "")', workflow)
+            self.assertIn('metadata_elf != root / "domes.elf"', workflow)
+
     def test_release_build_embeds_the_validated_tag(self) -> None:
         self.assertIn(
             "RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}",
@@ -348,6 +375,9 @@ class ReleaseContractTest(unittest.TestCase):
             "WIFI_CAPABILITY_OUTCOME: ${{ steps.wifi_capability.outcome }}",
             'report "Default-build WiFi capability contract" "$WIFI_CAPABILITY_OUTCOME"',
             "'feature enable haptic'",
+            "'feature enable wifi'",
+            "'ota auto-update --enable'",
+            '"$CLI" --port "$port" ota auto-update --disable',
             "Capturing final health and feature state",
             "Final device mode is not idle",
         )

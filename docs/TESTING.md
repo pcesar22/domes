@@ -231,7 +231,7 @@ Flash coredumps and clean-restart snapshots are separate diagnostics. The active
 | [`firmware-ci.yml`](../.github/workflows/firmware-ci.yml) | Aggregate Software CI: ESP-IDF build/package validation, host tests, CLI checks, host tooling, protocol drift, and Flutter checks, exposed through `CI Gate` | Unfiltered `pull_request`, merge queue entry, and push to `main` |
 | [`flutter-ci.yml`](../.github/workflows/flutter-ci.yml) | Reusable generated-binding, analysis, Flutter test, Linux release-build, and no-codesign iOS release-build jobs called by Software CI | `workflow_call` only |
 | [`firmware-hw-test.yml`](../.github/workflows/firmware-hw-test.yml) | Self-hosted device checks | `hw-test` label and subsequent synchronize/reopen events while labeled, or manual run |
-| [`firmware-release.yml`](../.github/workflows/firmware-release.yml) | Tag validation, the complete reusable Software CI gate, then OTA app and merged factory images with checksums | Stable `vMAJOR.MINOR.PATCH` tags on `main` |
+| [`firmware-release.yml`](../.github/workflows/firmware-release.yml) | Tag validation, the complete reusable Software CI gate, then OTA app, merged factory image, exact ELF/build identity, and checksums | Stable `vMAJOR.MINOR.PATCH` tags on `main` |
 
 The Software CI workflow has no pull-request path filter, so documentation-only and code changes use
 the same aggregate gate. The repository ruleset or branch-protection configuration must require the

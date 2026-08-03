@@ -1230,16 +1230,28 @@ jobs:
 
           for port in "${PORTS[@]}"; do
             echo "Checking WiFi client capability on $port..."
-            if output=$("$CLI" --port "$port" wifi status 2>&1); then
+            for command in \
+              'wifi status' \
+              'wifi enable' \
+              'wifi disable' \
+              'feature enable wifi' \
+              'feature disable wifi' \
+              'ota check' \
+              'ota auto-update --enable'; do
+              read -ra args <<< "$command"
+              if output=$("$CLI" --port "$port" "${args[@]}" 2>&1); then
+                printf '%s\n' "$output"
+                echo "::error::Default firmware unexpectedly accepted: $command"
+                exit 1
+              fi
               printf '%s\n' "$output"
-              echo "::error::Default firmware unexpectedly exposes runtime WiFi client control"
-              exit 1
-            fi
-            printf '%s\n' "$output"
-            if ! grep -q 'does not expose the WiFi feature flag' <<< "$output"; then
-              echo "::error::WiFi capability failed for an unexpected reason"
-              exit 1
-            fi
+              if ! grep -q 'does not expose the WiFi feature flag' <<< "$output"; then
+                echo "::error::WiFi capability command failed for an unexpected reason: $command"
+                exit 1
+              fi
+            done
+
+            "$CLI" --port "$port" ota auto-update --disable
           done
 
       - name: Test - Automated Initialization Self-Test (all devices)

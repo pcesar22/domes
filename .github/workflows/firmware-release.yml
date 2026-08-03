@@ -169,6 +169,8 @@ jobs:
           fi
 
           cp domes.bin "$release_dir/domes-${RELEASE_VERSION}.bin"
+          cp domes.elf "$release_dir/domes.elf"
+          cp project_description.json "$release_dir/project_description.json"
           cp bootloader/bootloader.bin "$release_dir/bootloader.bin"
           cp partition_table/partition-table.bin "$release_dir/partition-table.bin"
           cp ota_data_initial.bin "$release_dir/ota_data_initial.bin"
@@ -180,13 +182,28 @@ jobs:
 
           cd "$release_dir"
           test -s "domes-${RELEASE_VERSION}.bin"
+          test -s domes.elf
+          test -s project_description.json
           test -s "domes-${RELEASE_VERSION}-factory.bin"
           manual_flash_image="${RUNNER_TEMP:-/tmp}/domes-release-flash-args.bin"
           python -m esptool --chip esp32s3 merge_bin -o "$manual_flash_image" @flash_args
           cmp -- "$manual_flash_image" "domes-${RELEASE_VERSION}-factory.bin"
           rm -f "$manual_flash_image"
-          sha256sum -- *.bin flash_args > SHA256SUMS
+          sha256sum -- *.bin *.elf *.json flash_args > SHA256SUMS
           sha256sum --check SHA256SUMS
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(".").resolve()
+          metadata = json.loads((root / "project_description.json").read_text())
+          metadata_elf = (root / metadata.get("app_elf", "")).resolve()
+          if metadata_elf != root / "domes.elf" or not metadata_elf.is_file():
+              raise SystemExit(f"project metadata does not resolve to packaged ELF: {metadata_elf}")
+          if metadata.get("project_version") != os.environ["RELEASE_VERSION"]:
+              raise SystemExit("project metadata version does not match release tag")
+          PY
           app_sha256=$(sha256sum "domes-${RELEASE_VERSION}.bin" | cut -d ' ' -f 1)
           echo "app_sha256=$app_sha256" >> "$GITHUB_OUTPUT"
 
@@ -201,7 +218,9 @@ jobs:
 
             - `domes-${{ needs.validate-release.outputs.version }}.bin` is the OTA application image.
             - `domes-${{ needs.validate-release.outputs.version }}-factory.bin` is the complete factory image.
-            - `SHA256SUMS` verifies every published binary and the manual flash arguments.
+            - `domes.elf` and `project_description.json` retain the exact symbols and build identity
+              needed for restart snapshots and panic dumps.
+            - `SHA256SUMS` verifies every published image, diagnostic artifact, and the manual flash arguments.
 
             SHA-256: ${{ steps.package.outputs.app_sha256 }}
 

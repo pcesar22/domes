@@ -23,14 +23,14 @@ Hardware rows are dated observations of the image exercised during the review; t
 automatically validate later working-tree edits. Rebuild, reflash, and repeat the applicable checks
 on the final pull-request head before promoting any pending release gate.
 
-The dated firmware and hardware evidence below is bound to this artifact identity:
+The dated firmware and hardware evidence below used three purpose-built artifacts from source commit
+`99db4b77cc58a6695b86b7122ea5ee77fa9cbecb`:
 
-| Evidence field | Tested value |
-| --- | --- |
-| Firmware source commit | `99db4b77cc58a6695b86b7122ea5ee77fa9cbecb` |
-| Embedded application version | `v0.0.0-1-g99db4b77cc58` |
-| `domes.bin` SHA-256 | `cafb9c480f04b8d67f599977f84fd437fb2d0d0786c52a50e1205f4dc26f510b` |
-| `domes.elf` SHA-256 | `e2fe59021b24c09b4cfc53ca961b5f1389762fd1160a55c96670ff86f0fb1ce7` |
+| Campaign artifact | Embedded version | `domes.bin` SHA-256 | `domes.elf` SHA-256 | Additional identity |
+| --- | --- | --- | --- | --- |
+| Baseline and merged-factory programming | `v0.0.0-0-g99db4b77cc58` | `9b27881a78d0d800277dc1cf6900b4e96f6e8ac3d221614355281ae43e176122` | `e01eb0fc66fe9efe34fd24eb47967bee5c792fa9c17e0f6059c911ad00fc0831` | Factory image SHA-256 `b5a5509bc61fd08118d0a0b1a9e2933e9f65c00077c985c9f7bde10441417d94` |
+| Accepted serial/BLE OTA and final runtime | `v0.0.0-1-g99db4b77cc58` | `cafb9c480f04b8d67f599977f84fd437fb2d0d0786c52a50e1205f4dc26f510b` | `e2fe59021b24c09b4cfc53ca961b5f1389762fd1160a55c96670ff86f0fb1ce7` | Final image on both reviewed pods |
+| Forced failed-self-test rollback | `v0.0.0-2-g99db4b77cc58` | `d065b384e95e06251d48e6e3ee2590af81c6895afd449d39ddac56c78ecc03b8` | `5831c1206a22c4ab9f8264c0c3ac85985e00ea53cadca1a0a42435ad4c03be78` | Rollback-test build only |
 
 Later documentation, CI, generated-comment, and host CLI capability-reporting corrections do not
 alter the firmware runtime behavior tested in this campaign, so this ledger names `99db4b7` rather
@@ -68,7 +68,7 @@ wire-schema, dependency, or build-input change invalidates the retained artifact
 | --- | --- | --- |
 | Host firmware tests | 271/271 passed in a fresh build on 2026-08-02 | Protocol, services, simulation, and selected drivers from firmware source `99db4b7`. |
 | ESP-IDF firmware build | Exact ESP-IDF v5.4.4 clean build passed on 2026-08-02 | The 1,433,248-byte `99db4b7` image fit the `0x1E0000` OTA slot with 532,832 bytes free; rollback was enabled in the resolved configuration. |
-| Rust CLI | Format, strict Clippy, debug/release locked builds, and 98/98 tests passed on 2026-08-02 | The count is 88 unit tests plus 10 CLI integration tests. |
+| Rust CLI | Format, strict Clippy, debug/release locked builds, and 100/100 tests passed on 2026-08-02 | The count is 90 unit tests plus 10 CLI integration tests. |
 | Flutter app | Pinned Flutter 3.44.8 analysis, 161 tests, and a Linux release build passed locally on 2026-08-02 | The local toolchain matches CI. Native iOS build remains unavailable on Linux. |
 | Protocol generation | Nanopb and Dart drift checks passed on 2026-08-02 | `tools/generate_protocols.sh --check all`. |
 | Attached hardware | Two NFF N8R8 pods exercised on 2026-08-02 | Erase plus merged-factory programming, normal multi-image programming, UART/BLE diagnostics, feature/mode control, registry fan-out, serial/BLE OTA and recovery, forced rollback, repeated two-way ESP-NOW benchmarks, a trace-backed drill, and a 620-second dual-board soak passed. Physical output/input remains listed below. |

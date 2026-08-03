@@ -54,7 +54,7 @@ enum class Status : uint8_t {
 };
 
 /**
- * @brief Check if a message type is a trace command (0x10-0x1B assigned range)
+ * @brief Check if a message type is in the trace family (0x10-0x1B, including reserved 0x18)
  */
 inline bool isTraceMessage(uint8_t type) {
     return (type >= static_cast<uint8_t>(MsgType::kStart) &&

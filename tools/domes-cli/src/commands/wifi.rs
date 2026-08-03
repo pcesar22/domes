@@ -7,14 +7,12 @@ use anyhow::{anyhow, Result};
 
 /// Enable WiFi subsystem
 pub fn wifi_enable(transport: &mut dyn Transport) -> Result<bool> {
-    require_wifi_capability(transport)?;
     let state = super::feature_enable(transport, Feature::Wifi)?;
     Ok(state.enabled)
 }
 
 /// Disable WiFi subsystem
 pub fn wifi_disable(transport: &mut dyn Transport) -> Result<bool> {
-    require_wifi_capability(transport)?;
     let state = super::feature_disable(transport, Feature::Wifi)?;
     Ok(!state.enabled)
 }
@@ -125,5 +123,28 @@ mod tests {
                 vec![ConfigMsgType::ListFeaturesReq as u8]
             );
         }
+    }
+
+    #[test]
+    fn generic_wifi_mutations_use_the_same_capability_preflight() {
+        let mut enable_transport = MockTransport::without_wifi();
+        let error = super::super::feature_enable(&mut enable_transport, Feature::Wifi)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("does not expose the WiFi feature flag"));
+        assert_eq!(
+            enable_transport.commands,
+            vec![ConfigMsgType::ListFeaturesReq as u8]
+        );
+
+        let mut disable_transport = MockTransport::without_wifi();
+        let error = super::super::feature_disable(&mut disable_transport, Feature::Wifi)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("does not expose the WiFi feature flag"));
+        assert_eq!(
+            disable_transport.commands,
+            vec![ConfigMsgType::ListFeaturesReq as u8]
+        );
     }
 }
