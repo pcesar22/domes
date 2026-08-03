@@ -8,6 +8,7 @@ when documents disagree; do not resolve conflicts by copying the same fact into 
 | Concern | Authoritative source | Supporting documentation |
 | --- | --- | --- |
 | Delivered status and remaining work | [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) | Pull requests and verification results |
+| Milestone structure and acceptance contract | [`MILESTONE_TEMPLATE.md`](MILESTONE_TEMPLATE.md) | `$domes-milestone-manager` semantic review workflow |
 | Firmware behavior | Code under [`firmware/domes/main/`](../firmware/domes/main/) | [`firmware/README.md`](../firmware/README.md) |
 | Active compiled board profile and GPIO values | [`firmware/domes/main/config.hpp`](../firmware/domes/main/config.hpp) | [`PIN_REFERENCE.md`](PIN_REFERENCE.md) and board schematic |
 | Config and trace messages | [`firmware/common/proto/`](../firmware/common/proto/) | [`tools/domes-cli/README.md`](../tools/domes-cli/README.md) |
@@ -45,6 +46,7 @@ to introduce a message or enum.
 | Work with multiple pods, BLE, or Linux device setup | [`.codex/PLATFORM.md`](../.codex/PLATFORM.md) |
 | Check current GPIO assignments | [`PIN_REFERENCE.md`](PIN_REFERENCE.md) |
 | Bring up an NFF board | [`hardware/nff-devboard/BRING_UP_CHECKLIST.md`](../hardware/nff-devboard/BRING_UP_CHECKLIST.md) |
+| Create or audit delivery milestones | [`MILESTONE_TEMPLATE.md`](MILESTONE_TEMPLATE.md) |
 | Inspect archived plans | [`research/archive/README.md`](../research/archive/README.md) |
 
 ## Document Lifecycle

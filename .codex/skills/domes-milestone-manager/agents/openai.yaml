@@ -1,0 +1,4 @@
+interface:
+  display_name: "DOMES Milestone Manager"
+  short_description: "Create and audit evidence-based DOMES milestones"
+  default_prompt: "Use $domes-milestone-manager to create, audit, and accept the DOMES milestone plan and report current status, next actions, evidence, and acceptance decisions."
