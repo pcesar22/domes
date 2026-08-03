@@ -84,7 +84,7 @@ else
 fi
 
 # Called by the EXIT trap below; ShellCheck cannot resolve trap callbacks.
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 cleanup() {
     if ! $RETAIN_ARTIFACTS; then
         rm -rf -- "${VERIFY_TMP:?}"

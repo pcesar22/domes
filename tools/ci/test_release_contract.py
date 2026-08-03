@@ -21,6 +21,7 @@ class ReleaseContractTest(unittest.TestCase):
         ).read_text()
         cls.software_workflow = (ROOT / ".github/workflows/firmware-ci.yml").read_text()
         cls.flutter_workflow = (ROOT / ".github/workflows/flutter-ci.yml").read_text()
+        cls.flutter_installer = (ROOT / "tools/ci/install_flutter.sh").read_text()
         cls.ios_project = (
             ROOT / "ios/domes_app/ios/Runner.xcodeproj/project.pbxproj"
         ).read_text()
@@ -187,7 +188,7 @@ class ReleaseContractTest(unittest.TestCase):
         self.assertIn(agent_eval_test, self.verify_script)
 
     def test_ios_swift_package_resolution_is_locked_consistently(self) -> None:
-        self.assertIn("flutter-version: 3.44.8", self.flutter_workflow)
+        self.assertIn("readonly version=3.44.8", self.flutter_installer)
         self.assertIn("XCLocalSwiftPackageReference", self.ios_project)
         self.assertIn("FlutterGeneratedPluginSwiftPackage", self.ios_project)
         self.assertIn("Run Prepare Flutter Framework Script", self.ios_scheme)
@@ -275,6 +276,34 @@ class ReleaseContractTest(unittest.TestCase):
         self.assertGreater(len(idf_images), 0)
         for image in idf_images:
             self.assertRegex(image, r"^espressif/idf:v5\.4\.4@sha256:[0-9a-f]{64}$")
+
+    def test_flutter_install_uses_verified_official_archives(self) -> None:
+        self.assertEqual(
+            2, self.flutter_workflow.count("run: tools/ci/install_flutter.sh")
+        )
+        self.assertNotIn("subosito/flutter-action", self.flutter_workflow)
+        self.assertIn(
+            "https://storage.googleapis.com/flutter_infra_release/releases",
+            self.flutter_installer,
+        )
+        for archive, digest in (
+            (
+                "flutter_linux_3.44.8-stable.tar.xz",
+                "672089e001571a9fbb209a495c583580c0c6c73ef98999264ba07fa93ace332d",
+            ),
+            (
+                "flutter_macos_3.44.8-stable.zip",
+                "b2f765234217327a5859d046c9f3b167387b61da5408b5866ed448d905877c66",
+            ),
+            (
+                "flutter_macos_arm64_3.44.8-stable.zip",
+                "c3d6fe95078f7001d947a31d42527de91d5bfe62e4cf444a1493a2e8f1fb199d",
+            ),
+        ):
+            self.assertIn(archive, self.flutter_installer)
+            self.assertIn(digest, self.flutter_installer)
+        self.assertIn("sha256sum --check", self.flutter_installer)
+        self.assertIn("shasum -a 256 --check", self.flutter_installer)
 
     def test_markdownlint_uses_an_isolated_lts_node_runtime(self) -> None:
         markdownlint_hook = self.pre_commit_config.split(
