@@ -10,7 +10,7 @@
 #endif
 
 /* Enum definitions */
-/* Frame-level message types for trace protocol (0x10-0x1F range)
+/* Frame-level message types for trace protocol (0x10-0x1B assigned range; 0x18 reserved)
  Used in the frame header [0xAA 0x55][Len][MsgType][Payload][CRC32] */
 typedef enum _domes_trace_MsgType {
     domes_trace_MsgType_MSG_TYPE_UNKNOWN = 0,

@@ -83,8 +83,9 @@ graph TB
 
 ## 1.3 Development Board Variants
 
-The source contains preliminary blocks for multiple platforms, but only the NFF profile is an active
-development target. The bare DevKit and production profiles are incomplete design stubs.
+The source contains one compiled board profile: the NFF carrier. The bare DevKit and production
+variants below are documentation-only historical or target descriptions, not source stubs or build
+targets.
 
 | Platform | Form Factor | Features | Primary Use |
 | ---------- | ------------- | ---------- | ------------- |
@@ -653,30 +654,29 @@ graph LR
 
 ### 9.1 Target Partition Scheme
 
-This 16 MB layout is a proposal. The current NFF firmware uses the checked-in 8 MB layout in
-`firmware/domes/partitions.csv`, with two `0x1E0000` app slots.
+The current NFF firmware uses the checked-in 8 MB layout in
+`firmware/domes/partitions.csv`, with two `0x1E0000` app slots. A production layout has not been
+implemented. The following address budget is a feasible 16 MB target for design review:
 
-```
-┌────────────────────────────────────────────────┐
-│              16MB Flash Layout                  │
-├────────────────────────────────────────────────┤
-│ Bootloader (0x1000)              │    32KB     │
-├────────────────────────────────────────────────┤
-│ Partition Table (0x8000)         │     4KB     │
-├────────────────────────────────────────────────┤
-│ NVS (config storage)             │    24KB     │
-├────────────────────────────────────────────────┤
-│ OTA Data (boot selection)        │     8KB     │
-├────────────────────────────────────────────────┤
-│ OTA_0 (Firmware Slot A)          │    4MB      │
-├────────────────────────────────────────────────┤
-│ OTA_1 (Firmware Slot B)          │    4MB      │
-├────────────────────────────────────────────────┤
-│ Audio Samples (SPIFFS/LittleFS)  │    6MB      │
-├────────────────────────────────────────────────┤
-│ Factory Reset Image              │    2MB      │
-└────────────────────────────────────────────────┘
-```
+| Region | Address range | Size |
+| --- | --- | --- |
+| Bootloader region | `0x000000-0x007FFF` | 32 KiB |
+| Partition table | `0x008000-0x008FFF` | 4 KiB |
+| NVS | `0x009000-0x00EFFF` | 24 KiB |
+| OTA data | `0x00F000-0x010FFF` | 8 KiB |
+| PHY initialization data | `0x011000-0x011FFF` | 4 KiB |
+| Panic core dump | `0x012000-0x031FFF` | 128 KiB |
+| Alignment and reserved system space | `0x032000-0x03FFFF` | 56 KiB |
+| OTA slot A | `0x040000-0x43FFFF` | 4 MiB |
+| OTA slot B | `0x440000-0x83FFFF` | 4 MiB |
+| Audio sample filesystem | `0x840000-0xD3FFFF` | 5 MiB |
+| Factory recovery application | `0xD40000-0xF3FFFF` | 2 MiB |
+| Reserved growth space | `0xF40000-0xFFFFFF` | 768 KiB |
+
+The ranges cover exactly 16 MiB, keep application offsets aligned to `0x10000`, and reserve both
+panic storage and growth space. Before adoption, the production profile still requires a checked-in
+partition CSV plus bootloader-size, secure-boot, flash-encryption, migration, OTA, and recovery
+verification.
 
 ### 9.2 Target OTA Update Flow
 
@@ -910,4 +910,4 @@ Consider building 2-3 prototype variants:
 
 *Document Created: 2026-01-03*
 *Project: DOMES*
-*Status: Draft for Review*
+*Lifecycle: Target design*

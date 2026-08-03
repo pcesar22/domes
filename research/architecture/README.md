@@ -36,7 +36,7 @@ Contributor rules live in [`../../AGENTS.md`](../../AGENTS.md), firmware-specifi
 | [`00-getting-started.md`](00-getting-started.md) | Retired decision record | Obsolete setup commands were removed; the file points to the maintained setup, testing, and bring-up documents. |
 | [`01-project-structure.md`](01-project-structure.md) | Retired decision record | The unadopted tree and templates were removed; the file records the current layout authorities. |
 | [`02-build-system.md`](02-build-system.md) | Retired decision record | Obsolete platform, Linux-target, partition, and flash guidance was removed; the file points to the maintained build authorities. |
-| [`03-driver-development.md`](03-driver-development.md) | Design proposal, partially implemented | Interface and dependency-injection concepts remain relevant; examples and paths require verification against `main/interfaces/` and `main/drivers/`. |
+| [`03-driver-development.md`](03-driver-development.md) | Retired decision record | The obsolete interface and implementation tutorial was removed; the page points to current driver, composition, and verification authorities. |
 | [`04-communication.md`](04-communication.md) | Design proposal, partially implemented | Preserves adopted protocol-family and validation decisions while linking all live wire details to their owning sources. |
 | [`05-game-engine.md`](05-game-engine.md) | Design proposal, partially implemented | Describes the implemented per-pod FSM boundary and separates it from the unimplemented general drill architecture. |
 | [`06-testing.md`](06-testing.md) | Retired decision record | Obsolete Unity/CMock, coverage, device, and CI instructions were removed; the file points to the maintained verification matrix. |
@@ -44,7 +44,7 @@ Contributor rules live in [`../../AGENTS.md`](../../AGENTS.md), firmware-specifi
 | [`08-ota-updates.md`](08-ota-updates.md) | Retired decision record | Obsolete partition, transport, and CLI examples were removed; the file points to the implemented OTA and programming contracts. |
 | [`09-reference.md`](09-reference.md) | Retired decision record | Copied lookup tables were removed; the record redirects each subject to its source-controlled authority. |
 | [`10-host-simulation.md`](10-host-simulation.md) | Current reference | Describes the GoogleTest/CTest host project, deterministic multi-pod simulation, trace generator, and hardware boundary. |
-| [`11-system-modes.md`](11-system-modes.md) | Design proposal, partially implemented | `ModeManager` and mode commands exist; power management and several transition triggers remain proposed. Use `modeManager.*` and `main.cpp`. |
+| [`11-system-modes.md`](11-system-modes.md) | Retired decision record | Mixed current and proposed mode guidance was removed; the page separates the implemented `ModeManager` boundary from unadopted power and orchestration targets. |
 | [`12-multi-pod-orchestration.md`](12-multi-pod-orchestration.md) | Target design, partially implemented | Separates the current two-pod fixed workflow from app-selected master, general drill, six-pod, and synchronized-clock targets. |
 | [`trace-overhaul-architecture.md`](trace-overhaul-architecture.md) | Current reference | Describes the separate console/UART topology, trace protobuf and binary event boundary, retained dump snapshot, streaming, and local-only merge behavior. |
 
