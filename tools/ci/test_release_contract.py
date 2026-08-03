@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -20,6 +21,28 @@ class ReleaseContractTest(unittest.TestCase):
         ).read_text()
         cls.software_workflow = (ROOT / ".github/workflows/firmware-ci.yml").read_text()
         cls.flutter_workflow = (ROOT / ".github/workflows/flutter-ci.yml").read_text()
+        cls.ios_project = (
+            ROOT / "ios/domes_app/ios/Runner.xcodeproj/project.pbxproj"
+        ).read_text()
+        cls.ios_scheme = (
+            ROOT
+            / "ios/domes_app/ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme"
+        ).read_text()
+        cls.ios_app_delegate = (
+            ROOT / "ios/domes_app/ios/Runner/AppDelegate.swift"
+        ).read_text()
+        cls.ios_info_plist = (ROOT / "ios/domes_app/ios/Runner/Info.plist").read_text()
+        cls.ios_app_framework_info = (
+            ROOT / "ios/domes_app/ios/Flutter/AppFrameworkInfo.plist"
+        ).read_text()
+        cls.ios_project_package_lock = (
+            ROOT
+            / "ios/domes_app/ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+        ).read_text()
+        cls.ios_workspace_package_lock = (
+            ROOT
+            / "ios/domes_app/ios/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+        ).read_text()
         cls.pre_commit_config = (ROOT / ".pre-commit-config.yaml").read_text()
         cls.flash_helper = (ROOT / "tools/firmware/flash_and_verify.sh").read_text()
         cls.restart_snapshot_helper = (
@@ -162,6 +185,51 @@ class ReleaseContractTest(unittest.TestCase):
         )
         self.assertIn(agent_eval_test, self.software_workflow)
         self.assertIn(agent_eval_test, self.verify_script)
+
+    def test_ios_swift_package_resolution_is_locked_consistently(self) -> None:
+        self.assertIn("flutter-version: 3.44.8", self.flutter_workflow)
+        self.assertIn("XCLocalSwiftPackageReference", self.ios_project)
+        self.assertIn("FlutterGeneratedPluginSwiftPackage", self.ios_project)
+        self.assertIn("Run Prepare Flutter Framework Script", self.ios_scheme)
+        self.assertIn("xcode_backend.sh&quot; prepare", self.ios_scheme)
+        self.assertIn("FlutterImplicitEngineDelegate", self.ios_app_delegate)
+        self.assertIn("didInitializeImplicitFlutterEngine", self.ios_app_delegate)
+        self.assertIn("engineBridge.pluginRegistry", self.ios_app_delegate)
+        self.assertNotIn("register(with: self)", self.ios_app_delegate)
+        self.assertIn("UIApplicationSceneManifest", self.ios_info_plist)
+        self.assertIn("FlutterSceneDelegate", self.ios_info_plist)
+        self.assertNotIn("MinimumOSVersion", self.ios_app_framework_info)
+        self.assertEqual(
+            self.ios_project_package_lock,
+            self.ios_workspace_package_lock,
+        )
+        package_lock = json.loads(self.ios_workspace_package_lock)
+        self.assertEqual(2, package_lock["version"])
+        self.assertEqual(6, len(package_lock["pins"]))
+        for pin in package_lock["pins"]:
+            self.assertRegex(pin["state"]["revision"], r"^[0-9a-f]{40}$")
+        branch_revisions = {
+            pin["identity"]: pin["state"]
+            for pin in package_lock["pins"]
+            if "branch" in pin["state"]
+        }
+        self.assertEqual(
+            {
+                "dkcamera": {
+                    "branch": "master",
+                    "revision": "5c691d11014b910aff69f960475d70e65d9dcc96",
+                },
+                "dkimagepickercontroller": {
+                    "branch": "4.3.9",
+                    "revision": "0bdfeacefa308545adde07bef86e349186335915",
+                },
+                "dkphotogallery": {
+                    "branch": "master",
+                    "revision": "311c1bc7a94f1538f82773a79c84374b12a2ef3d",
+                },
+            },
+            branch_revisions,
+        )
 
     def test_local_and_ci_cli_checks_build_debug_and_release_profiles(self) -> None:
         build_sequence = re.compile(
