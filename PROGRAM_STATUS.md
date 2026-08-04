@@ -11,7 +11,7 @@ belong in [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md), ta
 [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md), and verification procedures
 in [`docs/TESTING.md`](docs/TESTING.md).
 
-**As of:** 2026-08-04, FS2 execution issue 96
+**As of:** 2026-08-04, review-ready PR 97
 
 ## CEO Control Panel
 
@@ -24,8 +24,8 @@ in [`docs/TESTING.md`](docs/TESTING.md).
 | Next program gate | G1 System Architecture Baseline and Schematic Authorization |
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
-| Current execution package | `FS-WP-002A` deterministic clock and network replay, [issue 96](https://github.com/pcesar22/domes/issues/96) |
-| Next AI-owned action | Finish implementation evidence and obtain a green review-ready PR for issue 96 |
+| Current execution package | `FS-WP-002A` deterministic clock and network replay, [PR 97](https://github.com/pcesar22/domes/pull/97) |
+| Next AI-owned action | Review and merge PR 97; the next continuation cycle selects a new programming or executed-validation delivery |
 | Current AI execution blocker | None for the deterministic foundation; predictive calibration still requires measured device data |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
@@ -65,8 +65,9 @@ simulation run can be repeated exactly before model calibration begins.
 | Contract | Current state |
 | --- | --- |
 | Owner | AI simulation lead |
-| State / health | `Active` / `Green` |
+| State / health | `Review` / `Green` |
 | Execution issue | [Issue 96](https://github.com/pcesar22/domes/issues/96) |
+| Review package | [PR 97](https://github.com/pcesar22/domes/pull/97), Software CI run 30937299656 passed |
 | Inputs | Existing host pod simulator, game engine, simulated ESP-NOW bus, and host CI |
 | Dependencies/blockers | None for implementation; real-world predictiveness requires later measured calibration and held-out validation |
 | Gate/risk unlocked | FS2 deterministic fault campaigns and repeatable simulator-to-device comparisons |
