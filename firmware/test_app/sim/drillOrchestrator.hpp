@@ -6,6 +6,7 @@
 #include "sim/simOrchestrator.hpp"
 #include "sim/simProtocol.hpp"
 
+#include <algorithm>
 #include <vector>
 
 namespace sim {
@@ -93,8 +94,10 @@ public:
             const TouchScenario* touchScenario = (i < touches.size()) ? &touches[i] : nullptr;
 
             // Advance time by delay
-            sim_.advanceTimeMs(step.delayBeforeMs);
+            advanceNetworkTimeMs(step.delayBeforeMs);
             sim_.tickAll();
+            masterReceived.clear();
+            uint64_t roundToken = nextRoundToken_++;
 
             RoundResult roundResult{step.targetPodId, false, 0, 0};
 
@@ -130,6 +133,7 @@ public:
                 armCmd.header.type = SimMessageType::kArmTouch;
                 armCmd.timeoutMs = step.timeoutMs;
                 armCmd.feedbackMode = step.feedbackMode;
+                armCmd.roundToken = roundToken;
                 bus_.send(armCmd);
                 bus_.deliverPending();
 
@@ -140,7 +144,7 @@ public:
             // Simulate touch or timeout
             if (touchScenario && touchScenario->touchAfterMs > 0) {
                 // HIT: advance to touch time, set touch, tick
-                sim_.advanceTimeMs(touchScenario->touchAfterMs);
+                advanceNetworkTimeMs(touchScenario->touchAfterMs);
                 targetPod->touch().setTouched(touchScenario->padIndex, true);
                 sim_.tickAll();
                 targetPod->touch().clearAll();
@@ -148,10 +152,15 @@ public:
                 if (step.targetPodId != sim_.pod(0).podId()) {
                     // Slave: deliver TouchEvent back to master
                     bus_.deliverPending();
+                    advanceUntilTouchEvent(masterReceived, step.targetPodId, roundToken);
 
                     // Extract result from the last TouchEvent received by master
                     for (auto it = masterReceived.rbegin(); it != masterReceived.rend(); ++it) {
                         if (auto* te = std::get_if<TouchEventMsg>(&*it)) {
+                            if (te->header.srcPodId != step.targetPodId ||
+                                te->roundToken != roundToken) {
+                                continue;
+                            }
                             roundResult.hit = true;
                             roundResult.reactionTimeUs = te->reactionTimeUs;
                             roundResult.padIndex = te->padIndex;
@@ -162,7 +171,8 @@ public:
                 // For master-as-target, roundResult was already set by event callback
             } else {
                 // MISS: advance past timeout
-                sim_.advanceTimeMs(step.timeoutMs + 1);
+                advanceUntilArmed(*targetPod);
+                advanceNetworkTimeMs(step.timeoutMs + 1);
                 sim_.tickAll();
 
                 if (step.targetPodId != sim_.pod(0).podId()) {
@@ -172,10 +182,9 @@ public:
             }
 
             result.rounds.push_back(roundResult);
-            masterReceived.clear();
 
             // Wait for feedback duration
-            sim_.advanceTimeMs(domes::game::kFeedbackDurationMs + 1);
+            advanceNetworkTimeMs(domes::game::kFeedbackDurationMs + 1);
             sim_.tickAll();
         }
 
@@ -192,6 +201,60 @@ public:
     }
 
 private:
+    void advanceNetworkTimeMs(uint64_t durationMs) { advanceNetworkTimeUs(durationMs * 1000); }
+
+    void advanceNetworkTimeUs(uint64_t durationUs) {
+        uint64_t targetUs = sim_.clock().nowUs() + durationUs;
+        bus_.deliverPending();
+
+        while (auto nextDeliveryUs = bus_.nextDeliveryTimeUs()) {
+            if (*nextDeliveryUs > targetUs)
+                break;
+            if (*nextDeliveryUs > sim_.clock().nowUs())
+                sim_.advanceTimeUs(*nextDeliveryUs - sim_.clock().nowUs());
+            bus_.deliverPending();
+            sim_.tickAll();
+            bus_.deliverPending();
+        }
+
+        if (targetUs > sim_.clock().nowUs())
+            sim_.advanceTimeUs(targetUs - sim_.clock().nowUs());
+        bus_.deliverPending();
+    }
+
+    void advanceUntilArmed(PodInstance& pod) {
+        while (pod.engine().currentState() != domes::game::GameState::kArmed) {
+            auto nextDeliveryUs = bus_.nextDeliveryTimeUs();
+            if (!nextDeliveryUs)
+                return;
+            uint64_t durationUs =
+                *nextDeliveryUs > sim_.clock().nowUs() ? *nextDeliveryUs - sim_.clock().nowUs() : 0;
+            advanceNetworkTimeUs(durationUs);
+        }
+    }
+
+    static bool hasTouchEvent(const std::vector<SimMessage>& received, uint16_t targetPodId,
+                              uint64_t roundToken) {
+        return std::any_of(received.begin(), received.end(),
+                           [targetPodId, roundToken](const SimMessage& message) {
+                               auto* touch = std::get_if<TouchEventMsg>(&message);
+                               return touch && touch->header.srcPodId == targetPodId &&
+                                      touch->roundToken == roundToken;
+                           });
+    }
+
+    void advanceUntilTouchEvent(const std::vector<SimMessage>& received, uint16_t targetPodId,
+                                uint64_t roundToken) {
+        while (!hasTouchEvent(received, targetPodId, roundToken)) {
+            auto nextDeliveryUs = bus_.nextDeliveryTimeUs();
+            if (!nextDeliveryUs)
+                return;
+            uint64_t durationUs =
+                *nextDeliveryUs > sim_.clock().nowUs() ? *nextDeliveryUs - sim_.clock().nowUs() : 0;
+            advanceNetworkTimeUs(durationUs);
+        }
+    }
+
     void setupPod(PodInstance& pod) {
         auto& mode = pod.mode();
         if (mode.currentMode() == domes::config::SystemMode::kBooting)
@@ -214,6 +277,7 @@ private:
     SimOrchestrator& sim_;
     SimEspNowBus& bus_;
     SimLog& log_;
+    uint64_t nextRoundToken_ = 1;
 };
 
 }  // namespace sim

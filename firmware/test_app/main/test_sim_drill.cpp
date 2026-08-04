@@ -13,6 +13,7 @@
 #include "sim/simEspNowBus.hpp"
 #include "sim/simOrchestrator.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 
@@ -161,6 +162,133 @@ TEST_F(SimDrillTest, ThreePod_MasterAsTarget) {
         }
     }
     EXPECT_EQ(masterArmCount, 3u);
+}
+
+TEST_F(SimDrillTest, DelayedArmIsAppliedBeforeTouch) {
+    DrillEnv env(2);
+    env.bus->setDeliveryPolicy([](const DeliveryContext& context) {
+        if (context.type == SimMessageType::kArmTouch) {
+            return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 50'000};
+        }
+        if (context.type == SimMessageType::kTouchEvent) {
+            return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 25'000};
+        }
+        return DeliveryDirective{};
+    });
+
+    std::vector<DrillStep> steps = {
+        {1, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+    };
+    std::vector<TouchScenario> touches = {{1, 100, 0}};
+
+    DrillResult result = env.drill->execute(steps, touches);
+
+    ASSERT_EQ(result.rounds.size(), 1u);
+    EXPECT_TRUE(result.rounds[0].hit);
+    EXPECT_EQ(result.rounds[0].reactionTimeUs, 50'000u);
+    auto touchFlow = std::find_if(
+        env.bus->flowEvents().begin(), env.bus->flowEvents().end(),
+        [](const FlowEvent& event) { return event.type == SimMessageType::kTouchEvent; });
+    ASSERT_NE(touchFlow, env.bus->flowEvents().end());
+    EXPECT_EQ(touchFlow->timestampUs, 125'000u);
+}
+
+TEST_F(SimDrillTest, DelayedArmTimeoutStartsAtDelivery) {
+    DrillEnv env(2);
+    env.bus->setDeliveryPolicy([](const DeliveryContext& context) {
+        if (context.type == SimMessageType::kArmTouch) {
+            return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 50'000};
+        }
+        return DeliveryDirective{};
+    });
+
+    std::vector<DrillStep> steps = {
+        {1, 0, 100, 0x03, domes::Color::rgb(255, 0, 0)},
+    };
+    std::vector<TouchScenario> touches = {{1, 0, 0}};
+
+    DrillResult result = env.drill->execute(steps, touches);
+
+    ASSERT_EQ(result.rounds.size(), 1u);
+    EXPECT_FALSE(result.rounds[0].hit);
+    auto timeoutFlow = std::find_if(
+        env.bus->flowEvents().begin(), env.bus->flowEvents().end(),
+        [](const FlowEvent& event) { return event.type == SimMessageType::kTimeoutEvent; });
+    ASSERT_NE(timeoutFlow, env.bus->flowEvents().end());
+    EXPECT_EQ(timeoutFlow->timestampUs, 151'000u);
+}
+
+TEST_F(SimDrillTest, StaleDelayedTimeoutDoesNotMaskNextTouchResponse) {
+    DrillEnv env(2);
+    env.bus->setDeliveryPolicy([](const DeliveryContext& context) {
+        if (context.type == SimMessageType::kTimeoutEvent) {
+            return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 300'000};
+        }
+        if (context.type == SimMessageType::kTouchEvent) {
+            return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 25'000};
+        }
+        return DeliveryDirective{};
+    });
+
+    std::vector<DrillStep> steps = {
+        {1, 0, 100, 0x03, domes::Color::rgb(255, 0, 0)},
+        {1, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+    };
+    std::vector<TouchScenario> touches = {
+        {1, 0, 0},
+        {1, 100, 0},
+    };
+
+    DrillResult result = env.drill->execute(steps, touches);
+
+    ASSERT_EQ(result.rounds.size(), 2u);
+    EXPECT_FALSE(result.rounds[0].hit);
+    EXPECT_TRUE(result.rounds[1].hit);
+    EXPECT_EQ(result.rounds[1].reactionTimeUs, 100'000u);
+    auto timeoutFlow = std::find_if(
+        env.bus->flowEvents().begin(), env.bus->flowEvents().end(),
+        [](const FlowEvent& event) { return event.type == SimMessageType::kTimeoutEvent; });
+    ASSERT_NE(timeoutFlow, env.bus->flowEvents().end());
+    EXPECT_EQ(timeoutFlow->timestampUs, 401'000u);
+    auto touchFlow = std::find_if(
+        env.bus->flowEvents().begin(), env.bus->flowEvents().end(),
+        [](const FlowEvent& event) { return event.type == SimMessageType::kTouchEvent; });
+    ASSERT_NE(touchFlow, env.bus->flowEvents().end());
+    EXPECT_EQ(touchFlow->timestampUs, 427'000u);
+}
+
+TEST_F(SimDrillTest, DelayedOldArmCannotClaimNextRoundTouch) {
+    DrillEnv env(2);
+    size_t armCount = 0;
+    env.bus->setDeliveryPolicy([&armCount](const DeliveryContext& context) {
+        if (context.type != SimMessageType::kArmTouch) {
+            return DeliveryDirective{};
+        }
+        armCount++;
+        if (armCount == 1) {
+            return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 150'000};
+        }
+        return DeliveryDirective{.action = DeliveryAction::kDrop};
+    });
+
+    std::vector<DrillStep> steps = {
+        {1, 0, 3000, 0x03, domes::Color::rgb(255, 0, 0)},
+        {1, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+    };
+    std::vector<TouchScenario> touches = {
+        {1, 100, 0},
+        {1, 100, 0},
+    };
+
+    DrillResult result = env.drill->execute(steps, touches);
+
+    ASSERT_EQ(result.rounds.size(), 2u);
+    EXPECT_FALSE(result.rounds[0].hit);
+    EXPECT_FALSE(result.rounds[1].hit);
+    auto touchFlow = std::find_if(
+        env.bus->flowEvents().begin(), env.bus->flowEvents().end(),
+        [](const FlowEvent& event) { return event.type == SimMessageType::kTouchEvent; });
+    EXPECT_NE(touchFlow, env.bus->flowEvents().end());
 }
 
 // =============================================================================

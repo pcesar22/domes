@@ -27,9 +27,19 @@ private:
 
     void dispatch(const ArmTouchCommand& cmd) {
         uint16_t masterPodId = cmd.header.srcPodId;
+        uint64_t roundToken = cmd.roundToken;
+
+        domes::game::ArmConfig config{
+            .timeoutMs = cmd.timeoutMs,
+            .feedbackMode = cmd.feedbackMode,
+        };
+        if (!pod_.engine().arm(config)) {
+            log_.log(pod_.podId(), "cmd", "ARM_TOUCH rejected");
+            return;
+        }
 
         // Set event callback to send touch/timeout events back to master
-        pod_.setEventCallback([this, masterPodId](const domes::game::GameEvent& event) {
+        pod_.setEventCallback([this, masterPodId, roundToken](const domes::game::GameEvent& event) {
             if (event.type == domes::game::GameEvent::Type::kHit) {
                 TouchEventMsg msg;
                 msg.header.srcPodId = pod_.podId();
@@ -37,21 +47,17 @@ private:
                 msg.header.type = SimMessageType::kTouchEvent;
                 msg.reactionTimeUs = event.reactionTimeUs;
                 msg.padIndex = event.padIndex;
+                msg.roundToken = roundToken;
                 bus_.send(msg);
             } else {
                 TimeoutEventMsg msg;
                 msg.header.srcPodId = pod_.podId();
                 msg.header.dstPodId = masterPodId;
                 msg.header.type = SimMessageType::kTimeoutEvent;
+                msg.roundToken = roundToken;
                 bus_.send(msg);
             }
         });
-
-        domes::game::ArmConfig config{
-            .timeoutMs = cmd.timeoutMs,
-            .feedbackMode = cmd.feedbackMode,
-        };
-        pod_.engine().arm(config);
         log_.log(pod_.podId(), "cmd", "ARM_TOUCH timeout=" + std::to_string(cmd.timeoutMs));
     }
 

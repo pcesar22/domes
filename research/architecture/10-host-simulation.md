@@ -59,11 +59,19 @@ contract coverage in `main/test_esp_now_protocol.cpp`.
 drop, or duplicate a message without wall-clock sleeps. Delayed messages remain pending until
 `SimClock` reaches their virtual deadline.
 
-Every decision records the send time, source, destination, message type, sequence, action, and
-delay. A fresh bus can consume that record with `setReplayRecord()`. Replay checks every message
-identity and reports a mismatch rather than silently applying a decision to different input. Host
-tests cover the default lossless behavior, virtual delay boundary, drop, duplicate, exact flow
-replay, and mismatch detection.
+Every decision records the send time, source, addressed and resolved destinations, message variant,
+type, canonical payload, sequence, action, and delay. Deadlines are anchored to send time, and drill
+time advances through due deliveries before applying pod inputs. A fresh bus can consume the record
+with `setReplayRecord()`. Replay checks the complete message identity and fails closed rather than
+applying a decision to different input. Empty records are valid replays that reject unexpected
+traffic, and replay completes only after every recorded decision is consumed and both delivery
+queues are empty. Host tests cover the default lossless behavior, virtual delay boundary, drop,
+duplicate, exact flow replay, complete variant identity, payload mismatch, empty replay, delayed
+arm/touch/timeout ordering, and cross-round response correlation.
+
+Simulated arm commands carry a unique round token that the pod returns unchanged in touch and
+timeout events. Drill scoring accepts only an event from the targeted pod with the active round's
+token, so delayed traffic from an earlier round cannot be credited to a later one.
 
 This is deterministic fault-injection infrastructure, not a calibrated radio model. Delivery
 policies and timing distributions must be derived from physical evidence and validated against

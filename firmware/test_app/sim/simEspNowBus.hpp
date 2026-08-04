@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -33,9 +34,11 @@ enum class DeliveryAction : uint8_t {
 struct DeliveryContext {
     uint64_t sentAtUs;
     uint16_t srcPod;
+    uint16_t addressedPod;
     uint16_t dstPod;
     SimMessageType type;
     uint32_t sequence;
+    std::vector<uint8_t> payload;
 
     bool operator==(const DeliveryContext&) const = default;
 };
@@ -67,6 +70,7 @@ public:
 
     void setDeliveryPolicy(DeliveryPolicy policy) {
         policy_ = std::move(policy);
+        replayMode_ = false;
         replayRecord_.clear();
         replayCursor_ = 0;
         replayMismatch_ = false;
@@ -74,6 +78,7 @@ public:
 
     void setReplayRecord(std::vector<DeliveryDecision> record) {
         policy_ = {};
+        replayMode_ = true;
         replayRecord_ = std::move(record);
         replayCursor_ = 0;
         replayMismatch_ = false;
@@ -129,10 +134,23 @@ public:
     const std::vector<DeliveryDecision>& deliveryRecord() const { return deliveryRecord_; }
 
     bool replayComplete() const {
-        return !replayRecord_.empty() && !replayMismatch_ && replayCursor_ == replayRecord_.size();
+        return replayMode_ && !replayMismatch_ && replayCursor_ == replayRecord_.size() &&
+               pending_.empty() && scheduled_.empty();
     }
 
     bool replayMismatch() const { return replayMismatch_; }
+
+    std::optional<uint64_t> nextDeliveryTimeUs() const {
+        if (scheduled_.empty())
+            return std::nullopt;
+
+        auto next =
+            std::min_element(scheduled_.begin(), scheduled_.end(),
+                             [](const ScheduledDelivery& lhs, const ScheduledDelivery& rhs) {
+                                 return lhs.deliverAtUs < rhs.deliverAtUs;
+                             });
+        return next->deliverAtUs;
+    }
 
     void clearFlowEvents() { flowEvents_.clear(); }
     void clearDeliveryRecord() { deliveryRecord_.clear(); }
@@ -166,33 +184,35 @@ private:
 
     void resolveDelivery(const SimMessage& message, uint16_t dstPod) {
         const auto& header = getHeader(message);
-        DeliveryContext context{header.timestampUs, header.srcPodId, dstPod, header.type,
-                                header.sequence};
-        DeliveryDirective directive = chooseDirective(context);
-        deliveryRecord_.push_back({context, directive});
+        DeliveryContext context{
+            header.timestampUs, header.srcPodId, header.dstPodId,          dstPod,
+            header.type,        header.sequence, canonicalPayload(message)};
+        auto directive = chooseDirective(context);
+        if (!directive)
+            return;
+        deliveryRecord_.push_back({context, *directive});
 
-        if (directive.action == DeliveryAction::kDrop)
+        if (directive->action == DeliveryAction::kDrop)
             return;
 
-        schedule(message, dstPod, directive.delayUs);
-        if (directive.action == DeliveryAction::kDuplicate)
-            schedule(message, dstPod, directive.delayUs);
+        schedule(message, dstPod, context.sentAtUs, directive->delayUs);
+        if (directive->action == DeliveryAction::kDuplicate)
+            schedule(message, dstPod, context.sentAtUs, directive->delayUs);
     }
 
-    DeliveryDirective chooseDirective(const DeliveryContext& context) {
-        if (!replayRecord_.empty()) {
+    std::optional<DeliveryDirective> chooseDirective(const DeliveryContext& context) {
+        if (replayMode_) {
+            if (replayMismatch_)
+                return std::nullopt;
             if (replayCursor_ >= replayRecord_.size()) {
                 replayMismatch_ = true;
-                return {.action = DeliveryAction::kDrop};
+                return std::nullopt;
             }
 
             const auto& expected = replayRecord_[replayCursor_++];
-            if (expected.context.sentAtUs != context.sentAtUs ||
-                expected.context.srcPod != context.srcPod ||
-                expected.context.dstPod != context.dstPod ||
-                expected.context.type != context.type ||
-                expected.context.sequence != context.sequence) {
+            if (expected.context != context) {
                 replayMismatch_ = true;
+                return std::nullopt;
             }
             return expected.directive;
         }
@@ -200,8 +220,8 @@ private:
         return policy_ ? policy_(context) : DeliveryDirective{};
     }
 
-    void schedule(const SimMessage& message, uint16_t dstPod, uint64_t delayUs) {
-        scheduled_.push_back({clock_.nowUs() + delayUs, nextDeliveryOrder_++, dstPod, message});
+    void schedule(const SimMessage& message, uint16_t dstPod, uint64_t sentAtUs, uint64_t delayUs) {
+        scheduled_.push_back({sentAtUs + delayUs, nextDeliveryOrder_++, dstPod, message});
     }
 
     SimLog& log_;
@@ -212,6 +232,7 @@ private:
     std::vector<FlowEvent> flowEvents_;
     std::vector<DeliveryDecision> deliveryRecord_;
     DeliveryPolicy policy_;
+    bool replayMode_ = false;
     std::vector<DeliveryDecision> replayRecord_;
     size_t replayCursor_ = 0;
     bool replayMismatch_ = false;
