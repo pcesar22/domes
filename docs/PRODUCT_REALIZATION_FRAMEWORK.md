@@ -99,30 +99,16 @@ phase starts only after the preceding exit gate passes. A failed gate, material 
 specialist, or supply constraint requires the milestone manager to record the effect and rebaseline
 the remaining dates. Completed work is never moved merely to make the forecast look current.
 
-```mermaid
-gantt
-    title DOMES initial product-realization waterfall
-    dateFormat  YYYY-MM-DD
-    axisFormat  %b %Y
-    tickInterval 1month
+![DOMES product-realization waterfall from M0 foundation through M7 open product release](assets/product-realization-waterfall.png)
 
-    section Foundation
-    M0 Foundation accepted                    :done, milestone, m0, 2026-08-03, 0d
+Diagram source: [`assets/product-realization-waterfall.mmd`](assets/product-realization-waterfall.mmd).
+Regenerate the image with:
 
-    section Definition
-    M1 Product definition and NFF proof       :active, m1, 2026-08-04, 2026-09-28
-
-    section System proof
-    M2 Predictive system model                :m2, 2026-09-29, 2026-12-07
-    M3 Six-node system alpha                  :m3, 2026-12-08, 2027-03-01
-
-    section Product hardware
-    M4 EVT production-intent prototype        :m4, 2027-03-02, 2027-06-21
-    M5 DVT frozen form-factor product         :m5, 2027-06-22, 2027-11-08
-    M6 PVT repeatable manufacturing system    :m6, 2027-11-09, 2028-01-31
-
-    section Release
-    M7 Open product release                   :m7, 2028-02-01, 2028-03-27
+```bash
+npx --yes @mermaid-js/mermaid-cli@11.12.0 \
+  -i docs/assets/product-realization-waterfall.mmd \
+  -o docs/assets/product-realization-waterfall.png \
+  -w 2400 -H 1200 -b white
 ```
 
 | Phase | Initial planning range | Nominal duration | Start condition |
