@@ -2,9 +2,9 @@
 
 This is the product hypothesis and requirements-entry record for DOMES. It deliberately separates
 what the project intends to prove from what current hardware has demonstrated. Delivery status and
-acceptance evidence live in [`../firmware/MILESTONES.md`](../firmware/MILESTONES.md).
+acceptance evidence live in [`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md).
 
-**State:** Hypothesis; M1 validation incomplete
+**State:** Hypothesis; P1 validation incomplete
 **Last reviewed:** 2026-08-03
 
 ## Product Vision
@@ -23,7 +23,7 @@ The initial target segment is independent coaches, trainers, clubs, and small te
 repeatable reaction, agility, rehabilitation, or cognitive-motor drills and are constrained by
 closed software, subscriptions, limited customization, or uncertain long-term support.
 
-This hypothesis is not yet validated. M1 requires observed evidence sufficient to identify:
+This hypothesis is not yet validated. P1 discovery must identify:
 
 - the primary buyer and user;
 - the highest-value training job and current workaround;
@@ -55,9 +55,9 @@ The initial release does not promise medical-device use, outdoor weatherproofing
 rating, cloud analytics, arbitrary third-party radio compatibility, or every global market. Those
 claims require explicit requirements and evidence.
 
-## M1 Definition Outputs
+## P1 Definition Outputs
 
-Before this definition becomes an accepted product baseline, M1 must produce:
+Before this definition becomes an accepted product baseline, P1 must produce:
 
 | Output | Required content | Current state |
 | --- | --- | --- |

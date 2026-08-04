@@ -1,0 +1,58 @@
+---
+config:
+  theme: neutral
+  gantt:
+    barHeight: 26
+    barGap: 7
+    topPadding: 48
+---
+gantt
+    title DOMES integrated master plan - phases, gates, and concurrent workstreams
+    dateFormat  YYYY-MM-DD
+    axisFormat  %b %Y
+    tickInterval 1month
+
+    section Program phases
+    P1 Definition and feasibility             :active, p1, 2026-08-03, 2026-09-15
+    P2 Integrated alpha and EVT design        :p2, 2026-09-16, 2026-11-02
+    P3 EVT build and qualification            :p3, 2026-11-03, 2027-02-08
+    P4 DVT product validation                 :p4, 2027-02-09, 2027-08-02
+    P5 PVT and launch readiness               :p5, 2027-08-03, 2027-11-01
+    P6 Open product release                   :p6, 2027-11-02, 2027-12-13
+
+    section Decision gates
+    G0 Foundation accepted                    :done, milestone, g0, 2026-08-03, 0d
+    G1 System baseline                        :crit, milestone, g1, 2026-09-15, 0d
+    G2 EVT release to fab                     :crit, milestone, g2, 2026-11-02, 0d
+    G3 EVT exit                               :crit, milestone, g3, 2027-02-08, 0d
+    G4 DVT exit                               :crit, milestone, g4, 2027-08-02, 0d
+    G5 PVT exit                               :crit, milestone, g5, 2027-11-01, 0d
+    G6 Product release                        :crit, milestone, g6, 2027-12-13, 0d
+
+    section Product and system
+    Product and requirements baseline         :active, ps1, 2026-08-04, 2026-09-15
+    Six-node workflow and alpha               :ps2, 2026-08-15, 2026-10-19
+    Customer and product validation           :ps3, 2027-02-09, 2027-08-02
+    Offer, support, and launch                :ps4, 2027-08-03, 2027-12-13
+
+    section Firmware software simulation
+    NFF reference closure                     :active, fs1, 2026-08-04, 2026-08-24
+    Shared drill protocol and runtime         :fs3, 2026-08-04, 2026-10-19
+    Deterministic model and validation        :fs2, 2026-08-04, 2026-10-19
+    EVT profile and board support             :fs5, 2026-09-16, 2027-02-08
+    DVT PVT release candidates                :fs6, 2027-02-09, 2027-12-13
+
+    section Hardware and NPI
+    HW-WP-001 architecture and parts          :active, hw1, 2026-08-04, 2026-09-15
+    EVT schematic layout and release          :hw2, 2026-09-16, 2026-11-02
+    EVT fabrication and assembly              :hw3, 2026-11-03, 2026-12-14
+    EVT bring-up and correction               :hw4, 2026-12-15, 2027-02-08
+    DVT design build and qualification        :hw5, 2027-02-09, 2027-08-02
+    PVT intended-line pilot                   :hw6, 2027-08-03, 2027-11-01
+
+    section Verification compliance operations
+    V matrix FMEA compliance plan             :active, vc1, 2026-08-04, 2026-09-15
+    Alpha timing fault and soak evidence      :vc2, 2026-09-16, 2026-10-19
+    EVT verification and defect closure       :vc3, 2026-12-15, 2027-02-08
+    DVT reliability security compliance       :vc4, 2027-02-09, 2027-08-02
+    PVT process and release acceptance        :vc5, 2027-08-03, 2027-11-01

@@ -7,6 +7,8 @@ outputs, and bill of materials.
 
 Reference documents:
 
+- `../PROGRAM_STATUS.md`
+- `hardware/NEXT_ITERATION_REQUEST.md`
 - `research/SYSTEM_ARCHITECTURE.md`
 - `research/ID_REQUIREMENTS.md`
 - `hardware/BOM.csv`
@@ -26,7 +28,11 @@ Primary tasks:
 4. Prefer JLCPCB Basic Parts when they meet requirements.
 5. Update `hardware/BOM.csv` when the user asks for BOM changes.
 
-## Sourcing Priorities
+## Candidate Sourcing Inputs
+
+The parts below are current candidates, not a frozen product architecture or AVL. For the next
+product iteration, `hardware/NEXT_ITERATION_REQUEST.md` owns the trade and evidence required before
+selection. Do not optimize catalog sourcing around a candidate that has not passed HR1/HR2.
 
 Tier 1 parts should be JLCPCB-assemblable for prototypes:
 
@@ -69,17 +75,21 @@ For each component, verify:
 - Stock and lead time: 10+ for prototype, 1000+ or restock confidence for production.
 - Cost at relevant price breaks.
 
-## Critical Specs
+## Critical Review Rules
 
-- ESP32-S3 module must be WROOM-1-N16R8: 16 MB flash, 8 MB PSRAM, PCB antenna, not U.FL.
+- Evaluate the ESP32-S3 module/chip-down, memory, and antenna choice against product, RF,
+  certification, service, manufacturing, cost, and supply requirements before freezing it.
 - LIS2DW12 must be LGA-12 and support tap detection; do not substitute LIS2DH12 without review.
 - DRV2605L must support LRA motors and fixed I2C address 0x5A.
 - The current NFF actuator is LD0832AA-0099F; do not substitute another LRA without updating and
   validating the DRV2605L profile.
 - MAX98357A must support standard Philips I2S input.
 - SK6812 alternative must be RGBW if the design expects a separate white die.
-- TP4056 must expose CHRG and STDBY status pins.
-- 3.3 V LDO must support enough current for ESP32-S3 load with dropout margin.
+- Do not carry TP4056, the candidate 500 mA LDO, discrete battery protection, or VBAT-driven RGBW
+  forward without closing power-path, simultaneous peak load, charging, thermal, protection,
+  runtime, sourcing, and compliance evidence.
+- Any selected 3.3 V regulator must support measured worst-case combined load, transient and
+  dropout margin across the product battery and thermal envelope.
 
 ## Output Format
 
@@ -101,7 +111,9 @@ Example:
 MCU,U1,ESP32-S3 Module,1,Module,16MB/8MB/PCB Ant,ESP32-S3-WROOM-1-N16R8,C2913202,$3.45,In stock (5000+) - Basic Part
 ```
 
-## Constraints
+## Candidate Manufacturing Constraints
+
+These are design targets to evaluate during HR1/HR2, not a released PCB specification:
 
 - PCB target: 4 layers, about 80 mm diameter, 1.6 mm thickness, ENIG finish.
 - Prefer single-sided SMT assembly.

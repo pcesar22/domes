@@ -6,7 +6,7 @@ in [`../AGENTS.md`](../AGENTS.md). Claude Code sessions working in this director
 Current supporting documentation:
 
 - [`README.md`](README.md): as-built firmware layout and protocol ownership
-- [`MILESTONES.md`](MILESTONES.md): implementation and hardware-verification status
+- [`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md): integrated program and workstream status
 - [`../docs/TESTING.md`](../docs/TESTING.md): required host, ESP-IDF, and device checks
 - [`../docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md): reviewed board mapping
 - [`../research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md): system boundaries and authority map

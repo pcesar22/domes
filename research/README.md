@@ -18,7 +18,7 @@ history, and archived plans. Delivery status and executable workflows live elsew
 
 ## Authority Boundaries
 
-- Use [`../firmware/MILESTONES.md`](../firmware/MILESTONES.md) for implemented and hardware-verified
+- Use [`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) for implemented and hardware-verified
   status.
 - Use [`../docs/PRODUCT_REALIZATION_FRAMEWORK.md`](../docs/PRODUCT_REALIZATION_FRAMEWORK.md) for
   phase entry, exit, and status-reporting rules.

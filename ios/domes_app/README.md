@@ -17,7 +17,7 @@ to its connected pod, and the drill accepts it only while that pod is the active
 simulation is restricted to explicit `sim-pod-*` targets. This path still requires an on-device app
 drill before it is hardware verified.
 
-See [`../../firmware/MILESTONES.md`](../../firmware/MILESTONES.md) for current delivery status and
+See [`../../PROGRAM_STATUS.md`](../../PROGRAM_STATUS.md) for current delivery status and
 [`../../docs/TESTING.md`](../../docs/TESTING.md) for verification requirements.
 
 ## Setup

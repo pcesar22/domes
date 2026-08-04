@@ -1,175 +1,223 @@
 # DOMES Product Realization Framework
 
-This document defines how DOMES moves from development boards to a product that can be built,
-tested, sold, supported, and openly reproduced. [`firmware/MILESTONES.md`](../firmware/MILESTONES.md)
-records the current phase and evidence. This framework defines the process used to make phase
-decisions.
+This document defines how DOMES converts development-board learning into controlled product
+hardware, verified software, repeatable manufacturing, and an open product release. Current
+position, evidence, critical path, and decisions live in [`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md).
 
 ## Tailored Industry Model
 
-DOMES uses a small, evidence-driven subset of established product-development practice:
+DOMES uses a lean subset of established practice:
 
-- [ISO/IEC/IEEE 15288](https://www.iso.org/standard/81702.html) supplies the system life-cycle
-  framing.
-- [ISO/IEC/IEEE 29148](https://www.iso.org/standard/72089.html) supplies requirements quality and
-  traceability.
-- A V-model pairs each requirement and design decision with its verification or validation method.
-- [IEC 60812](https://webstore.iec.ch/en/publication/26359) supplies failure-mode and risk analysis.
-- EVT, DVT, and PVT provide production-intent hardware and manufacturing gates.
+- [ISO/IEC/IEEE 15288](https://www.iso.org/standard/81702.html) for the system life cycle;
+- [ISO/IEC/IEEE 29148](https://www.iso.org/standard/72089.html) for requirements and traceability;
+- a V-model to pair requirements and design decisions with verification/validation;
+- [IEC 60812](https://webstore.iec.ch/en/publication/26359) for failure-mode analysis; and
+- EVT, DVT, and PVT for production-intent hardware and manufacturing maturity.
 
-This is tailoring, not a claim of certification to those standards. DOMES does not require separate
-SRR, PDR, CDR, or audit ceremonies. The AI milestone manager performs the relevant semantic review
-at phase entry and exit using direct evidence.
+This is process tailoring, not a claim of certification. DOMES uses evidence packages and decision
+records rather than separate ceremonial SRR/PDR/CDR meetings.
 
-## Four Control Artifacts
+## Object Model
 
-Maintain these artifacts and avoid parallel status systems:
+The program uses five different objects. They must not be called interchangeable milestones.
 
-| Control artifact | Authority | Purpose |
+| Object | Identifier | Purpose |
 | --- | --- | --- |
-| Product definition and requirements | [`research/PRODUCT_DEFINITION.md`](../research/PRODUCT_DEFINITION.md) and accepted requirement records it links | Defines the user, problem, product boundary, measurable needs, and launch assumptions |
-| Phase and delivery ledger | [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) | States the active phase, entry decision, exit evidence, and next gate |
-| Verification matrix | Phase acceptance gates and linked test evidence | Maps each required outcome to test, analysis, inspection, or demonstration |
-| Risk register | The active decisions and risks in the milestone ledger, with detailed analyses linked as needed | Tracks product, safety, technical, supply, manufacturing, and schedule risk |
+| Program phase | `P0`-`P7` | Bounded cross-functional execution interval between program gates |
+| Decision gate | `G0`-`G7` | Zero-duration decision that authorizes a specific commitment |
+| Workstream | `PS`, `FS`, `HW`, `VC` | Continuous discipline plan running concurrently inside phases |
+| Work package | e.g. `HW-WP-001` | Inspectable assignment with inputs, outputs, owner, timing, acceptance, and stop condition |
+| Hardware release | `HR0`-`HR7` | Technical hardware evidence checkpoint feeding a program gate |
 
-Issues and pull requests manage work. They do not replace the phase ledger. Architecture documents
-describe targets or as-built boundaries; they do not claim delivery status.
+One program phase is active at a time. Product/System, Firmware/Software/Simulation, Hardware/NPI,
+and Verification/Compliance all run in parallel. A work package may be pulled forward to retire a
+named risk when its stop condition prevents premature spend or design freeze.
 
-## Lifecycle State Machine
+This distinction answers hardware questions precisely:
 
-Status and health are separate. No percentage-complete estimate is used.
+- **Definition authorized:** architecture, part selection, suppliers, budgets, coupons, preliminary
+  BOM and design inputs may proceed.
+- **Schematic authorized:** controlled schematic capture may proceed; PCB routing may not.
+- **PCB layout authorized:** HR3 released schematic/interfaces may enter controlled layout;
+  fabrication may not.
+- **EVT build authorized:** one immutable release package may be fabricated and assembled.
+- **DVT authorized:** corrected design is frozen for near-final product validation.
+- **PVT authorized:** intended factory and process may run a pilot.
+- **Release authorized:** the immutable product may ship and enter sustainment.
 
-| Status | Exact meaning |
+Never summarize these states as only “hardware started.”
+
+## Governance
+
+The AI milestone manager is the **Evidence Auditor and Program Secretariat**. It owns evidence
+inventory, semantic review, traceability, conflict detection, status maintenance, schedule/risk
+analysis, the technical gate verdict, and evidence-driven status transitions. It refuses unsupported
+progress claims and does not wait for ceremonial human acceptance of objective results.
+
+Named decision ownership remains explicit:
+
+- the CEO owns budget, vendor, product, and market commitments;
+- the hardware design owner owns the controlled design package;
+- workstream owners own delivery and corrective action; and
+- compliance, quality, supplier, or laboratory evidence identifies its responsible source.
+
+AI does not infer spend, contractual commitment, or professional accountability from technical
+evidence. A technical `Go` establishes readiness; the CEO separately authorizes any budget, vendor,
+or market action that readiness enables. The qualified design owner remains accountable for the
+engineering package without becoming a manual evidence-approval checkpoint.
+
+## State Models
+
+### Program Phase
+
+| State | Exact meaning |
 | --- | --- |
-| `Proposed` | The phase contract exists, but its definition audit or entry gate is not yet satisfied. Work may reduce risk but cannot be reported as phase execution. |
-| `Ready` | The contract meets intent and every entry condition has current `Pass` evidence. The phase may start. |
-| `In progress` | Entry was recorded, an owner is accountable, and work toward the exit gates is active. |
-| `Acceptance pending` | Required outputs exist and the exit evidence package is ready for the final semantic audit. |
-| `Complete` | The milestone manager found every applicable exit gate passed on direct, current, mutually consistent evidence. |
-| `Superseded` | A recorded decision replaced the phase contract or outcome. |
+| `Not entered` | Entry gate has not authorized execution. This is normal future sequencing, not a health failure. |
+| `Ready` | Entry evidence and resources are sufficient; the gate decision may enter the phase. |
+| `Active` | Entry is recorded and concurrent workstreams are producing exit evidence. |
+| `Gate review` | Exit package is immutable enough for evidence audit and disposition. |
+| `Closed` | Exit gate recorded `Go` or an explicitly bounded `Conditional Go`. |
+| `Superseded` | A controlled decision replaced the phase objective or boundary. |
 
-| Health | Exact meaning |
+### Work Package
+
+| State | Exact meaning |
 | --- | --- |
-| `On track` | No known condition prevents the next gate from being reached by the current plan. |
-| `At risk` | A named uncertainty threatens the next gate, but useful work can continue. |
-| `Blocked` | A named missing dependency or decision prevents the next gate from being executed. |
+| `Not due` | Planned work is intentionally outside its authorized interval. |
+| `Ready` | Inputs and boundaries allow work to begin without premature commitment. |
+| `Active` | An owner is executing the package. |
+| `Acceptance pending` | Outputs exist and the evidence audit is running. |
+| `Complete` | All applicable acceptance criteria pass on direct current evidence. |
+| `Blocked` | A named missing input prevents the next package result. |
 
-### Transition Rules
+Health is separately `Green`, `Amber`, `Red`, or `Not rated`. Future work is normally `Not rated`,
+not `Red` or `Blocked` simply because its phase has not started.
 
-1. `Proposed` to `Ready`: the contract audit returns `Meets intent`, all predecessor phases required
-   for entry are `Complete`, and every phase-specific entry condition is `Pass`.
-2. `Ready` to `In progress`: the accountable owner, evidence revision, start date, and first exit gate
-   action are recorded.
-3. `In progress` to `Acceptance pending`: all deliverables exist and no applicable exit gate remains
-   `Not run`; failed or unverified evidence remains visible for the audit.
-4. `Acceptance pending` to `Complete`: an AI semantic audit verifies every applicable exit gate as
-   `Pass`. Human observations and laboratory measurements may be evidence, but are not approval.
-5. `Complete` to `In progress`: a listed invalidation condition makes material evidence stale; the
-   reason and affected gates are recorded.
+### Decision Gate
 
-Only one product-realization phase is `In progress` or `Acceptance pending` at a time. Later-phase
-experiments are allowed when they retire a named risk, but they do not constitute entry into that
-phase. A phase begins only at the `Ready` to `In progress` transition and exits only at `Complete`.
+Gate dispositions are:
 
-## Requirement And Evidence Rules
+- `Go`: required evidence passes and the named commitment is authorized.
+- `Conditional Go`: only non-architecture-changing exceptions remain, each with consequence, owner,
+  risk acceptance, and closure date.
+- `Hold`: do not commit; named evidence or capacity must be supplied.
+- `Recycle`: return to a prior baseline because the proposed result is not viable.
+- `Stop`: discontinue the program or bounded product direction.
 
-Each accepted requirement has a stable identifier, rationale, measurable statement, verification
-method, target environment, owner, and linked result. Use one of four verification methods:
+The gate record names the audited revision/package, AI technical verdict, exact technical work that
+verdict enables, any separate CEO commitment authorization, exceptions, evidence date, and
+invalidation conditions.
 
-- **Test:** measure behavior under controlled conditions.
-- **Analysis:** calculate or model a result from validated inputs.
-- **Inspection:** examine an artifact, assembly, configuration, or record.
-- **Demonstration:** operate the system and observe the required user-visible result.
+## Integrated Phase And Gate Plan
 
-A requirement is not satisfied by code existence, a successful command, or an aspirational
-architecture statement. Evidence names the source revision, artifact identity, hardware identity,
-environment, procedure, result, and date. Calibration data cannot also serve as held-out validation
-data. A changed requirement, implementation, board, toolchain, or environment reopens affected
-evidence.
+| Phase | Exit gate | Product/System (`PS`) | Firmware/Software (`FS`) | Hardware/NPI (`HW`) | Verification/Compliance (`VC`) |
+| --- | --- | --- | --- | --- | --- |
+| P0 Development Foundation | G0 Development Foundation | Product hypothesis and target gap map | Reproducible CI and automated two-board platform | Identified NFF boards and lab configuration | Evidence policy and automated verification |
+| P1 Definition and Feasibility | G1 System Architecture Baseline | Hardware-driving product/system requirements and interfaces | NFF closure, shared protocol/runtime plan, deterministic interfaces | HR0-HR2: characterization, architecture and component baseline | Verification matrix, FMEA, compliance/RF/supply/test plan |
+| P2 Integrated Alpha and EVT Design | G2 EVT Release To Fab | Six-node workflow and accepted critical behavior | Unified drill/runtime, alpha, diagnostics, model evidence, EVT profile | HR3-HR4: reviewed schematic/layout/manufacturing package | Alpha faults/soak/timing, design review, DFM/DFT and pre-compliance plan |
+| P3 EVT Build and Qualification | G3 EVT Exit / DVT Authorization | Controlled requirements feedback | Product-board bring-up, factory/service tools and corrected firmware | Traceable EVT build, bring-up, correction and design-freeze candidate | EVT electrical/RF/power/peripheral/firmware/testability verification and defect closure |
+| P4 DVT Product Validation | G4 DVT Exit / PVT Authorization | Product claims, customer validation, support/warranty baseline | Release candidate on frozen product hardware | Near-final form-factor units, controlled BOM/suppliers/tooling | Full V&V, reliability/environment, security and formal launch-market compliance |
+| P5 PVT and Launch Readiness | G5 PVT Exit / Release Candidate | Price, channel, demand, support and launch plan | Reproducible candidate and production/update tooling | Intended-line pilot, yield, traceability, packaging and logistics | Process validation, production sampling, certificates and quality plan |
+| P6 Open Product Release | G6 Product Release | Offer, documentation and launch operations | GA firmware, CLI/app, security and update process | Released design/manufacturing package and launch inventory | Candidate regression, approvals, open-source and support evidence |
+| P7 Sustainment | G7 Sustainment Handoff | Customer learning and roadmap | Incidents, vulnerabilities and supported updates | Ramp, spares, returns and quality escapes | Post-market monitoring, evidence retention and continuing compliance |
 
-## Phase Sequence
+The deterministic model is an `FS` work package across P1-P2. It informs decisions but is not a
+company-wide phase that blocks product discovery, hardware definition, supplier engagement, or
+compliance risk reduction.
 
-Build quantities are planning ranges, not quotas. The milestone manager may change them when the
-risk model, contract manufacturer, cost, or learning objective supports a different count.
+## Hardware Authorization Ladder
 
-### Initial Waterfall
+| Release | Evidence result | Program effect |
+| --- | --- | --- |
+| HR0 NFF Reference Closure | Exact as-built identity and quantitative physical/electrical reference | Closes measured inputs to product architecture |
+| HR1 Architecture Downselect | Requirements allocation, ID/mechanical envelope, topology trades, budgets, RF/charging/service strategy, FMEA and risk coupons | Establishes recommended product architecture |
+| HR2 Component Baseline | Exact selected/alternate parts with derating, sample/footprint, lifecycle, supply, cost, driver, compliance and manufacturing evidence | Supports G1 schematic authorization |
+| HR3 Schematic Release | Controlled schematic/netlist/calculations/interfaces, firmware profile contract, test points, zero unwaived ERC and cross-discipline review | Authorizes PCB layout, not fabrication |
+| HR4 PCB Release To Fab | Controlled EDA/fabrication/assembly/test package, zero unwaived DRC, DFM/DFA/DFT and checksums | Supports G2 EVT build decision |
+| HR5 EVT Exit | Traceable product-intent units pass electrical, RF, power, peripheral, update/recovery, testability and six-node regression without architecture-changing defect | Supports G3 DVT decision |
+| HR6 DVT Exit | Frozen form-factor units meet product, user, reliability, security, service and compliance requirements | Supports G4 PVT decision |
+| HR7 PVT Exit | Intended-line yield, capability, traceability, factory test, regression and logistics pass | Supports G5 release-candidate decision |
 
-The initial schedule is a planning baseline, not an acceptance claim or delivery commitment. Each
-phase starts only after the preceding exit gate passes. A failed gate, material redesign, unavailable
-specialist, or supply constraint requires the milestone manager to record the effect and rebaseline
-the remaining dates. Completed work is never moved merely to make the forecast look current.
+The active [`HW-WP-001`](../hardware/NEXT_ITERATION_REQUEST.md) request covers HR0-HR2 and explicitly
+stops before controlled schematic release, PCB release, or fabrication.
 
-![DOMES product-realization waterfall from M0 foundation through M7 open product release](assets/product-realization-waterfall.png)
+## Integrated Master Schedule
 
-Diagram source: [`assets/product-realization-waterfall.mmd`](assets/product-realization-waterfall.mmd).
-Regenerate the image with:
+The schedule shows parallel workstreams and cross-functional gates. Dates are a baseline forecast,
+not evidence or a delivery guarantee.
+
+![DOMES integrated master schedule with parallel product, software, hardware, and verification workstreams](assets/integrated-master-plan.png)
+
+Diagram source: [`assets/integrated-master-plan.mmd`](assets/integrated-master-plan.mmd). Regenerate:
 
 ```bash
 npx --yes @mermaid-js/mermaid-cli@11.12.0 \
-  -i docs/assets/product-realization-waterfall.mmd \
-  -o docs/assets/product-realization-waterfall.png \
-  -w 2400 -H 1200 -b white
+  -i docs/assets/integrated-master-plan.mmd \
+  -o docs/assets/integrated-master-plan.png \
+  -w 2800 -H 1400 -b white
 ```
 
-| Phase | Initial planning range | Nominal duration | Start condition |
-| --- | --- | --- | --- |
-| M0 Foundation | Accepted 2026-08-03 | Complete | Existing accepted evidence |
-| M1 Product Definition and NFF Proof | 2026-08-04 to 2026-09-28 | 8 weeks | M0 complete and M1 execution recorded |
-| M2 Predictive System Model | 2026-09-29 to 2026-12-07 | 10 weeks | M1 complete and model envelope accepted |
-| M3 Six-Node System Alpha | 2026-12-08 to 2027-03-01 | 12 weeks | M2 complete and six suitable nodes available |
-| M4 EVT Production-Intent Prototype | 2027-03-02 to 2027-06-21 | 16 weeks | M3 complete and EVT input package accepted |
-| M5 DVT Form-Factor Product | 2027-06-22 to 2027-11-08 | 20 weeks | EVT complete and design frozen |
-| M6 PVT Manufacturing System | 2027-11-09 to 2028-01-31 | 12 weeks | DVT complete and intended line ready |
-| M7 Open Product Release | 2028-02-01 to 2028-03-27 | 8 weeks | PVT complete and immutable candidate selected |
+Schedule control rules:
 
-This baseline assumes one primary program stream, four economical alpha nodes sourced during M2,
-specialist and contract-manufacturer availability before EVT, one launch-market compliance path, and
-no architecture-scale redesign after EVT. Work can be pulled forward to retire a named risk, but the
-phase itself cannot start early. Schedule confidence is highest for M1 and deliberately decreases
-for later hardware and manufacturing phases.
+1. Baseline and current forecast are separate; variance is never erased by rewriting history.
+2. The critical path names dependencies, responsible work packages, resource assumptions, supplier
+   lead times, and the next irreversible commitment.
+3. A failed gate, material scope/configuration change, resource loss, or supply constraint triggers a
+   recorded impact and reforecast.
+4. Work may pull forward only within its authorization boundary. Early analysis is not early gate
+   passage.
+5. Confidence is stated for each near-term gate and decreases when ownership, resources, supplier
+   evidence, or upstream measurements are unknown.
 
-| Phase | Purpose | Entry decision | Exit decision |
-| --- | --- | --- | --- |
-| M0 Foundation | Establish trustworthy source, CI, programming, and two-board automation | Project initiated with identified development hardware | Reproducible software CI and automated two-board firmware, transport, update, recovery, peer, and diagnostic flows pass |
-| M1 Product Definition and NFF Proof | Decide what should be built and establish a complete physical development-board reference | M0 complete and the two NFF boards are available | Customer and product hypotheses are validated to the stated threshold; requirements, compliance, open-source, and economics baselines are accepted; both NFF boards pass physical peripheral qualification |
-| M2 Predictive System Model | Make deterministic Linux simulation trustworthy enough to predict the bounded physical system | M1 complete; accepted requirements and NFF measurements identify the validation envelope | Shared production logic replays exactly and meets held-out functional, safety, timing, and delivery error bounds against two physical pods |
-| M3 Six-Node System Alpha | Prove the complete offline product behavior before custom electronics | M2 complete; drill, authority, timing, and recovery requirements accepted | A representative app-driven six-node system passes physical interaction, failure, diagnostics, coexistence, and soak gates; four added nodes may be inexpensive radio reference nodes |
-| M4 EVT Production-Intent Prototype | Prove production-intent electrical architecture and the highest hardware risks | M3 complete; preliminary FMEA, compliance plan, ID package, schematic, BOM, and CM feedback accepted | Typically 10-20 electrical prototypes prove power, battery, RF, touch, optics, audio, haptics, firmware, update, testability, and DFM; enclosure may be soft tooling |
-| M5 DVT Form-Factor Product | Prove the frozen design meets product and regulatory requirements | EVT complete and electrical, mechanical, firmware, and manufacturing interfaces frozen | Typically 30-100 near-final units pass product, environmental, reliability, security, compliance, customer-use, and full six-pod validation |
-| M6 PVT Manufacturing System | Prove the intended factory can repeatedly build and test the product | DVT complete; line, fixtures, work instructions, materials, and yield target ready | Typically 100-300 pilot units meet ratified yield, traceability, process-control, factory-test, packaging, update, and failure-disposition gates |
-| M7 Open Product Release | Release and sustain one exact, reproducible product version | PVT complete and one immutable candidate selected | Candidate CI, compliance, product operation, service, security, licensing, source, design, manufacturing, and support packages are accepted |
+## Requirements, Evidence, And Configuration
 
-The M3 economy is intentional: add inexpensive representative ESP32 nodes before committing to
-more NFF carriers or a custom PCB. The full six-pod physical product is requalified on form-factor
-DVT units in M5.
+Each accepted requirement has a stable identifier, rationale, measurable statement, owner,
+verification method, target environment, and linked result. Verification methods are Test,
+Analysis, Inspection, or Demonstration.
 
-## Hardware And Compliance Strategy
+Evidence names source revision, software artifact, hardware/configuration identity, instruments,
+environment, procedure, raw/derived results, uncertainty where applicable, date, and invalidation
+conditions. Code existence, a successful build, command acceptance, initialization, architecture
+prose, or capture-start trace alignment is not physical or synchronized timing proof.
 
-- Prefer a pre-certified ESP32 radio module and a certified battery pack until volume or packaging
-  proves a custom radio or cell integration necessary.
-- Define the launch market in M1. Build only its applicable standards matrix first; later markets are
-  design inputs, not simultaneous certification projects.
-- Expected areas include FCC equipment authorization, Bluetooth qualification, IEC/UL 62368-1,
-  IEC 62133-2 and UN 38.3 for batteries, IEC 60529 if an IP claim is retained, and consumer-IoT
-  security requirements applicable to the launch market.
-- Do not claim a rating, qualification, certification, or open-hardware status until the relevant
-  body or evidence package supports it. Use the [OSHWA definition](https://oshwa.org/definition/)
-  and [sharing best practices](https://oshwa.org/resources/sharing-best-practices/) when preparing
-  M7.
+Configuration and interface baselines include hardware revision, schematic/BOM/AVL, firmware board
+profile, partitions, protocols/protobuf schemas, app/CLI compatibility, fixture/test software, factory
+data and manufacturing package. A frozen-interface change requires compatibility review, ECO impact,
+updated verification, and reopening every invalidated release/gate.
 
-## Required Status Report
+Calibration data cannot also be held-out validation data. Simulation evidence additionally names
+model version, scenario/config/seed, calibration and held-out dataset identities, normalized trace
+hashes, clock-correlation method, error bounds, and prediction envelope.
 
-Every project-status review reports these fields in this order:
+## Program Control Artifacts
 
-1. **Active phase:** ID, outcome, status, health, actual start, forecast exit, reviewed revision, and
-   evidence date.
-2. **Entry:** `Pass` or the exact unmet condition; include when phase execution began.
-3. **Exit:** accepted gates over total gates and any failed or unverified gate.
-4. **Delivered:** accepted results with direct evidence.
-5. **Now:** one current gate and its owner.
-6. **Next:** the next unmet gate and the concrete action that can change its state.
-7. **Risks and decisions:** condition, owner, consequence, mitigation, and decision point.
-8. **Following phase:** readiness state and the exact entry condition still missing.
+| Concern | Authority now | Required maturation |
+| --- | --- | --- |
+| CEO status, gates, workstreams, critical path and risks | [`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) | Updated on every gate/status/evidence change |
+| Product/customer/launch hypothesis | [`../research/PRODUCT_DEFINITION.md`](../research/PRODUCT_DEFINITION.md) | PS1 produces accepted product/system requirements |
+| Target system and ID architecture | [`../research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md), [`../research/ID_REQUIREMENTS.md`](../research/ID_REQUIREMENTS.md) | G1-controlled interface/architecture baseline |
+| As-built software and protocols | Implementation, protobuf schemas and [`../research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md) | G2 pins unified runtime/protocol and EVT profile |
+| Verification procedures and evidence | [`TESTING.md`](TESTING.md), CI and retained evidence | VC1 traceability matrix and phase evidence packages |
+| Hardware definition and NPI | [`../hardware/NEXT_ITERATION_REQUEST.md`](../hardware/NEXT_ITERATION_REQUEST.md), hardware sources | HR releases and controlled manufacturing packages |
+| Schedule | [`assets/integrated-master-plan.mmd`](assets/integrated-master-plan.mmd) and CEO status | Baseline/forecast/variance and resource/lead-time basis |
+| Risk, decisions, waivers and exceptions | Program status plus linked design records | Immutable gate ledger entries at each decision |
 
-The dashboard in `firmware/MILESTONES.md` is a compact index. The detailed contract and its evidence
-remain authoritative when a summary conflicts with it.
+Issues and pull requests manage execution. They do not replace these control artifacts.
+
+## Required CEO Status Report
+
+Every report answers in this order:
+
+1. Active program phase, development hardware, NPI stage, evidence revision/date and overall health.
+2. Next program gate, baseline/forecast/confidence, exact authorization, critical inputs and AI
+   technical verdict.
+3. Immediate hardware authorization level: definition, schematic, PCB layout, EVT, DVT, PVT or
+   release.
+4. `PS`, `FS`, `HW`, and `VC` outcomes: delivered, now, next, owner, health and forecast.
+5. Hardware release-ladder position and next evidence release.
+6. Critical path and top risks with owner, mitigation and decision-by date.
+7. Decisions required from the CEO with recommendation, alternatives and consequence of delay.
+8. Changes to scope, schedule, cost, requirements, configuration, evidence or risk.
+
+Do not report one aggregate completion percentage. Gate readiness, hardware release state, current
+evidence, dated workstream outcomes, and explicit decision authority are the program truth.

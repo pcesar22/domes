@@ -317,5 +317,5 @@ $CLI --port "$PORT" trace dump \
 | Forced rollback | | |
 | Trace/coredump diagnostics | | |
 
-Update [`../../firmware/MILESTONES.md`](../../firmware/MILESTONES.md) only when recorded evidence
+Update [`../../PROGRAM_STATUS.md`](../../PROGRAM_STATUS.md) only when recorded evidence
 changes the project-wide verification status.

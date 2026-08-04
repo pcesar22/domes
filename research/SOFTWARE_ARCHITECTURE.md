@@ -139,7 +139,7 @@ protocol boundary:
 Touch simulation is limited to explicit simulated pod addresses. The OTA chunk protocol remains a
 bounded fixed-binary exception mirrored with firmware and the Rust CLI. Unit/widget tests cover the
 app layers, but a physical app drill and mobile OTA remain hardware-verification gates in
-[`../firmware/MILESTONES.md`](../firmware/MILESTONES.md).
+[`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md).
 
 ## Board Profile
 
@@ -188,7 +188,7 @@ Use the following source when documents disagree:
 | NVS keys | `firmware/domes/main/infra/nvsConfig.hpp` and owning service headers |
 | Flash size and partition layout | `firmware/domes/sdkconfig.defaults` and `firmware/domes/partitions.csv` |
 | Build and verification commands | [`docs/TESTING.md`](../docs/TESTING.md) |
-| Delivery and hardware-verification status | [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) |
+| Delivery and hardware-verification status | [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) |
 | Product goals and proposed production hardware | [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md) |
 | Historical rationale and future proposals | [`architecture/`](architecture/README.md) |
 
@@ -200,5 +200,5 @@ environment instead of treating copied numbers as permanent architecture.
 
 An implementation change must update the owning source above and any user-facing summary that would
 otherwise become false. A proposal becomes current architecture only after its implementation,
-tests, and hardware status are linked from this document or the milestone tracker. Detailed research
-documents remain non-normative even when parts of their design have been implemented.
+tests, and hardware status are linked from this document or the integrated program status. Detailed
+research documents remain non-normative even when parts of their design have been implemented.

@@ -15,7 +15,7 @@ Use progressive disclosure:
 | `ios/domes_app/` | `ios/domes_app/AGENTS.md` |
 | `hardware/` | `hardware/AGENTS.md` |
 | GitHub, commits, reviews, or releases | `$domes-github-workflow` |
-| Delivery milestones or project status | `$domes-milestone-manager` |
+| Program phases, gates, hardware authorization, or project status | `$domes-milestone-manager` |
 | Platform, BLE, USB, or multi-device setup | `.codex/PLATFORM.md` |
 | Host capability discovery | `scripts/doctor.sh` (use `--json` for automation) |
 | Codex defaults and specialist agents | `.codex/README.md` |
@@ -40,7 +40,7 @@ silently treating a proposal as shipped behavior. Useful authority routes:
 | Firmware coding and architecture | `firmware/AGENTS.md` |
 | Product-realization phases and transitions | `docs/PRODUCT_REALIZATION_FRAMEWORK.md` |
 | Product definition and launch hypotheses | `research/PRODUCT_DEFINITION.md` |
-| Current delivery status | `firmware/MILESTONES.md` |
+| Current delivery status | `PROGRAM_STATUS.md` |
 | Verification | `docs/TESTING.md` |
 | GPIO mappings | `docs/PIN_REFERENCE.md` and active `firmware/domes/main/config.hpp` |
 | Host protocol schemas | `firmware/common/proto/*.proto` |
@@ -110,7 +110,8 @@ paths.
 | `docs/PRODUCT_REALIZATION_FRAMEWORK.md` | Product lifecycle and phase entry/exit rules |
 | `docs/TESTING.md` | Software and hardware verification procedures |
 | `PLANS.md` | Living execution-plan contract for substantial work |
-| `firmware/MILESTONES.md` | Development phases and current status |
+| `PROGRAM_STATUS.md` | CEO status, phases, gates, workstreams, hardware releases, and decisions |
+| `hardware/NEXT_ITERATION_REQUEST.md` | Current hardware-definition and component-selection work package |
 | `research/PRODUCT_DEFINITION.md` | Customer, value, launch, and requirements hypotheses |
 | `research/SYSTEM_ARCHITECTURE.md` | Product target, not as-built status |
 | `research/architecture/README.md` | Historical/proposed record lifecycle |
