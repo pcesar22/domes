@@ -27,17 +27,21 @@ instructions.
 
 ## Autonomous Continuation
 
-When no specific task is active, `Continue DOMES.` authorizes one autonomous cycle. Use
-`$domes-milestone-manager` to reconcile current truth, select exactly one bounded, unblocked,
-AI-owned package, and apply `.codex/README.md` routing. Do not ask the user to rank eligible work.
+`Continue DOMES.` and clear technical-continuation variants authorize autonomous delivery when
+no task is active. Use `$domes-milestone-manager` to select one bounded, unblocked programming or
+executed-validation package; do not ask the user to rank work.
 
-The directive authorizes one issue and package through branch/worktree, implementation, runbook
-verification, status, commit/push, one review-ready PR, and CI repair. When hardware CI is required,
-it also authorizes `hw-test` and its checked-in erase/factory/rollback sequence only on the two
-registered NFF CI boards after identity and runner preflight. It never authorizes merge, release,
-other labels, purchases, vendor commitments, fabrication, other destructive device actions,
-gate-prohibited work, or unsupported claims. The milestone-manager skill defines selection and stop
-rules.
+The result must implement, repair, or exercise software, simulation, CI/tooling, tests, or device
+behavior and leave reproducible evidence. Supporting artifacts are allowed. Requirements,
+discovery, program administration, architecture/part studies, planning matrices, FMEA/compliance,
+research, and docs-only work require an explicit request. Never finish with only another plan.
+
+The continuation request authorizes one issue and eligible package through implementation,
+verification, status, commit/push, one review-ready PR, and CI repair. Only the exact
+`Continue DOMES.` directive also authorizes required `hw-test` after its registered-board preflight.
+It never authorizes merge, release, other labels, purchases, vendor/fabrication commitments, other
+destructive device actions, gate-prohibited work, or unsupported claims. The milestone-manager
+skill defines selection and stop rules.
 
 ## Truth And Authority
 
@@ -91,9 +95,9 @@ substantial work started from `main`, prefer `.worktrees/<name>` on a
 `chore`. Never create new worktrees under `.claude/worktrees/`.
 
 Keep commits intentional and scoped. Ask before creating or publishing a pull request or other
-GitHub state unless the user already authorized it. The exact autonomous-continuation directive
-counts only as the bounded issue and pull-request authorization defined above; it is not merge or
-release authorization.
+GitHub state unless the user already authorized it. A continuation request matched above counts
+only as the bounded issue and pull-request authorization defined above; it is not merge or release
+authorization.
 
 ## Host Protocol Contract
 
