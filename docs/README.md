@@ -9,6 +9,7 @@ when documents disagree; do not resolve conflicts by copying the same fact into 
 | --- | --- | --- |
 | Product-realization lifecycle and phase transitions | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) and `$domes-milestone-manager` |
 | Product brief, customer/offer hypotheses, and canonical workflow | [`research/PRODUCT_DEFINITION.md`](../research/PRODUCT_DEFINITION.md) | Accepted requirements and research evidence linked from it |
+| G1 product/system requirement and interface candidate | [`research/G1_REQUIREMENTS_AND_INTERFACES.md`](../research/G1_REQUIREMENTS_AND_INTERFACES.md) | Product, as-built, target, hardware, and verification authorities linked from it |
 | CEO status, phases, gates, workstreams, hardware releases, and decisions | [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) | Pull requests and verification results |
 | Program and gate contract structure | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) | `$domes-milestone-manager` semantic review workflow |
 | Firmware behavior | Code under [`firmware/domes/main/`](../firmware/domes/main/) | [`firmware/README.md`](../firmware/README.md) |
@@ -37,9 +38,11 @@ to introduce a message or enum.
 4. [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) for the active phase and accepted evidence.
 5. [`research/PRODUCT_DEFINITION.md`](../research/PRODUCT_DEFINITION.md) for the product brief,
    canonical workflow, hypotheses, and current product gaps.
-6. [`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md) for software boundaries.
-7. [`research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md) for hardware and network targets.
-8. [`research/architecture/README.md`](../research/architecture/README.md) for detailed design references.
+6. [`research/G1_REQUIREMENTS_AND_INTERFACES.md`](../research/G1_REQUIREMENTS_AND_INTERFACES.md) for
+   the candidate product/system allocation, interface register, and open G1 closure inputs.
+7. [`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md) for software boundaries.
+8. [`research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md) for hardware and network targets.
+9. [`research/architecture/README.md`](../research/architecture/README.md) for detailed design references.
 
 ## Guides By Task
 

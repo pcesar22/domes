@@ -217,6 +217,10 @@ minimum they must allocate:
 No seed above is an accepted numeric requirement until PS1 records its rationale, bound, owner,
 verification method, and status.
 
+The [`G1 requirements and interface candidate`](G1_REQUIREMENTS_AND_INTERFACES.md) performs that
+allocation for PS-WP-002. It remains a candidate with explicit closure inputs; the link does not
+promote its targets or bounded fallbacks to accepted requirements or G1 evidence.
+
 ## PS0 Discovery And Invalidation
 
 This brief completes the PS-WP-001 hypothesis baseline; it does not complete PS0 validation. P1 must
@@ -226,7 +230,7 @@ still produce:
 | --- | --- | --- |
 | Customer evidence | Interview/observation protocol, participants, findings, contradictions, purchase evidence, and decision | `Not started` |
 | Competitive workflow benchmark | Comparable kit, setup, drill, failure/recovery, results, offline, service, repair, current price, and ownership observations | `Started`; only dated official BlazePod offer observations recorded here |
-| Product requirements | Stable IDs, rationale, measurable statement, verification method, environment, owner, and status | `Not started`; seeds defined |
+| Product requirements | Stable IDs, rationale, measurable statement, verification method, environment, owner, and status | `Candidate`; PS-WP-002 allocation written, acceptance evidence remains open |
 | Verification matrix | Every accepted product requirement mapped to test, analysis, inspection, or demonstration | `Not started` |
 | Launch compliance matrix | Market, classification, standards/regulations, evidence route, owner, and timing | `Not started` |
 | Product economics | Price, fully burdened cost, margin, warranty, support, certification, manufacturing, and open-product assumptions | `Started`; hypothesis guardrails only |

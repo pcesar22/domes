@@ -11,7 +11,8 @@ belong in [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md), ta
 [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md), and verification procedures
 in [`docs/TESTING.md`](docs/TESTING.md).
 
-**As of:** 2026-08-04, `main` after merged PR 90 plus the PS-WP-001 review package
+**As of:** 2026-08-04, `main` after merged PR 90 plus the PS-WP-001 review package and active
+PS-WP-002 stacked work
 
 ## CEO Control Panel
 
@@ -24,9 +25,9 @@ in [`docs/TESTING.md`](docs/TESTING.md).
 | Next program gate | G1 System Architecture Baseline and Schematic Authorization |
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
-| Current execution package | `PS-WP-001` review-ready in [PR 92](https://github.com/pcesar22/domes/pull/92); [issue 91](https://github.com/pcesar22/domes/issues/91) owns execution evidence |
-| Next AI-owned action | `PS-WP-002` Hardware-Driving Requirements and Interface Baseline; reserved for the next directive |
-| Current AI execution blocker | None for PS-WP-002; missing customer evidence must remain explicit in bounded requirement assumptions |
+| Current execution package | `PS-WP-002` active in [issue 93](https://github.com/pcesar22/domes/issues/93), stacked on review-ready [PR 92](https://github.com/pcesar22/domes/pull/92) |
+| Next AI-owned action | Complete PS-WP-002 semantic/automated verification, publish its one stacked PR, and stop at green review readiness |
+| Current AI execution blocker | None for the bounded candidate; missing customer, HW-owner, measurement, compliance, supplier, and cost evidence remains explicit and prevents unsupported G1 acceptance |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
 | First product-hardware purchase authorization | G2 EVT Release to Fab, forecast 2026-11-02 |
@@ -102,19 +103,21 @@ requirements and interface candidate without inventing evidence or freezing the 
 | Contract | Current state |
 | --- | --- |
 | Owner | AI systems lead |
-| State / health | `Ready` / `Amber` |
-| Requested start / finish | Next autonomous directive / 2026-09-07 |
+| State / health | `Active` / `Amber` |
+| Actual start / forecast | 2026-08-04 / 2026-09-07 |
 | Inputs | Product brief/workflow, target system/ID architecture, as-built software, HW-WP-001 inputs, G1 evidence contract |
 | Dependencies/blockers | None for a bounded candidate; customer, HW-owner, measurement, compliance, and cost evidence remain explicit open inputs |
 | Gate/risk unlocked | Supplies the product/system allocation and interface input required by HW1, FS3, VC1, HR1/HR2, and G1 |
 | Execution authority | AI-owned repository research, requirements, interface, and traceability documentation |
-| Execution issue | None; the next directive creates or reuses it |
+| Execution issue | [Issue 93](https://github.com/pcesar22/domes/issues/93); PR is created only after local verification |
 | Stop condition | No runtime/protocol change, architecture/part freeze, spend, schematic/layout release, or product/compliance claim |
 
 Acceptance requires stable candidate IDs with source/rationale, measurable value or explicit bounded
 TBD/fallback, allocation across product/hardware/firmware/app/mechanical/test, verification method,
 owner, status, and invalidation rule. It must include a current/target interface-control candidate and
-make every unresolved G1 input visible. This cycle records the package but does not start it.
+make every unresolved G1 input visible. The candidate is written in
+[`research/G1_REQUIREMENTS_AND_INTERFACES.md`](research/G1_REQUIREMENTS_AND_INTERFACES.md); semantic,
+automated, pull-request, and CI evidence remain open.
 
 ### What Is Not Authorized
 
@@ -194,7 +197,7 @@ cannot upgrade a failing technical verdict.
 | ID | Outcome | Owner | Status | Health | Forecast | Now / next |
 | --- | --- | --- | --- | --- | --- | --- |
 | PS0 | Product brief and launch hypothesis | CEO/product owner with AI product lead | `Active` | `Amber` | 2026-08-14 | Hypothesis baseline review-ready; execute customer, competitive, economic, licensing and support discovery |
-| PS1 | Hardware-driving product/system baseline and traceability | AI systems lead | `Active` | `Amber` | 2026-09-07 | Start PS-WP-002 next; allocate measurable requirements/interfaces and bounded fallbacks |
+| PS1 | Hardware-driving product/system baseline and traceability | AI systems lead | `Active` | `Amber` | 2026-09-07 | Verify and publish PS-WP-002 candidate; close its bounded G1 evidence inputs through PS/HW/FS/VC work |
 | PS2 | App-driven six-node system alpha | AI systems lead | `Ready` | `Amber` | 2026-10-19 | Acquire four nodes; unify drill, authority, timing, failure, result and coexistence requirements |
 | PS3 | DVT user/product validation | Product/UX owner, unassigned | `Not due` | `Not rated` | 2027-08-02 | Starts on representative frozen units; continues customer/economic validation before it |
 | PS4 | Launch offer, price, channel, support and warranty | CEO/product owner | `Not due` | `Not rated` | 2027-12-13 | Close from customer, DVT, PVT, cost and support evidence |
@@ -262,9 +265,9 @@ The critical path to the next irreversible design commitment is:
 | Required input | Current state | Pass result |
 | --- | --- | --- |
 | Named HW owner, definition budget, supplier/CM access and dated plan | `Open` | HW-WP-001 becomes active with accountable delivery |
-| Hardware-driving product/system requirements and interface allocation | `Not run` | Stable values or explicit ranges/fallbacks across product, HW, FW, mechanical and test |
+| Hardware-driving product/system requirements and interface allocation | `Candidate drafted`; acceptance evidence open | Stable values or explicit ranges/fallbacks across product, HW, FW, mechanical and test |
 | NFF physical, exact-population, current, power, timing and RF record | `Unverified` | Measured reference and known limitations |
-| Architecture block, interface-control record and mechanical/ID envelope | `Not run` | Every rail, bus, pin, timing, boot, debug, test, RF and physical interface has an owner |
+| Architecture block, interface-control record and mechanical/ID envelope | `Interface candidate drafted`; architecture and controlled ME/ID envelope open | Every rail, bus, pin, timing, boot, debug, test, RF and physical interface has an owner |
 | Component matrix and preliminary M-BOM/AVL | `Not run` | Selected/alternate parts close requirement, lifecycle, supply, cost, compliance, driver and manufacturing needs |
 | Power/battery/charging/thermal/runtime and resource budgets | `Not run` | Typical/worst-case budgets close with stated margin |
 | Preliminary FMEA, RF/compliance route and risk-coupon results | `Not run` | No hidden critical risk capable of invalidating schematic/layout |
