@@ -1,92 +1,81 @@
-# DOMES Delivery Milestones
+# DOMES Product Realization Milestones
 
-This document is the delivery-status authority for DOMES. It answers what is accepted, what is being
-worked on, what comes next, and what evidence supports each claim. Product targets belong in
-[`research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md), as-built boundaries in
-[`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md), and verification
+This is the delivery-status authority for DOMES. The lifecycle and transition rules are defined in
+[`docs/PRODUCT_REALIZATION_FRAMEWORK.md`](../docs/PRODUCT_REALIZATION_FRAMEWORK.md). Product targets
+belong in [`research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md), product
+hypotheses in [`research/PRODUCT_DEFINITION.md`](../research/PRODUCT_DEFINITION.md), as-built
+boundaries in [`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md), and test
 procedures in [`docs/TESTING.md`](../docs/TESTING.md).
 
+The framework also contains the initial dependency-driven waterfall through March 2028. Dates are
+forecasts and never override the entry and exit evidence in this ledger.
+
 Use [`docs/MILESTONE_TEMPLATE.md`](../docs/MILESTONE_TEMPLATE.md) and
-`$domes-milestone-manager` when creating or reviewing these contracts. Substance and evidence matter;
-the layout is only a readable presentation.
+`$domes-milestone-manager` for every status or transition audit. Evidence and intent govern; layout
+does not.
 
 **Status reviewed:** 2026-08-03
+**Reviewed revision:** `7be7387` plus this proposed ledger change
 
-## Reading Status
+## Current Status
 
-Lifecycle and health are separate:
+| ID | Phase outcome | Status | Health | Entry | Exit gates | Forecast exit | Next gate | Last reviewed |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| M0 | Trustworthy software and two-board foundation | `Complete` | `On track` | `Pass` | 5/5 | 2026-08-03 actual | Preserve required CI and hardware evidence | 2026-08-03 |
+| M1 | Accepted product definition and complete NFF proof | `In progress` | `At risk` | `Pass` | 1/8 | 2026-09-28 | Run customer discovery and define measurable product requirements | 2026-08-03 |
+| M2 | Predictive deterministic Linux system model | `Proposed` | `Blocked` | M1 incomplete | 0/7 | 2026-12-07 | Complete M1 | 2026-08-03 |
+| M3 | Representative app-driven six-node system alpha | `Proposed` | `Blocked` | M2 incomplete | 0/7 | 2027-03-01 | Complete M2 and provide four economical radio nodes | 2026-08-03 |
+| M4 | Production-intent EVT electrical prototype | `Proposed` | `Blocked` | M3 incomplete | 0/7 | 2027-06-21 | Complete M3 and approve EVT input package | 2026-08-03 |
+| M5 | Frozen form-factor product validated at DVT | `Proposed` | `Blocked` | M4 incomplete | 0/7 | 2027-11-08 | Complete EVT and freeze the design | 2026-08-03 |
+| M6 | Repeatable pilot manufacturing system at PVT | `Proposed` | `Blocked` | M5 incomplete | 0/6 | 2028-01-31 | Complete DVT and prepare intended production line | 2026-08-03 |
+| M7 | Reproducible, compliant, supportable open product release | `Proposed` | `Blocked` | M6 incomplete | 0/7 | 2028-03-27 | Complete PVT and select an immutable candidate | 2026-08-03 |
 
-| Field | Values | Interpretation |
-| --- | --- | --- |
-| Status | `Proposed`, `Ready`, `In progress`, `Acceptance pending`, `Complete`, `Superseded` | Position in the acceptance lifecycle |
-| Health | `On track`, `At risk`, `Blocked` | Confidence that the next gate can be reached |
-| Gate | `Not run`, `Pass`, `Fail`, `Unverified`, `N/A` | State of direct acceptance evidence |
+### Active Phase Report
 
-`Complete` means the milestone manager audited direct evidence for every applicable gate and found
-the outcome accepted, not merely implemented. Human measurements and physical observations are
-evidence inputs, not approval. A host test is not firmware integration, a successful command is not
-physical observation, and a grouped trace is not synchronized cross-pod timing. Hardware evidence
-is valid only for the named source, artifacts, boards, transports, and date.
+**Active phase:** M1, Product Definition and NFF Proof; `In progress`, `At risk`; actual start
+2026-08-03; forecast exit 2026-09-28. Evidence reviewed 2026-08-03 against the revision above.
 
-## Evidence Invalidation
+**Entry:** `Pass`. M0 is complete, the automated two-board baseline is accepted, both identified NFF
+boards are available, and M1 execution began 2026-08-03 with product-definition and physical
+qualification work active.
 
-The milestone manager reopens a completed milestone when a relevant change makes its evidence stale.
-Every status review checks these triggers; individual contracts do not repeat them.
+**Exit:** 1/8 gates accepted. Product discovery, requirements, compliance/open-source/economics, and
+physical LED, touch, IMU, haptic, and audio evidence remain open.
 
-| Milestone | Evidence becomes stale after changes to |
-| --- | --- |
-| M0 | Required CI, supported toolchains, generated contracts, or authoritative documentation |
-| M1 | Runner or board identity, hardware-workflow coverage, firmware, CLI, or transports |
-| M2 | Peripherals, pins, board assembly, power, drivers, haptic profile, or audio path |
-| M3 | Timing, protocol, scheduling, radio parameters, boards, model, scenarios, or validation envelope |
-| M4 | Trace schema, buffers, crash storage, snapshots, symbolization, clocks, transports, or soak thresholds |
-| M5 | BLE protocol, fragmentation, permissions, WiFi capability, credentials, OTA, mobile platform, or transports |
-| M6 | Drill semantics, authority, peer protocol, timing targets, pod identity, radio configuration, scale, or pod design |
-| M7 | Schematic, BOM, PCB, pins, partitions, bootloader, peripherals, RF, power, factory flow, or production profile |
-| M8 | Candidate source, dependencies, toolchains, generated contracts, hardware, artifacts, platforms, thresholds, or required documentation |
+**Delivered:** Reproducible software CI, automated programming and recovery, UART and BLE control,
+serial and BLE OTA, two-way ESP-NOW, diagnostics, trace, self-tests, and a 620-second two-board soak.
 
-## Delivery Dashboard
+**Now:** Validate the customer, problem, competitive wedge, product boundary, and measurable
+requirements while completing the NFF audio path and physical peripheral campaign.
 
-| ID | Outcome | Status | Health | Accepted gates | Next gate | Last reviewed |
-| --- | --- | --- | --- | --- | --- | --- |
-| M0 | Reproducible repository and software-CI baseline | `Complete` | `On track` | 5/5 | Preserve the baseline on each PR | 2026-08-03 |
-| M1 | Automated two-board programming and readiness | `Complete` | `On track` | 6/6 | Rerun after behavior-affecting changes | 2026-08-03 |
-| M2 | Physical NFF peripheral qualification | `In progress` | `At risk` | 1/7 | Complete audio workflow, then run the observed checklist | 2026-08-03 |
-| M3 | Deterministic predictive Linux system simulation | `Ready` | `On track` | 0/7 | Introduce virtual-time and scheduler interfaces | 2026-08-03 |
-| M4 | Actionable diagnostics and field serviceability | `Proposed` | `On track` | 3/7 | Deliberately capture and decode a panic coredump | 2026-08-03 |
-| M5 | Qualified network and mobile workflows | `Proposed` | `At risk` | 1/6 | Exercise a WiFi-enabled image with stored credentials | 2026-08-03 |
-| M6 | Six-pod product runtime | `Proposed` | `Blocked` | 1/7 | Provide four additional representative pods | 2026-08-03 |
-| M7 | Verified production hardware profile | `Proposed` | `Blocked` | 0/6 | Approve the production board and storage profile | 2026-08-03 |
-| M8 | Releasable product candidate | `Proposed` | `Blocked` | 0/7 | Complete M2 through M7 | 2026-08-03 |
+**Next:** Produce the customer-evidence and product-requirements baseline, then run the observed
+two-board LED, touch, IMU, haptic, and audio checklist.
 
-**Current milestone:** M2, Physical NFF Peripheral Qualification.
+**Risks and decisions:** The product and willingness-to-pay hypotheses are unvalidated; the launch
+market, license, economics, populated haptic part, and audio implementation remain unresolved.
 
-**Current focus:** Finish the missing audio sample and volume-control path, then obtain human
-observation of LEDs, touch, IMU taps, haptics, and audio on both NFF boards.
-
-**Following milestone:** M3 is ready once M2 establishes a trusted physical reference. It turns the
-existing host simulator into a deterministic, hardware-calibrated predictor for the bounded two-pod
-system behavior needed by later milestones.
+**Following phase:** M2 is `Proposed` and blocked by M1. It becomes `Ready` only after M1 is complete
+and the accepted NFF measurements define its validation envelope.
 
 ## Evidence Register
 
-### Current Software Baseline
+### Software And Automated Hardware Baseline
 
 | Evidence | Source | Result | Boundary |
 | --- | --- | --- | --- |
 | Main software CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30782073994](https://github.com/pcesar22/domes/actions/runs/30782073994) | Passed | Builds, tests, generated artifacts, lint, documentation, Flutter Linux, and ESP-IDF release checks |
-| Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged by project owner on 2026-08-03 | Accepted | Repository instructions, verification orchestration, pinned toolchains, and CI behavior |
-| Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace paths; no physical observation |
-| Hardware runner | `domes-hardware-ministrom`, Linux x64, `domes-hardware` label | Online when reviewed | Runner availability can change and must be checked before dispatch |
+| Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains, and CI behavior |
+| Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
+| Hardware runner | `domes-hardware-ministrom`, Linux x64, `domes-hardware` label | Online when reviewed | Availability is checked before dispatch |
 
-The current software baseline passed 271 host firmware tests, 100 Rust CLI tests, 161 Flutter tests,
-generated-binding checks, a clean ESP-IDF v5.4.4 build, and the aggregate `CI Gate`. Use live test
-discovery and CI output instead of copying these counts into other documents.
+The accepted software baseline passed 271 host firmware tests, 100 Rust CLI tests, 161 Flutter
+tests, generated-binding checks, a clean ESP-IDF v5.4.4 build, and the aggregate `CI Gate`. Use live
+test discovery and CI output rather than copying these counts elsewhere.
 
-### Retained Manual Hardware Campaign
+### Retained Two-Board Campaign
 
 The 2026-08-02 campaign used two NFF ESP32-S3 N8R8 boards, their CP2102N UART bridges, and an Intel
-AX210 BLE adapter. The following exact artifacts were built from
+AX210 BLE adapter. The following artifacts were built from
 `99db4b77cc58a6695b86b7122ea5ee77fa9cbecb`:
 
 | Purpose | Embedded version | `domes.bin` SHA-256 | `domes.elf` SHA-256 | Additional identity |
@@ -106,575 +95,304 @@ two-way ESP-NOW benchmarks, a traced drill, restart-snapshot symbolization, and 
 did not physically confirm light, touch, motion, vibration, or sound.
 
 Across three fresh ESP-NOW lifecycles per direction, both boards received 300/300 benchmark packets.
-The command/acknowledgment round-trip observations were:
+Command/acknowledgment round-trip observations were 2.644-18.910 ms from Pod 1 to Pod 2 and
+2.688-20.780 ms from Pod 2 to Pod 1, with per-session means of 4.975-5.272 ms and 5.062-5.226 ms
+respectively. These are round trips, not one-way latency, and do not prove sub-millisecond behavior.
 
-| Direction | Minimum | Per-session mean range | Maximum |
-| --- | --- | --- | --- |
-| Pod 1 to Pod 2 | 2.644 ms | 4.975-5.272 ms | 18.910 ms |
-| Pod 2 to Pod 1 | 2.688 ms | 5.062-5.226 ms | 20.780 ms |
-
-These are round-trip observations, not one-way latency, and they do not demonstrate the target
-architecture's sub-millisecond goal.
-
-## Milestone Contracts
+## Phase Contracts
 
 <!-- markdownlint-disable MD024 -->
 
-### M0: Reproducible Repository And Software-CI Baseline
+### M0: Trustworthy Software And Two-Board Foundation
 
-**Outcome:** Every pull request can be evaluated from documented sources of truth with pinned
-toolchains, reproducible builds, and one trustworthy aggregate software-CI result.
+**Outcome:** Every change can be evaluated through reproducible software CI, and a trusted Linux
+runner can program, communicate with, update, recover, and test two identified NFF boards.
 
 **Status:** `Complete`
 **Health:** `On track`
-**Owner:** Repository engineering
-**Last reviewed:** 2026-08-03
+**Owner:** Repository, firmware, and CI engineering
 **Depends on:** None
 **Blocks:** M1
 
-#### Scope
+#### Entry Gate
 
-Included: repository authority, documentation lifecycle, firmware/CLI/Flutter builds, host tests,
-generated protocols, lint, release-package checks, and the required aggregate CI gate.
+Project source, development hardware, and accountable engineering ownership existed. `Pass`.
 
-Excluded: proof of physical device behavior and product-scale qualification.
-
-#### Constraints
-
-- Current code and generated artifacts outrank proposals when describing implemented behavior.
-- ESP-IDF v5.4.4, Rust 1.92.0, and Flutter 3.44.8 remain pinned until deliberately changed.
-- Protocol definitions remain owned by `firmware/common/proto/` except documented bounded legacy
-  binary contracts.
-- A pull request is not review-ready while its required `CI Gate` is failing or missing.
-
-#### Deliverables
-
-| Deliverable | Evidence | State |
-| --- | --- | --- |
-| Repository authority and scoped agent guidance | `AGENTS.md`, nested instructions, `docs/README.md` | `Accepted` |
-| Change-aware verification entry point | `scripts/verify.sh`, `docs/TESTING.md` | `Accepted` |
-| Software-CI workflow with aggregate gate | `.github/workflows/firmware-ci.yml` | `Accepted` |
-| Reproducible firmware, CLI, Flutter, and protocol builds | PR 85 verification record and run 30782073994 | `Accepted` |
-| Current architecture and stale-document separation | `research/SOFTWARE_ARCHITECTURE.md`, `research/architecture/README.md` | `Accepted` |
-
-#### Acceptance Gates
+#### Exit Gates
 
 | Gate | Required result | Evidence | State |
 | --- | --- | --- | --- |
-| Full repository verification | Every required `scripts/verify.sh` section passes | PR 85 verification record | `Pass` |
-| Pull-request CI | Aggregate `CI Gate` passes on the accepted head | Run 30781526810 | `Pass` |
-| Main CI | Aggregate `CI Gate` passes after merge | Run 30782073994 | `Pass` |
-| Documentation and generated artifacts | Links and generated bindings show no drift | PR 85 verification record | `Pass` |
-| Evidence acceptance | Milestone manager finds the repository, CI, generated contracts, and documents consistent | PR 85 evidence and merged main CI | `Pass` |
+| Repository authority | Sources of truth, architecture boundaries, and scoped instructions are consistent | `AGENTS.md`, `docs/README.md`, architecture docs | `Pass` |
+| Reproducible software CI | Pinned firmware, CLI, Flutter, protocol, lint, docs, and package checks pass behind one required gate | Run 30782073994 | `Pass` |
+| Build and program | Both stable board identities build, flash, boot, self-test, and receive unique pod IDs | Run 30785241480 | `Pass` |
+| Transport, update, and recovery | UART, BLE, serial/BLE OTA, interruption recovery, second boot, and forced rollback pass | Run 30785241480 | `Pass` |
+| Peer, diagnostics, and closure | Two-way ESP-NOW, health, trace, registry fan-out, and deterministic cleanup pass | Run 30785241480 | `Pass` |
 
-#### Current State
+**Invalidation:** Reopen affected gates after material changes to required CI, toolchains, generated
+contracts, runner/board identity, firmware, CLI, transport, update, peer, or diagnostic behavior.
 
-**Delivered:** A clean, reproducible software baseline with documented authority and CI parity.
-**Now:** Preserve it as later milestones change behavior.
-**Next:** Rerun affected verification on every pull request and keep `CI Gate` required.
-**Blockers:** None.
-**Decisions needed:** None.
+### M1: Product Definition And NFF Proof
 
-### M1: Automated Two-Board Programming And Readiness
-
-**Outcome:** A trusted Linux runner can take two identified NFF boards from source checkout through
-programming, communication, update, rollback, peer, diagnostics, trace, and deterministic cleanup
-without manual command intervention.
-
-**Status:** `Complete`
-**Health:** `On track`
-**Owner:** Firmware and CI engineering
-**Last reviewed:** 2026-08-03
-**Depends on:** M0
-**Blocks:** M2, M3
-
-#### Scope
-
-Included: two stable CP2102N board identities, firmware and CLI build, flashing, deterministic pod
-identity, UART, native Linux BLE, serial/BLE OTA and recovery, forced rollback, registry fan-out,
-ESP-NOW exchange, health, self-test, trace artifacts, and cleanup.
-
-Excluded: visual/tactile/acoustic observations, WiFi-enabled runtime, synchronized one-way latency,
-six-pod behavior, and production hardware.
-
-#### Constraints
-
-- Hardware CI runs only on trusted code with the `hw-test` gate or explicit dispatch.
-- Device identity uses `/dev/serial/by-id/`, never mutable kernel port numbers.
-- ESP-NOW tests use fresh exact `disabled` lifecycles and separate simulation-off benchmarks from
-  the simulated drill.
-- Successful initialization and command responses remain distinct from physical confirmation.
-
-#### Deliverables
-
-| Deliverable | Evidence | State |
-| --- | --- | --- |
-| Registered labeled runner | `domes-hardware-ministrom`, Linux x64, online at review | `Accepted` |
-| Stable two-board discovery and identity provisioning | Hardware run 30785241480 | `Accepted` |
-| End-to-end serial and BLE OTA workflows | Hardware run 30785241480 | `Accepted` |
-| Forced failed-self-test rollback workflow | Hardware run 30785241480 | `Accepted` |
-| Two-board registry, ESP-NOW, diagnostics, and trace workflow | Hardware run 30785241480 | `Accepted` |
-| Deterministic idle cleanup and retained artifacts | Hardware run 30785241480 | `Accepted` |
-
-#### Acceptance Gates
-
-| Gate | Required result | Evidence | State |
-| --- | --- | --- | --- |
-| Runner readiness | Required runner version, labels, toolchains, two serial devices, and BLE host are available | Run 30785241480, steps 1-8 | `Pass` |
-| Build and programming | Firmware and CLI build; both boards flash and receive unique identities | Run 30785241480, steps 5-10 | `Pass` |
-| Communication and diagnostics | UART, BLE, registry, self-test, health, and capability checks pass on both boards | Run 30785241480, steps 11-12 and 22-26 | `Pass` |
-| Update and recovery | Invalid/interrupted recovery, serial OTA, BLE OTA, second-boot checks, and forced rollback pass | Run 30785241480, steps 13-20 | `Pass` |
-| Peer and trace behavior | Two-way ESP-NOW workflow passes and non-empty traces are retained | Run 30785241480, steps 21-28 | `Pass` |
-| Cleanup and evidence closure | Both boards return to deterministic idle and the workflow concludes successfully | Run 30785241480, steps 29-30 | `Pass` |
-
-#### Current State
-
-**Delivered:** A successful 43-minute main-branch hardware run against both registered boards.
-**Now:** Keep the runner online and rerun the workflow after relevant changes.
-**Next:** Use the boards for the observed M2 peripheral campaign.
-**Blockers:** None for automated two-board readiness.
-**Decisions needed:** None.
-
-### M2: Physical NFF Peripheral Qualification
-
-**Outcome:** Both NFF development boards demonstrate correct observable LED, touch, motion, haptic,
-and audio behavior under the complete bring-up checklist while remaining healthy afterward.
+**Outcome:** An evidence-backed product contract defines what DOMES should become, and both NFF
+boards provide a complete, healthy physical reference for the next engineering phase.
 
 **Status:** `In progress`
 **Health:** `At risk`
-**Owner:** Firmware and hardware integration
-**Last reviewed:** 2026-08-03
-**Depends on:** M1
-**Blocks:** M3, M4
+**Owner:** Product and systems engineering
+**Depends on:** M0
+**Blocks:** M2
+
+#### Entry Gate
+
+M0 is complete; both NFF boards and the automated workflow are available; product-definition and
+physical-qualification work started 2026-08-03. `Pass`.
 
 #### Scope
 
-Included: all 16 NFF LEDs and patterns, four physical touch pads, orientation and physical IMU tap,
-confirmation of the populated haptic actuator and felt output, audio samples and volume control,
-speaker output, repeated board health, and retained human observations for both boards.
+Included: target user and job, competitive wedge, willingness to pay, launch scope, measurable
+requirements, verification matrix, launch-market compliance plan, preliminary economics,
+open-source plan, and physical LED/touch/IMU/haptic/audio qualification on both NFF boards.
 
-Excluded: WiFi/mobile workflows, six-pod timing, production RGBW/16 MB behavior, and simulation
-predictiveness.
+Excluded: predictive simulation acceptance, six-node system claims, custom PCB design, certification,
+and form-factor product validation.
 
-#### Constraints
-
-- CLI acceptance, driver initialization, and simulated input cannot satisfy a physical gate.
-- Human observations identify the board, firmware revision, date, action, and observed result.
-- Haptic settings stay within the bounded LD0832AA-0099F profile unless the populated part proves
-  different and the design is reviewed.
-- Failed or ambiguous physical behavior is recorded as a failure, not softened to partial success.
-
-#### Deliverables
-
-| Deliverable | Evidence | State |
-| --- | --- | --- |
-| Automated electrical/control baseline on both boards | Run 30785241480; ten on-device self-tests per board | `Accepted` |
-| LED visual acceptance record | Pending | `In progress` |
-| Physical touch and IMU acceptance record | Pending | `Not started` |
-| Populated haptic part and physical-output record | Pending | `Not started` |
-| Complete audio sample, playback, and volume workflow | Driver exists; sample/volume path incomplete | `In progress` |
-| Two-board bring-up record and final health evidence | Pending | `Not started` |
-
-#### Acceptance Gates
+#### Exit Gates
 
 | Gate | Required result | Verification and evidence | State |
 | --- | --- | --- | --- |
-| Automated baseline | Both boards flash, self-test, report healthy, and accept peripheral commands | Run 30785241480 | `Pass` |
-| LED observation | Every LED displays correct red, green, blue, white, breathing, cycle, brightness, and off behavior on both boards | Human observation using `domes-cli` and bring-up checklist | `Unverified` |
-| Touch observation | Every physical pad is detected on both boards with no persistent false activation | Physical interaction plus CLI/log evidence | `Unverified` |
-| IMU observation | Orientation changes and physical tap interrupt produce the expected response on both boards | Physical interaction plus CLI/log evidence | `Unverified` |
-| Haptic observation | Populated part matches the configured profile and commanded effects are felt correctly on both boards | BOM/part inspection and human observation | `Unverified` |
-| Audio observation | Known samples play through both speakers and volume control changes output across its supported range | CLI/app action and human observation | `Not run` |
-| Campaign closure | Complete checklist is retained and both boards finish with health and all self-tests passing | Bring-up record plus final CLI output | `Not run` |
+| Customer and purchase evidence | Target user, job, switching reason, kit, and price are supported by at least 10 relevant observations/interviews and 3 paid or deposit-backed pilot commitments | Research record and semantic audit | `Not run` |
+| Product requirements | Stable, measurable requirements and a complete verification matrix cover the accepted launch scope | Inspection and semantic traceability audit | `Not run` |
+| Product constraints | Launch market, compliance route, preliminary COGS/margin/support model, licenses, and open-source release boundary are accepted | Decision records and specialist input where required | `Not run` |
+| Automated NFF baseline | Both boards flash, self-test, report healthy, and pass transport/update/peer/diagnostic automation | Run 30785241480 | `Pass` |
+| LED observation | All 16 LEDs show required colors, patterns, brightness, and off behavior on both boards | Observed bring-up record | `Unverified` |
+| Touch and IMU observation | Every pad, orientation change, and physical tap produces the required response without persistent false activation | Observed bring-up record plus logs | `Unverified` |
+| Haptic and audio observation | Populated haptic parts match their profiles; required effects, samples, and volume range are physically correct on both boards | Inspection, CLI/app action, observation | `Not run` |
+| Phase closure | Complete record is retained; both boards finish healthy; product definition and physical evidence are mutually consistent | Milestone manager audit | `Not run` |
 
-#### Current State
+**Current work:** Validate the product hypothesis, define requirements, complete audio sample/volume
+control, confirm the populated haptic part, and execute the observed bring-up checklist.
 
-**Delivered:** Drivers initialize, control commands round-trip, simulated touch works, and both boards
-pass automated health/self-tests.
-**Now:** Complete sample storage and the host volume-control workflow.
-**Next:** Run one observed checklist across both boards and retain the results.
-**Blockers:** Physical measurements need an observer; audio acceptance also needs the incomplete
-sample/volume workflow. The milestone manager will evaluate the retained observations and health
-evidence.
-**Decisions needed:** Confirm the populated haptic actuator identity if it differs from the schematic.
+**Invalidation:** Reopen affected gates after changes to the target customer, product boundary,
+launch market, requirements, peripherals, pins, board assembly, power, drivers, haptic profile, audio
+path, or accepted evidence environment.
 
-### M3: Deterministic Predictive Linux System Simulation
+### M2: Predictive Deterministic Linux System Model
 
-**Outcome:** A deterministic Linux simulation reuses production logic and predicts two-pod DOMES
-protocol, game-state, failure-handling, and timing behavior within a measured operating envelope.
-
-**Status:** `Ready`
-**Health:** `On track`
-**Owner:** Firmware architecture and test engineering
-**Last reviewed:** 2026-08-03
-**Depends on:** M2
-**Blocks:** M4, M5, M6
-
-#### Scope
-
-Included: game, mode, feature, orchestration, and protocol state machines; two-pod ESP-NOW delivery;
-deadlines, retries, loss, duplication, reordering, and peer loss; measured coexistence effects;
-abstract touch/IMU/output completion; and functional two-to-six-pod design scenarios.
-
-Predictive timing qualification is initially limited to two NFF ESP32-S3 boards, the tested firmware
-profile, and documented RF/coexistence conditions. Six-pod functional simulation is included, but
-six-pod timing qualification belongs to M6.
-
-Excluded: arbitrary RF environments, cycle-accurate ESP32 execution, unmeasured FreeRTOS timing,
-LED appearance, haptic feel, audio quality, touch sensitivity, battery, thermal, and mechanical
-behavior.
-
-#### Constraints
-
-- Simulation uses virtual time only; wall-clock reads, sleeps, and host scheduling cannot advance it.
-- Production state and protocol logic is reused rather than reimplemented.
-- Time, scheduling, randomness, delivery, input, and output enter through explicit interfaces.
-- Equal-time events have stable ordering and stochastic behavior uses recorded independent seeds.
-- Identical revision, scenario, model, configuration, and seed produces an identical normalized trace.
-- The same declarative scenario can drive simulation and hardware using existing protobuf commands.
-- Hardware comparison uses validated clock correlation; capture-start alignment is not timing proof.
-- Model parameters come from versioned hardware measurements, never aspirational targets.
-- Calibration and held-out validation datasets remain separate.
-- CI reports drift and never updates calibration or expected results automatically.
-- Predictive claims remain bounded to the published validation envelope.
-
-#### Deliverables
-
-| Deliverable | Evidence | State |
-| --- | --- | --- |
-| Injected virtual clock, scheduler, and deterministic RNG | Existing simulator advances mock time; production paths still read ESP/FreeRTOS clocks directly | `In progress` |
-| Production-logic Linux scenario runner for two to six pods | Existing `SimOrchestrator` and five-pod trace generator provide a partial foundation | `In progress` |
-| Deterministic fault and calibrated ESP-NOW/coexistence model | Pending | `Not started` |
-| Shared scenario execution on Linux and physical boards | Pending | `Not started` |
-| Truthful multi-board clock-correlation and comparison report | Pending | `Not started` |
-| Pull-request deterministic suite and hardware drift report | Pending | `Not started` |
-| Versioned simulation validation record | Pending | `Not started` |
-
-#### Acceptance Gates
-
-| Gate | Required result | Verification and evidence | State |
-| --- | --- | --- | --- |
-| Repeatability | Repeated supported Linux runs produce byte-identical normalized traces | Fixed revision/scenario/model/config/seed replay | `Not run` |
-| Production fidelity | In-scope state and protocol behavior executes shared production logic with virtual dependencies | Source review plus focused tests | `Not run` |
-| Functional agreement | Every held-out scenario preserves required protocol and state invariants on simulation and hardware | Shared scenario comparison | `Not run` |
-| Safety agreement | No held-out critical scenario passes simulation while hardware violates a required deadline or outcome | Fault and boundary campaign | `Not run` |
-| Central timing accuracy | Hardware and simulation p50/p95 latency differ by no more than `max(1 ms, 15%)` | Held-out statistical report | `Not run` |
-| Tail and delivery accuracy | p99 differs by no more than `max(2 ms, 25%)`; delivery differs by no more than one percentage point or defined intervals overlap | Held-out statistical report | `Not run` |
-| CI and model record | PR deterministic suite passes and a versioned report states envelope, datasets, error bounds, limitations, and invalidation rules | CI plus validation document review | `Not run` |
-
-#### Current State
-
-**Delivered:** The milestone manager's semantic audit returns `Meets intent`, so this contract is
-`Ready`. Deterministic host drills, in-memory pod routing, hits/misses/timeouts, and trace export
-exist, but the simulator explicitly does not establish radio or device timing and no acceptance gate
-has passed.
-**Now:** Await M2 completion, then introduce common virtual-time and scheduler interfaces at the
-production boundary.
-**Next:** Demonstrate exact replay before adding calibrated timing or radio variability.
-**Blockers:** M2 physical reference is not accepted; production timing calls are not fully injected;
-pod clocks are not truthfully correlated.
-**Decisions needed:** Ratify the proposed statistical tolerances after the first calibration dataset.
-
-### M4: Actionable Diagnostics And Field Serviceability
-
-**Outcome:** A developer can detect, capture, correlate, decode, and act on runtime failures using
-version-bound evidence without confusing clean restarts, local traces, or initialization status with
-the underlying failure.
-
-**Status:** `Proposed`
-**Health:** `On track`
-**Owner:** Firmware reliability engineering
-**Last reviewed:** 2026-08-03
-**Depends on:** M2, M3
-**Blocks:** M5, M6, M8
-
-#### Scope
-
-Included: system health, bounded memory profiles, restart snapshots, exact-ELF symbolization, panic
-coredump capture/decode, trace capture/export, truthful clock correlation, non-resetting passive
-capture, failure reproduction, and release-retained diagnostic artifacts.
-
-Excluded: production observability services, cloud telemetry, and unsupported claims of synchronized
-timing before correlation exists.
-
-#### Deliverables
-
-| Deliverable | Evidence | State |
-| --- | --- | --- |
-| UART/BLE health, self-test, memory, and ESP-NOW diagnostics | Manual campaign and hardware run 30785241480 | `Accepted` |
-| CRC- and exact-ELF-bound restart snapshots | Manual campaign on both boards | `Accepted` |
-| Trace recording, dump, live stream, names, and Perfetto export | Host tests and two-board captures | `Accepted` |
-| Deliberate panic coredump retrieval and exact-ELF decode | Storage/build configuration exists; runtime capture pending | `In progress` |
-| Validated cross-pod clock correlation | Current `zero`/`raw` merge is not correlation | `Not started` |
-| Non-resetting live capture/mirror topology | Passive reader cannot share command UART | `Not started` |
-| Extended failure and memory soak report | 620-second two-board baseline exists | `In progress` |
-
-#### Acceptance Gates
-
-| Gate | Required result | Evidence | State |
-| --- | --- | --- | --- |
-| Health and self-test | Both boards report actionable health and all self-tests over UART and BLE | Campaign plus run 30785241480 | `Pass` |
-| Restart diagnosis | Both restart snapshots validate, bind the exact ELF, symbolize, reject corruption, and clear explicitly | 2026-08-02 campaign | `Pass` |
-| Trace transport | Non-empty named traces capture, dump, merge without false clock claims, and open in Perfetto | Host tests and hardware captures | `Pass` |
-| Panic diagnosis | A deliberate panic is stored, retrieved, and decoded with its exact ELF | Hardware procedure | `Unverified` |
-| Cross-pod correlation | A validated synchronization marker supports bounded timing comparison | Hardware trace comparison | `Not run` |
-| Passive capture | A documented topology observes live protocol without resetting or stealing the command transport | Hardware capture procedure | `Not run` |
-| Stability | Required-duration soak meets restart, memory, task-health, and trace-drop thresholds | Release-oriented soak report | `Not run` |
-
-#### Current State
-
-**Delivered:** Health, self-test, memory profiling, restart snapshots, and trace export are usable.
-**Now:** Panic storage is enabled, but deliberate capture and decode remain unverified.
-**Next:** Trigger a controlled panic, retain the exact ELF and flash dump, and prove decoding.
-**Blockers:** No truthful cross-clock marker and no defined passive mirror topology.
-**Decisions needed:** Select the synchronization mechanism and physical capture topology.
-
-### M5: Qualified Network And Mobile Workflows
-
-**Outcome:** Supported users can discover, control, diagnose, and update pods through the documented
-WiFi and mobile BLE paths with capability-aware failure handling and recovery.
-
-**Status:** `Proposed`
-**Health:** `At risk`
-**Owner:** Host and mobile integration
-**Last reviewed:** 2026-08-03
-**Depends on:** M3, M4
-**Blocks:** M6, M8
-
-#### Scope
-
-Included: build-gated WiFi/TCP config on port 5000, dedicated WiFi trace endpoint, credentialed device
-testing, native mobile BLE discovery/control/notifications/OTA/abort/recovery, and multi-device app
-orchestration consistent with firmware capabilities.
-
-Excluded: raw WiFi/TCP image transfer, which is unsupported; generic trace commands over config port
-5000; and simulated or Linux-only Flutter tests as mobile hardware proof.
-
-#### Deliverables
-
-| Deliverable | Evidence | State |
-| --- | --- | --- |
-| Capability-aware CLI rejection for unsupported default WiFi and raw TCP OTA | Host tests and two-board hardware checks | `Accepted` |
-| Credentialed WiFi-enabled firmware profile and test procedure | Pending | `Not started` |
-| On-device TCP config and dedicated trace validation | Pending | `Not started` |
-| Flutter BLE discovery, control, touch notification, and diagnostics validation | Implementation and host tests exist; device workflow pending | `In progress` |
-| Flutter BLE OTA, abort, recovery, and second-boot validation | Implementation and tests exist; mobile hardware workflow pending | `In progress` |
-| Multi-pod mobile orchestration acceptance record | Direct-BLE orchestration exists; full device workflow pending | `In progress` |
-
-#### Acceptance Gates
-
-| Gate | Required result | Evidence | State |
-| --- | --- | --- | --- |
-| Capability truthfulness | Default builds and unsupported transports fail before misleading connection or transfer behavior | Host tests and run 30785241480 | `Pass` |
-| WiFi config | Credentialed image performs system, feature, mode, and diagnostic commands over TCP port 5000 | On-device WiFi campaign | `Not run` |
-| WiFi trace | Dedicated endpoint streams/dumps valid traces without implying config-port support | On-device WiFi campaign | `Not run` |
-| Mobile BLE control | Supported phone discovers both boards and completes control, diagnostics, and physical-touch notification workflows | Native mobile campaign | `Unverified` |
-| Mobile BLE update | Full OTA, abort/recovery, expected-version boot, health/self-test, and second boot pass | Native mobile campaign | `Unverified` |
-| Multi-device UX | App selects devices, handles partial failure, and completes a representative drill without stale state | Native mobile multi-device campaign | `Unverified` |
-
-#### Current State
-
-**Delivered:** The Rust CLI accurately exposes current capability boundaries; Flutter analysis and
-host tests pass.
-**Now:** No WiFi-enabled on-device or supported-phone acceptance campaign is retained.
-**Next:** Build with `CONFIG_DOMES_WIFI_AUTO_CONNECT`, provision credentials, and exercise TCP config
-and the dedicated trace endpoint.
-**Blockers:** Credentials and network environment are not part of the default clean-board workflow;
-native mobile validation requires a supported phone.
-**Decisions needed:** Select the supported mobile platform/device matrix and credential-provisioning
-procedure.
-
-### M6: Six-Pod Product Runtime
-
-**Outcome:** Six physical pods execute phone-defined drills with deterministic authority, bounded
-timing, physical input, result collection, and recovery from peer and transport failures.
+**Outcome:** A deterministic Linux simulation reuses production logic and predicts bounded two-pod
+protocol, state, failure, and timing behavior closely enough to guide hardware decisions.
 
 **Status:** `Proposed`
 **Health:** `Blocked`
-**Owner:** Distributed runtime engineering
-**Last reviewed:** 2026-08-03
-**Depends on:** M3, M4, M5
-**Blocks:** M7, M8
+**Owner:** Firmware architecture and test engineering
+**Depends on:** M1
+**Blocks:** M3
 
-#### Scope
+#### Entry Gate
 
-Included: six physical pods, app-selected ESP-NOW authority, a general validated drill definition,
-physical touch/input, synchronized start within an approved bound, timing and interference evidence,
-peer join/loss/rejoin, partial failure, result collection, soak, and extension of simulation
-qualification to the six-pod envelope.
+M1 is complete; accepted requirements and NFF measurements define the model and held-out validation
+envelope; the contract audit returns `Meets intent`. Currently blocked by M1.
 
-Excluded: production-PCB qualification and claims based only on the existing fixed two-pod drill.
+#### Constraints
 
-#### Deliverables
+Virtual time alone advances the simulation. Production state/protocol logic is shared. Time,
+scheduling, randomness, delivery, input, and output use explicit interfaces. Equal-time ordering and
+seeds are stable. Calibration and held-out validation datasets are separate. Claims remain bounded
+to the measured board, firmware, RF/coexistence, and scenario envelope.
 
-| Deliverable | Evidence | State |
-| --- | --- | --- |
-| Two-pod discovery, roles, benchmark, fixed drill, and simulation baseline | Manual campaign and run 30785241480 | `Accepted` |
-| Six representative physical pods and stable identity registry | Only two boards currently available | `Not started` |
-| Phone-selected authority and general drill interpreter | Target design only | `Not started` |
-| Six-pod synchronization, failure recovery, and result collection | Pending | `Not started` |
-| Physical-input and coexistence campaign | Pending | `Not started` |
-| Six-pod long-duration soak | Pending | `Not started` |
-| Six-pod simulation calibration and validation extension | Pending | `Not started` |
+#### Exit Gates
 
-#### Acceptance Gates
-
-| Gate | Required result | Evidence | State |
+| Gate | Required result | Verification and evidence | State |
 | --- | --- | --- | --- |
-| Two-pod prerequisite | Fresh discovery, complementary roles, two-way exchange, drill, health, and cleanup pass | Campaign and run 30785241480 | `Pass` |
-| Six-pod inventory | Six representative pods flash, identify uniquely, self-test, and register reliably | Hardware campaign | `Not run` |
-| General drill | Phone-defined valid drills execute; invalid definitions are rejected consistently | App/firmware end-to-end campaign | `Not run` |
-| Timing and interference | Start, event, and completion timing meet approved product bounds under defined coexistence conditions | Correlated six-pod trace report | `Not run` |
-| Failure recovery | Peer loss, delayed join, restart, duplicate/out-of-order traffic, and partial command failure resolve safely | Fault campaign | `Not run` |
-| Physical interaction and results | Physical inputs drive correct rounds and all results return without stale or duplicated state | Observed six-pod campaign | `Not run` |
-| Scale stability and prediction | Required soak passes and the M3 model meets ratified accuracy bounds for the six-pod envelope | Soak plus held-out comparison report | `Not run` |
+| Exact replay | Repeated revision/scenario/model/config/seed runs produce byte-identical normalized traces | Linux CI artifacts | `Not run` |
+| Production fidelity | In-scope state and protocol behavior execute shared production logic through virtual dependencies | Source audit and focused tests | `Not run` |
+| Functional agreement | Every held-out scenario preserves required invariants in simulation and hardware | Shared scenario comparison | `Not run` |
+| Safety agreement | No held-out critical scenario passes simulation while hardware violates a required deadline or outcome | Boundary and fault campaign | `Not run` |
+| Central timing accuracy | Hardware and simulation p50/p95 differ by no more than `max(1 ms, 15%)` | Held-out correlated report | `Not run` |
+| Tail and delivery accuracy | p99 differs by no more than `max(2 ms, 25%)`; delivery differs by at most one percentage point or accepted intervals overlap | Held-out report | `Not run` |
+| Model closure | PR suite passes and a versioned record states inputs, envelope, error, limitations, and invalidation | CI and milestone audit | `Not run` |
 
-#### Current State
+**Invalidation:** Reopen after material changes to timing, protocol, scheduling, radio parameters,
+boards, model, scenario semantics, validation envelope, or correlation method.
 
-**Delivered:** Two-pod fixed behavior is well exercised; it is not product-scale evidence.
-**Now:** Work cannot enter six-pod physical qualification with only two boards.
-**Next:** Manufacture or provide four additional representative pods, then establish stable identity
-and health across all six.
-**Blockers:** Four additional pods, general drill semantics, and truthful synchronized timing are
-missing.
-**Decisions needed:** Ratify product timing bounds, peer-recovery policy, and the general drill schema.
+### M3: Representative Six-Node System Alpha
 
-### M7: Verified Production Hardware Profile
+**Outcome:** A representative six-node system executes general app-defined offline drills with
+bounded timing, physical interaction, diagnostics, result collection, and predictable recovery.
 
-**Outcome:** A separately selectable production hardware profile builds, programs, updates, and
-passes electrical, peripheral, storage, RF, power, and manufacturing acceptance on representative
-production boards.
+**Status:** `Proposed`
+**Health:** `Blocked`
+**Owner:** Product software and distributed-systems engineering
+**Depends on:** M2
+**Blocks:** M4
+
+#### Entry Gate
+
+M2 is complete; drill, authority, timing, result, mobile/network, and failure requirements are
+accepted; six suitable nodes exist. The four added nodes may be economical ESP32 radio reference
+nodes rather than additional NFF carriers. Currently blocked by M2 and inventory.
+
+#### Exit Gates
+
+| Gate | Required result | Verification and evidence | State |
+| --- | --- | --- | --- |
+| Six-node inventory | Six uniquely identified nodes program, self-test, register, and recover reliably | Hardware campaign | `Not run` |
+| General drill | Valid app-defined drills execute and invalid definitions fail consistently | App/firmware end-to-end campaign | `Not run` |
+| Control paths | Supported BLE/mobile and credentialed WiFi workflows are capability-correct and recoverable | Device campaigns | `Not run` |
+| Timing and coexistence | Accepted start, event, completion, delivery, and coexistence bounds pass with truthful clock correlation | Six-node trace report | `Not run` |
+| Failure and diagnostics | Join, peer loss, restart, delay, duplication, reordering, partial command failure, panic, trace, and passive capture produce safe and actionable results | Fault campaign | `Not run` |
+| Physical workflow | Physical input drives complete rounds and results return without stale or duplicated state | Observed campaign | `Not run` |
+| Stability and prediction | Required soak passes and M2 remains within accepted six-node functional bounds | Soak and comparison report | `Not run` |
+
+**Invalidation:** Reopen after changes to drill semantics, authority, peer protocol, timing, identity,
+radio configuration, scale, app transport, diagnostics, or model envelope.
+
+### M4: EVT Production-Intent Electrical Prototype
+
+**Outcome:** Production-intent electrical prototypes retire the major power, battery, RF, sensor,
+feedback, firmware, update, testability, and manufacturing risks before design freeze.
 
 **Status:** `Proposed`
 **Health:** `Blocked`
 **Owner:** Product hardware and firmware platform engineering
-**Last reviewed:** 2026-08-03
-**Depends on:** M6
-**Blocks:** M8
+**Depends on:** M3
+**Blocks:** M5
 
-#### Scope
+#### Entry Gate
 
-Included: reviewed production schematic and BOM, explicit board selection, production GPIO and
-peripheral constants, 16 MB partition/profile decision, RGBW behavior, factory image, OTA/rollback,
-power and thermal limits, RF performance, manufacturing programming, and production bring-up.
+M3 is complete; product requirements, preliminary FMEA and compliance plan, ID package, schematic,
+BOM, supply risks, test points, and contract-manufacturer feedback are accepted. Currently blocked
+by M3 and missing production-intent design files.
 
-Excluded: treating the current NFF RGB/8 MB profile as production or silently changing its verified
-configuration.
+#### Exit Gates
 
-#### Deliverables
-
-| Deliverable | Evidence | State |
-| --- | --- | --- |
-| Approved production schematic, BOM, and board identifier | Target architecture exists; final profile not approved | `Not started` |
-| Explicit firmware board/profile selection | Only the compiled NFF profile exists | `Not started` |
-| Reviewed 16 MB partition and release-image contract | Candidate budget exists; implementation pending | `Not started` |
-| Production RGBW and peripheral implementation | NFF currently drives RGB behavior | `Not started` |
-| Manufacturing programming and identity workflow | Pending | `Not started` |
-| Representative production-board qualification report | Pending | `Not started` |
-
-#### Acceptance Gates
-
-| Gate | Required result | Evidence | State |
+| Gate | Required result | Verification and evidence | State |
 | --- | --- | --- | --- |
-| Design approval | Schematic, BOM, pinout, power, storage, RF, and test points are reviewed and frozen for the candidate | Design review record | `Not run` |
-| Build separation | NFF and production profiles select explicitly and build without configuration leakage | Clean build matrix | `Not run` |
-| Programming and update | Factory programming, normal boot, OTA, second boot, and forced rollback pass on representative boards | Production hardware campaign | `Not run` |
-| Physical peripherals | RGBW, touch, IMU, haptic, audio, and power behavior meet approved production requirements | Observed production checklist | `Not run` |
-| RF and scale | BLE, WiFi, and ESP-NOW meet approved range, coexistence, timing, and six-pod requirements | RF/system campaign | `Not run` |
-| Manufacturing readiness | Programming, identity, self-test, traceability, and failure disposition are repeatable | Pilot manufacturing report | `Not run` |
+| Build identity | Each EVT unit, PCB revision, BOM, firmware, fixture, and deviation is traceable | Build record and inspection | `Not run` |
+| Power and battery | Charging, protection, runtime, faults, USB-C, thermal, and battery safety meet EVT requirements | Bench and fault report | `Not run` |
+| RF and coexistence | BLE, WiFi, and ESP-NOW range, latency, interference, and antenna behavior meet EVT limits | RF/system report | `Not run` |
+| Physical functions | Touch, IMU, RGBW optics, audio, haptic, controls, and provisional enclosure meet EVT requirements | Test and demonstration | `Not run` |
+| Firmware lifecycle | Factory program, identity, boot, OTA, second boot, rollback, diagnostics, and recovery pass | EVT campaign | `Not run` |
+| DFM and testability | CM review, assembly learning, test coverage, supply risk, rework, and failure analysis are dispositioned | Review and build report | `Not run` |
+| EVT closure | Typically 10-20 units provide enough evidence to freeze or deliberately revise architecture; every high risk has an owner and disposition | AI evidence audit | `Not run` |
 
-#### Current State
+**Invalidation:** Reopen after material schematic, BOM, PCB, RF, power, battery, peripheral,
+partition, bootloader, fixture, factory-flow, or requirement changes.
 
-**Delivered:** The NFF development profile and a candidate 16 MB target budget are documented.
-**Now:** No production profile or representative production board exists.
-**Next:** Approve the production schematic/BOM/profile and implement explicit board selection.
-**Blockers:** Production design decisions and representative boards are unavailable.
-**Decisions needed:** Final flash layout, RGBW device, pinout, power architecture, haptic actuator,
-audio path, manufacturing identity, and RF acceptance limits.
+### M5: DVT Frozen Form-Factor Product
 
-### M8: Releasable Product Candidate
-
-**Outcome:** One immutable release candidate can be built, installed, updated, rolled back,
-operated, diagnosed, and supported on the approved production system with every required software,
-hardware, mobile, scale, and documentation gate accepted.
+**Outcome:** Near-final form-factor units prove the frozen design meets accepted product, user,
+environmental, reliability, security, compliance, and six-pod requirements.
 
 **Status:** `Proposed`
 **Health:** `Blocked`
-**Owner:** Release engineering
-**Last reviewed:** 2026-08-03
-**Depends on:** M2, M3, M4, M5, M6, M7
+**Owner:** Systems validation and product engineering
+**Depends on:** M4
+**Blocks:** M6
+
+#### Entry Gate
+
+M4 is complete; electrical, mechanical, firmware, manufacturing, and test interfaces are frozen;
+accepted deviations are controlled; DVT units and procedures represent the intended product.
+
+#### Exit Gates
+
+| Gate | Required result | Verification and evidence | State |
+| --- | --- | --- | --- |
+| Product requirements | Every applicable requirement has direct passing evidence on frozen units | Verification matrix | `Not run` |
+| Form factor and durability | Drop, impact, wear, ingress claim, charging/stacking, thermal, and use-surface behavior meet requirements | Laboratory and observed report | `Not run` |
+| Full six-pod system | Near-final six-pod kits pass drill, latency, recovery, soak, update, diagnostics, and mobile workflows | System validation report | `Not run` |
+| Customer validation | Intended users complete representative workflows and purchase assumptions remain supported | Structured field trial | `Not run` |
+| Security and service | Threat controls, authenticated update, rollback, reset, diagnostics, repair, and support flows pass | Security/service review | `Not run` |
+| Compliance | Pre-compliance and required formal testing for the launch market pass or have accepted corrective evidence | Laboratory records | `Not run` |
+| DVT closure | Typically 30-100 controlled units show no unresolved design issue requiring architecture change | AI evidence audit | `Not run` |
+
+**Invalidation:** Reopen after a design, material, supplier, firmware, requirement, compliance,
+security, or manufacturing change that invalidates DVT evidence.
+
+### M6: PVT Repeatable Manufacturing System
+
+**Outcome:** The intended production line repeatedly builds traceable, conforming products at the
+ratified yield using controlled materials, fixtures, tests, work instructions, and disposition.
+
+**Status:** `Proposed`
+**Health:** `Blocked`
+**Owner:** Manufacturing and operations engineering
+**Depends on:** M5
+**Blocks:** M7
+
+#### Entry Gate
+
+M5 is complete; intended CM, line, approved materials, golden units, fixtures, software, work
+instructions, sampling plan, yield target, packaging, and failure process are ready.
+
+#### Exit Gates
+
+| Gate | Required result | Verification and evidence | State |
+| --- | --- | --- | --- |
+| Controlled pilot | Typically 100-300 units are built on the intended line with complete lot, component, firmware, operator, fixture, and result traceability | Pilot build record | `Not run` |
+| Yield and process | First-pass and final yield meet pre-ratified targets; defects and rework have closed dispositions | Yield and defect report | `Not run` |
+| Factory test | Programming, identity, calibration, functional test, data retention, golden-unit checks, and failure routing are repeatable | Capability study | `Not run` |
+| Product sampling | Ratified samples pass critical DVT, update, transport, battery, RF, and six-pod regression gates | PVT validation report | `Not run` |
+| Fulfillment readiness | Packaging, labels, regulatory marks, serialization, shipping, battery transport, spares, and return flow pass | Inspection and logistics trial | `Not run` |
+| PVT closure | No unresolved manufacturing-system issue prevents a controlled release build | AI evidence audit | `Not run` |
+
+**Invalidation:** Reopen after changes to factory, process, fixture, supplier, material, firmware,
+test limits, packaging, traceability, or yield assumptions.
+
+### M7: Open Product Release And Sustainment
+
+**Outcome:** One immutable DOMES candidate is reproducibly buildable, compliant, installable,
+operable, serviceable, supportable, and openly reproducible as the exact product released.
+
+**Status:** `Proposed`
+**Health:** `Blocked`
+**Owner:** Release and product operations
+**Depends on:** M6
 **Blocks:** Product release
 
-#### Scope
+#### Entry Gate
 
-Included: immutable versioned artifacts, software CI, trusted production hardware qualification,
-simulation drift status, network/mobile acceptance, six-pod soak and recovery, release OTA and forced
-rollback, diagnostics, documentation, licensing, known-risk disposition, and evidence-based release
-acceptance.
+M6 is complete; one immutable source, hardware, BOM, firmware, app, CLI, manufacturing, and package
+candidate is selected; every required release gate has an owner and evidence plan.
 
-Excluded: development-only NFF evidence presented as production proof and any capability outside the
-approved release matrix.
+#### Exit Gates
 
-#### Deliverables
-
-| Deliverable | Evidence | State |
-| --- | --- | --- |
-| Versioned release source, binaries, metadata, checksums, and SBOM/package | Pending | `Not started` |
-| Green software and production hardware CI on the exact candidate | Pending | `Not started` |
-| Accepted M2-M7 evidence package with no stale dependencies | Pending | `Not started` |
-| Release OTA, recovery, rollback, and diagnostics record | Pending | `Not started` |
-| Supported-platform, operations, and user documentation | Pending | `Not started` |
-| License, security, risk, and known-limitation disposition | Repository license not selected | `Not started` |
-| Milestone acceptance audit | Pending | `Not started` |
-
-#### Acceptance Gates
-
-| Gate | Required result | Evidence | State |
+| Gate | Required result | Verification and evidence | State |
 | --- | --- | --- | --- |
-| Upstream completion | M2 through M7 are complete and their evidence is valid for the candidate | Milestone review | `Not run` |
-| Immutable build | Clean pinned toolchains reproduce exact versioned binaries, checksums, metadata, and package | Release build record | `Not run` |
-| Candidate CI | Required software and trusted hardware workflows pass on the exact candidate | CI and hardware run links | `Not run` |
-| Update and recovery | Installation, serial/BLE supported updates, interruption recovery, second boot, and forced rollback pass | Release hardware campaign | `Not run` |
-| Product operation | Supported mobile/network and six-pod workflows meet timing, recovery, physical, and soak requirements | Release acceptance campaign | `Not run` |
-| Service and governance | Diagnostics, documentation, security/risk review, licensing, and support boundaries are accepted | Release review record | `Not run` |
-| Evidence acceptance | Milestone manager audits the immutable candidate and accepts it only when every gate is direct, current, and consistent | AI milestone audit | `Not run` |
+| Immutable candidate | Pinned clean builds reproduce versioned binaries, checksums, SBOM, manufacturing package, and release metadata | Release build record | `Not run` |
+| Candidate CI | Required software and trusted production-hardware workflows pass on the exact candidate | CI and hardware runs | `Not run` |
+| Product operation | Installation, six-pod use, mobile/network control, update, interruption recovery, second boot, rollback, diagnostics, and soak pass | Release campaign | `Not run` |
+| Compliance and security | Required launch-market approvals, Bluetooth obligations, security review, vulnerability intake, and update policy are accepted | Certificates and review records | `Not run` |
+| Open-source package | Licenses and third-party obligations are satisfied; editable hardware sources, firmware, CLI, app, BOM, manufacturing files, build/test instructions, and known limitations are published | Release inspection against OSHWA practices | `Not run` |
+| Service and launch | Support boundary, spares, repair, warranty, returns, production capacity, documentation, and launch-customer readiness are accepted | Operations review | `Not run` |
+| Release acceptance | The milestone manager finds every artifact and gate direct, current, consistent, and bound to the immutable candidate | AI semantic audit | `Not run` |
 
-#### Current State
-
-**Delivered:** No production release candidate is claimed.
-**Now:** Upstream development and qualification milestones remain open.
-**Next:** Complete M2 through M7 in sequence and assemble evidence against one immutable candidate.
-**Blockers:** Every upstream milestone, production hardware, six-pod inventory, mobile/network
-qualification, and a repository license.
-**Decisions needed:** Release platform matrix, release thresholds, licensing, support policy, and
-risk-disposition policy.
+**Invalidation:** Reopen after changes to the candidate source, dependency, toolchain, hardware, BOM,
+factory, artifact, platform, requirement, approval, license, security posture, or support boundary.
 
 <!-- markdownlint-enable MD024 -->
 
-## Active Decisions And Blockers
+## Active Risks And Decisions
 
-| Milestone | Item | Required decision or work | Owner |
-| --- | --- | --- | --- |
-| M2 | Audio path | Complete sample storage and host volume control before observed playback | Firmware integration |
-| M2 | Physical peripherals | Observe LEDs, touch, IMU taps, haptics, and audio on both boards | Project owner with firmware/hardware integration |
-| M2 | Haptic identity | Confirm the populated actuator matches the LD0832AA-0099F profile | Hardware integration |
-| M3 | Prediction thresholds | Ratify statistical tolerances after the first calibration dataset | Project owner and test engineering |
-| M4 | Panic diagnostics | Deliberately capture and decode an ELF flash coredump | Firmware reliability |
-| M4 | Clock and capture | Select truthful clock correlation and a non-resetting capture topology | Firmware architecture |
-| M5 | Network/mobile matrix | Define credentials, supported phone, OS, and BLE permission matrix | Product/mobile integration |
-| M6 | Pod inventory | Provide four additional representative pods | Project owner |
-| M6 | Product orchestration | Approve drill schema, authority selection, timing, and recovery policy | Product and firmware architecture |
-| M7 | Production profile | Approve schematic, BOM, 16 MB storage, RGBW, pins, power, and RF targets | Product hardware |
-| M8 | Release governance | Select repository license, support matrix, and release decision policy | Project owner |
+| Phase | Condition | Consequence | Owner | Resolution or decision point |
+| --- | --- | --- | --- | --- |
+| M1 | Customer, switching, and price hypotheses are unvalidated | A technically successful product may not be wanted or economically viable | Product | Complete discovery and obtain pilot purchase evidence before M1 exit |
+| M1 | Launch market, compliance route, economics, and licenses are unset | Product requirements and architecture may omit mandatory constraints | Product and systems | Accept baselines before M1 exit |
+| M1 | Audio path and physical peripheral evidence are incomplete | The NFF reference cannot calibrate M2 or de-risk EVT | Firmware/hardware integration | Complete audio, confirm haptic part, run observed checklist |
+| M2 | Production timing calls and pod clocks are not fully controlled/correlated | Simulation may be repeatable but not predictive | Firmware architecture | Prove exact replay, then calibrate and validate on held-out data |
+| M3 | Only two NFF boards exist | Six-node system behavior cannot be physically evaluated | Systems engineering | Add four economical representative ESP32 nodes after M2 |
+| M4 | No checked-in production schematic, PCB, manufacturing BOM, or approved profile exists | EVT cannot start | Product hardware | Develop and review the production-intent input package after M3 |
+| M5-M7 | Launch compliance, certification, manufacturing, support, and release evidence do not exist | Product cannot be sold or responsibly sustained | Product operations | Build evidence through EVT, DVT, PVT, and release gates |
 
 ## Authority Boundaries
 
 - The schematic/netlist owns physical connectivity; `firmware/domes/main/config.hpp` owns the active
   compiled NFF mapping; [`docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md) reconciles them.
 - The current NFF build is RGB on an 8 MB profile with two `0x1E0000` OTA app slots. RGBW and 16 MB
-  remain production targets until M7 proves a separate profile.
+  remain product targets until EVT proves a separate production-intent profile.
 - Raw WiFi/TCP image transfer is unsupported. Serial and BLE are the supported CLI OTA paths.
 - Current multi-pod trace merge supports local `zero` and `raw` timelines only. Neither correlates
   pod clocks.
-- Clean-restart snapshots and panic coredumps are separate diagnostic artifacts and must remain
-  described separately.
+- Clean-restart snapshots and panic coredumps are separate diagnostic artifacts.
+- Current hardware files do not contain production Gerbers, placement data, or a board-specific
+  manufacturing BOM. No production-PCB or form-factor claim is accepted.

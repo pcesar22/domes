@@ -38,6 +38,8 @@ silently treating a proposal as shipped behavior. Useful authority routes:
 | Topic | Authority |
 | --- | --- |
 | Firmware coding and architecture | `firmware/AGENTS.md` |
+| Product-realization phases and transitions | `docs/PRODUCT_REALIZATION_FRAMEWORK.md` |
+| Product definition and launch hypotheses | `research/PRODUCT_DEFINITION.md` |
 | Current delivery status | `firmware/MILESTONES.md` |
 | Verification | `docs/TESTING.md` |
 | GPIO mappings | `docs/PIN_REFERENCE.md` and active `firmware/domes/main/config.hpp` |
@@ -105,9 +107,11 @@ paths.
 | Document | Purpose |
 | --- | --- |
 | `docs/README.md` | Documentation index |
+| `docs/PRODUCT_REALIZATION_FRAMEWORK.md` | Product lifecycle and phase entry/exit rules |
 | `docs/TESTING.md` | Software and hardware verification procedures |
 | `PLANS.md` | Living execution-plan contract for substantial work |
 | `firmware/MILESTONES.md` | Development phases and current status |
+| `research/PRODUCT_DEFINITION.md` | Customer, value, launch, and requirements hypotheses |
 | `research/SYSTEM_ARCHITECTURE.md` | Product target, not as-built status |
 | `research/architecture/README.md` | Historical/proposed record lifecycle |
 | `.codex/PLATFORM.md` | Host, BLE, USB, udev, and multi-device setup |

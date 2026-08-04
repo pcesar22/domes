@@ -7,6 +7,8 @@ when documents disagree; do not resolve conflicts by copying the same fact into 
 
 | Concern | Authoritative source | Supporting documentation |
 | --- | --- | --- |
+| Product-realization lifecycle and phase transitions | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) | [`MILESTONE_TEMPLATE.md`](MILESTONE_TEMPLATE.md) and `$domes-milestone-manager` |
+| Product vision, customer, and launch hypotheses | [`research/PRODUCT_DEFINITION.md`](../research/PRODUCT_DEFINITION.md) | Accepted requirements and research evidence linked from it |
 | Delivered status and remaining work | [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) | Pull requests and verification results |
 | Milestone structure and acceptance contract | [`MILESTONE_TEMPLATE.md`](MILESTONE_TEMPLATE.md) | `$domes-milestone-manager` semantic review workflow |
 | Firmware behavior | Code under [`firmware/domes/main/`](../firmware/domes/main/) | [`firmware/README.md`](../firmware/README.md) |
@@ -30,10 +32,12 @@ to introduce a message or enum.
 
 1. [`README.md`](../README.md) for product scope and a minimal build path.
 2. [`DEVELOPER_QUICKSTART.md`](../DEVELOPER_QUICKSTART.md) for local setup and the first verified change.
-3. [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) for what is implemented and hardware-verified.
-4. [`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md) for software boundaries.
-5. [`research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md) for the hardware and network design.
-6. [`research/architecture/README.md`](../research/architecture/README.md) for detailed design references.
+3. [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) for how phases start and exit.
+4. [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) for the active phase and accepted evidence.
+5. [`research/PRODUCT_DEFINITION.md`](../research/PRODUCT_DEFINITION.md) for product hypotheses.
+6. [`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md) for software boundaries.
+7. [`research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md) for hardware and network targets.
+8. [`research/architecture/README.md`](../research/architecture/README.md) for detailed design references.
 
 ## Guides By Task
 
@@ -46,6 +50,7 @@ to introduce a message or enum.
 | Work with multiple pods, BLE, or Linux device setup | [`.codex/PLATFORM.md`](../.codex/PLATFORM.md) |
 | Check current GPIO assignments | [`PIN_REFERENCE.md`](PIN_REFERENCE.md) |
 | Bring up an NFF board | [`hardware/nff-devboard/BRING_UP_CHECKLIST.md`](../hardware/nff-devboard/BRING_UP_CHECKLIST.md) |
+| Decide whether a product phase may start or exit | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) |
 | Create or audit delivery milestones | [`MILESTONE_TEMPLATE.md`](MILESTONE_TEMPLATE.md) |
 | Inspect archived plans | [`research/archive/README.md`](../research/archive/README.md) |
 

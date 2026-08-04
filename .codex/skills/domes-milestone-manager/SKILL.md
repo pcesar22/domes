@@ -10,6 +10,10 @@ Treat a milestone as an outcome acceptance contract, not a task bucket. Keep
 [`docs/MILESTONE_TEMPLATE.md`](../../../docs/MILESTONE_TEMPLATE.md) as guidance. Judge substance and
 intent; do not require exact headings, tables, ordering, or phrasing.
 
+For product-realization work, read
+[`docs/PRODUCT_REALIZATION_FRAMEWORK.md`](../../../docs/PRODUCT_REALIZATION_FRAMEWORK.md) first. It
+defines the single active phase, entry and exit semantics, and required status report.
+
 ## Select The Operation
 
 - **Create or reorganize:** inventory current evidence, propose sequencing, and draft milestones.
@@ -24,9 +28,11 @@ intent; do not require exact headings, tables, ordering, or phrasing.
 1. Read root and applicable nested `AGENTS.md` files.
 2. Read `firmware/MILESTONES.md`, `docs/TESTING.md`, `docs/README.md`, and the architecture documents
    relevant to the milestone.
-3. Inspect the implementation, tests, CI workflows, open PR state, and retained hardware evidence.
-4. Record the exact source revision and evidence date when behavior may have changed.
-5. Treat missing, stale, indirect, or contradictory evidence as `Unverified`; never infer `Pass`.
+3. Read `research/PRODUCT_DEFINITION.md` when product scope, customer value, requirements, launch,
+   form factor, compliance, economics, or open-source readiness affects the decision.
+4. Inspect the implementation, tests, CI workflows, open PR state, and retained hardware evidence.
+5. Record the exact source revision and evidence date when behavior may have changed.
+6. Treat missing, stale, indirect, or contradictory evidence as `Unverified`; never infer `Pass`.
 
 Use the verification ladder in root `AGENTS.md`. Command acceptance is not physical confirmation,
 host tests are not firmware integration, and a successful build is not hardware verification.
@@ -42,8 +48,12 @@ host tests are not firmware integration, and a successful build is not hardware 
 6. Write each gate as a binary required result plus a reproducible verification method.
 7. Identify the evidence artifact each gate must produce.
 8. Define invalidation and reopening conditions.
-9. Sequence it after every dependency needed to execute its acceptance gates.
+9. Define a binary entry gate, then sequence it after every dependency needed to execute its exit
+   gates.
 10. Leave it `Proposed` until the milestone manager's semantic audit returns `Meets intent`.
+
+For lifecycle phases, permit only one `In progress` or `Acceptance pending` phase. Later-phase work
+may retire a named risk, but cannot be reported as phase execution before entry passes.
 
 Split a milestone when it contains unrelated outcomes, independently reviewable capabilities, an unbounded
 research question, or gates that cannot be evaluated in the same validation campaign.
@@ -59,8 +69,8 @@ Apply transitions conservatively:
 
 | Transition | Required evidence |
 | --- | --- |
-| `Proposed` to `Ready` | Semantic audit returns `Meets intent`; outcome, scope, constraints, dependencies, gates, and owner are clear |
-| `Ready` to `In progress` | Dependency gates satisfied and implementation work started |
+| `Proposed` to `Ready` | Semantic audit returns `Meets intent`; outcome, boundaries, dependencies, entry, exit gates, and owner are clear; every entry condition has current `Pass` evidence |
+| `Ready` to `In progress` | Owner, reviewed revision, start date, and first exit-gate action are recorded |
 | `In progress` to `Acceptance pending` | Deliverables present and applicable gates appear satisfied; final evidence audit remains |
 | `Acceptance pending` to `Complete` | Milestone manager audits direct current evidence and finds no failed, unverified, contradictory, or stale gate |
 | `Complete` to `In progress` | A listed invalidation condition occurs; record why the milestone reopened |
@@ -72,12 +82,15 @@ the reasoning and evidence for every transition, and refuse a transition when th
 
 For a status request, return this order:
 
-1. Current milestone, lifecycle status, health, and evidence freshness.
-2. Delivered and accepted results.
-3. Current work and the next unmet gate.
-4. Blockers and decisions needing an owner.
-5. Next milestone and why it follows.
-6. Any mismatch between the ledger and observed evidence.
+1. Active phase, lifecycle status, health, actual start, forecast exit, reviewed revision, and
+   evidence date.
+2. Entry result and phase start state.
+3. Exit gates passed over total, including failed or unverified gates.
+4. Delivered and accepted results.
+5. One current gate and owner, then the next concrete action.
+6. Risks and decisions with owner and consequence.
+7. Following phase and the exact unmet entry condition.
+8. Any mismatch between the ledger and observed evidence.
 
 ## Audit Quality
 
@@ -113,6 +126,8 @@ make the document look consistent.
 ## Preserve The Ledger
 
 - Keep current status in `firmware/MILESTONES.md`; link to evidence instead of duplicating it.
+- Keep lifecycle rules in `docs/PRODUCT_REALIZATION_FRAMEWORK.md` and product hypotheses in
+  `research/PRODUCT_DEFINITION.md`; do not turn the ledger into a second copy.
 - Keep its delivery dashboard synchronized with the detailed milestone contracts.
 - Keep detailed test procedures in `docs/TESTING.md`.
 - Keep product targets in `research/SYSTEM_ARCHITECTURE.md`.

@@ -23,7 +23,10 @@ two-pod drill. Physical LED, touch, IMU, audio, and haptic observations remain s
 checks; command acceptance and initialization tests are not physical proof. The dated evidence and
 remaining boundaries are maintained in the milestone ledger rather than duplicated here.
 
-See [`firmware/MILESTONES.md`](firmware/MILESTONES.md) for delivery evidence and remaining work.
+See [`docs/PRODUCT_REALIZATION_FRAMEWORK.md`](docs/PRODUCT_REALIZATION_FRAMEWORK.md) for the path from
+development boards through EVT, DVT, PVT, and open product release. See
+[`firmware/MILESTONES.md`](firmware/MILESTONES.md) for the active phase, delivery evidence, and next
+gate.
 That file owns status; architecture documents describe design and must not be used as completion
 claims.
 
@@ -211,9 +214,11 @@ Start with [`docs/README.md`](docs/README.md). It defines document ownership and
 
 | Document | Purpose |
 | --- | --- |
+| [`docs/PRODUCT_REALIZATION_FRAMEWORK.md`](docs/PRODUCT_REALIZATION_FRAMEWORK.md) | Product lifecycle, phase entry/exit, and status reporting |
 | [`DEVELOPER_QUICKSTART.md`](DEVELOPER_QUICKSTART.md) | First local build and change workflow |
 | [`docs/TESTING.md`](docs/TESTING.md) | Verification matrix and CI/hardware expectations |
 | [`firmware/MILESTONES.md`](firmware/MILESTONES.md) | Implemented, verified, and pending work |
+| [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md) | Customer, product, and launch hypotheses |
 | [`docs/PIN_REFERENCE.md`](docs/PIN_REFERENCE.md) | Compiled and planned GPIO mappings |
 | [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md) | Software boundaries and decisions |
 | [`research/SYSTEM_ARCHITECTURE.md`](research/SYSTEM_ARCHITECTURE.md) | Product hardware and network targets |
