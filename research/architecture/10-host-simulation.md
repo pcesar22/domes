@@ -5,7 +5,7 @@
 > and native-USB runtime topology proposals were removed because they were never implemented. Git
 > history retains that proposal.
 
-Last checked against the repository: 2026-08-02.
+Last checked against the repository: 2026-08-04.
 
 ## Purpose And Boundary
 
@@ -40,9 +40,10 @@ sources are included only when the host stubs can represent their dependencies f
 
 | Host component | Responsibility |
 | --- | --- |
-| `SimOrchestrator` | Owns simulated pods and advances deterministic mock time |
+| `SimClock` | Owns explicit virtual time while keeping production timer calls synchronized |
+| `SimOrchestrator` | Owns simulated pods, the clock, and the event log |
 | `PodInstance` | Composes per-pod feature, mode, game, and fake-driver state |
-| `SimEspNowBus` | Routes in-memory pod messages and records flow events |
+| `SimEspNowBus` | Applies deterministic delivery decisions and records delivery and flow events |
 | `PodCommandHandler` | Applies simulated peer commands and returns events |
 | `DrillOrchestrator` | Executes a deterministic sequence of target, delay, touch, and timeout steps |
 | `HostTraceBuffer` and `PerfettoExporter` | Capture host trace events and export trace-event JSON |
@@ -51,6 +52,22 @@ The simulator's internal message variant is test infrastructure, not the on-air 
 contract. The live packed contract remains
 [`espNowProtocol.hpp`](../../firmware/domes/main/services/espNowProtocol.hpp), with focused host
 contract coverage in `main/test_esp_now_protocol.cpp`.
+
+## Deterministic Delivery Replay
+
+`SimEspNowBus` accepts a delivery policy for each intended recipient. A policy can pass, delay,
+drop, or duplicate a message without wall-clock sleeps. Delayed messages remain pending until
+`SimClock` reaches their virtual deadline.
+
+Every decision records the send time, source, destination, message type, sequence, action, and
+delay. A fresh bus can consume that record with `setReplayRecord()`. Replay checks every message
+identity and reports a mismatch rather than silently applying a decision to different input. Host
+tests cover the default lossless behavior, virtual delay boundary, drop, duplicate, exact flow
+replay, and mismatch detection.
+
+This is deterministic fault-injection infrastructure, not a calibrated radio model. Delivery
+policies and timing distributions must be derived from physical evidence and validated against
+held-out device runs before the simulator can support a real-world prediction claim.
 
 ## Build And Test
 

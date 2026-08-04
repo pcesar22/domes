@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
     // --- Set up 5-pod environment ---
     constexpr size_t kNumPods = 5;
     SimOrchestrator sim;
-    auto bus = std::make_unique<SimEspNowBus>(sim.log());
+    auto bus = std::make_unique<SimEspNowBus>(sim.log(), sim.clock());
     std::vector<std::unique_ptr<PodCommandHandler>> handlers;
 
     for (size_t i = 0; i < kNumPods; i++) {

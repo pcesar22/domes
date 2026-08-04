@@ -1,6 +1,5 @@
 #pragma once
 
-#include "esp_timer.h"
 #include "game/gameEngine.hpp"
 #include "sim/podCommandHandler.hpp"
 #include "sim/simEspNowBus.hpp"
@@ -68,7 +67,7 @@ public:
     DrillResult execute(const std::vector<DrillStep>& steps,
                         const std::vector<TouchScenario>& touches) {
         DrillResult result;
-        uint64_t startTimeUs = static_cast<uint64_t>(test_stubs::mock_time_us.load());
+        uint64_t startTimeUs = sim_.clock().nowUs();
 
         // --- SETUP PHASE ---
         // Transition master (pod 0) to GAME
@@ -188,7 +187,7 @@ public:
         bus_.send(stopCmd);
         bus_.deliverPending();
 
-        result.totalTimeUs = static_cast<uint64_t>(test_stubs::mock_time_us.load()) - startTimeUs;
+        result.totalTimeUs = sim_.clock().nowUs() - startTimeUs;
         return result;
     }
 

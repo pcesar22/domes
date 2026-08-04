@@ -1,7 +1,7 @@
 #pragma once
 
-#include "esp_timer.h"
 #include "sim/podInstance.hpp"
+#include "sim/simClock.hpp"
 #include "sim/simLog.hpp"
 
 #include <memory>
@@ -11,6 +11,8 @@ namespace sim {
 
 class SimOrchestrator {
 public:
+    SimOrchestrator() : log_(clock_) {}
+
     PodInstance& addPod(uint16_t podId) {
         pods_.push_back(std::make_unique<PodInstance>(podId, log_));
         return *pods_.back();
@@ -22,16 +24,18 @@ public:
         }
     }
 
-    void advanceTimeMs(int64_t ms) { test_stubs::mock_time_us.fetch_add(ms * 1000); }
+    void advanceTimeMs(uint64_t ms) { clock_.advanceMs(ms); }
 
-    void advanceTimeUs(int64_t us) { test_stubs::mock_time_us.fetch_add(us); }
+    void advanceTimeUs(uint64_t us) { clock_.advanceUs(us); }
 
+    SimClock& clock() { return clock_; }
     SimLog& log() { return log_; }
     PodInstance& pod(size_t index) { return *pods_[index]; }
     size_t podCount() const { return pods_.size(); }
 
 private:
     std::vector<std::unique_ptr<PodInstance>> pods_;
+    SimClock clock_;
     SimLog log_;
 };
 

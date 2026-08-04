@@ -36,7 +36,7 @@ protected:
         std::unique_ptr<DrillOrchestrator> drill;
 
         DrillEnv(size_t numPods) {
-            bus = std::make_unique<SimEspNowBus>(sim.log());
+            bus = std::make_unique<SimEspNowBus>(sim.log(), sim.clock());
             for (size_t i = 0; i < numPods; i++) {
                 auto& pod = sim.addPod(static_cast<uint16_t>(i));
                 handlers.push_back(std::make_unique<PodCommandHandler>(pod, *bus, sim.log()));

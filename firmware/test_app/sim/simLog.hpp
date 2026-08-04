@@ -1,6 +1,6 @@
 #pragma once
 
-#include "esp_timer.h"
+#include "sim/simClock.hpp"
 
 #include <cstdint>
 #include <string>
@@ -17,9 +17,10 @@ struct SimLogEntry {
 
 class SimLog {
 public:
+    explicit SimLog(SimClock& clock) : clock_(clock) {}
+
     void log(uint16_t podId, const std::string& category, const std::string& message) {
-        entries_.push_back(
-            {static_cast<uint64_t>(test_stubs::mock_time_us.load()), podId, category, message});
+        entries_.push_back({clock_.nowUs(), podId, category, message});
     }
 
     const std::vector<SimLogEntry>& entries() const { return entries_; }
@@ -45,6 +46,7 @@ public:
     void clear() { entries_.clear(); }
 
 private:
+    SimClock& clock_;
     std::vector<SimLogEntry> entries_;
 };
 
