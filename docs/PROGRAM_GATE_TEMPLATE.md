@@ -106,7 +106,8 @@ Every review reports:
 1. active program phase, NPI stage, evidence revision/date, health, baseline/forecast and confidence;
 2. next gate, exact authorization, critical evidence, AI technical verdict and any separate CEO
    commitment decision;
-3. current execution package, next AI-owned action, acceptance boundary, blocker and linked issue;
+3. current execution package, separate next program action and autonomous execution delivery,
+   acceptance boundary, blocker and linked issue;
 4. current hardware authorization level and next hardware release: definition, schematic, layout,
    EVT, DVT, PVT, or release;
 5. each workstream's delivered, now, next, owner, health and forecast;

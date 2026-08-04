@@ -1,4 +1,4 @@
 interface:
   display_name: "DOMES Program Manager"
-  short_description: "Select, execute, and audit the next DOMES program result"
-  default_prompt: "Use $domes-milestone-manager to reconcile current evidence, select the single highest-priority unblocked AI-owned result, execute it within authorization boundaries, and report the active phase, workstreams, hardware level, next gate, risks, decisions, and forecast."
+  short_description: "Select executable delivery and audit the DOMES program"
+  default_prompt: "Use $domes-milestone-manager to reconcile current evidence and select the single highest-priority unblocked programming or executed-validation delivery. Do not select requirements, product discovery, architecture/part studies, program administration, planning matrices, FMEA/compliance plans, or documentation-only work unless explicitly requested. Execute the delivery within authorization boundaries and report the active phase, workstreams, hardware level, next gate, risks, decisions, and forecast."

@@ -203,8 +203,12 @@ hashes, clock-correlation method, error bounds, and prediction envelope.
 | Risk, decisions, waivers and exceptions | Program status plus linked design records | Immutable gate ledger entries at each decision |
 
 Issues and pull requests manage execution. They do not replace these control artifacts. The control
-panel names one next AI-owned package; autonomous continuation uses the milestone-manager selection
-rules to confirm or replace it from current evidence before opening that package's issue and PR.
+panel names the next cross-functional program action separately from the next autonomous execution
+delivery. Terse continuation can select only a programming or executed-validation delivery under the
+milestone-manager filter; requirements, discovery, architecture/part studies, planning matrices,
+FMEA/compliance plans, program administration, and documentation-only packages require an explicit
+request. The selector confirms or replaces the execution pointer from current evidence before
+opening that package's issue and PR.
 
 ## Required CEO Status Report
 
@@ -213,7 +217,8 @@ Every report answers in this order:
 1. Active program phase, development hardware, NPI stage, evidence revision/date and overall health.
 2. Next program gate, baseline/forecast/confidence, exact authorization, critical inputs and AI
    technical verdict.
-3. Current execution package, next AI-owned action, acceptance boundary, blocker and execution issue.
+3. Current execution package, next program action, next autonomous execution delivery, acceptance
+   boundary, blocker and execution issue.
 4. Immediate hardware authorization level: definition, schematic, PCB layout, EVT, DVT, PVT or
    release.
 5. `PS`, `FS`, `HW`, and `VC` outcomes: delivered, now, next, owner, health and forecast.
