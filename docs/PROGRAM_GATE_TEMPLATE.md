@@ -82,6 +82,9 @@ economic basis of the commitment.
 **State / health:** <Work-package state> / <Health>
 **Requested start / finish:** YYYY-MM-DD / YYYY-MM-DD
 **Inputs:** <Required baselines/evidence>
+**Dependencies/blockers:** <Predecessors, external actions, or None>
+**Gate/risk unlocked:** <Named gate input, downstream package, or risk retired>
+**Execution authority:** AI-owned | CEO/external-owned | Mixed with explicit boundary
 **Authorization:** <Permitted work>
 **Stop condition:** <Work or spend explicitly prohibited>
 
@@ -91,6 +94,7 @@ economic basis of the commitment.
 
 **Now:** <One current result>
 **Next:** <Concrete evidence-changing action>
+**Selected next / rationale:** <Yes/No and semantic priority reason>
 **Risks/decisions:** <Owner and due date>
 **Invalidation:** <Change reopening acceptance>
 ```
@@ -102,12 +106,13 @@ Every review reports:
 1. active program phase, NPI stage, evidence revision/date, health, baseline/forecast and confidence;
 2. next gate, exact authorization, critical evidence, AI technical verdict and any separate CEO
    commitment decision;
-3. current hardware authorization level and next hardware release: definition, schematic, layout,
+3. current execution package, next AI-owned action, acceptance boundary, blocker and linked issue;
+4. current hardware authorization level and next hardware release: definition, schematic, layout,
    EVT, DVT, PVT, or release;
-4. each workstream's delivered, now, next, owner, health and forecast;
-5. critical path, resources/lead times and top risks;
-6. CEO decisions with recommendation, alternatives, needed-by date and consequence of delay; and
-7. scope, schedule, cost, requirement, configuration, evidence and risk changes since last review.
+5. each workstream's delivered, now, next, owner, health and forecast;
+6. critical path, resources/lead times and top risks;
+7. CEO decisions with recommendation, alternatives, needed-by date and consequence of delay; and
+8. scope, schedule, cost, requirement, configuration, evidence and risk changes since last review.
 
 Do not report percentage complete. Do not mix phase status, gate disposition, work-package status,
 health, and hardware release state.

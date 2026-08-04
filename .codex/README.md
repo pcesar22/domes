@@ -4,11 +4,16 @@ This directory contains repository-scoped Codex defaults and narrow specialist a
 the project layer only after the checkout is trusted. Review these files before trusting a fork or
 unfamiliar branch; an untrusted checkout ignores project-local `.codex/` configuration.
 
-The primary agent is pinned to `gpt-5.6-sol` at medium reasoning. It remains responsible for scope,
-implementation decisions, final synthesis, and verification. Specialist agents are opt-in: use them
-only when a user or applicable project or skill instruction explicitly requests delegation. The
-configuration caps concurrently open subagent threads at two and does not change approval policy,
-network access, or the primary sandbox.
+The primary agent is pinned to `gpt-5.6-sol` at medium reasoning. Generic child agents default to
+`gpt-5.6-terra` at medium reasoning; named roles below override that fallback. Configuration selects
+models and caps concurrently open subagent threads at two. It does not perform semantic routing or
+change approval policy, network access, or the primary sandbox.
+
+The primary routes specialists automatically when a trigger below applies and delegation materially
+reduces uncertainty or risk. It remains the sole writer and owns scope, decisions, synthesis, and
+verification.
+
+## Specialist Roles
 
 | Agent | Model | Purpose |
 | --- | --- | --- |
@@ -18,20 +23,32 @@ network access, or the primary sandbox.
 | `test_triage` | Terra, medium | Isolate the first failure and smallest confirming rerun |
 | `hardware_verifier` | Sol, high | Gather device evidence from checked-in runbooks when explicitly assigned |
 
+## Automatic Routing
+
+| Trigger | Route and timing |
+| --- | --- |
+| Unfamiliar or cross-component scope | `repo_explorer` before planning or editing |
+| Protobuf, framing, transport, or cross-language contract | `protocol_reviewer` during design and again on the resulting diff |
+| ESP-IDF, ISR, FreeRTOS, memory, or initialization behavior | `firmware_reviewer` after implementation and before acceptance |
+| Test or CI failure | `test_triage` before choosing a repair |
+| Physical-device evidence or hardware-readiness claim | `hardware_verifier` before accepting the evidence |
+| Small, isolated change with an obvious verification path | No specialist; primary handles it directly |
+
 Every specialist is read-only. A role never grants permission to access hardware, publish GitHub
 state, change files, or bypass an approval; the parent session and repository instructions still
-govern those actions. Terra is limited to bounded, read-heavy support work. Quality-critical review
-and the primary agent's final judgment stay on Sol.
+govern those actions. Reuse a relevant thread, run at most two specialists concurrently, and do not
+delegate trivial work. Terra is limited to bounded exploration and triage; priority selection,
+quality-critical review, and final judgment stay on Sol.
 
 Validate syntax and the active project default from a trusted checkout with:
 
 ```bash
 python -m unittest discover -s tools/agent_eval -p 'test_*.py'
-codex exec --ephemeral --strict-config --sandbox read-only \
-  "Report the active model and reasoning effort, then stop without changing files."
+codex --strict-config doctor --json --summary
 ```
 
-The non-interactive run should identify `gpt-5.6-sol` and medium reasoning in its session metadata.
-Representative read-only cases for every role live in `tools/agent_eval/cases.json`.
+The unit tests assert the checked-in model, effort, routing fallbacks, concurrency bound, and named
+roles. Doctor must report `config.load` as `ok`; this checks parser compatibility, not semantic
+routing. Representative read-only cases for every role live in `tools/agent_eval/cases.json`.
 
 Reference: [Codex configuration and project trust](https://learn.chatgpt.com/docs/config-file/config-reference).

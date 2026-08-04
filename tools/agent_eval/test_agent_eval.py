@@ -77,7 +77,7 @@ def structured_response(**overrides):
         "invariants": ["The repository contract remains authoritative."],
         "verification": ["Review the cited source."],
         "hardware_requirement": "not_required",
-        "claims": ["The evidence requires human review."],
+        "claims": ["The evidence requires an independent semantic audit."],
         "criterion_evidence": [
             {
                 "criterion_id": "repository-evidence",
@@ -534,7 +534,8 @@ class IsolationTest(unittest.TestCase):
 
         self.assertIn("Cleanup contract:", prompt)
         self.assertIn("repository-evidence", prompt)
-        self.assertIn("reviewer decides correctness", prompt)
+        self.assertIn("independent LLM semantic audit decides", prompt)
+        self.assertIn("must already exist in the sanitized checkout", prompt)
         self.assertIn("describes a requirement, not execution status", prompt)
         self.assertIn("--ignore-user-config", command)
         self.assertIn("--ignore-rules", command)
@@ -998,7 +999,7 @@ class CaseExecutionTest(unittest.TestCase):
 
 
 class ReportTest(unittest.TestCase):
-    def test_report_marks_coverage_as_requiring_human_review(self) -> None:
+    def test_report_marks_coverage_as_requiring_semantic_audit(self) -> None:
         document = {
             "schema_version": 3,
             "run_id": "baseline",
@@ -1035,7 +1036,7 @@ class ReportTest(unittest.TestCase):
                     "response": {
                         "summary": "The repository contract is authoritative.",
                         "files": ["AGENTS.md"],
-                        "claims": ["The change requires human review."],
+                        "claims": ["The change requires a semantic audit."],
                         "invariants": ["AGENTS.md remains authoritative."],
                         "verification": ["Review AGENTS.md."],
                     },
@@ -1061,12 +1062,12 @@ class ReportTest(unittest.TestCase):
         report = render_report(document)
 
         self.assertIn("Structurally review-ready: 1 / 1", report)
-        self.assertIn("review required", report)
+        self.assertIn("semantic audit required", report)
         self.assertIn("not a correctness score or approval", report)
         self.assertIn("### Agent claims", report)
         self.assertIn("### Agent-reported files", report)
         self.assertIn("`AGENTS.md`", report)
-        self.assertIn("The change requires human review.", report)
+        self.assertIn("The change requires a semantic audit.", report)
         self.assertIn("### Agent invariants", report)
         self.assertIn("AGENTS.md remains authoritative.", report)
         self.assertIn("### Agent verification plan", report)

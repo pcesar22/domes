@@ -11,7 +11,7 @@ belong in [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md), ta
 [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md), and verification procedures
 in [`docs/TESTING.md`](docs/TESTING.md).
 
-**As of:** 2026-08-03, working branch at PR 89
+**As of:** 2026-08-03, `main` after merged PR 89
 
 ## CEO Control Panel
 
@@ -24,6 +24,10 @@ in [`docs/TESTING.md`](docs/TESTING.md).
 | Next program gate | G1 System Architecture Baseline and Schematic Authorization |
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
+| Current execution package | None recorded on `main`; the next autonomous cycle creates or reuses one execution issue |
+| Next AI-owned action | `PS-WP-001` Product Brief and Canonical Six-Pod Workflow |
+| Current AI execution blocker | None; customer evidence remains explicitly unverified rather than blocking the hypothesis baseline |
+| Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
 | First product-hardware purchase authorization | G2 EVT Release to Fab, forecast 2026-11-02 |
 
@@ -50,6 +54,39 @@ start PCB layout, or order EVT boards until the corresponding gates pass.
 | General drill/protocol convergence | `Ready now` | One protobuf-owned drill, timing, authority, result, and recovery contract across firmware/sim/app |
 | Four economical ESP32-S3 alpha nodes | `Ready now` | System-scale development inventory, not product hardware |
 | FMEA, compliance, supply, CM, DFM/DFT, and test planning | `Ready now` | Planning and risk closure; no approval or production claim |
+
+### Selected Next AI-Owned Work
+
+#### PS-WP-001: Product Brief And Canonical Six-Pod Workflow
+
+**Objective:** Turn the current product hypotheses into one internally consistent product brief and
+end-to-end six-pod reference workflow that can drive measurable requirements without presenting
+uncollected customer evidence as fact.
+
+| Contract | Current state |
+| --- | --- |
+| Owner | AI product/system lead |
+| State / health | `Ready` / `Amber` |
+| Requested start / finish | 2026-08-04 / 2026-08-14 |
+| Inputs | Product definition, target system/ID architecture, as-built software architecture, current program evidence |
+| Dependencies/blockers | None for the hypothesis baseline; customer interviews and purchase evidence remain open PS0 evidence |
+| Gate/risk unlocked | Feeds PS1 hardware-driving requirements, FS3 runtime semantics, HW1 trades, VC1 verification planning, and G1 |
+| Execution authority | AI-owned repository research and documentation |
+| Execution issue | Not yet created; `Continue DOMES.` creates or reuses it before implementation |
+| Stop condition | No protocol/runtime change, part or architecture freeze, spend, market validation, or product/compliance claim |
+
+Acceptance requires the repository to distinguish evidence, hypothesis, and decision; name the buyer,
+user, job, kit, environment, economic bounds, and unresolved discovery questions; and define one
+canonical workflow covering setup, roster, drill configuration, play, partial failure, recovery,
+results, shutdown, and charging/storage. Conflicts with current architecture and program authority
+must be reconciled or recorded explicitly. Documentation and repository checks must pass.
+
+At selection, current `main` CI was green and no open execution issue, PR, or plan existed, so no
+integrity repair or resumable work outranked new work. PS-WP-001 is selected because PS0 is active
+with the earliest forecast and its output unlocks named work in every G1 workstream. PS1 depends on
+that product boundary; FS1/HW0 acceptance depends on physical observation and instrumentation; and
+VC1 has a later forecast and consumes the workflow and requirements. The higher program dependency,
+HW owner and budget, remains a separate CEO decision and does not stall this AI-owned package.
 
 ### What Is Not Authorized
 
@@ -233,7 +270,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 
 | Evidence | Source | Result | Boundary |
 | --- | --- | --- | --- |
-| Main software CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30782073994](https://github.com/pcesar22/domes/actions/runs/30782073994) | Passed | Builds, tests, generated artifacts, lint, docs, Flutter Linux and ESP-IDF release checks |
+| Current main software CI | Commit `af06e8e822f38da1550e49da94a75ff8c7b5266d`, [run 30877635194](https://github.com/pcesar22/domes/actions/runs/30877635194) | Passed | Builds, tests, generated artifacts, lint, docs, Flutter Linux/iOS and ESP-IDF release checks |
 | Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains and CI behavior |
 | Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
 
@@ -285,13 +322,14 @@ Every status report answers, in order:
 1. Active program phase, current development hardware, NPI stage, revision/date and overall health.
 2. Next program gate, baseline/forecast/confidence, authorization, open critical evidence and
    recommended disposition.
-3. Immediate hardware authorization: definition, schematic/layout, EVT, DVT or PVT; never say only
+3. Current execution package, next AI-owned action, acceptance boundary, blocker and execution issue.
+4. Immediate hardware authorization: definition, schematic/layout, EVT, DVT or PVT; never say only
    “hardware can start.”
-4. `PS`, `FS`, `HW`, and `VC` workstream outcome, delivered/now/next, health and forecast.
-5. Hardware release-ladder position and the exact next evidence release.
-6. Critical path and top risks with owner, mitigation and decision-by date.
-7. CEO decisions required, team recommendation, alternatives and consequence of delay.
-8. Changes to scope, schedule, cost, requirements, configuration, evidence or risk since last review.
+5. `PS`, `FS`, `HW`, and `VC` workstream outcome, delivered/now/next, health and forecast.
+6. Hardware release-ladder position and the exact next evidence release.
+7. Critical path and top risks with owner, mitigation and decision-by date.
+8. CEO decisions required, team recommendation, alternatives and consequence of delay.
+9. Changes to scope, schedule, cost, requirements, configuration, evidence or risk since last review.
 
 No percentage rollup is permitted. Gate readiness, hardware release state, evidence and dated
 workstream outcomes are the program truth.

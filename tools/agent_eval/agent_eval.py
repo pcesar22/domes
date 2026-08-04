@@ -783,16 +783,19 @@ Cleanup contract:
 Evidence criteria:
 {criteria}
 
-In the final structured response, list every authoritative or affected repository
-path in `files`, the durable contracts in `invariants`, the checks that would be
+In the final structured response, list every existing authoritative or affected
+repository path in `files`, the durable contracts in `invariants`, the checks that would be
 required in `verification`, and whether physical hardware is required for full
 validation in `hardware_requirement` (`required` or `not_required`). This field
 describes a requirement, not execution status; hardware is never run here.
 Return exactly one `criterion_evidence` entry for each evidence criterion. Each
 entry must identify its criterion id, concise repository evidence, and the paths
-that support it. Paths must be exact repository-relative paths without line-number
-suffixes. Keep `claims` limited to conclusions supported by that evidence.
-Automated checks measure evidence coverage only; a reviewer decides correctness.
+that support it. Every reported path must already exist in the sanitized checkout
+and use an exact repository-relative path without a line-number suffix. Mention a
+prospective file only in prose, not in `files` or criterion evidence. Keep `claims`
+limited to conclusions supported by that evidence.
+Automated checks measure evidence coverage only; an independent LLM semantic audit decides
+correctness.
 """
 
 
@@ -1874,7 +1877,7 @@ def render_report(document: dict[str, Any]) -> str:
         f"- Case timeout: {execution.get('timeout_seconds', '-')} seconds",
         "",
         "> Automated checks validate evidence coverage and execution contracts only. "
-        "Every completed case requires human correctness review.",
+        "Every completed case requires an independent LLM semantic audit.",
         "",
         "| Case | Automated status | Coverage | Duration | Hardware requirement |",
         "| --- | --- | ---: | ---: | --- |",
@@ -1894,7 +1897,7 @@ def render_report(document: dict[str, Any]) -> str:
             "| {id} | {status} | {coverage} | {duration} | {hardware} |".format(
                 id=result["id"],
                 status=(
-                    "review required"
+                    "semantic audit required"
                     if result.get("review_ready")
                     else (
                         "incomplete coverage"

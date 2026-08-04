@@ -1,6 +1,6 @@
 ---
 name: domes-milestone-manager
-description: Manage the integrated DOMES product program through evidence-based phases, cross-functional gates, parallel Product/System, Firmware/Software, Hardware/NPI, and Verification/Compliance workstreams, hardware releases, and CEO status. Use when defining or auditing program status, sequencing NFF learning into hardware requests, deciding what hardware work is authorized, checking gate readiness, reporting current/next work, or reconciling product, architecture, firmware, CLI/app, simulation, CI, hardware, manufacturing, compliance, and test evidence.
+description: Manage the integrated DOMES product program through evidence-based phases, cross-functional gates, parallel Product/System, Firmware/Software, Hardware/NPI, and Verification/Compliance workstreams, hardware releases, and CEO status. Use when the user says "Continue DOMES", asks the AI to select or execute the next priority, defines or audits program status, sequences NFF learning into hardware requests, decides what hardware work is authorized, checks gate readiness, or reconciles product, architecture, firmware, CLI/app, simulation, CI, hardware, manufacturing, compliance, and test evidence.
 ---
 
 # DOMES Program And Milestone Manager
@@ -41,6 +41,68 @@ company-wide phase, or mixes hardware definition with release-to-fab authorizati
 A host test is not firmware integration, command acceptance is not physical behavior, NFF proof is
 not product-board proof, capture-start alignment is not clock correlation, and calibration data is
 not held-out validation.
+
+## Select Autonomous Work
+
+When the user issues the autonomous-continuation directive in root `AGENTS.md`, first reconcile
+`PROGRAM_STATUS.md` with the worktree, open execution plans, GitHub issues and pull requests, current
+CI, and retained evidence. A more specific current user request always wins. Then apply this order:
+
+1. Repair an urgent integrity failure: a safety or security defect, failing active PR or `main` CI,
+   contradiction in an authority, invalidated evidence, or accepted evidence expiring before use.
+2. Resume an existing unblocked execution plan or pull request before opening competing work.
+3. Use the control panel's `Next AI-owned action` when it remains current, authorized, and unblocked.
+4. Otherwise rank eligible work as: active next-gate critical path, ready next-gate critical path,
+   other active, then other ready. Exclude `Not due`, prohibited, externally owned, and blocked work.
+5. Break ties by earliest decision or forecast date, most named next-gate dependencies unlocked,
+   greatest material risk retired, then lowest stable work-package ID.
+6. Select exactly one smallest coherent evidence-producing deliverable with observable acceptance,
+   an owner, dependencies, invalidation rule, and stop condition. Do not select generic cleanup while
+   gate-critical work is eligible.
+
+If the highest program dependency needs a CEO, supplier, lab operator, purchase, or physical action,
+keep that decision visible and evaluate the next AI-owned candidate instead of stalling or treating
+the dependency as authorized. Record the selected package, rationale, execution issue, gate or risk
+unlocked, and next reserved decision in `PROGRAM_STATUS.md`.
+
+## Execute Selected Work
+
+1. Reuse an exact open execution issue or create one bounded issue with objective, acceptance
+   evidence, dependencies, authorization, and stop condition. The exact continuation directive is
+   authorization for this one issue and its one pull request.
+2. When resuming, reuse the issue, branch/worktree, plan, and PR already linked to the package.
+   Otherwise create an isolated branch/worktree and add a plan under `docs/plans/` when `PLANS.md`
+   requires one.
+3. Route read-only specialists using `.codex/README.md`; the primary agent is the only writer and
+   retains the gate, scope, and acceptance judgment.
+4. Implement the package, update affected authorities, and run the strongest feasible automated and
+   physical verification required by root and nested instructions. Never convert an unavailable
+   capability into a pass.
+5. Self-review, commit, and push. Open one review-ready PR linked to the issue only when one does not
+   already exist, then monitor every required check. Diagnose and repair ordinary failures until CI
+   passes or an external blocker is proven.
+6. Before completion, update the issue and `PROGRAM_STATUS.md` with evidence, changed forecasts or
+   risks, current execution state, and the next AI-owned action selected by the same rules.
+7. End the cycle when this package reaches its PR, CI, and status boundary. Record the next candidate
+   but do not begin it without another directive.
+
+For registered NFF development boards, the directive permits repository-standard application flash
+or OTA, temporary runtime configuration, reboot, and observation when the selected package requires
+them. Resolve stable identity, capture pre-state, use the checked-in runbook, and restore temporary
+state. It does not permit whole-flash or NVS erase, factory reset, eFuse, secure-boot,
+flash-encryption or key provisioning, destructive electrical/battery testing, or host configuration.
+
+The checked-in hardware CI is a narrow exception to the destructive-operation prohibition. Apply
+`hw-test` only when the selected package requires it, the runner is online and idle, and exactly two
+attached NFF CP2102N identities match the current registered board IDs in `PROGRAM_STATUS.md`. The
+directive then authorizes that workflow's documented erase, factory-programming, OTA/recovery, and
+forced-rollback sequence on those two boards. Do not reproduce those destructive steps manually or
+apply the label when inventory cannot be proven.
+
+The directive does not authorize merge, release, other labels, purchases, vendor or fabrication
+commitments, other destructive device operations, work beyond the selected package, work barred by
+the current gate, or unsupported product, safety, compliance, certification, or market claims. Stop
+at that boundary and name the exact decision or capability required.
 
 ## Create Or Update The Plan
 
@@ -85,12 +147,13 @@ Report in this order:
 1. Active phase, current development hardware, NPI stage, revision/date, overall health,
    baseline/forecast and confidence.
 2. Next gate, exact authorization, passed/open/failed critical evidence and AI technical verdict.
-3. Immediate hardware authorization: definition, schematic, PCB layout, EVT, DVT, PVT or release.
-4. `PS`, `FS`, `HW`, `VC`: delivered, now, next, owner, health and forecast.
-5. Hardware release-ladder position and next evidence release.
-6. Critical path and top risks with owner, mitigation and decision-by date.
-7. CEO commitment decisions, team recommendation, alternatives and delay consequence.
-8. Changes since the last review and any mismatch between ledger and observed evidence.
+3. Current execution package, next AI-owned action, and its acceptance/stop boundary.
+4. Immediate hardware authorization: definition, schematic, PCB layout, EVT, DVT, PVT or release.
+5. `PS`, `FS`, `HW`, `VC`: delivered, now, next, owner, health and forecast.
+6. Hardware release-ladder position and next evidence release.
+7. Critical path and top risks with owner, mitigation and decision-by date.
+8. CEO commitment decisions, team recommendation, alternatives and delay consequence.
+9. Changes since the last review and any mismatch between ledger and observed evidence.
 
 Do not use percentage rollups. Future phases are `Not entered`/`Not rated`, not `Blocked` solely due
 to sequence.

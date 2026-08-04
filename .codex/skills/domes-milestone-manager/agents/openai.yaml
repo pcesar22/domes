@@ -1,4 +1,4 @@
 interface:
   display_name: "DOMES Program Manager"
-  short_description: "Audit DOMES phases, gates, workstreams, and hardware releases"
-  default_prompt: "Use $domes-milestone-manager to report the active DOMES phase, parallel workstreams, hardware authorization level, next gate and release, evidence, critical path, risks, CEO decisions, and forecast."
+  short_description: "Select, execute, and audit the next DOMES program result"
+  default_prompt: "Use $domes-milestone-manager to reconcile current evidence, select the single highest-priority unblocked AI-owned result, execute it within authorization boundaries, and report the active phase, workstreams, hardware level, next gate, risks, decisions, and forecast."

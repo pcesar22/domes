@@ -25,6 +25,20 @@ Use progressive disclosure:
 Reusable procedures live in `.codex/skills/`; do not copy their runbooks into always-loaded
 instructions.
 
+## Autonomous Continuation
+
+When no specific task is active, `Continue DOMES.` authorizes one autonomous cycle. Use
+`$domes-milestone-manager` to reconcile current truth, select exactly one bounded, unblocked,
+AI-owned package, and apply `.codex/README.md` routing. Do not ask the user to rank eligible work.
+
+The directive authorizes one issue and package through branch/worktree, implementation, runbook
+verification, status, commit/push, one review-ready PR, and CI repair. When hardware CI is required,
+it also authorizes `hw-test` and its checked-in erase/factory/rollback sequence only on the two
+registered NFF CI boards after identity and runner preflight. It never authorizes merge, release,
+other labels, purchases, vendor commitments, fabrication, other destructive device actions,
+gate-prohibited work, or unsupported claims. The milestone-manager skill defines selection and stop
+rules.
+
 ## Truth And Authority
 
 Current code, generated artifacts, tests, and current-status documents describe the as-built
@@ -66,7 +80,8 @@ access is unavailable, state exactly what remains unverified. In particular:
 - ESP-NOW evidence requires a fresh exact `disabled` lifecycle, complementary roles with one peer
   each, simulation-off benchmarks in both directions, and a separate traced simulation drill;
   `stopping` is transitional, not ready.
-- Hardware CI requires the `hw-test` label; ask the user before adding it.
+- Hardware CI requires the `hw-test` label; ask before adding it unless the exact autonomous
+  continuation directive selected a package whose required verification includes hardware CI.
 
 ## Git And GitHub Boundaries
 
@@ -75,8 +90,10 @@ substantial work started from `main`, prefer `.worktrees/<name>` on a
 `codex/<type>/<description>` branch, where type is `feat`, `fix`, `refactor`, `docs`, `test`, or
 `chore`. Never create new worktrees under `.claude/worktrees/`.
 
-Keep commits intentional and scoped. Always ask before creating or publishing a pull request. Do
-not publish issues, labels, releases, or other GitHub state unless the user authorized that action.
+Keep commits intentional and scoped. Ask before creating or publishing a pull request or other
+GitHub state unless the user already authorized it. The exact autonomous-continuation directive
+counts only as the bounded issue and pull-request authorization defined above; it is not merge or
+release authorization.
 
 ## Host Protocol Contract
 

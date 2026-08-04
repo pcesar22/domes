@@ -140,5 +140,7 @@ runner must expose the CP2102N ports to the service account and retain stable de
 
 Manual dispatch accepts a comma-separated `ports` input; pass CP2102N `/dev/serial/by-id/` paths.
 The `hw-test` pull request label uses runner auto-detection and consumes attached lab hardware; ask
-before adding it. Verify a qualifying runner is online first. A queued job with no runner is not a
-test result and should be cancelled rather than left indefinitely pending.
+before adding it unless the exact `Continue DOMES.` directive authorized the registered-board
+preflight defined by the milestone-manager skill. Verify a qualifying runner is online first. A
+queued job with no runner is not a test result and should be cancelled rather than left indefinitely
+pending.

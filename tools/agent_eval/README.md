@@ -3,7 +3,7 @@
 This suite captures whether a coding agent can find DOMES's authoritative files, explain protocol
 and hardware contracts, select adequate verification, and support claims with repository evidence.
 It provides an auditable repository-understanding and change-planning baseline; it does not replace
-human review, component tests, firmware builds, or physical device validation.
+an independent semantic audit, component tests, firmware builds, or physical device validation.
 
 ## Safety Model
 
@@ -103,7 +103,7 @@ before any case starts.
 wrong hardware requirement, or writes in the read-only checkout. Every case reports only whether
 physical hardware is required for full validation; hardware execution is prohibited by the harness
 and recorded separately in run metadata. Exit zero means only that the result is structurally ready
-for review. It never means the response is correct or approved.
+for an independent LLM semantic audit. It never means the response is correct or approved.
 
 ## Comparing Changes
 
@@ -113,7 +113,9 @@ Change one variable at a time:
 2. Test Sol at high reasoning only on cases whose difficulty may justify it.
 3. Apply one instruction, tool, or configuration change.
 4. Rerun the same case definition with the original model and effort.
-5. Review evidence correctness, coverage, duration, token usage, and unsupported claims.
+5. Have an independent LLM apply the case criteria to evidence correctness, coverage, unsupported
+   claims, and the content and spirit of the repository contract; use `Meets intent`, `Needs
+   revision`, or `Not verifiable`, with reasons.
 
 Do not make coverage easier by weakening a criterion or reference path. Update a case only when the
 repository contract or the evaluation itself was wrong, and retain the previous result for
@@ -125,19 +127,21 @@ comparison.
 criteria, read-only sandbox mode, hardware requirement, and cleanup contract. Criterion ids and
 questions are shown to the evaluated agent, but reference paths and previous results are not present
 in its sanitized checkout. Codex must return [`response.schema.json`](response.schema.json) with one
-evidence entry per criterion. `hardware_requirement: required` means physical evidence remains
-necessary for full validation; it never means the harness ran that evidence. `not_required` means
-the scoped assessment can be completed without physical execution.
+evidence entry per criterion. Reported paths must already exist in the sanitized checkout;
+prospective outputs belong in response prose. `hardware_requirement: required` means physical
+evidence remains necessary for full validation; it never means the harness ran that evidence.
+`not_required` means the scoped assessment can be completed without physical execution.
 
 Automated checks validate only structural evidence coverage, repository path existence, the
 hardware-requirement contract, and checkout cleanliness. They do not search for required or
 forbidden keywords and do not assign a correctness score. The generated report includes the agent
 summary, claims, invariants, verification plan, criterion evidence, token usage, and containment
-metadata so a reviewer can inspect correctness before comparing runs or accepting a result.
+metadata so an independent LLM can audit correctness before comparing runs or accepting a result.
 
 Cases cover cross-language protobuf changes, response envelopes, ISR safety, CLI commands, Flutter
-BLE lifecycle, documentation authority, OTA rollback claims, multi-pod port routing, scoped docs,
-unsafe firmware review, WiFi boundaries, and release verification.
+BLE lifecycle, documentation authority, autonomous priority selection, OTA rollback claims,
+multi-pod port routing, scoped docs, unsafe firmware review, WiFi boundaries, and release
+verification.
 
 ## Legacy Results
 
