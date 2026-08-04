@@ -11,7 +11,7 @@ belong in [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md), ta
 [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md), and verification procedures
 in [`docs/TESTING.md`](docs/TESTING.md).
 
-**As of:** 2026-08-03, `main` after merged PR 89
+**As of:** 2026-08-04, review-ready PR 97
 
 ## CEO Control Panel
 
@@ -24,9 +24,9 @@ in [`docs/TESTING.md`](docs/TESTING.md).
 | Next program gate | G1 System Architecture Baseline and Schematic Authorization |
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
-| Current execution package | None recorded on `main`; the next autonomous cycle creates or reuses one execution issue |
-| Next AI-owned action | `PS-WP-001` Product Brief and Canonical Six-Pod Workflow |
-| Current AI execution blocker | None; customer evidence remains explicitly unverified rather than blocking the hypothesis baseline |
+| Current execution package | `FS-WP-002A` deterministic clock and network replay, [PR 97](https://github.com/pcesar22/domes/pull/97) |
+| Next AI-owned action | Review and merge PR 97; the next continuation cycle selects a new programming or executed-validation delivery |
+| Current AI execution blocker | None for the deterministic foundation; predictive calibration still requires measured device data |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
 | First product-hardware purchase authorization | G2 EVT Release to Fab, forecast 2026-11-02 |
@@ -55,38 +55,28 @@ start PCB layout, or order EVT boards until the corresponding gates pass.
 | Four economical ESP32-S3 alpha nodes | `Ready now` | System-scale development inventory, not product hardware |
 | FMEA, compliance, supply, CM, DFM/DFT, and test planning | `Ready now` | Planning and risk closure; no approval or production claim |
 
-### Selected Next AI-Owned Work
+### Selected Execution Delivery
 
-#### PS-WP-001: Product Brief And Canonical Six-Pod Workflow
+#### FS-WP-002A: Deterministic Clock And Network Replay
 
-**Objective:** Turn the current product hypotheses into one internally consistent product brief and
-end-to-end six-pod reference workflow that can drive measurable requirements without presenting
-uncollected customer evidence as fact.
+**Objective:** Establish explicit Linux virtual time and reproducible in-memory network faults so a
+simulation run can be repeated exactly before model calibration begins.
 
 | Contract | Current state |
 | --- | --- |
-| Owner | AI product/system lead |
-| State / health | `Ready` / `Amber` |
-| Requested start / finish | 2026-08-04 / 2026-08-14 |
-| Inputs | Product definition, target system/ID architecture, as-built software architecture, current program evidence |
-| Dependencies/blockers | None for the hypothesis baseline; customer interviews and purchase evidence remain open PS0 evidence |
-| Gate/risk unlocked | Feeds PS1 hardware-driving requirements, FS3 runtime semantics, HW1 trades, VC1 verification planning, and G1 |
-| Execution authority | AI-owned repository research and documentation |
-| Execution issue | Not yet created; `Continue DOMES.` creates or reuses it before implementation |
-| Stop condition | No protocol/runtime change, part or architecture freeze, spend, market validation, or product/compliance claim |
+| Owner | AI simulation lead |
+| State / health | `Review` / `Green` |
+| Execution issue | [Issue 96](https://github.com/pcesar22/domes/issues/96) |
+| Review package | [PR 97](https://github.com/pcesar22/domes/pull/97), Software CI run 30937299656 passed |
+| Inputs | Existing host pod simulator, game engine, simulated ESP-NOW bus, and host CI |
+| Dependencies/blockers | None for implementation; real-world predictiveness requires later measured calibration and held-out validation |
+| Gate/risk unlocked | FS2 deterministic fault campaigns and repeatable simulator-to-device comparisons |
+| Stop condition | No production protocol redesign, radio accuracy claim, device behavior change, or requirements work |
 
-Acceptance requires the repository to distinguish evidence, hypothesis, and decision; name the buyer,
-user, job, kit, environment, economic bounds, and unresolved discovery questions; and define one
-canonical workflow covering setup, roster, drill configuration, play, partial failure, recovery,
-results, shutdown, and charging/storage. Conflicts with current architecture and program authority
-must be reconciled or recorded explicitly. Documentation and repository checks must pass.
-
-At selection, current `main` CI was green and no open execution issue, PR, or plan existed, so no
-integrity repair or resumable work outranked new work. PS-WP-001 is selected because PS0 is active
-with the earliest forecast and its output unlocks named work in every G1 workstream. PS1 depends on
-that product boundary; FS1/HW0 acceptance depends on physical observation and instrumentation; and
-VC1 has a later forecast and consumes the workflow and requirements. The higher program dependency,
-HW owner and budget, remains a separate CEO decision and does not stall this AI-owned package.
+Acceptance requires an injected virtual clock; deterministic pass, delay, drop, and duplicate
+delivery; a captured record that a fresh simulation can replay exactly; explicit mismatch detection;
+and a green complete host suite. This package is foundation evidence only. It does not advance FS2
+to predictive or complete without calibrated parameters and held-out physical-device agreement.
 
 ### What Is Not Authorized
 

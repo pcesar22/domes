@@ -4,7 +4,9 @@
 
 #include <cstdint>
 #include <string>
+#include <type_traits>
 #include <variant>
+#include <vector>
 
 namespace sim {
 
@@ -35,6 +37,7 @@ struct ArmTouchCommand {
     SimMessageHeader header;
     uint32_t timeoutMs = 3000;
     uint8_t feedbackMode = 0x03;
+    uint64_t roundToken = 0;
 };
 
 struct PlaySoundCommand {
@@ -50,10 +53,12 @@ struct TouchEventMsg {
     SimMessageHeader header;
     uint32_t reactionTimeUs = 0;
     uint8_t padIndex = 0;
+    uint64_t roundToken = 0;
 };
 
 struct TimeoutEventMsg {
     SimMessageHeader header;
+    uint64_t roundToken = 0;
 };
 
 struct JoinGameCommand {
@@ -71,6 +76,42 @@ inline const SimMessageHeader& getHeader(const SimMessage& msg) {
 // Helper to get mutable header from any message variant
 inline SimMessageHeader& getMutableHeader(SimMessage& msg) {
     return std::visit([](auto& m) -> SimMessageHeader& { return m.header; }, msg);
+}
+
+inline std::vector<uint8_t> canonicalPayload(const SimMessage& msg) {
+    std::vector<uint8_t> payload = {static_cast<uint8_t>(msg.index())};
+    auto appendU32 = [&payload](uint32_t value) {
+        for (size_t i = 0; i < sizeof(value); i++) {
+            payload.push_back(static_cast<uint8_t>(value >> (i * 8)));
+        }
+    };
+    auto appendU64 = [&payload](uint64_t value) {
+        for (size_t i = 0; i < sizeof(value); i++) {
+            payload.push_back(static_cast<uint8_t>(value >> (i * 8)));
+        }
+    };
+
+    std::visit(
+        [&payload, &appendU32, &appendU64](const auto& message) {
+            using Message = std::decay_t<decltype(message)>;
+            if constexpr (std::is_same_v<Message, SetColorCommand>) {
+                payload.insert(payload.end(), {message.r, message.g, message.b});
+            } else if constexpr (std::is_same_v<Message, ArmTouchCommand>) {
+                appendU32(message.timeoutMs);
+                payload.push_back(message.feedbackMode);
+                appendU64(message.roundToken);
+            } else if constexpr (std::is_same_v<Message, PlaySoundCommand>) {
+                payload.insert(payload.end(), message.soundName.begin(), message.soundName.end());
+            } else if constexpr (std::is_same_v<Message, TouchEventMsg>) {
+                appendU32(message.reactionTimeUs);
+                payload.push_back(message.padIndex);
+                appendU64(message.roundToken);
+            } else if constexpr (std::is_same_v<Message, TimeoutEventMsg>) {
+                appendU64(message.roundToken);
+            }
+        },
+        msg);
+    return payload;
 }
 
 // Helper to get message type name for logging

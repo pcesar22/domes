@@ -5,7 +5,7 @@
 > and native-USB runtime topology proposals were removed because they were never implemented. Git
 > history retains that proposal.
 
-Last checked against the repository: 2026-08-02.
+Last checked against the repository: 2026-08-04.
 
 ## Purpose And Boundary
 
@@ -40,9 +40,10 @@ sources are included only when the host stubs can represent their dependencies f
 
 | Host component | Responsibility |
 | --- | --- |
-| `SimOrchestrator` | Owns simulated pods and advances deterministic mock time |
+| `SimClock` | Owns explicit virtual time while keeping production timer calls synchronized |
+| `SimOrchestrator` | Owns simulated pods, the clock, and the event log |
 | `PodInstance` | Composes per-pod feature, mode, game, and fake-driver state |
-| `SimEspNowBus` | Routes in-memory pod messages and records flow events |
+| `SimEspNowBus` | Applies deterministic delivery decisions and records delivery and flow events |
 | `PodCommandHandler` | Applies simulated peer commands and returns events |
 | `DrillOrchestrator` | Executes a deterministic sequence of target, delay, touch, and timeout steps |
 | `HostTraceBuffer` and `PerfettoExporter` | Capture host trace events and export trace-event JSON |
@@ -51,6 +52,30 @@ The simulator's internal message variant is test infrastructure, not the on-air 
 contract. The live packed contract remains
 [`espNowProtocol.hpp`](../../firmware/domes/main/services/espNowProtocol.hpp), with focused host
 contract coverage in `main/test_esp_now_protocol.cpp`.
+
+## Deterministic Delivery Replay
+
+`SimEspNowBus` accepts a delivery policy for each intended recipient. A policy can pass, delay,
+drop, or duplicate a message without wall-clock sleeps. Delayed messages remain pending until
+`SimClock` reaches their virtual deadline.
+
+Every decision records the send time, source, addressed and resolved destinations, message variant,
+type, canonical payload, sequence, action, and delay. Deadlines are anchored to send time, and drill
+time advances through due deliveries before applying pod inputs. A fresh bus can consume the record
+with `setReplayRecord()`. Replay checks the complete message identity and fails closed rather than
+applying a decision to different input. Empty records are valid replays that reject unexpected
+traffic, and replay completes only after every recorded decision is consumed and both delivery
+queues are empty. Host tests cover the default lossless behavior, virtual delay boundary, drop,
+duplicate, exact flow replay, complete variant identity, payload mismatch, empty replay, delayed
+arm/touch/timeout ordering, and cross-round response correlation.
+
+Simulated arm commands carry a unique round token that the pod returns unchanged in touch and
+timeout events. Drill scoring accepts only an event from the targeted pod with the active round's
+token, so delayed traffic from an earlier round cannot be credited to a later one.
+
+This is deterministic fault-injection infrastructure, not a calibrated radio model. Delivery
+policies and timing distributions must be derived from physical evidence and validated against
+held-out device runs before the simulator can support a real-world prediction claim.
 
 ## Build And Test
 
