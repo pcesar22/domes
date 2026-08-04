@@ -1,9 +1,11 @@
 # Hardware-Driving Requirements And Interface Baseline
 
-Status: active
-Current phase: candidate and local verification complete; publication pending
-Repository state: `codex/docs/ps-wp-002-requirements` in `.worktrees/ps-wp-002`, stacked on PR 92
-Last updated: 2026-08-04
+Status: complete
+Current phase: review-ready pull request boundary
+Repository state: `codex/docs/ps-wp-002-requirements` in `.worktrees/ps-wp-002`; stacked PR 94;
+content commit `011b949` passed all required Software CI checks; final status-only commit requires the
+same gate
+Last updated: 2026-08-04; PS-WP-002 complete at its review/CI/status stop boundary
 
 ## Objective and observable outcome
 
@@ -44,7 +46,8 @@ No generated output or runtime consumer changes.
 - [x] Write the controlled requirement, interface, traceability, conflict, and closure candidate.
 - [x] Complete independent semantic review and resolve findings.
 - [x] Run documentation and repository verification.
-- [ ] Commit, push, open one stacked PR, require green CI, and record final evidence on issue 93.
+- [x] Commit, push, open one stacked PR, pass required CI on the content commit, and prepare final
+  status/evidence closeout.
 
 ## Verification
 
@@ -54,7 +57,7 @@ No generated output or runtime consumer changes.
 | Automated | `python3 tools/docs/check_markdown_links.py` | Passed: 87 files, 424 relative links |
 | Automated | Pre-commit plus 51 agent/instruction tests and 40 CI contract tests | Passed |
 | Automated | `scripts/verify.sh --component docs` | All available checks passed; wrapper stopped only because this host lacks `shellcheck`, so CI remains required |
-| CI | Stacked pull-request Software CI and aggregate gate | Pending |
+| CI | PR 94 Software CI, run 30892936374 | Content commit passed all seven checks including the aggregate `CI Gate`; final status-only head rerun required |
 | Hardware | Not applicable; this package changes no behavior and claims no new device evidence | Not required |
 
 ## Decisions and boundaries
@@ -69,6 +72,9 @@ No generated output or runtime consumer changes.
 
 ## Resume checkpoint
 
-Review `research/G1_REQUIREMENTS_AND_INTERFACES.md` against issue 93 and the G1 evidence table. Fix
-semantic findings first, then run all documentation checks. Publish exactly one PR with base
-`codex/docs/ps-wp-001-product-brief`, monitor its aggregate CI, update status/evidence, and stop.
+PS-WP-002 is complete at the bounded review-package stop condition. PR 94 contains the controlled
+candidate, navigation, traceability, and program controls; two independent reviews found no remaining
+actionable issue. Content commit `011b949` passed every required Software CI check, including the
+CI-provided shell checks. Push this final status-only commit and require the same aggregate gate to
+remain green. Then update issue 93 with the exact evidence and stop. Do not begin VC-WP-001 without a
+new continuation directive, and do not merge, release, spend, fabricate, or claim product behavior.

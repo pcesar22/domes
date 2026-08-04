@@ -11,8 +11,8 @@ belong in [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md), ta
 [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md), and verification procedures
 in [`docs/TESTING.md`](docs/TESTING.md).
 
-**As of:** 2026-08-04, `main` after merged PR 90 plus the PS-WP-001 review package and active
-PS-WP-002 stacked work
+**As of:** 2026-08-04, `main` after merged PR 90 plus the PS-WP-001 and PS-WP-002 stacked review
+packages
 
 ## CEO Control Panel
 
@@ -25,9 +25,9 @@ PS-WP-002 stacked work
 | Next program gate | G1 System Architecture Baseline and Schematic Authorization |
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
-| Current execution package | `PS-WP-002` active in [issue 93](https://github.com/pcesar22/domes/issues/93), stacked on review-ready [PR 92](https://github.com/pcesar22/domes/pull/92) |
-| Next AI-owned action | Complete PS-WP-002 semantic/automated verification, publish its one stacked PR, and stop at green review readiness |
-| Current AI execution blocker | None for the bounded candidate; missing customer, HW-owner, measurement, compliance, supplier, and cost evidence remains explicit and prevents unsupported G1 acceptance |
+| Current execution package | `PS-WP-002` review-ready in stacked [PR 94](https://github.com/pcesar22/domes/pull/94); [issue 93](https://github.com/pcesar22/domes/issues/93) owns execution evidence |
+| Next AI-owned action | `VC-WP-001` G1 Verification Matrix, FMEA, And Compliance Plan; reserved for the next directive |
+| Current AI execution blocker | None for a bounded VC-WP-001 candidate; qualified compliance/HW owners, launch-market decisions, and physical evidence remain explicit external inputs |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
 | First product-hardware purchase authorization | G2 EVT Release to Fab, forecast 2026-11-02 |
@@ -103,21 +103,29 @@ requirements and interface candidate without inventing evidence or freezing the 
 | Contract | Current state |
 | --- | --- |
 | Owner | AI systems lead |
-| State / health | `Active` / `Amber` |
-| Actual start / forecast | 2026-08-04 / 2026-09-07 |
+| State / health | `Review ready` / `Green` |
+| Actual start / review boundary | 2026-08-04 / 2026-08-04 |
 | Inputs | Product brief/workflow, target system/ID architecture, as-built software, HW-WP-001 inputs, G1 evidence contract |
 | Dependencies/blockers | None for a bounded candidate; customer, HW-owner, measurement, compliance, and cost evidence remain explicit open inputs |
 | Gate/risk unlocked | Supplies the product/system allocation and interface input required by HW1, FS3, VC1, HR1/HR2, and G1 |
 | Execution authority | AI-owned repository research, requirements, interface, and traceability documentation |
-| Execution issue | [Issue 93](https://github.com/pcesar22/domes/issues/93); PR is created only after local verification |
+| Execution issue | [Issue 93](https://github.com/pcesar22/domes/issues/93); stacked [PR 94](https://github.com/pcesar22/domes/pull/94) is the one review package |
 | Stop condition | No runtime/protocol change, architecture/part freeze, spend, schematic/layout release, or product/compliance claim |
 
 Acceptance requires stable candidate IDs with source/rationale, measurable value or explicit bounded
 TBD/fallback, allocation across product/hardware/firmware/app/mechanical/test, verification method,
 owner, status, and invalidation rule. It must include a current/target interface-control candidate and
 make every unresolved G1 input visible. The candidate is written in
-[`research/G1_REQUIREMENTS_AND_INTERFACES.md`](research/G1_REQUIREMENTS_AND_INTERFACES.md); semantic,
-automated, pull-request, and CI evidence remain open.
+[`research/G1_REQUIREMENTS_AND_INTERFACES.md`](research/G1_REQUIREMENTS_AND_INTERFACES.md). It contains
+43 candidate requirements, 18 interface boundaries, and 17 bounded closure packages. Two independent
+semantic reviews closed all findings, and content commit `011b949` passed all seven Software CI checks
+in [run 30892936374](https://github.com/pcesar22/domes/actions/runs/30892936374).
+
+The next bounded AI package is VC-WP-001 because it converts these stable IDs into the missing G1
+verification, FMEA, compliance, qualification, and evidence-ownership plan. It is ahead of FS2/FS3
+on the G1 critical path and can expose blocked physical/owner inputs without fabricating them. HW1
+still requires the CEO to name a qualified owner, while FS1/HW0/HR0 requires lab evidence. Reserving
+VC-WP-001 does not start it or change any hardware, compliance, spend, or gate authorization.
 
 ### What Is Not Authorized
 
@@ -197,7 +205,7 @@ cannot upgrade a failing technical verdict.
 | ID | Outcome | Owner | Status | Health | Forecast | Now / next |
 | --- | --- | --- | --- | --- | --- | --- |
 | PS0 | Product brief and launch hypothesis | CEO/product owner with AI product lead | `Active` | `Amber` | 2026-08-14 | Hypothesis baseline review-ready; execute customer, competitive, economic, licensing and support discovery |
-| PS1 | Hardware-driving product/system baseline and traceability | AI systems lead | `Active` | `Amber` | 2026-09-07 | Verify and publish PS-WP-002 candidate; close its bounded G1 evidence inputs through PS/HW/FS/VC work |
+| PS1 | Hardware-driving product/system baseline and traceability | AI systems lead | `Active` | `Amber` | 2026-09-07 | Candidate review-ready in PR 94; close its bounded G1 evidence inputs through PS/HW/FS/VC work |
 | PS2 | App-driven six-node system alpha | AI systems lead | `Ready` | `Amber` | 2026-10-19 | Acquire four nodes; unify drill, authority, timing, failure, result and coexistence requirements |
 | PS3 | DVT user/product validation | Product/UX owner, unassigned | `Not due` | `Not rated` | 2027-08-02 | Starts on representative frozen units; continues customer/economic validation before it |
 | PS4 | Launch offer, price, channel, support and warranty | CEO/product owner | `Not due` | `Not rated` | 2027-12-13 | Close from customer, DVT, PVT, cost and support evidence |
@@ -303,6 +311,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | --- | --- | --- | --- |
 | Current main software CI | Commit `0378730fbe4773453a0f276a62aed0a7549b672d`, [run 30889560443](https://github.com/pcesar22/domes/actions/runs/30889560443) | Passed | Builds, tests, generated artifacts, lint, docs, Flutter Linux/iOS and ESP-IDF release checks |
 | PS-WP-001 product baseline | Commit `628a5250d28aa9581001c0e164e596887067f858`, [PR 92](https://github.com/pcesar22/domes/pull/92), [run 30890512299](https://github.com/pcesar22/domes/actions/runs/30890512299) | Review-ready content commit passed all seven Software CI checks | Product hypothesis and workflow authority; customer, economics, licensing, product implementation, and hardware proof remain open |
+| PS-WP-002 requirements/interface candidate | Commit `011b949c55964aaf1821ad7db737c11d26300673`, [PR 94](https://github.com/pcesar22/domes/pull/94), [run 30892936374](https://github.com/pcesar22/domes/actions/runs/30892936374) | Review-ready content commit passed all seven Software CI checks | Candidate requirements, interfaces, traceability, conflicts, and closure inputs; G1 acceptance and all named open evidence remain open |
 | Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains and CI behavior |
 | Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
 
