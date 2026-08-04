@@ -122,6 +122,34 @@
       "cleanup": "Temporary sanitized checkout is removed; documentation remains unchanged."
     },
     {
+      "id": "autonomous-continuation-selection",
+      "title": "Select the next autonomous DOMES work package",
+      "category": "program",
+      "prompt": "The user says only: Continue DOMES. This is a read-only selection exercise: do not modify files or publish state. Reconcile current program, repository, and GitHub workflow authorities, select exactly one highest-priority unblocked AI-owned action, justify it against the strongest alternatives, and state the specialist routing, verification, status maintenance, and reserved authorization boundaries for a real execution cycle.",
+      "reference_files": [
+        "AGENTS.md",
+        "PROGRAM_STATUS.md",
+        "docs/PRODUCT_REALIZATION_FRAMEWORK.md",
+        "docs/PROGRAM_GATE_TEMPLATE.md",
+        "docs/TESTING.md",
+        "PLANS.md",
+        ".codex/skills/domes-milestone-manager/SKILL.md",
+        ".codex/skills/domes-github-workflow/SKILL.md",
+        ".codex/README.md"
+      ],
+      "criteria": [
+        { "id": "current-truth", "description": "Reconcile the control panel with available work, plans, and evidence before trusting its next-action pointer, and identify unavailable live PR or CI state." },
+        { "id": "single-priority-selection", "description": "Select exactly one eligible AI-owned package using the ordered priority and tie-break rules." },
+        { "id": "dependency-unlock", "description": "Explain which next-gate dependencies and material risks the selected package unlocks relative to alternatives." },
+        { "id": "authorization-boundary", "description": "Reconcile root and repository GitHub workflow authority, then separate authorized execution and publication from CEO, external, destructive, merge, fabrication, and claim boundaries." },
+        { "id": "agent-routing", "description": "Choose only the specialist routing justified by the selected work while preserving primary ownership." },
+        { "id": "completion-and-status", "description": "Use the repository execution, testing, and GitHub workflow authorities to carry the hypothetical cycle through strongest feasible verification, PR CI, issue evidence, and refreshed next-action status." }
+      ],
+      "sandbox": "read-only",
+      "hardware_requirement": "not_required",
+      "cleanup": "Temporary sanitized checkout is removed; no issue, branch, pull request, CI action, or device operation occurs."
+    },
+    {
       "id": "ota-rollback-claims",
       "title": "Audit OTA rollback verification claims",
       "category": "ota",

@@ -262,8 +262,11 @@ the destructive rollback sequence. The failure image is test-only and must never
 release artifact. The hardware workflow also verifies direct and registry-backed multi-device
 fan-out and exercises truncated and interrupted recovery over serial and BLE before accepted OTA.
 
-Ask before applying the `hw-test` pull-request label because it consumes attached lab hardware.
-Manual hardware dispatch requires exactly two selected devices and accepts a comma-separated `ports` input;
+Ask before applying the `hw-test` pull-request label because it consumes and destructively
+reprograms attached lab hardware. The exact `Continue DOMES.` directive counts as approval only for
+a selected package that requires hardware CI and only after the milestone-manager preflight matches
+both registered board identities on an online idle runner. Manual hardware dispatch requires exactly
+two selected devices and accepts a comma-separated `ports` input;
 use CP2102N `/dev/serial/by-id/` paths on a runner with stable device identities. The workflow does
 not provision the machine: an online Linux x64 self-hosted runner, Actions Runner 2.327.1 or newer,
 ESP-IDF v5.4.4, Rust 1.92.0, native BLE, and two attached NFF pods are prerequisites. Do not apply

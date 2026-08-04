@@ -55,10 +55,12 @@ class InstructionContextTest(unittest.TestCase):
             "hardware/AGENTS.md",
             "docs/TESTING.md",
             ".codex/PLATFORM.md",
+            ".codex/README.md",
             ".codex/skills/domes-esp32-firmware/SKILL.md",
             ".codex/skills/domes-esp32-firmware/references/runbooks.md",
             ".codex/skills/domes-debug-esp32/SKILL.md",
             ".codex/skills/domes-github-workflow/SKILL.md",
+            ".codex/skills/domes-milestone-manager/SKILL.md",
         )
         missing = [relative for relative in targets if not (ROOT / relative).exists()]
         self.assertEqual([], missing)

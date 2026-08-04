@@ -9,7 +9,7 @@ or OTA workflows.
 
 | Path | Purpose |
 | --- | --- |
-| [`agent_eval/`](agent_eval/) | Reproducible, contained coding-agent repository-understanding evaluations; never a substitute for human or hardware review |
+| [`agent_eval/`](agent_eval/) | Contained coding-agent evaluations; structure is checked automatically, while correctness needs an independent semantic audit or hardware evidence |
 | [`domes-cli/`](domes-cli/) | Supported device CLI for discovery, configuration, diagnostics, OTA, tracing, and multi-device operations |
 | [`generate_protocols.sh`](generate_protocols.sh) | Generate or drift-check nanopb and Dart bindings from the authoritative protobuf schemas |
 | [`ci/test_release_contract.py`](ci/test_release_contract.py) | Assert release, CI, programming, OTA, and hardware-workflow contracts |

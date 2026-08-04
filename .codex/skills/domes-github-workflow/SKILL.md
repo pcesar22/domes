@@ -39,7 +39,10 @@ mkdir -p .worktrees
 git worktree add .worktrees/<name> -b codex/<type>/<short-description>
 ```
 
-Do not create or publish a PR without asking the user first.
+Do not create or publish a PR without asking the user first, unless the user issued the exact
+autonomous-continuation directive defined in root `AGENTS.md`. That directive authorizes one focused
+execution issue and one selected-package PR, but never merge, release, or unrelated GitHub state.
+It permits `hw-test` only when required and the milestone-manager registered-board preflight passes.
 
 ## Commit Messages
 
@@ -128,7 +131,9 @@ Use precise file and line references.
 ## CI And Hardware Testing
 
 Every PR should pass relevant build, unit, CLI, and firmware checks. The `hw-test` label triggers
-self-hosted hardware validation. Ask before adding that label.
+self-hosted erase, factory-programming, OTA/recovery, and forced-rollback validation. Ask before
+adding it unless root `AGENTS.md` makes the exact registered-board workflow part of an authorized
+autonomous-continuation cycle.
 
 ## Templates
 

@@ -16,6 +16,10 @@ class CodexConfigTest(unittest.TestCase):
         self.assertEqual("medium", config["model_reasoning_effort"])
         self.assertTrue(config["agents"]["enabled"])
         self.assertEqual(2, config["agents"]["max_concurrent_threads_per_session"])
+        self.assertEqual("gpt-5.6-terra", config["agents"]["default_subagent_model"])
+        self.assertEqual(
+            "medium", config["agents"]["default_subagent_reasoning_effort"]
+        )
         self.assertNotIn("approval_policy", config)
         self.assertNotIn("sandbox_mode", config)
         self.assertNotIn("network_access", config)
@@ -47,6 +51,8 @@ class CodexConfigTest(unittest.TestCase):
             encoding="utf-8"
         ) as stream:
             case_ids = {case["id"] for case in json.load(stream)["cases"]}
+
+        self.assertIn("autonomous-continuation-selection", case_ids)
 
         coverage = {
             "firmware_reviewer": {"freertos-isr-review", "firmware-patch-review"},

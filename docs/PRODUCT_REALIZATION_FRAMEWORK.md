@@ -202,7 +202,9 @@ hashes, clock-correlation method, error bounds, and prediction envelope.
 | Schedule | [`assets/integrated-master-plan.mmd`](assets/integrated-master-plan.mmd) and CEO status | Baseline/forecast/variance and resource/lead-time basis |
 | Risk, decisions, waivers and exceptions | Program status plus linked design records | Immutable gate ledger entries at each decision |
 
-Issues and pull requests manage execution. They do not replace these control artifacts.
+Issues and pull requests manage execution. They do not replace these control artifacts. The control
+panel names one next AI-owned package; autonomous continuation uses the milestone-manager selection
+rules to confirm or replace it from current evidence before opening that package's issue and PR.
 
 ## Required CEO Status Report
 
@@ -211,13 +213,14 @@ Every report answers in this order:
 1. Active program phase, development hardware, NPI stage, evidence revision/date and overall health.
 2. Next program gate, baseline/forecast/confidence, exact authorization, critical inputs and AI
    technical verdict.
-3. Immediate hardware authorization level: definition, schematic, PCB layout, EVT, DVT, PVT or
+3. Current execution package, next AI-owned action, acceptance boundary, blocker and execution issue.
+4. Immediate hardware authorization level: definition, schematic, PCB layout, EVT, DVT, PVT or
    release.
-4. `PS`, `FS`, `HW`, and `VC` outcomes: delivered, now, next, owner, health and forecast.
-5. Hardware release-ladder position and next evidence release.
-6. Critical path and top risks with owner, mitigation and decision-by date.
-7. Decisions required from the CEO with recommendation, alternatives and consequence of delay.
-8. Changes to scope, schedule, cost, requirements, configuration, evidence or risk.
+5. `PS`, `FS`, `HW`, and `VC` outcomes: delivered, now, next, owner, health and forecast.
+6. Hardware release-ladder position and next evidence release.
+7. Critical path and top risks with owner, mitigation and decision-by date.
+8. Decisions required from the CEO with recommendation, alternatives and consequence of delay.
+9. Changes to scope, schedule, cost, requirements, configuration, evidence or risk.
 
 Do not report one aggregate completion percentage. Gate readiness, hardware release state, current
 evidence, dated workstream outcomes, and explicit decision authority are the program truth.
