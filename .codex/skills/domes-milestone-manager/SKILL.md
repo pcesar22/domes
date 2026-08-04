@@ -1,121 +1,127 @@
 ---
 name: domes-milestone-manager
-description: Create, sequence, audit, accept, and update evidence-based DOMES delivery milestones. Use when defining milestone outcomes and acceptance gates, reporting project status or next steps, checking whether a milestone is ready or complete, reconciling MILESTONES.md with code, CI, documentation, architecture, CLI, firmware, or hardware evidence, or deciding a milestone status transition.
+description: Manage the integrated DOMES product program through evidence-based phases, cross-functional gates, parallel Product/System, Firmware/Software, Hardware/NPI, and Verification/Compliance workstreams, hardware releases, and CEO status. Use when defining or auditing program status, sequencing NFF learning into hardware requests, deciding what hardware work is authorized, checking gate readiness, reporting current/next work, or reconciling product, architecture, firmware, CLI/app, simulation, CI, hardware, manufacturing, compliance, and test evidence.
 ---
 
-# DOMES Milestone Manager
+# DOMES Program And Milestone Manager
 
-Treat a milestone as an outcome acceptance contract, not a task bucket. Keep
-[`firmware/MILESTONES.md`](../../../firmware/MILESTONES.md) authoritative for delivery status and use
-[`docs/MILESTONE_TEMPLATE.md`](../../../docs/MILESTONE_TEMPLATE.md) as guidance. Judge substance and
-intent; do not require exact headings, tables, ordering, or phrasing.
+Keep [`PROGRAM_STATUS.md`](../../../PROGRAM_STATUS.md) authoritative for executive status. Read
+[`docs/PRODUCT_REALIZATION_FRAMEWORK.md`](../../../docs/PRODUCT_REALIZATION_FRAMEWORK.md) for the
+operating model and [`docs/PROGRAM_GATE_TEMPLATE.md`](../../../docs/PROGRAM_GATE_TEMPLATE.md) for
+semantic checklists. Content and evidence govern; exact formatting does not.
 
-## Select The Operation
+Act as **Evidence Auditor and Program Secretariat**. Maintain the ledger, audit direct evidence,
+record technical gate verdicts and evidence-driven status transitions, expose contradictions, and
+refuse unsupported claims. Do not wait for ceremonial human acceptance of objective evidence. Never
+infer a budget, vendor, fabrication, certification, or market commitment from technical evidence.
 
-- **Create or reorganize:** inventory current evidence, propose sequencing, and draft milestones.
-- **Check status:** compare every claimed state with current evidence and report delivered, now, next,
-  blockers, decisions, and the acceptance decision.
-- **Update status:** change the ledger only after verification supports the transition.
-- **Audit quality:** reason through the milestone, challenge ambiguity, trace claims to evidence, and
-  identify unsupported status or completion claims.
+## Classify Before Managing
 
-## Gather Evidence
+- `P#`: cross-functional program phase between gates.
+- `G#`: zero-duration decision authorizing a defined commitment.
+- `PS#`, `FS#`, `HW#`, `VC#`: concurrent workstream outcome.
+- `<stream>-WP-###`: bounded assignment with a stop condition.
+- `HR#`: technical hardware release feeding, but not replacing, a program gate.
+
+Reject a plan that serializes departments, treats future phases as blocked, makes simulation a
+company-wide phase, or mixes hardware definition with release-to-fab authorization.
+
+## Gather Current Evidence
 
 1. Read root and applicable nested `AGENTS.md` files.
-2. Read `firmware/MILESTONES.md`, `docs/TESTING.md`, `docs/README.md`, and the architecture documents
-   relevant to the milestone.
-3. Inspect the implementation, tests, CI workflows, open PR state, and retained hardware evidence.
-4. Record the exact source revision and evidence date when behavior may have changed.
-5. Treat missing, stale, indirect, or contradictory evidence as `Unverified`; never infer `Pass`.
+2. Read `PROGRAM_STATUS.md`, the framework, product definition, system/software architecture, and
+   `docs/TESTING.md`.
+3. Read the owning hardware request/design files and current firmware/CLI/app/protocol code for the
+   decision under review.
+4. Inspect current CI/PR state and retained software/hardware evidence.
+5. Record exact source, software artifact, hardware/configuration identity, environment, procedure,
+   result, uncertainty, and date.
+6. Mark missing, stale, indirect, or contradictory evidence `Unverified`; never infer `Pass`.
 
-Use the verification ladder in root `AGENTS.md`. Command acceptance is not physical confirmation,
-host tests are not firmware integration, and a successful build is not hardware verification.
+A host test is not firmware integration, command acceptance is not physical behavior, NFF proof is
+not product-board proof, capture-start alignment is not clock correlation, and calibration data is
+not held-out validation.
 
-## Create A Milestone
+## Create Or Update The Plan
 
-1. State one externally meaningful outcome in one sentence.
-2. Name one accountable owner.
-3. Bound included and excluded behavior explicitly.
-4. List hard constraints and dependencies before deliverables.
-5. Keep independently inspectable deliverables and acceptance gates few enough for one coherent
-   evidence review.
-6. Write each gate as a binary required result plus a reproducible verification method.
-7. Identify the evidence artifact each gate must produce.
-8. Define invalidation and reopening conditions.
-9. Sequence it after every dependency needed to execute its acceptance gates.
-10. Leave it `Proposed` until the milestone manager's semantic audit returns `Meets intent`.
+1. Define the next irreversible decision first: product boundary, schematic, PCB layout, EVT order,
+   DVT, PVT, release, or other commitment.
+2. Write its gate criteria as binary cross-workstream evidence and name the exact authorization.
+3. Place parallel `PS`, `FS`, `HW`, and `VC` outcomes before the gate.
+4. Identify hardware releases and bounded work packages needed to produce those outcomes.
+5. Add stop conditions so early risk work cannot silently become premature design/spend.
+6. Build the critical path from dependencies, named resources, supplier/CM lead times, labs and
+   budget assumptions.
+7. Record baseline, forecast, variance and confidence separately.
+8. Name invalidation, interface-change, ECO, compatibility and evidence-reopening rules.
 
-Split a milestone when it contains unrelated outcomes, independently reviewable capabilities, an unbounded
-research question, or gates that cannot be evaluated in the same validation campaign.
+Pull work forward when it retires risk safely. Do not wait for all software/product work before
+starting hardware definition, supplier research, coupons, FMEA, compliance or test architecture.
+Do not freeze or fabricate before the owning release/gate passes.
 
-## Check Or Update Status
+## Audit A Gate
 
-Keep lifecycle and delivery confidence separate:
+For every critical criterion determine `Not due`, `Not run`, `Pass`, `Fail`, `Waived`, or
+`Invalidated`. Then record the technical gate verdict:
 
-- `Status`: `Proposed`, `Ready`, `In progress`, `Acceptance pending`, `Complete`, or `Superseded`.
-- `Health`: `On track`, `At risk`, or `Blocked`.
+- `Go`: all critical evidence passes.
+- `Conditional Go`: only bounded non-architecture exceptions remain with consequence, owner and
+  closure date.
+- `Hold`: commitment is prohibited until named evidence/capacity exists.
+- `Recycle`: the proposed baseline is not viable and prior definition must reopen.
+- `Stop`: product/program direction should cease.
 
-Apply transitions conservatively:
+Reject `Conditional Go` when an exception can affect topology, selected critical parts, interfaces,
+safety, compliance, PCB outline/stack-up, placement, firmware architecture, or the economic basis.
+Bind the verdict and status transition to an immutable package/revision. When the gate enables spend,
+a vendor commitment, or a market commitment, report the separate CEO authorization as pending or
+recorded; it cannot upgrade a failing technical verdict. A qualified design owner is accountable for
+the controlled engineering package without becoming a manual evidence-approval checkpoint.
 
-| Transition | Required evidence |
-| --- | --- |
-| `Proposed` to `Ready` | Semantic audit returns `Meets intent`; outcome, scope, constraints, dependencies, gates, and owner are clear |
-| `Ready` to `In progress` | Dependency gates satisfied and implementation work started |
-| `In progress` to `Acceptance pending` | Deliverables present and applicable gates appear satisfied; final evidence audit remains |
-| `Acceptance pending` to `Complete` | Milestone manager audits direct current evidence and finds no failed, unverified, contradictory, or stale gate |
-| `Complete` to `In progress` | A listed invalidation condition occurs; record why the milestone reopened |
+## Check Status
 
-Do not use percentages. Report progress as accepted gates over total gates and name the next unmet
-gate. The milestone manager owns acceptance and status transitions. Humans refine the contract and
-may provide measurements or physical observations; those inputs are evidence, not approval. Record
-the reasoning and evidence for every transition, and refuse a transition when the evidence is weak.
+Report in this order:
 
-For a status request, return this order:
+1. Active phase, current development hardware, NPI stage, revision/date, overall health,
+   baseline/forecast and confidence.
+2. Next gate, exact authorization, passed/open/failed critical evidence and AI technical verdict.
+3. Immediate hardware authorization: definition, schematic, PCB layout, EVT, DVT, PVT or release.
+4. `PS`, `FS`, `HW`, `VC`: delivered, now, next, owner, health and forecast.
+5. Hardware release-ladder position and next evidence release.
+6. Critical path and top risks with owner, mitigation and decision-by date.
+7. CEO commitment decisions, team recommendation, alternatives and delay consequence.
+8. Changes since the last review and any mismatch between ledger and observed evidence.
 
-1. Current milestone, lifecycle status, health, and evidence freshness.
-2. Delivered and accepted results.
-3. Current work and the next unmet gate.
-4. Blockers and decisions needing an owner.
-5. Next milestone and why it follows.
-6. Any mismatch between the ledger and observed evidence.
+Do not use percentage rollups. Future phases are `Not entered`/`Not rated`, not `Blocked` solely due
+to sequence.
 
-## Audit Quality
+## Semantic Quality Audit
 
-Perform a semantic review. Formatting differences are irrelevant when the content is clear; a
-well-formatted milestone still fails when its meaning or evidence is weak.
+Return `Meets intent`, `Needs revision`, or `Not verifiable` for each reviewed object. Test:
 
-For each milestone, answer:
+1. **Classification:** phase, gate, workstream, package and hardware release are not conflated.
+2. **Decision:** the exact commitment enabled or prohibited is unambiguous.
+3. **Concurrency:** useful functional work runs in parallel within safe authorization boundaries.
+4. **Causality:** workstream results actually support the gate decision.
+5. **Evidence:** every material claim is direct, current, configuration-bound and reproducible.
+6. **Interfaces:** product, firmware, protocol, app, hardware, mechanical, test and manufacturing
+   responsibilities are controlled.
+7. **Critical path:** dependencies, resources, lead times, owner and forecast confidence are real.
+8. **Risk:** product, safety, technical, supply, manufacturing, compliance, security and economic
+   failure modes are visible and owned.
+9. **Hardware truth:** definition, schematic, fab, EVT, DVT and PVT authorization are distinguished.
+10. **Supervision:** a CEO can see where the program is, what starts now, the next decision, its
+    evidence, cost/schedule consequence and responsible owner.
 
-1. **Outcome:** Is there one valuable end state, or merely a list of activity?
-2. **Boundary:** Can a reasonable reader tell what is and is not promised?
-3. **Causality:** Do the deliverables actually produce the stated outcome?
-4. **Acceptance:** Would two independent reviewers reach the same pass/fail decision?
-5. **Evidence:** Does each material claim have direct, current evidence for the reviewed revision and
-   required environment?
-6. **Coverage:** Are software, firmware, protocol, CLI, CI, documentation, and hardware implications
-   included where relevant?
-7. **Sequence:** Are prerequisites complete or explicitly blocking the milestone, and does the next
-   milestone logically follow?
-8. **Ownership:** Is one person or role accountable for resolving ambiguity and producing evidence?
-9. **Truthfulness:** Are targets separated from observations, and are limitations visible rather than
-   softened by wording?
-10. **Closure:** Does `Complete` mean the outcome is accepted, not merely that code exists or a command
-    ran?
-11. **Durability:** Are the conditions that make old evidence stale or reopen the milestone understood?
-12. **Supervision:** Can a reader immediately identify delivered results, current work, next action,
-    blockers, decisions, and acceptance state?
+## Preserve Authority
 
-Return one of `Meets intent`, `Needs revision`, or `Not verifiable` for each milestone, followed by
-specific evidence and the smallest changes needed. Explicitly state uncertainty and conflicting
-evidence. Do not reward template compliance, count headings, or rewrite historical evidence merely to
-make the document look consistent.
+- Program status: `PROGRAM_STATUS.md`.
+- Product hypotheses/requirements: `research/PRODUCT_DEFINITION.md` and accepted records it links.
+- Target architecture: `research/SYSTEM_ARCHITECTURE.md`; as-built boundaries: implementation and
+  `research/SOFTWARE_ARCHITECTURE.md`.
+- Hardware definition/NPI: `hardware/NEXT_ITERATION_REQUEST.md` and controlled design packages.
+- Verification procedures: `docs/TESTING.md`; evidence stays linked, not recopied.
+- Work execution: issues and PRs; they do not replace gate or status records.
 
-## Preserve The Ledger
-
-- Keep current status in `firmware/MILESTONES.md`; link to evidence instead of duplicating it.
-- Keep its delivery dashboard synchronized with the detailed milestone contracts.
-- Keep detailed test procedures in `docs/TESTING.md`.
-- Keep product targets in `research/SYSTEM_ARCHITECTURE.md`.
-- Keep as-built boundaries in `research/SOFTWARE_ARCHITECTURE.md` and `research/architecture/`.
-- Put implementation tasks in issues or PRs; milestones contain outcomes, gates, and status only.
-- Update `Last reviewed` whenever status, health, evidence, blockers, or next action changes.
+Update the status date whenever phase, gate, workstream, hardware release, evidence, forecast, risk,
+or decision state changes.

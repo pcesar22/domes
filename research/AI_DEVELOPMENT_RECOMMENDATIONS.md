@@ -44,7 +44,7 @@ prompts. Those approaches were retired because they drift independently and can 
 completion claims.
 
 Agent-specific files may explain how to execute a workflow, but they must link to source code,
-schemas, the milestone ledger, and the verification matrix for project facts. A model response,
+schemas, the integrated program ledger, and the verification matrix for project facts. A model response,
 evaluation score, unit test, or successful build is never a substitute for required hardware
 verification.
 

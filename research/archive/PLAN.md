@@ -5,7 +5,7 @@
 > **Archived planning record.** Product assumptions, costs, architecture, and schedules below are
 > retained for history and are not current requirements. Use
 > [`../SYSTEM_ARCHITECTURE.md`](../SYSTEM_ARCHITECTURE.md) for product targets and
-> [`../../firmware/MILESTONES.md`](../../firmware/MILESTONES.md) for delivery status.
+> [`../../PROGRAM_STATUS.md`](../../PROGRAM_STATUS.md) for delivery status.
 
 ---
 

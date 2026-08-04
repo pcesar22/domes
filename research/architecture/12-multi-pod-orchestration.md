@@ -15,7 +15,7 @@
 | Per-pod game state | [`../../firmware/domes/main/game/gameEngine.hpp`](../../firmware/domes/main/game/gameEngine.hpp) |
 | Direct-BLE app drill | [`../../ios/domes_app/lib/application/providers/drill_provider.dart`](../../ios/domes_app/lib/application/providers/drill_provider.dart) |
 | Multi-device CLI | [`../../tools/domes-cli/README.md`](../../tools/domes-cli/README.md) |
-| Dated delivery evidence | [`../../firmware/MILESTONES.md`](../../firmware/MILESTONES.md) |
+| Dated delivery evidence | [`../../PROGRAM_STATUS.md`](../../PROGRAM_STATUS.md) |
 | Required verification | [`../../docs/TESTING.md`](../../docs/TESTING.md) |
 
 ## Discovery

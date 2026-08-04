@@ -19,7 +19,7 @@
 | ESP-NOW messages | [`../../firmware/domes/main/services/espNowProtocol.hpp`](../../firmware/domes/main/services/espNowProtocol.hpp) |
 | CLI syntax | `domes-cli --help` and [`../../tools/domes-cli/README.md`](../../tools/domes-cli/README.md) |
 | Build and verification limits | [`../../docs/TESTING.md`](../../docs/TESTING.md) |
-| Delivered status | [`../../firmware/MILESTONES.md`](../../firmware/MILESTONES.md) |
+| Delivered status | [`../../PROGRAM_STATUS.md`](../../PROGRAM_STATUS.md) |
 
 ## Decision
 

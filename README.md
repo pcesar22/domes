@@ -21,11 +21,13 @@ and BLE commands, device-registry fan-out, serial and BLE OTA success/recovery, 
 CRC- and ELF-bound restart snapshots, repeated lossless ESP-NOW lifecycles, and a trace-backed
 two-pod drill. Physical LED, touch, IMU, audio, and haptic observations remain separate release
 checks; command acceptance and initialization tests are not physical proof. The dated evidence and
-remaining boundaries are maintained in the milestone ledger rather than duplicated here.
+remaining boundaries are maintained in the integrated program ledger rather than duplicated here.
 
-See [`firmware/MILESTONES.md`](firmware/MILESTONES.md) for delivery evidence and remaining work.
-That file owns status; architecture documents describe design and must not be used as completion
-claims.
+See [`docs/PRODUCT_REALIZATION_FRAMEWORK.md`](docs/PRODUCT_REALIZATION_FRAMEWORK.md) for the path from
+development boards through EVT, DVT, PVT, and open product release. See
+[`PROGRAM_STATUS.md`](PROGRAM_STATUS.md) for the active phase, delivery evidence, and next
+gate. That file owns status; architecture documents describe design and must not be used as
+completion claims.
 
 The repository does not currently contain a license file. Public visibility alone does not define
 reuse or contribution terms; license selection remains a project-owner decision.
@@ -211,9 +213,12 @@ Start with [`docs/README.md`](docs/README.md). It defines document ownership and
 
 | Document | Purpose |
 | --- | --- |
+| [`docs/PRODUCT_REALIZATION_FRAMEWORK.md`](docs/PRODUCT_REALIZATION_FRAMEWORK.md) | Product lifecycle, phase entry/exit, and status reporting |
 | [`DEVELOPER_QUICKSTART.md`](DEVELOPER_QUICKSTART.md) | First local build and change workflow |
 | [`docs/TESTING.md`](docs/TESTING.md) | Verification matrix and CI/hardware expectations |
-| [`firmware/MILESTONES.md`](firmware/MILESTONES.md) | Implemented, verified, and pending work |
+| [`PROGRAM_STATUS.md`](PROGRAM_STATUS.md) | CEO status, phases, gates, workstreams, hardware releases, evidence, and decisions |
+| [`hardware/NEXT_ITERATION_REQUEST.md`](hardware/NEXT_ITERATION_REQUEST.md) | Current product-hardware definition and component-selection request |
+| [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md) | Customer, product, and launch hypotheses |
 | [`docs/PIN_REFERENCE.md`](docs/PIN_REFERENCE.md) | Compiled and planned GPIO mappings |
 | [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md) | Software boundaries and decisions |
 | [`research/SYSTEM_ARCHITECTURE.md`](research/SYSTEM_ARCHITECTURE.md) | Product hardware and network targets |

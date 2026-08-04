@@ -6,7 +6,7 @@ architecture, and testing each have a separate owner; links below are intentiona
 ## Read First
 
 1. [`docs/README.md`](docs/README.md): documentation ownership and navigation.
-2. [`firmware/MILESTONES.md`](firmware/MILESTONES.md): implemented and hardware-verified status.
+2. [`PROGRAM_STATUS.md`](PROGRAM_STATUS.md): implemented and hardware-verified status.
 3. [`firmware/AGENTS.md`](firmware/AGENTS.md): firmware coding and runtime constraints.
 4. [`docs/TESTING.md`](docs/TESTING.md): required verification by change type.
 5. [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md): software boundaries.
@@ -196,5 +196,5 @@ single-status or sleep-based checks are not sufficient evidence.
 - Update an authoritative source instead of adding another duplicate description.
 - Run the checks required by [`docs/TESTING.md`](docs/TESTING.md).
 - Search tracked documentation for commands, pins, status claims, or names that changed.
-- Update `firmware/MILESTONES.md` only when verification justifies a status change.
+- Update `PROGRAM_STATUS.md` only when verification justifies a status change.
 - State hardware, BLE, or multi-device checks that could not be run.

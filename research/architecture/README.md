@@ -51,7 +51,7 @@ Contributor rules live in [`../../AGENTS.md`](../../AGENTS.md), firmware-specifi
 ## Promotion And Retirement
 
 A proposal is promoted only when implementation, automated checks, and any required hardware
-verification are complete. Promotion means updating the as-built architecture and milestone tracker;
+verification are complete. Promotion means updating the as-built architecture and program status;
 it does not make every example in the original proposal current.
 
 When a proposal is abandoned or replaced, keep a concise retirement record that links the

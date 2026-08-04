@@ -26,7 +26,7 @@ class hierarchy from the retired proposal.
 | Dependency construction and startup order | [`firmware/domes/main/main.cpp`](../../firmware/domes/main/main.cpp) |
 | Host coverage | [`firmware/test_app/`](../../firmware/test_app/) |
 | Build and hardware verification | [`docs/TESTING.md`](../../docs/TESTING.md) |
-| Delivered status and remaining peripheral work | [`firmware/MILESTONES.md`](../../firmware/MILESTONES.md) |
+| Delivered status and remaining peripheral work | [`PROGRAM_STATUS.md`](../../PROGRAM_STATUS.md) |
 
 ## Superseded Material
 

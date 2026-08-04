@@ -3,7 +3,7 @@
 > **Lifecycle: product requirements.** This document defines enclosure and industrial-design
 > targets, not the dimensions, peripherals, or verified behavior of the current NFF development
 > boards. Use [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md) for the broader product target and
-> [`../firmware/MILESTONES.md`](../firmware/MILESTONES.md) for delivered hardware status.
+> [`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) for delivered hardware status.
 
 ## Form Factor Specification for ID Engineer
 

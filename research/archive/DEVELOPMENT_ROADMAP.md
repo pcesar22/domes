@@ -4,7 +4,7 @@
 
 > **Archived planning record.** This roadmap preserves early assumptions and completion claims; it
 > is not current status or an executable workflow. Use
-> [`../../firmware/MILESTONES.md`](../../firmware/MILESTONES.md) for status and
+> [`../../PROGRAM_STATUS.md`](../../PROGRAM_STATUS.md) for status and
 > [`../../docs/TESTING.md`](../../docs/TESTING.md) for verification.
 
 ---

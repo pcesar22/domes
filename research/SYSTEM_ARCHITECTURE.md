@@ -3,7 +3,8 @@
 > **Lifecycle: target design.** This document defines product goals and candidate production
 > architecture. It is not the source of truth for current firmware behavior, current NFF wiring,
 > delivery status, or verification. Use [`docs/README.md`](../docs/README.md) for document ownership,
-> [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) for delivery status,
+> [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) for delivery status,
+> [`research/PRODUCT_DEFINITION.md`](PRODUCT_DEFINITION.md) for the customer and product hypotheses,
 > [`research/SOFTWARE_ARCHITECTURE.md`](SOFTWARE_ARCHITECTURE.md) for the as-built software, and
 > [`docs/PIN_REFERENCE.md`](../docs/PIN_REFERENCE.md) for active board mappings.
 

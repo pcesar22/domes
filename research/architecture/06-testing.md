@@ -13,7 +13,7 @@
 | Host firmware tests and simulation | [`../../firmware/test_app/README.md`](../../firmware/test_app/README.md) |
 | Current CI jobs and triggers | [`firmware-ci.yml`](../../.github/workflows/firmware-ci.yml) and [`firmware-hw-test.yml`](../../.github/workflows/firmware-hw-test.yml) |
 | NFF programming and physical acceptance | [`../../hardware/nff-devboard/BRING_UP_CHECKLIST.md`](../../hardware/nff-devboard/BRING_UP_CHECKLIST.md) |
-| Dated software and hardware results | [`../../firmware/MILESTONES.md`](../../firmware/MILESTONES.md) |
+| Dated software and hardware results | [`../../PROGRAM_STATUS.md`](../../PROGRAM_STATUS.md) |
 
 The host suite uses GoogleTest and CTest under `firmware/test_app/`. It verifies deterministic host
 logic and shared contracts but does not establish an ESP-IDF build, a transport result, radio timing,

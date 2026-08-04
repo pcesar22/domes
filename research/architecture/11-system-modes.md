@@ -25,7 +25,7 @@ and must not be copied into this historical record.
 | Runtime construction and transport integration | [`main.cpp`](../../firmware/domes/main/main.cpp) |
 | Host behavior tests | [`test_mode_manager.cpp`](../../firmware/test_app/main/test_mode_manager.cpp) |
 | As-built software boundaries | [`SOFTWARE_ARCHITECTURE.md`](../SOFTWARE_ARCHITECTURE.md) |
-| Delivery and hardware evidence | [`firmware/MILESTONES.md`](../../firmware/MILESTONES.md) |
+| Delivery and hardware evidence | [`PROGRAM_STATUS.md`](../../PROGRAM_STATUS.md) |
 
 ## Not Adopted As Written
 

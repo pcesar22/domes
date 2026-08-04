@@ -105,12 +105,12 @@
       "id": "documentation-authority",
       "title": "Resolve a current-versus-proposed documentation conflict",
       "category": "documentation",
-      "prompt": "A historical research document describes a production board and feature as delivered, but the current implementation and milestone tracker disagree. Identify the authority order, the files to inspect, and how to update documentation without promoting a proposal to as-built status.",
+      "prompt": "A historical research document describes a production board and feature as delivered, but the current implementation and integrated program status disagree. Identify the authority order, the files to inspect, and how to update documentation without promoting a proposal to as-built status.",
       "reference_files": [
         "docs/README.md",
         "research/SOFTWARE_ARCHITECTURE.md",
         "research/SYSTEM_ARCHITECTURE.md",
-        "firmware/MILESTONES.md"
+        "PROGRAM_STATUS.md"
       ],
       "criteria": [
         { "id": "authority-order", "description": "Establish the authority order among implementation, milestone, system, and research documents." },
@@ -128,7 +128,7 @@
       "prompt": "Audit what evidence is required to claim an OTA update and rollback behavior are verified. Distinguish successful first and second boots, invalid or interrupted recovery, and a deliberately forced failed-self-test rollback. Identify the authoritative workflows and implementation surfaces.",
       "reference_files": [
         "docs/TESTING.md",
-        "firmware/MILESTONES.md",
+        "PROGRAM_STATUS.md",
         "tools/domes-cli/src/commands/ota.rs",
         "firmware/domes/main/services/otaManager.hpp"
       ],

@@ -79,7 +79,7 @@ ctest --test-dir firmware/test_app/build --output-on-failure
 
 Use `ctest -N` for the current discovered count. The suite covers frame and OTA codecs, protobuf
 messages, feature and mode management, game behavior, multi-pod simulation, and drill/Perfetto
-export. Dated verification snapshots belong in `firmware/MILESTONES.md`.
+export. Dated verification snapshots belong in `../PROGRAM_STATUS.md`.
 
 ## Firmware Build
 

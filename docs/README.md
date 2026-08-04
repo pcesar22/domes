@@ -7,8 +7,10 @@ when documents disagree; do not resolve conflicts by copying the same fact into 
 
 | Concern | Authoritative source | Supporting documentation |
 | --- | --- | --- |
-| Delivered status and remaining work | [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) | Pull requests and verification results |
-| Milestone structure and acceptance contract | [`MILESTONE_TEMPLATE.md`](MILESTONE_TEMPLATE.md) | `$domes-milestone-manager` semantic review workflow |
+| Product-realization lifecycle and phase transitions | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) and `$domes-milestone-manager` |
+| Product vision, customer, and launch hypotheses | [`research/PRODUCT_DEFINITION.md`](../research/PRODUCT_DEFINITION.md) | Accepted requirements and research evidence linked from it |
+| CEO status, phases, gates, workstreams, hardware releases, and decisions | [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) | Pull requests and verification results |
+| Program and gate contract structure | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) | `$domes-milestone-manager` semantic review workflow |
 | Firmware behavior | Code under [`firmware/domes/main/`](../firmware/domes/main/) | [`firmware/README.md`](../firmware/README.md) |
 | Active compiled board profile and GPIO values | [`firmware/domes/main/config.hpp`](../firmware/domes/main/config.hpp) | [`PIN_REFERENCE.md`](PIN_REFERENCE.md) and board schematic |
 | Config and trace messages | [`firmware/common/proto/`](../firmware/common/proto/) | [`tools/domes-cli/README.md`](../tools/domes-cli/README.md) |
@@ -17,7 +19,8 @@ when documents disagree; do not resolve conflicts by copying the same fact into 
 | Frame encoding and per-message response envelope | [`firmware/common/protocol/frameCodec.hpp`](../firmware/common/protocol/frameCodec.hpp) plus the paired firmware sender/host decoder | [`firmware/common/proto/README.md`](../firmware/common/proto/README.md) and protocol tests |
 | CLI commands and options | `domes-cli --help` from [`tools/domes-cli`](../tools/domes-cli/) | [`tools/domes-cli/README.md`](../tools/domes-cli/README.md) |
 | Automated verification | [`.github/workflows/firmware-ci.yml`](../.github/workflows/firmware-ci.yml) and its `CI Gate` | [`TESTING.md`](TESTING.md) |
-| Hardware verification | [`.github/workflows/firmware-hw-test.yml`](../.github/workflows/firmware-hw-test.yml) plus retained device evidence | [`TESTING.md`](TESTING.md), [`.codex/PLATFORM.md`](../.codex/PLATFORM.md), and [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) |
+| Hardware verification | [`.github/workflows/firmware-hw-test.yml`](../.github/workflows/firmware-hw-test.yml) plus retained device evidence | [`TESTING.md`](TESTING.md), [`.codex/PLATFORM.md`](../.codex/PLATFORM.md), and [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) |
+| Current hardware authorization and next-iteration definition | [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) and [`hardware/NEXT_ITERATION_REQUEST.md`](../hardware/NEXT_ITERATION_REQUEST.md) | [`hardware/README.md`](../hardware/README.md) |
 | Panic coredumps and clean-restart snapshots | `firmware/domes/partitions.csv`, `sdkconfig.defaults`, and the owning firmware implementation | [`firmware/README.md`](../firmware/README.md) and project debug runbooks |
 | System design and hardware targets | [`research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md) | Hardware files under [`hardware/`](../hardware/) |
 | As-built software boundaries and decisions | [`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md) | Implementation source and tests |
@@ -30,10 +33,12 @@ to introduce a message or enum.
 
 1. [`README.md`](../README.md) for product scope and a minimal build path.
 2. [`DEVELOPER_QUICKSTART.md`](../DEVELOPER_QUICKSTART.md) for local setup and the first verified change.
-3. [`firmware/MILESTONES.md`](../firmware/MILESTONES.md) for what is implemented and hardware-verified.
-4. [`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md) for software boundaries.
-5. [`research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md) for the hardware and network design.
-6. [`research/architecture/README.md`](../research/architecture/README.md) for detailed design references.
+3. [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) for how phases start and exit.
+4. [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) for the active phase and accepted evidence.
+5. [`research/PRODUCT_DEFINITION.md`](../research/PRODUCT_DEFINITION.md) for product hypotheses.
+6. [`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md) for software boundaries.
+7. [`research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md) for hardware and network targets.
+8. [`research/architecture/README.md`](../research/architecture/README.md) for detailed design references.
 
 ## Guides By Task
 
@@ -46,7 +51,9 @@ to introduce a message or enum.
 | Work with multiple pods, BLE, or Linux device setup | [`.codex/PLATFORM.md`](../.codex/PLATFORM.md) |
 | Check current GPIO assignments | [`PIN_REFERENCE.md`](PIN_REFERENCE.md) |
 | Bring up an NFF board | [`hardware/nff-devboard/BRING_UP_CHECKLIST.md`](../hardware/nff-devboard/BRING_UP_CHECKLIST.md) |
-| Create or audit delivery milestones | [`MILESTONE_TEMPLATE.md`](MILESTONE_TEMPLATE.md) |
+| Start or audit the next hardware iteration | [`hardware/NEXT_ITERATION_REQUEST.md`](../hardware/NEXT_ITERATION_REQUEST.md) |
+| Decide whether a product phase may start or exit | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) |
+| Create or audit phases, gates, work packages, or hardware releases | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) |
 | Inspect archived plans | [`research/archive/README.md`](../research/archive/README.md) |
 
 ## Document Lifecycle
@@ -63,7 +70,7 @@ must point to the sources above rather than becoming independent architecture sp
 When behavior changes:
 
 1. Change the authoritative code, schema, or workflow first.
-2. Update `firmware/MILESTONES.md` only after verification supports a status change.
+2. Update `PROGRAM_STATUS.md` only after verification supports a status change.
 3. Update the owning guide and any architecture decision affected by the change.
 4. Search for the old command, pin, test count, or feature claim across tracked files.
 5. Run the checks in [`TESTING.md`](TESTING.md), including

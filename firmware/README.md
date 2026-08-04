@@ -9,7 +9,7 @@ The firmware owns per-pod hardware, feature and mode state, local game timing, c
 handling, and ESP-NOW participation. Host discovery, named-device registration, and command fan-out
 belong to `tools/domes-cli`.
 
-Current delivery status is maintained in [`MILESTONES.md`](MILESTONES.md). Software boundaries are
+Integrated delivery status is maintained in [`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md). Software boundaries are
 documented in [`../research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md).
 
 ## Build
