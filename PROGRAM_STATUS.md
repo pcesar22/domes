@@ -11,7 +11,7 @@ belong in [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md), ta
 [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md), and verification procedures
 in [`docs/TESTING.md`](docs/TESTING.md).
 
-**As of:** 2026-08-03, `main` after merged PR 89
+**As of:** 2026-08-04, `main` after merged PR 90 plus the PS-WP-001 review package
 
 ## CEO Control Panel
 
@@ -24,9 +24,9 @@ in [`docs/TESTING.md`](docs/TESTING.md).
 | Next program gate | G1 System Architecture Baseline and Schematic Authorization |
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
-| Current execution package | None recorded on `main`; the next autonomous cycle creates or reuses one execution issue |
-| Next AI-owned action | `PS-WP-001` Product Brief and Canonical Six-Pod Workflow |
-| Current AI execution blocker | None; customer evidence remains explicitly unverified rather than blocking the hypothesis baseline |
+| Current execution package | `PS-WP-001` active on [issue 91](https://github.com/pcesar22/domes/issues/91); semantic findings are being closed before review |
+| Next AI-owned action | Complete PS-WP-001 verification and review package; `PS-WP-002` remains reserved |
+| Current AI execution blocker | None; local `shellcheck` is unavailable and the required CI host-tooling job remains the acceptance authority |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
 | First product-hardware purchase authorization | G2 EVT Release to Fab, forecast 2026-11-02 |
@@ -55,7 +55,7 @@ start PCB layout, or order EVT boards until the corresponding gates pass.
 | Four economical ESP32-S3 alpha nodes | `Ready now` | System-scale development inventory, not product hardware |
 | FMEA, compliance, supply, CM, DFM/DFT, and test planning | `Ready now` | Planning and risk closure; no approval or production claim |
 
-### Selected Next AI-Owned Work
+### Current Package And Reserved Next Work
 
 #### PS-WP-001: Product Brief And Canonical Six-Pod Workflow
 
@@ -66,13 +66,13 @@ uncollected customer evidence as fact.
 | Contract | Current state |
 | --- | --- |
 | Owner | AI product/system lead |
-| State / health | `Ready` / `Amber` |
-| Requested start / finish | 2026-08-04 / 2026-08-14 |
+| State / health | `Active` / `Amber` |
+| Actual start / forecast review boundary | 2026-08-04 / 2026-08-04 |
 | Inputs | Product definition, target system/ID architecture, as-built software architecture, current program evidence |
 | Dependencies/blockers | None for the hypothesis baseline; customer interviews and purchase evidence remain open PS0 evidence |
 | Gate/risk unlocked | Feeds PS1 hardware-driving requirements, FS3 runtime semantics, HW1 trades, VC1 verification planning, and G1 |
 | Execution authority | AI-owned repository research and documentation |
-| Execution issue | Not yet created; `Continue DOMES.` creates or reuses it before implementation |
+| Execution issue | [Issue 91](https://github.com/pcesar22/domes/issues/91); pull request pending verification |
 | Stop condition | No protocol/runtime change, part or architecture freeze, spend, market validation, or product/compliance claim |
 
 Acceptance requires the repository to distinguish evidence, hypothesis, and decision; name the buyer,
@@ -81,12 +81,40 @@ canonical workflow covering setup, roster, drill configuration, play, partial fa
 results, shutdown, and charging/storage. Conflicts with current architecture and program authority
 must be reconciled or recorded explicitly. Documentation and repository checks must pass.
 
-At selection, current `main` CI was green and no open execution issue, PR, or plan existed, so no
-integrity repair or resumable work outranked new work. PS-WP-001 is selected because PS0 is active
-with the earliest forecast and its output unlocks named work in every G1 workstream. PS1 depends on
+At selection, PR 90 was merged, its `main` CI completed green, and no open execution issue, PR, or
+plan existed, so no integrity repair or resumable work outranked new work. PS-WP-001 was selected
+because PS0 was active with the earliest forecast and its output unlocks named work in every G1
+workstream. PS1 depends on
 that product boundary; FS1/HW0 acceptance depends on physical observation and instrumentation; and
 VC1 has a later forecast and consumes the workflow and requirements. The higher program dependency,
 HW owner and budget, remains a separate CEO decision and does not stall this AI-owned package.
+
+The working package establishes the evidence-labeled brief, a dated USD 349-439 planning hypothesis,
+one canonical workflow, an explicit pause/preserve/disclose recovery policy, current app/firmware
+gaps, and downstream requirement seeds. It does not complete customer, purchase, cost, licensing,
+support, six-node, or product-hardware evidence.
+
+#### PS-WP-002: Hardware-Driving Requirements And Interface Baseline
+
+**Objective:** Convert the PS-WP-001 workflow and current/target architecture into one traceable G1
+requirements and interface candidate without inventing evidence or freezing the solution.
+
+| Contract | Current state |
+| --- | --- |
+| Owner | AI systems lead |
+| State / health | `Ready` / `Amber` |
+| Requested start / finish | Next autonomous directive / 2026-09-07 |
+| Inputs | Product brief/workflow, target system/ID architecture, as-built software, HW-WP-001 inputs, G1 evidence contract |
+| Dependencies/blockers | None for a bounded candidate; customer, HW-owner, measurement, compliance, and cost evidence remain explicit open inputs |
+| Gate/risk unlocked | Supplies the product/system allocation and interface input required by HW1, FS3, VC1, HR1/HR2, and G1 |
+| Execution authority | AI-owned repository research, requirements, interface, and traceability documentation |
+| Execution issue | None; the next directive creates or reuses it |
+| Stop condition | No runtime/protocol change, architecture/part freeze, spend, schematic/layout release, or product/compliance claim |
+
+Acceptance requires stable candidate IDs with source/rationale, measurable value or explicit bounded
+TBD/fallback, allocation across product/hardware/firmware/app/mechanical/test, verification method,
+owner, status, and invalidation rule. It must include a current/target interface-control candidate and
+make every unresolved G1 input visible. This cycle records the package but does not start it.
 
 ### What Is Not Authorized
 
@@ -165,8 +193,8 @@ cannot upgrade a failing technical verdict.
 
 | ID | Outcome | Owner | Status | Health | Forecast | Now / next |
 | --- | --- | --- | --- | --- | --- | --- |
-| PS0 | Product brief and launch hypothesis | CEO/product owner with AI product lead | `Active` | `Amber` | 2026-08-14 | Separate evidence-backed value from assumptions; name buyer, user, job, kit, environment and economic bounds |
-| PS1 | Hardware-driving product/system baseline and traceability | AI systems lead | `Active` | `Amber` | 2026-09-07 | Allocate measurable requirements/interfaces and verification methods; use bounded fallback where discovery is incomplete |
+| PS0 | Product brief and launch hypothesis | CEO/product owner with AI product lead | `Active` | `Amber` | 2026-08-14 | Hypothesis baseline review-ready; execute customer, competitive, economic, licensing and support discovery |
+| PS1 | Hardware-driving product/system baseline and traceability | AI systems lead | `Active` | `Amber` | 2026-09-07 | Start PS-WP-002 next; allocate measurable requirements/interfaces and bounded fallbacks |
 | PS2 | App-driven six-node system alpha | AI systems lead | `Ready` | `Amber` | 2026-10-19 | Acquire four nodes; unify drill, authority, timing, failure, result and coexistence requirements |
 | PS3 | DVT user/product validation | Product/UX owner, unassigned | `Not due` | `Not rated` | 2027-08-02 | Starts on representative frozen units; continues customer/economic validation before it |
 | PS4 | Launch offer, price, channel, support and warranty | CEO/product owner | `Not due` | `Not rated` | 2027-12-13 | Close from customer, DVT, PVT, cost and support evidence |
@@ -251,7 +279,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | Date | Integrated result | Decision impact |
 | --- | --- | --- |
 | 2026-08-04 | HW-WP-001 released; deterministic-interface work, VC planning and four-node sourcing start | Parallel definition begins without PCB commitment |
-| 2026-08-14 | Product brief, hardware-driving requirement draft, current/target interface inventory and initial risk register | Conflicts and missing measurements surface early |
+| 2026-08-14 | Product brief hypothesis review baseline completed 2026-08-04; hardware-driving requirement draft, current/target interface inventory and initial risk register remain | Conflicts and missing measurements surface early |
 | 2026-08-24 | NFF physical/peripheral/electrical characterization baseline | Guesses are replaced before selection freeze |
 | 2026-08-31 | Architecture/component shortlist and bounded risk-coupon review | Weak candidates are removed |
 | 2026-09-07 | Requirements/interface baseline candidate, budgets, RF/compliance and manufacturing/test concepts | G1 package becomes auditable |
@@ -270,7 +298,8 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 
 | Evidence | Source | Result | Boundary |
 | --- | --- | --- | --- |
-| Current main software CI | Commit `af06e8e822f38da1550e49da94a75ff8c7b5266d`, [run 30877635194](https://github.com/pcesar22/domes/actions/runs/30877635194) | Passed | Builds, tests, generated artifacts, lint, docs, Flutter Linux/iOS and ESP-IDF release checks |
+| Current main software CI | Commit `0378730fbe4773453a0f276a62aed0a7549b672d`, [run 30889560443](https://github.com/pcesar22/domes/actions/runs/30889560443) | Passed | Builds, tests, generated artifacts, lint, docs, Flutter Linux/iOS and ESP-IDF release checks |
+| PS-WP-001 product baseline | [Issue 91](https://github.com/pcesar22/domes/issues/91) and working branch | In verification | Product hypothesis and workflow authority; customer, economics, licensing, product implementation, and hardware proof remain open |
 | Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains and CI behavior |
 | Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
 
@@ -313,7 +342,7 @@ synchronized one-way measurements and do not prove sub-millisecond behavior.
 | Firmware, simulator and Flutter drill/timing paths diverge | System alpha and model cannot prove product behavior | FS | Establish protobuf-owned semantics, shared production logic and correlated timing before G2 |
 | Only two NFF boards exist | Six-node behavior cannot inform EVT release | PS/FS | Procure four inexpensive alpha nodes by 2026-08-07 |
 | Candidate power/charging/RGBW/battery topology is unproved | Unsafe or underpowered architecture could be carried into EVT | HW/VC | Challenge by analysis/coupons; do not inherit proposal parts by default |
-| Launch market, economics, license and support are unset | Hardware or release scope may miss mandatory constraints | PS/VC | Bound at G1; close before DVT |
+| Launch market/economics are unvalidated and license/support are unset | Hardware or release scope may miss mandatory constraints | PS/VC | Test PS-WP-001 guardrails, bound at G1, and close before DVT |
 
 ## Reporting Contract
 

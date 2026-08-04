@@ -9,7 +9,7 @@ history, and archived plans. Delivery status and executable workflows live elsew
 | Document | Lifecycle | Use |
 | --- | --- | --- |
 | [`SOFTWARE_ARCHITECTURE.md`](SOFTWARE_ARCHITECTURE.md) | Current as-built overview | Software surfaces, runtime boundaries, protocol ownership, and implementation links |
-| [`PRODUCT_DEFINITION.md`](PRODUCT_DEFINITION.md) | Product hypothesis | Intended customer, value proposition, launch scope, and requirements-entry outputs |
+| [`PRODUCT_DEFINITION.md`](PRODUCT_DEFINITION.md) | Working product baseline | Evidence-labeled product brief, canonical six-pod workflow, economic guardrails, current gaps, and requirements-entry outputs |
 | [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md) | Product target | Intended hardware, networking, power, enclosure, and production direction |
 | [`ID_REQUIREMENTS.md`](ID_REQUIREMENTS.md) | Product target | Industrial-design goals and unresolved physical-design inputs |
 | [`architecture/README.md`](architecture/README.md) | Current lifecycle index | Classification and replacements for detailed architecture proposals |

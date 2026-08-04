@@ -136,10 +136,18 @@ protocol boundary:
   LED commands, accepts only the active pod's physical touch, and protects stopped or superseded
   rounds from stale asynchronous completions.
 
+The production UI currently uses the separate single-pod connection provider and does not call
+`MultiPodNotifier.connectPod`, so the internal multi-pod drill path has no end-to-end user flow that
+populates its roster. The reaction, sequence, and speed labels also share one random-target execution
+path; they are not three implemented drill semantics. App reaction scoring uses phone wall time even
+though the touch notification carries a pod-local timestamp, and no cross-clock correlation exists.
+
 Touch simulation is limited to explicit simulated pod addresses. The OTA chunk protocol remains a
 bounded fixed-binary exception mirrored with firmware and the Rust CLI. Unit/widget tests cover the
 app layers, but a physical app drill and mobile OTA remain hardware-verification gates in
-[`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md).
+[`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md). The intended user workflow and recovery policy live
+in [`PRODUCT_DEFINITION.md`](PRODUCT_DEFINITION.md); they are requirements inputs, not current app
+claims.
 
 ## Board Profile
 

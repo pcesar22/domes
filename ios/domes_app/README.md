@@ -1,9 +1,9 @@
 # DOMES Controller App
 
 Flutter controller prototype for discovering and operating DOMES pods over BLE. The app contains
-device connection, feature and LED controls, drill setup/results, OTA, settings, and multi-pod state.
-The Rust CLI remains the primary development and service interface while mobile workflows are being
-validated.
+single-device connection, feature and LED controls, drill setup/results, OTA, settings, and an
+internal multi-pod state layer. The Rust CLI remains the primary development and service interface
+while mobile workflows are being validated.
 
 ## Project Status
 
@@ -16,6 +16,12 @@ transport separates that bare-protobuf notification from command responses, the 
 to its connected pod, and the drill accepts it only while that pod is the active target. Touch
 simulation is restricted to explicit `sim-pod-*` targets. This path still requires an on-device app
 drill before it is hardware verified.
+
+There is not yet a production UI path that connects discovered pods through the multi-pod provider,
+so the drill screen cannot build a real multi-pod roster end to end. Reaction, sequence, and speed
+are displayed as choices, but the current provider executes the same random-target behavior for all
+three and scores with phone wall time. The product workflow and required failure/recovery semantics
+are defined separately in [`../../research/PRODUCT_DEFINITION.md`](../../research/PRODUCT_DEFINITION.md).
 
 See [`../../PROGRAM_STATUS.md`](../../PROGRAM_STATUS.md) for current delivery status and
 [`../../docs/TESTING.md`](../../docs/TESTING.md) for verification requirements.
