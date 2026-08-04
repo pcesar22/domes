@@ -24,9 +24,9 @@ in [`docs/TESTING.md`](docs/TESTING.md).
 | Next program gate | G1 System Architecture Baseline and Schematic Authorization |
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
-| Current execution package | `PS-WP-001` active on [issue 91](https://github.com/pcesar22/domes/issues/91); semantic findings are being closed before review |
-| Next AI-owned action | Complete PS-WP-001 verification and review package; `PS-WP-002` remains reserved |
-| Current AI execution blocker | None; local `shellcheck` is unavailable and the required CI host-tooling job remains the acceptance authority |
+| Current execution package | `PS-WP-001` review-ready in [PR 92](https://github.com/pcesar22/domes/pull/92); [issue 91](https://github.com/pcesar22/domes/issues/91) owns execution evidence |
+| Next AI-owned action | `PS-WP-002` Hardware-Driving Requirements and Interface Baseline; reserved for the next directive |
+| Current AI execution blocker | None for PS-WP-002; missing customer evidence must remain explicit in bounded requirement assumptions |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
 | First product-hardware purchase authorization | G2 EVT Release to Fab, forecast 2026-11-02 |
@@ -66,13 +66,13 @@ uncollected customer evidence as fact.
 | Contract | Current state |
 | --- | --- |
 | Owner | AI product/system lead |
-| State / health | `Active` / `Amber` |
-| Actual start / forecast review boundary | 2026-08-04 / 2026-08-04 |
+| State / health | `Review ready` / `Green` |
+| Actual start / review boundary | 2026-08-04 / 2026-08-04 |
 | Inputs | Product definition, target system/ID architecture, as-built software architecture, current program evidence |
 | Dependencies/blockers | None for the hypothesis baseline; customer interviews and purchase evidence remain open PS0 evidence |
 | Gate/risk unlocked | Feeds PS1 hardware-driving requirements, FS3 runtime semantics, HW1 trades, VC1 verification planning, and G1 |
 | Execution authority | AI-owned repository research and documentation |
-| Execution issue | [Issue 91](https://github.com/pcesar22/domes/issues/91); pull request pending verification |
+| Execution issue | [Issue 91](https://github.com/pcesar22/domes/issues/91); [PR 92](https://github.com/pcesar22/domes/pull/92) is the one review package |
 | Stop condition | No protocol/runtime change, part or architecture freeze, spend, market validation, or product/compliance claim |
 
 Acceptance requires the repository to distinguish evidence, hypothesis, and decision; name the buyer,
@@ -89,7 +89,7 @@ that product boundary; FS1/HW0 acceptance depends on physical observation and in
 VC1 has a later forecast and consumes the workflow and requirements. The higher program dependency,
 HW owner and budget, remains a separate CEO decision and does not stall this AI-owned package.
 
-The working package establishes the evidence-labeled brief, a dated USD 349-439 planning hypothesis,
+The review package establishes the evidence-labeled brief, a dated USD 349-439 planning hypothesis,
 one canonical workflow, an explicit pause/preserve/disclose recovery policy, current app/firmware
 gaps, and downstream requirement seeds. It does not complete customer, purchase, cost, licensing,
 support, six-node, or product-hardware evidence.
@@ -299,7 +299,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | Evidence | Source | Result | Boundary |
 | --- | --- | --- | --- |
 | Current main software CI | Commit `0378730fbe4773453a0f276a62aed0a7549b672d`, [run 30889560443](https://github.com/pcesar22/domes/actions/runs/30889560443) | Passed | Builds, tests, generated artifacts, lint, docs, Flutter Linux/iOS and ESP-IDF release checks |
-| PS-WP-001 product baseline | [Issue 91](https://github.com/pcesar22/domes/issues/91) and working branch | In verification | Product hypothesis and workflow authority; customer, economics, licensing, product implementation, and hardware proof remain open |
+| PS-WP-001 product baseline | Commit `628a5250d28aa9581001c0e164e596887067f858`, [PR 92](https://github.com/pcesar22/domes/pull/92), [run 30890512299](https://github.com/pcesar22/domes/actions/runs/30890512299) | Review-ready content commit passed all seven Software CI checks | Product hypothesis and workflow authority; customer, economics, licensing, product implementation, and hardware proof remain open |
 | Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains and CI behavior |
 | Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
 

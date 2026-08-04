@@ -1,10 +1,10 @@
 # Product Brief And Canonical Six-Pod Workflow
 
-Status: active
-Current phase: product baseline synthesis
-Repository state: `codex/docs/ps-wp-001-product-brief` in `.worktrees/ps-wp-001`; based on
-`origin/main` at `0378730`; no intentional dirty files before this plan
-Last updated: 2026-08-04; authoring and available local verification complete, publication/CI next
+Status: complete
+Current phase: review-ready pull request boundary
+Repository state: `codex/docs/ps-wp-001-product-brief` in `.worktrees/ps-wp-001`; PR 92; content
+commit `628a525` passed all required Software CI checks; final status-only commit requires the same gate
+Last updated: 2026-08-04; PS-WP-001 complete at its review/CI/status stop boundary
 
 ## Objective and observable outcome
 
@@ -46,8 +46,8 @@ No generated consumer changes.
 - [x] Completed bounded read-only repository exploration and identified current/target conflicts.
 - [x] Wrote the product brief, canonical workflow, explicit gaps, and working program-state update.
 - [x] Closed semantic-review findings and reran documentation/repository verification.
-- [ ] **Current:** Self-review, commit, push, open one PR, monitor required CI, and update
-  issue/status evidence.
+- [x] Self-reviewed, committed, pushed, opened PR 92, passed required CI on the content commit, and
+  prepared the final status-only commit; issue evidence is updated after its CI passes.
 
 ## Verification
 
@@ -56,6 +56,7 @@ No generated consumer changes.
 | Automated | `python3 tools/docs/check_markdown_links.py` | passed: 86 files, 419 relative links after final finding fixes |
 | Automated | `scripts/verify.sh --component docs` | all available checks passed; wrapper stopped only because host lacks `shellcheck`; CI required |
 | Automated | strongest applicable pre-commit and instruction/evaluator tests | pre-commit passed; 51 agent/instruction/plan tests and 40 CI contract tests passed |
+| Automated | PR 92 Software CI, run 30890512299 | content commit passed all seven checks including Host Tooling and `CI Gate`; final status-only head rerun required |
 | Accepted command | Not applicable; no transport or device command changes | not required |
 | Physical confirmation | Not applicable; no current hardware behavior is claimed | not required |
 
@@ -74,9 +75,9 @@ No generated consumer changes.
 
 ## Resume checkpoint
 
-Issue 91 and the isolated worktree exist. The brief, workflow, as-built corrections, and working
-status update are written. The charging-topology, status-timing, and economic-traceability findings
-are closed; the independent rereview found no remaining issue. Available local checks pass except
-that the host has no `shellcheck`; required CI supplies it. Self-review the diff, commit/push, open the
-one linked PR, and monitor every required check. Do not modify firmware, protocol, CLI, or app
-behavior. Main CI for merge commit `0378730` passed including its aggregate gate.
+PS-WP-001 is complete at the bounded review-package stop condition. PR 92 contains the brief,
+workflow, as-built corrections, and program controls; the independent rereview found no remaining
+semantic issue. Content commit `628a525` passed every required Software CI check, including the
+CI-provided shell checks. Push this final status-only commit and require the same aggregate gate to
+remain green. Then update issue 91 with the exact evidence and stop. Do not begin PS-WP-002 without a
+new continuation directive, and do not merge, release, spend, fabricate, or claim product behavior.
