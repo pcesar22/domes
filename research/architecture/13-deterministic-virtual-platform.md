@@ -583,10 +583,12 @@ kernel, transport, service, or runtime logic.
 [PR 100](https://github.com/pcesar22/domes/pull/100). The `firmware/domes` source tree
 `f0db7c5516879de37a5a04ec2ee052ace8ebe0f2` passed the bounded 100-run QEMU and two-board technical
 qualification. The PR and `PROGRAM_STATUS.md` record the result and claim boundary; generated run
-output is not stored in Git. D is `Active` / `Amber` until the new exact-checkout 100-process QEMU
-runtime check and aggregate `CI Gate` pass. `PROGRAM_STATUS.md` is authoritative for live state.
-FS-WP-002C remains blocked on that exit and does not enter until selected in a separate execution
-cycle.
+output is not stored in Git. D is `Complete` / `Green`: required
+[Software CI run 31039047667](https://github.com/pcesar22/domes/actions/runs/31039047667)
+rebuilt runtime implementation head `f36447f931f9216b7733ff4685ffc5ccaab895ce`, passed 100 identical
+production-runtime QEMU processes, and passed the aggregate `CI Gate`. Every later PR head remains
+gated before merge. `PROGRAM_STATUS.md` is authoritative for live state. FS-WP-002C is eligible but
+does not enter until selected in a separate execution cycle.
 
 **Entry:** FS-WP-002B is complete with a `Viable` result; current physical startup order and the
 QEMU peripheral inventory are recorded.

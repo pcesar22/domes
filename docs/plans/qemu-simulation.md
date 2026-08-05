@@ -1,6 +1,7 @@
 # Deliver Deterministic ESP32-S3 QEMU Execution
 
-**Status:** active; implementation complete, required QEMU CI execution pending
+**Status:** complete; required exact-checkout QEMU execution and aggregate CI gate passed for the
+runtime implementation head; every later PR head remains gated before merge
 
 **Delivery:** [PR 100](https://github.com/pcesar22/domes/pull/100)
 
@@ -65,6 +66,6 @@ flash images, SDKCONFIG dumps, campaign reports, or trace captures.
 
 ## Next Package
 
-`FS-WP-002C`, scheduler/ISR/synchronization causality and trace normalization, becomes eligible when
-the required QEMU execution check and aggregate `CI Gate` pass. It has not been selected or started;
-it requires a separate execution cycle and must preserve the claim boundaries above.
+`FS-WP-002C`, scheduler/ISR/synchronization causality and trace normalization, is now eligible. It has
+not been selected or started; it requires a separate execution cycle and must preserve the claim
+boundaries above.
