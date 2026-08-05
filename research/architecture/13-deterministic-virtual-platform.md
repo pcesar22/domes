@@ -498,8 +498,10 @@ The fixed production-runtime QEMU lane is a required pull-request check once its
 container are immutable, a clean 100-process baseline passes, execution is reproducible locally in
 that exact container, failure diagnostics are retained outside Git, and the aggregate `CI Gate`
 reports it. The required lane rebuilds the exact checkout and accepts only 100 identical
-`service_ready_v1` executions tied to `GITHUB_SHA`; a cloud-only or manually interpreted result
-cannot become a required gate.
+`service_ready_v1` executions tied to `GITHUB_SHA`. All 100 target logs must be present, hash-bound,
+cleanly terminated, and independently reparsed against the retained fidelity manifest; a summary
+count, partial campaign, cloud-only result, or manually interpreted result cannot become a required
+gate.
 
 Expansion beyond that fixed runtime gate additionally requires:
 

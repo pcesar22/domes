@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -48,9 +49,8 @@ CI_REQUIRED_ARTIFACTS = frozenset(
         "domes-fidelity-manifest.json",
         "runtime-report.json",
         "sdkconfig.qemu",
-        "runs/001/qemu.log",
-        "runs/100/qemu.log",
     }
+    | {f"runs/{index:03d}/qemu.log" for index in range(1, ACCEPTANCE_RUNS + 1)}
 )
 
 SHARED_MAIN_SOURCES = frozenset(
@@ -248,6 +248,12 @@ def _read_json(path: Path, label: str) -> Mapping[str, Any]:
 
 def _canonical_bytes(value: Any) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def _is_positive_number(value: Any) -> bool:
+    return (type(value) is int and value > 0) or (
+        type(value) is float and math.isfinite(value) and value > 0
+    )
 
 
 def _task_config_sha256(manifest: Mapping[str, Any]) -> str:
@@ -978,7 +984,14 @@ def _build_qemu(
         "build",
     ]
     seconds = _run_logged(command, REPO_ROOT, log_path, 1800.0)
-    return {"command": command, "seconds": seconds, "sdkconfig": str(sdkconfig)}
+    return {
+        "skipped": False,
+        "command": command,
+        "seconds": seconds,
+        "sdkconfig": str(sdkconfig),
+        "log": str(log_path),
+        "log_sha256": sha256_file(log_path),
+    }
 
 
 def _source_snapshot() -> Mapping[str, str]:
@@ -1054,9 +1067,10 @@ def verify_ci_report(report_path: Path, expected_head: str) -> Mapping[str, Any]
         "required_acceptance_runs": ACCEPTANCE_RUNS,
     }
     for key, value in expected.items():
-        if report.get(key) != value:
+        actual = report.get(key)
+        if type(actual) is not type(value) or actual != value:
             raise RuntimeProfileError(
-                f"QEMU runtime report {key} expected {value!r}, found {report.get(key)!r}"
+                f"QEMU runtime report {key} expected {value!r}, found {actual!r}"
             )
 
     git = report.get("git")
@@ -1067,6 +1081,39 @@ def verify_ci_report(report_path: Path, expected_head: str) -> Mapping[str, Any]
     ):
         raise RuntimeProfileError(
             "QEMU runtime report is not tied to the clean expected CI commit"
+        )
+
+    build = report.get("build")
+    build_command = build.get("command") if isinstance(build, dict) else None
+    expected_build_tail = [
+        "-C",
+        str(FIRMWARE_DIR),
+        "-B",
+        str((artifact_dir.parent / "build").resolve()),
+        "-D",
+        "IDF_TARGET=esp32s3",
+        "-D",
+        f"SDKCONFIG={(artifact_dir / 'sdkconfig.qemu').resolve()}",
+        "-D",
+        f"SDKCONFIG_DEFAULTS={QEMU_DEFAULTS}",
+        "build",
+    ]
+    if (
+        not isinstance(build, dict)
+        or build.get("skipped") is not False
+        or not isinstance(build_command, list)
+        or len(build_command) != 13
+        or not all(isinstance(part, str) for part in build_command)
+        or Path(build_command[0]).name != "python"
+        or Path(build_command[1]).name != "idf.py"
+        or build_command[2:] != expected_build_tail
+        or not _is_positive_number(build.get("seconds"))
+        or not isinstance(build.get("sdkconfig"), str)
+        or not isinstance(build.get("log"), str)
+        or not isinstance(build.get("log_sha256"), str)
+    ):
+        raise RuntimeProfileError(
+            "QEMU CI report does not prove a fresh firmware build"
         )
 
     signature = report.get("ready_signature")
@@ -1080,31 +1127,12 @@ def verify_ci_report(report_path: Path, expected_head: str) -> Mapping[str, Any]
         raise RuntimeProfileError(
             f"expected {ACCEPTANCE_RUNS} QEMU run records, found {count}"
         )
-    for expected_index, run in enumerate(run_evidence, start=1):
-        if not isinstance(run, dict) or run.get("index") != expected_index:
-            raise RuntimeProfileError(
-                f"QEMU run record {expected_index} is missing or out of order"
-            )
-        if run.get("ready_signature") != signature:
-            raise RuntimeProfileError(
-                "QEMU runtime readiness signatures are not identical"
-            )
-        execution = run.get("execution")
-        if not isinstance(execution, dict) or execution.get("qemu_returncode") != 0:
-            raise RuntimeProfileError(
-                f"QEMU run {expected_index} did not terminate cleanly"
-            )
-        result = run.get("result")
-        if (
-            not isinstance(result, dict)
-            or result.get("status") != "PASS"
-            or result.get("failure_mask") != 0
-        ):
-            raise RuntimeProfileError(f"QEMU run {expected_index} did not report PASS")
-
     manifest_path = artifact_dir / "artifact-manifest.json"
     manifest = _read_json(manifest_path, "QEMU artifact manifest")
-    if manifest.get("schema_version") != 1:
+    if (
+        type(manifest.get("schema_version")) is not int
+        or manifest["schema_version"] != 1
+    ):
         raise RuntimeProfileError("QEMU artifact manifest schema must be 1")
     files = manifest.get("files")
     if not isinstance(files, dict) or not files:
@@ -1137,6 +1165,85 @@ def verify_ci_report(report_path: Path, expected_head: str) -> Mapping[str, Any]
         candidate = artifact_dir / relative_path
         if sha256_file(candidate) != expected_hash:
             raise RuntimeProfileError(f"QEMU artifact hash mismatch: {relative}")
+
+    if (
+        Path(build["sdkconfig"]).resolve()
+        != (artifact_dir / "sdkconfig.qemu").resolve()
+        or Path(build["log"]).resolve() != (artifact_dir / "build.log").resolve()
+        or build["log_sha256"] != files["build.log"]
+    ):
+        raise RuntimeProfileError(
+            "QEMU CI report is not bound to its fresh build artifacts"
+        )
+
+    fidelity = report.get("fidelity_manifest")
+    fidelity_path = artifact_dir / "domes-fidelity-manifest.json"
+    if (
+        not isinstance(fidelity, dict)
+        or fidelity.get("path") != fidelity_path.name
+        or not isinstance(fidelity.get("sha256"), str)
+        or not HASH.fullmatch(fidelity["sha256"])
+        or files.get(fidelity_path.name) != fidelity["sha256"]
+    ):
+        raise RuntimeProfileError(
+            "QEMU runtime report has invalid fidelity-manifest evidence"
+        )
+    runtime_manifest = _read_json(fidelity_path, "retained QEMU fidelity manifest")
+
+    for expected_index, run in enumerate(run_evidence, start=1):
+        if (
+            not isinstance(run, dict)
+            or type(run.get("index")) is not int
+            or run["index"] != expected_index
+        ):
+            raise RuntimeProfileError(
+                f"QEMU run record {expected_index} is missing or out of order"
+            )
+        execution = run.get("execution")
+        if (
+            not isinstance(execution, dict)
+            or execution.get("termination") != "marker_observed_then_runner_sigterm"
+            or execution.get("termination_action") != "sigterm"
+            or type(execution.get("qemu_returncode")) is not int
+            or execution["qemu_returncode"] != 0
+            or not _is_positive_number(execution.get("seconds"))
+        ):
+            raise RuntimeProfileError(
+                f"QEMU run {expected_index} did not terminate cleanly"
+            )
+
+        log_relative = f"runs/{expected_index:03d}/qemu.log"
+        log_path = artifact_dir / log_relative
+        reported_log = execution.get("log")
+        if (
+            not isinstance(reported_log, str)
+            or Path(reported_log).resolve() != log_path.resolve()
+            or execution.get("log_sha256") != files[log_relative]
+        ):
+            raise RuntimeProfileError(
+                f"QEMU run {expected_index} is not bound to its retained log"
+            )
+        log_text = log_path.read_bytes().decode("utf-8", errors="replace")
+        try:
+            reparsed = analyze_runtime_log(
+                log_text, runtime_manifest, str(fidelity["sha256"])
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeProfileError(
+                f"QEMU run {expected_index} cannot be checked against the fidelity manifest: {error}"
+            ) from error
+        result = run.get("result")
+        if not isinstance(result, dict) or _canonical_bytes(
+            reparsed
+        ) != _canonical_bytes(result):
+            raise RuntimeProfileError(
+                f"QEMU run {expected_index} report differs from its retained log"
+            )
+        run_signature = canonical_ready_signature(reparsed)
+        if run.get("ready_signature") != run_signature or run_signature != signature:
+            raise RuntimeProfileError(
+                "QEMU runtime readiness signatures are not identical"
+            )
 
     return {
         "status": "PASS",

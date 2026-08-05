@@ -102,20 +102,35 @@ def valid_log(**overrides: str) -> str:
 
 
 def write_ci_report(root: Path, head: str = "a" * 40) -> Path:
-    for relative in runtime.CI_REQUIRED_ARTIFACTS - {"runtime-report.json"}:
-        path = root / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"fixture:{relative}\n", encoding="utf-8")
-    signature = "b" * 64
-    run_evidence = [
-        {
-            "index": index,
-            "ready_signature": signature,
-            "execution": {"qemu_returncode": 0},
-            "result": {"status": "PASS", "failure_mask": 0},
-        }
-        for index in range(1, runtime.ACCEPTANCE_RUNS + 1)
-    ]
+    (root / "build.log").write_text("fresh build\n", encoding="utf-8")
+    (root / "sdkconfig.qemu").write_text("CONFIG_DOMES_QEMU=y\n", encoding="utf-8")
+    fidelity_manifest = manifest()
+    fidelity_path = root / "domes-fidelity-manifest.json"
+    fidelity_path.write_text(json.dumps(fidelity_manifest), encoding="utf-8")
+    fidelity_sha256 = runtime.sha256_file(fidelity_path)
+    log_text = valid_log(manifest_sha256=fidelity_sha256)
+    result = runtime.analyze_runtime_log(log_text, fidelity_manifest, fidelity_sha256)
+    signature = runtime.canonical_ready_signature(result)
+    run_evidence = []
+    for index in range(1, runtime.ACCEPTANCE_RUNS + 1):
+        log_path = root / f"runs/{index:03d}/qemu.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(log_text, encoding="utf-8")
+        run_evidence.append(
+            {
+                "index": index,
+                "ready_signature": signature,
+                "execution": {
+                    "seconds": 1.0,
+                    "termination": "marker_observed_then_runner_sigterm",
+                    "termination_action": "sigterm",
+                    "qemu_returncode": 0,
+                    "log": str(log_path.resolve()),
+                    "log_sha256": runtime.sha256_file(log_path),
+                },
+                "result": result,
+            }
+        )
     report_path = root / "runtime-report.json"
     report_path.write_text(
         json.dumps(
@@ -127,6 +142,32 @@ def write_ci_report(root: Path, head: str = "a" * 40) -> Path:
                 "required_acceptance_runs": runtime.ACCEPTANCE_RUNS,
                 "ready_signature": signature,
                 "git": {"head": head, "dirty": False},
+                "build": {
+                    "skipped": False,
+                    "command": [
+                        "python",
+                        "idf.py",
+                        "-C",
+                        str(runtime.FIRMWARE_DIR),
+                        "-B",
+                        str((root.parent / "build").resolve()),
+                        "-D",
+                        "IDF_TARGET=esp32s3",
+                        "-D",
+                        f"SDKCONFIG={(root / 'sdkconfig.qemu').resolve()}",
+                        "-D",
+                        f"SDKCONFIG_DEFAULTS={runtime.QEMU_DEFAULTS}",
+                        "build",
+                    ],
+                    "seconds": 1.0,
+                    "sdkconfig": str((root / "sdkconfig.qemu").resolve()),
+                    "log": str((root / "build.log").resolve()),
+                    "log_sha256": runtime.sha256_file(root / "build.log"),
+                },
+                "fidelity_manifest": {
+                    "path": fidelity_path.name,
+                    "sha256": fidelity_sha256,
+                },
                 "run_evidence": run_evidence,
             }
         ),
@@ -418,6 +459,116 @@ class CiReportTests(unittest.TestCase):
             runtime._write_artifact_manifest(root)
             with self.assertRaisesRegex(runtime.RuntimeProfileError, "run 5"):
                 runtime.verify_ci_report(report_path, "a" * 40)
+
+    def test_rejects_missing_middle_run_log(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = write_ci_report(root)
+            (root / "runs/050/qemu.log").unlink()
+            runtime._write_artifact_manifest(root)
+            with self.assertRaisesRegex(
+                runtime.RuntimeProfileError, "omits required files"
+            ):
+                runtime.verify_ci_report(report, "a" * 40)
+
+    def test_rejects_run_log_that_disagrees_with_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report_path = write_ci_report(root)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            log_path = root / "runs/050/qemu.log"
+            log_path.write_text("no readiness marker\n", encoding="utf-8")
+            report["run_evidence"][49]["execution"]["log_sha256"] = runtime.sha256_file(
+                log_path
+            )
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            runtime._write_artifact_manifest(root)
+            with self.assertRaisesRegex(runtime.RuntimeProfileError, "exactly one"):
+                runtime.verify_ci_report(report_path, "a" * 40)
+
+    def test_rejects_skipped_firmware_build(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report_path = write_ci_report(root)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report["build"]["skipped"] = True
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            runtime._write_artifact_manifest(root)
+            with self.assertRaisesRegex(
+                runtime.RuntimeProfileError, "fresh firmware build"
+            ):
+                runtime.verify_ci_report(report_path, "a" * 40)
+
+    def test_rejects_arbitrary_fresh_build_command(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report_path = write_ci_report(root)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report["build"]["command"] = ["true"]
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            runtime._write_artifact_manifest(root)
+            with self.assertRaisesRegex(
+                runtime.RuntimeProfileError, "fresh firmware build"
+            ):
+                runtime.verify_ci_report(report_path, "a" * 40)
+
+    def test_rejects_boolean_numeric_evidence(self) -> None:
+        mutations = (
+            ("build seconds", lambda report: report["build"].update(seconds=True)),
+            (
+                "execution seconds",
+                lambda report: report["run_evidence"][0]["execution"].update(
+                    seconds=True
+                ),
+            ),
+            (
+                "return code",
+                lambda report: report["run_evidence"][0]["execution"].update(
+                    qemu_returncode=False
+                ),
+            ),
+            (
+                "runtime result",
+                lambda report: report["run_evidence"][0]["result"].update(
+                    failure_mask=False
+                ),
+            ),
+        )
+        for name, mutate in mutations:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                report_path = write_ci_report(root)
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                mutate(report)
+                report_path.write_text(json.dumps(report), encoding="utf-8")
+                runtime._write_artifact_manifest(root)
+                with self.assertRaises(runtime.RuntimeProfileError):
+                    runtime.verify_ci_report(report_path, "a" * 40)
+
+    def test_malformed_fidelity_manifest_fails_cleanly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report_path = write_ci_report(root)
+            fidelity_path = root / "domes-fidelity-manifest.json"
+            fidelity_path.write_text("{}\n", encoding="utf-8")
+            fidelity_sha256 = runtime.sha256_file(fidelity_path)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report["fidelity_manifest"]["sha256"] = fidelity_sha256
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            runtime._write_artifact_manifest(root)
+            with self.assertRaisesRegex(
+                runtime.RuntimeProfileError, "fidelity manifest"
+            ):
+                runtime.verify_ci_report(report_path, "a" * 40)
+
+    def test_rejects_build_log_that_is_not_bound_to_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = write_ci_report(root)
+            (root / "build.log").write_text("different build\n", encoding="utf-8")
+            runtime._write_artifact_manifest(root)
+            with self.assertRaisesRegex(runtime.RuntimeProfileError, "build artifacts"):
+                runtime.verify_ci_report(report, "a" * 40)
 
     def test_rejects_unmanifested_output(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -131,8 +131,9 @@ FS-WP-002D builds `firmware/domes` with mutually exclusive physical and QEMU com
 Software CI builds both roots and runs the build/manifest/source-closure validator. Its required
 `Execute ESP32-S3 QEMU Runtime` job also rebuilds the QEMU root from the exact checkout, executes
 100 fresh `service_ready_v1` target processes under the pinned emulator, verifies the accepted
-report against `GITHUB_SHA`, and blocks `CI Gate` on any failure. Reproduce the paired build contract
-locally with isolated SDKCONFIG files:
+report against `GITHUB_SHA`, and blocks `CI Gate` on any failure. The verifier requires and reparses
+all 100 hash-bound target logs against the retained fidelity manifest; a summary count or partial
+campaign cannot pass. Reproduce the paired build contract locally with isolated SDKCONFIG files:
 
 ```bash
 . ~/esp/esp-idf/export.sh
