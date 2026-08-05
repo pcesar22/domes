@@ -1,0 +1,8 @@
+# Preserve machine-captured QEMU evidence byte-for-byte and exclude it from text linting.
+docs/evidence/qemu-feasibility/*.log binary
+docs/evidence/qemu-feasibility/**/*.log binary
+docs/evidence/qemu-feasibility/**/gdb.txt binary
+docs/evidence/qemu-feasibility/**/monitor.txt binary
+docs/evidence/qemu-feasibility/*/artifact-manifest.sha256 binary
+docs/evidence/qemu-feasibility/*/report.json binary
+docs/evidence/qemu-feasibility/*/artifacts/sdkconfig binary

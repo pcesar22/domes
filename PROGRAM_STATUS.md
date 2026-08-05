@@ -11,7 +11,8 @@ belong in [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md), ta
 [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md), and verification procedures
 in [`docs/TESTING.md`](docs/TESTING.md).
 
-**As of:** 2026-08-04, main `c0691f34f68c8e671f1023f1dabc05cea1526344` after merged PR 97
+**As of:** 2026-08-04, FS-WP-002B evidence bound to implementation
+`b12dbddeac64397b0b15e9970251694f40632cf9` on `codex/feat/qemu-feasibility`
 
 ## CEO Control Panel
 
@@ -24,10 +25,10 @@ in [`docs/TESTING.md`](docs/TESTING.md).
 | Next program gate | G1 System Architecture Baseline and Schematic Authorization |
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
-| Current execution package | None; `FS-WP-002A` is complete and `FS-WP-002B` is the next ready technical package |
+| Current execution package | None; `FS-WP-002B` is complete with a retained `Viable` result |
 | Next program action | Select and start VC1 now; in parallel, record the HW owner/budget decision and then start HW-WP-001 while active PS1 and FS1 work continues |
-| Next autonomous execution delivery | Execute `FS-WP-002B`; return a retained `Viable` or `Not viable` result before transport or QEMU-device implementation |
-| Current AI execution blocker | None for `FS-WP-002B`; target support and patch size are risks the package must resolve, not assumed capabilities |
+| Next autonomous execution delivery | Select and execute `FS-WP-002D` as a separate package: physical/QEMU composition roots and deterministic platform inputs |
+| Current AI execution blocker | None; D is technically eligible but is not active until separately selected |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
 | First product-hardware purchase authorization | G2 EVT Release to Fab, forecast 2026-11-02 |
@@ -51,35 +52,35 @@ start PCB layout, or order EVT boards until the corresponding gates pass.
 | HW-WP-001 NFF Characterization and Product Architecture Downselect | `Ready now` | HR0-HR2 evidence; analysis, supplier work, evaluation kits, and coupons only |
 | Product/system requirement allocation | `Active` | Stabilize hardware-driving values or explicit ranges/fallbacks for G1 |
 | Physical NFF closure | `Active` | Both boards, all peripherals, exact populated parts, current/power/timing/RF evidence |
-| Deterministic virtual platform | `Active` | Replay foundation is complete; QEMU feasibility is next; predictive claims require the full FS2 ladder and independent held-out qualification |
+| Deterministic virtual platform | `Active` | Replay foundation and QEMU feasibility are complete; D is next; predictive claims still require the full FS2 ladder and independent held-out qualification |
 | General drill/protocol convergence | `Ready now` | One protobuf-owned drill, timing, authority, result, and recovery contract across firmware/sim/app |
 | Four economical ESP32-S3 alpha nodes | `Ready now` | System-scale development inventory, not product hardware |
 | FMEA, compliance, supply, CM, DFM/DFT, and test planning | `Ready now` | Planning and risk closure; no approval or production claim |
 
-### Selected Execution Delivery
+### Latest Completed Execution Delivery
 
 #### FS-WP-002B: ESP32-S3 QEMU Feasibility
 
 **Objective:** Determine whether a pinned ESP32-S3 QEMU target can execute a bounded ESP-IDF
-FreeRTOS SMP feasibility probe reproducibly before DOMES changes its production composition or
+dual-core FreeRTOS feasibility probe reproducibly before DOMES changes its production composition or
 transport.
 
 | Contract | Current state |
 | --- | --- |
 | Owner | AI simulation lead |
-| State / health | `Ready` / `Amber` |
-| Execution issue / review package | Not yet opened |
+| State / health | `Complete` / `Green` |
+| Execution issue / review package | Implementation `b12dbddeac64397b0b15e9970251694f40632cf9`; [retained evidence](docs/evidence/qemu-feasibility/FS-WP-002B.md); PR not yet opened |
 | Inputs | Merged `FS-WP-002A`; ESP-IDF v5.4.4; official ESP32-S3 QEMU support documentation and candidate upstreams; current task topology and trace system |
-| Dependencies/blockers | No blocker to feasibility; no transport refactor, QEMU fork, or required CI lane is authorized by entry |
-| Gate/risk unlocked | A `Viable` result authorizes selection of simulation composition (`D`); observability (`C`) follows `D`, and the physical radio seam (`E`) follows `C` |
-| Stop condition | Return `Not viable` and an architecture-disposition recommendation if the bounded target requires replacement of core kernel, transport, service, or runtime logic, or an unbounded QEMU patch |
+| Dependencies/blockers | Complete with unmodified pinned QEMU; no transport refactor, QEMU fork, production composition root, or required CI lane entered |
+| Gate/risk unlocked | `Viable` makes simulation composition (`D`) eligible for separate selection; observability (`C`) follows `D`, and the physical radio seam (`E`) follows `C` |
+| Stop condition | Reached after the binary disposition and retained evidence; later package work is prohibited in this delivery |
 
-Acceptance requires a retained target boot with pinned-task progress on both CPUs, a blocking/wakeup
-exchange, tick and controlled-interrupt counters, and QEMU monitor/GDB evidence; 100 identical
-deterministic signatures for that fixed probe; a complete fidelity inventory; measured build/runtime;
-an immutable engine revision; numeric and structural patch/maintenance limits; and an explicit
-`Viable` or `Not viable` result. This is feasibility evidence, not scheduler coverage, ESP-NOW, RF,
-cycle-accuracy, or predictive evidence.
+Acceptance passed with 100/100 fresh target boots, pinned-task progress on both CPUs, a
+blocking/wakeup exchange, tick and controlled-interrupt counters, one structural and one normalized
+observation signature, HMP/GDB evidence, immutable source/build/media identities, measured
+build/runtime, and the adopted numeric patch/maintenance limits. The result is `Viable`. This remains
+feasibility evidence, not production-firmware, scheduler-coverage, ESP-NOW, RF, cycle-accuracy,
+required-CI, or predictive evidence.
 
 ### FS2 Deterministic Virtual Platform Ladder
 
@@ -90,8 +91,8 @@ These forecasts are planning targets, not evidence. Entry criteria, not date, au
 | Package | Bounded outcome | State / health | Entry | Binary exit | Baseline | Forecast |
 | --- | --- | --- | --- | --- | --- | --- |
 | FS-WP-002A | Deterministic host clock, network faults, identity, and exact delivery replay | `Complete` / `Green` | Existing host simulator | Merged [PR 97](https://github.com/pcesar22/domes/pull/97), exact replay and green required CI | 2026-08-04 | 2026-08-04 actual |
-| FS-WP-002B | ESP32-S3 QEMU feasibility and adoption decision | `Ready` / `Amber` | `A` complete | Two-CPU task progress, block/wake, tick/IRQ probe, 100 signatures, pinned engine, numeric patch/maintenance budget, `Viable`/`Not viable` | 2026-08-14 | 2026-08-14 |
-| FS-WP-002D | Physical/QEMU composition roots and deterministic platform inputs | `Not due` / `Not rated` | `B` is `Viable` and this package is selected | QEMU reaches service-ready state through declared adapters; physical init/build behavior remains unchanged and excludes simulation code | 2026-08-25 | 2026-08-25 |
+| FS-WP-002B | ESP32-S3 QEMU feasibility and adoption decision | `Complete` / `Green` | `A` complete | `Viable`: 100/100 fixed runs, HMP/GDB, immutable pinned engine, complete fidelity inventory and numeric adoption budget | 2026-08-14 | 2026-08-04 actual |
+| FS-WP-002D | Physical/QEMU composition roots and deterministic platform inputs | `Ready` / `Amber` | `B` is `Viable`; this package must be separately selected | QEMU reaches service-ready state through declared adapters; physical init/build behavior remains unchanged and excludes simulation code | 2026-08-25 | 2026-08-25 |
 | FS-WP-002C | Stable scheduler, ISR, synchronization, causality, and trace normalization | `Not due` / `Not rated` | `D` passes and this package is selected | QEMU and hardware use one bounded raw/normalized trace contract with stable IDs, full causal graph, overflow failure, and measured overhead | 2026-09-04 | 2026-09-04 |
 | FS-WP-002E | Production `IEspNowRadio` seam and trace correlation below `EspNowTransport` | `Not due` / `Not rated` | `C` passes and this package is selected | Physical path passes two-board regression; causal tokens cross callback/ring/dequeue without wire or pending-frame-capacity change | 2026-09-11 | 2026-09-11 |
 | FS-WP-003A | Portable protobuf-owned peer/drill codec and role semantics, required FS3 input | `Ready` / `Red` | Current physical/simulator/app contracts and compatibility baseline identified | Generated nanopb/prost/Dart contract replaces duplicated semantics and passes host/app/CLI/build/two-board migration regression | 2026-09-15 | 2026-09-15 |
@@ -205,7 +206,7 @@ laundering a failed model into gate evidence.
 | --- | --- | --- | --- | --- | --- | --- |
 | FS0 | Reproducible CI and automated two-board platform | AI firmware/software lead | `Complete` | `Green` | 2026-08-03 actual | Preserve required CI and rerun hardware evidence after behavioral change |
 | FS1 | Complete physical NFF reference and product-interface inventory | AI firmware/software lead | `Active` | `Amber` | 2026-08-24 | Finish audio/volume; observe peripherals; capture current/power/timing; confirm exact parts |
-| FS2 | Layered deterministic virtual platform with a measured prediction envelope | AI simulation lead | `Active` | `Amber` | 2026-10-30 | `A` complete; execute `B` QEMU feasibility next; confidence remains `Low` until `B` is `Viable` |
+| FS2 | Layered deterministic virtual platform with a measured prediction envelope | AI simulation lead | `Active` | `Amber` | 2026-10-30 | `A` and `B` complete; D is the next selectable package; confidence remains `Low` until the full ladder and independent qualification pass |
 | FS3 | One production-owned drill/runtime contract across firmware, simulator and app | AI firmware/software lead | `Ready` | `Red` | 2026-10-19 | Deliver `FS-WP-003A` portable protobuf peer/drill contract by 2026-09-15, then close fixed two-pod and host-wall-clock scoring divergence |
 | FS4 | Six-node runtime, mobile/control, diagnostics, failure recovery and soak | AI systems/software lead | `Ready` | `Amber` | 2026-10-19 | Execute on NFF plus economical alpha nodes; feed critical results into G2 |
 | FS5 | EVT BSP, board profile, factory/service tooling and bring-up | AI firmware lead | `Not due` | `Not rated` | 2027-02-08 | Scaffold after G1; exact profile must build before G2 and remain separate from NFF |
@@ -278,8 +279,8 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 
 | Date | Integrated result | Decision impact |
 | --- | --- | --- |
-| 2026-08-04 | HW-WP-001 released; FS2 replay foundation accepted; VC planning and four-node sourcing start | Parallel definition begins without PCB commitment |
-| 2026-08-14 | Product brief, hardware-driving requirement draft, initial risk register, and FS-WP-002B QEMU result | Conflicts and missing measurements surface early; `Viable` authorizes selection of `D`, the first target-platform implementation package |
+| 2026-08-04 | HW-WP-001 released; FS2 replay foundation accepted; FS-WP-002B returned `Viable` early; VC planning and four-node sourcing start | D becomes eligible for separate selection without creating a production, hardware, or predictive claim |
+| 2026-08-14 | Product brief, hardware-driving requirement draft, and initial risk register | Conflicts and missing measurements surface early while simulation implementation proceeds on its separate ladder |
 | 2026-08-24 | NFF physical/peripheral/electrical characterization baseline | Guesses are replaced before selection freeze |
 | 2026-08-31 | Architecture/component shortlist and bounded risk-coupon review | Weak candidates are removed |
 | 2026-09-07 | Requirements/interface baseline candidate, budgets, RF/compliance and manufacturing/test concepts | G1 package becomes auditable |
@@ -301,6 +302,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | --- | --- | --- | --- |
 | Current main software CI | Commit `c0691f34f68c8e671f1023f1dabc05cea1526344`, [run 30943047671](https://github.com/pcesar22/domes/actions/runs/30943047671) | Passed | Builds, tests, generated artifacts, lint, docs, Flutter Linux/iOS, ESP-IDF release checks, and aggregate `CI Gate` |
 | Deterministic replay foundation | [PR 97](https://github.com/pcesar22/domes/pull/97), merged 2026-08-04 | Accepted | FS-WP-002A only: explicit host time, deterministic faults, delivery identity, and exact delivery replay; no trace-normalization, target-scheduler, or predictive claim |
+| ESP32-S3 QEMU feasibility | Implementation `b12dbddeac64397b0b15e9970251694f40632cf9`; [FS-WP-002B evidence](docs/evidence/qemu-feasibility/FS-WP-002B.md) | `Viable`; 100/100 runs and retained HMP/GDB/media identity | Standalone dual-core target probe only; no `firmware/domes`, scheduler trace, radio/RF, cycle-accuracy, CI-admission, or predictive claim |
 | Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains and CI behavior |
 | Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
 
@@ -341,7 +343,7 @@ synchronized one-way measurements and do not prove sub-millisecond behavior.
 | Physical NFF and engineering baseline incomplete | Part/architecture decisions may optimize against guesses | FS/HW | Close FS1/HW0/HR0 by 2026-08-24 |
 | Product/system allocation incomplete | G1 cannot bound interfaces or selection | PS/VC | Produce PS1 candidate by 2026-09-07 |
 | Firmware, simulator and Flutter drill/timing paths diverge | System alpha and model cannot prove product behavior | FS | Establish protobuf-owned semantics, shared production logic and correlated timing before G2 |
-| ESP32-S3 QEMU support or required patch surface may be insufficient | Target-execution tier may be too costly or may replace behavior it should test | FS | Execute bounded FS-WP-002B first; use its retained `Viable` or `Not viable` result before any fork or transport implementation |
+| QEMU peripheral gaps or future patch maintenance exceed the adopted budget | Target execution may bypass production behavior or become uneconomic to sustain | FS | Enforce FS-WP-002B's 10-file/2,500-line/path/effort ceilings; reopen the engine decision on any breach or unexplained divergence |
 | FS3 stability precedes calibration and leaves three days between simulation qualification and G2 | The prediction envelope may miss the G2 review window | FS/VC | Deliver FS-WP-003A by 2026-09-15, preserve direct physical G2 evidence, and reforecast FS2 immediately on dependency variance |
 | Deterministic single-thread QEMU serializes two vCPUs | A repeatable run can miss true parallel races and cannot imply cycle accuracy | FS/VC | Keep schedule sweeps, MTTCG stress, native sanitizers, and hardware differential evidence separate and mandatory in their declared envelopes |
 | Only two NFF boards exist | Six-node behavior cannot inform EVT release | PS/FS | Procure four inexpensive alpha nodes by 2026-08-07 |

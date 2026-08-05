@@ -1,0 +1,5 @@
+QEMU 9.2.2 monitor - type 'help' for more information
+(qemu) i[K[Din[K[D[Dinf[K[D[D[Dinfo[K[D[D[D[Dinfo [K[D[D[D[D[Dinfo c[K[D[D[D[D[D[Dinfo cp[K[D[D[D[D[D[D[Dinfo cpu[K[D[D[D[D[D[D[D[Dinfo cpus[K
+* CPU #0: thread_id=1797662
+  CPU #1: thread_id=1797662
+(qemu) 

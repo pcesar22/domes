@@ -10,14 +10,14 @@ repos:
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: '\.patch$'
+        exclude: '\.patch$|^docs/evidence/qemu-feasibility/(?:[0-9a-f]{40}/|[^/]+\.log$)'
       - id: end-of-file-fixer
-        exclude: '\.patch$|\.bin$|\.pdf$'
+        exclude: '\.patch$|\.bin$|\.pdf$|^docs/evidence/qemu-feasibility/(?:[0-9a-f]{40}/|[^/]+\.log$)'
       - id: check-yaml
       - id: check-json
       - id: check-added-large-files
         args: ['--maxkb=1000']
-        exclude: '\.pdf$|\.png$|\.zip$|\.epro$'
+        exclude: '\.pdf$|\.png$|\.zip$|\.epro$|^docs/evidence/qemu-feasibility/[0-9a-f]{40}/'
       - id: check-merge-conflict
       - id: check-case-conflict
 

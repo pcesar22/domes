@@ -1,0 +1,52 @@
+0x40000400 in ?? ()
+* CPU #0: thread_id=1797662
+  CPU #1: thread_id=1797662
+Breakpoint 1 at 0x4200f79c: file /COMPONENT_MAIN_DIR/qemuFeasibility.cpp, line 72.
+
+Thread 1 hit Breakpoint 1, domesQemuProbeComplete () at /COMPONENT_MAIN_DIR/qemuFeasibility.cpp:72
+warning: 72	/COMPONENT_MAIN_DIR/qemuFeasibility.cpp: No such file or directory
+* CPU #0: thread_id=1797662
+  CPU #1: thread_id=1797662
+$1 = {
+  schema = 3,
+  failureMask = 0,
+  controllerCore = 0,
+  core0Observed = 0,
+  core1Observed = 1,
+  core0Runs = 1,
+  core1Runs = 1,
+  core0Phases = 5,
+  core1Phases = 5,
+  core0Blocks = 1,
+  core1Blocks = 2,
+  core0Wakeups = 1,
+  core1Wakeups = 2,
+  taskHandoff0To1 = 1,
+  taskHandoff1To0 = 1,
+  core0WaitTicks = 2,
+  core1WaitTicks = 4,
+  irqWaitTicks = 2,
+  tickStart = 6,
+  tickEnd = 8,
+  tickDelta = 2,
+  irqCore = 0,
+  irqConsumerCore = 1,
+  irqConsumerWakeups = 1,
+  irqCount = 1,
+  irqDrops = 0,
+  irqSequence = 1,
+  irqAlarm = 2000,
+  irqCountValue = 2001,
+  irqCountDelta = 1,
+  timerCleanup = 1
+}
+  Id   Target Id                    Frame 
+* 1    Thread 1.1 (CPU#0 [running]) domesQemuProbeComplete () at /COMPONENT_MAIN_DIR/qemuFeasibility.cpp:72
+  2    Thread 1.2 (CPU#1 [halted ]) 0x40378496 in esp_cpu_wait_for_intr () at /COMPONENT_ESP_HW_SUPPORT_DIR/cpu.c:64
+
+Thread 2 (Thread 1.2 (CPU#1 [halted ])):
+pc             0x40378496          0x40378496 <esp_cpu_wait_for_intr+6>
+
+Thread 1 (Thread 1.1 (CPU#0 [running])):
+pc             0x4200f79c          0x4200f79c <domesQemuProbeComplete()>
+[Inferior 1 (process 1) detached]

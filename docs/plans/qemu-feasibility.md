@@ -1,10 +1,10 @@
 # Prove ESP32-S3 QEMU Feasibility
 
-Status: active
-Current phase: bounded target probe
-Repository state: implementation candidate prepared on `codex/feat/qemu-feasibility`; the retained
-100-run campaign must bind to the next immutable implementation commit
-Last updated: 2026-08-04; ESP-IDF v5.4.4 and its pinned QEMU 9.2.2 package were discovered locally
+Status: complete
+Current phase: FS-WP-002B closed; retained evidence and status independently accepted
+Repository state: implementation commit `b12dbddeac64397b0b15e9970251694f40632cf9` has a retained
+100-run acceptance package under `docs/evidence/qemu-feasibility/`
+Last updated: 2026-08-04; binary disposition `Viable`
 
 ## Objective and observable outcome
 
@@ -42,20 +42,23 @@ virtual radio, production composition root, scheduler trace, or predictive model
 - [x] ESP-IDF v5.4.4 found; pinned QEMU package is
   `esp_develop_9.2.2_20250817`.
 - [x] Build and run the isolated probe once; retain target, monitor, and GDB evidence.
-- [ ] **Current:** Freeze the implementation commit, then run 100 fixed deterministic repetitions
-  and measure cold/cached build and execution time.
-- [ ] Publish the fidelity inventory, numeric patch/maintenance budget, and binary disposition.
-- [ ] Run repository checks and update the resume checkpoint.
+- [x] Freeze implementation commit `b12dbdd`, run 100 fixed deterministic repetitions, and measure
+  cold/cached build and execution time.
+- [x] Publish the fidelity inventory, numeric patch/maintenance budget, and binary `Viable`
+  disposition.
+- [x] Run repository checks after populating the pinned nanopb submodule and keeping host-tool and
+  ESP-IDF Python environments separate.
+- [x] Independently review retained evidence/status; all findings resolved and the package accepted.
 
 ## Verification
 
 | Evidence level | Command or observation | Status and artifact |
 | --- | --- | --- |
-| Probe build | `python3 tools/simulation/qemu_feasibility.py --build-only` | pending |
-| Target execution | `python3 tools/simulation/qemu_feasibility.py --runs 1 --allow-dirty` | passed during development; immutable rerun pending |
-| Determinism | `python3 tools/simulation/qemu_feasibility.py --runs 100` | pending |
-| Runner unit tests | `python3 -m unittest tools/simulation/test_qemu_feasibility.py -v` | 31 passed |
-| Repository software | `scripts/verify.sh --component firmware` plus the package-specific runner | pending |
+| Probe build | Acceptance runner cold and cached builds | passed: 7.096 s cold, 0.560 s cached |
+| Target execution | `python3 tools/simulation/qemu_feasibility.py --runs 100 ...` | passed: HMP/GDB and 100/100 processes |
+| Determinism | Retained `report.json` and raw logs | passed: one structural and one normalized observation signature |
+| Runner unit tests | `python3 -m unittest tools/simulation/test_qemu_feasibility.py -v` | [31 passed](../evidence/qemu-feasibility/runner-unit-tests-b12dbdd.log) |
+| Repository software | `scripts/verify.sh --component firmware --component tooling --component docs` | [passed](../evidence/qemu-feasibility/repository-verification-b12dbdd.log): 283 host tests, host tooling/docs, production ESP-IDF build with 27% app-partition headroom |
 | Physical hardware | Not required | B makes no physical-device or peripheral claim |
 
 ## Decisions, discoveries, and deviations
@@ -72,9 +75,16 @@ virtual radio, production composition root, scheduler trace, or predictive model
   identity revalidation, signal-safe cleanup, retryable debug endpoints, disjoint output paths, and
   an enforced compiler-package pin. All six items are implemented; a hardened development smoke run
   passed with `acceptance.status=NOT_ELIGIBLE` as intended.
+- The clean immutable campaign reported `invocation_status=SUCCEEDED` and
+  `acceptance.status=PASS`. Its SHA-256 manifest passed all 112 listed artifacts; the manifest is the
+  113th package file and necessarily does not list itself.
+- The technical disposition is `Viable`. It makes D eligible but does not select D or establish any
+  production-firmware, scheduler-trace, radio, cycle-accuracy, CI, or predictive claim.
+- The first scoped repository-verification attempt exposed an uninitialized nanopb submodule and a
+  shell-contaminated Python path. After populating the recorded submodule commit and running host
+  tooling outside the ESP-IDF environment, the same selected verification passed completely.
 
 ## Resume checkpoint
 
-Commit the probe, runner, tests, and operator documentation. Execute the clean commit for 100 fresh
-QEMU processes, retain both signature classes plus monitor/GDB and media-integrity evidence, then
-publish the binary disposition and status update. Do not expand into FS-WP-002D from this package.
+FS-WP-002B is closed. FS-WP-002D is the next eligible simulation package, but it must be separately
+selected; do not expand B into D.

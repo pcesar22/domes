@@ -1,0 +1,39 @@
+Script started on 2026-08-04 18:35:58-07:00 [COMMAND="python3 -m unittest tools/simulation/test_qemu_feasibility.py -v" <not executed on terminal>]
+test_build_only_is_not_acceptance_eligible (tools.simulation.test_qemu_feasibility.AcceptanceTests.test_build_only_is_not_acceptance_eligible) ... ok
+test_dirty_execution_is_not_acceptance_eligible (tools.simulation.test_qemu_feasibility.AcceptanceTests.test_dirty_execution_is_not_acceptance_eligible) ... ok
+test_one_and_99_runs_are_not_acceptance_eligible (tools.simulation.test_qemu_feasibility.AcceptanceTests.test_one_and_99_runs_are_not_acceptance_eligible) ... ok
+test_only_clean_exact_100_run_execution_is_eligible (tools.simulation.test_qemu_feasibility.AcceptanceTests.test_only_clean_exact_100_run_execution_is_eligible) ... ok
+test_debug_command_starts_paused_with_hmp_and_gdb (tools.simulation.test_qemu_feasibility.CommandTests.test_debug_command_starts_paused_with_hmp_and_gdb) ... ok
+test_debug_endpoints_are_all_or_nothing (tools.simulation.test_qemu_feasibility.CommandTests.test_debug_endpoints_are_all_or_nothing) ... ok
+test_run_command_has_fixed_deterministic_controls (tools.simulation.test_qemu_feasibility.CommandTests.test_run_command_has_fixed_deterministic_controls) ... ok
+test_accepts_production_aligned_probe_config (tools.simulation.test_qemu_feasibility.ConfigTests.test_accepts_production_aligned_probe_config) ... ok
+test_rejects_amazon_smp_kernel (tools.simulation.test_qemu_feasibility.ConfigTests.test_rejects_amazon_smp_kernel) ... ok
+test_rejects_inconsistent_relative_observation (tools.simulation.test_qemu_feasibility.MarkerTests.test_rejects_inconsistent_relative_observation) ... ok
+test_rejects_multiple_markers (tools.simulation.test_qemu_feasibility.MarkerTests.test_rejects_multiple_markers) ... ok
+test_rejects_panic_and_reset_signatures (tools.simulation.test_qemu_feasibility.MarkerTests.test_rejects_panic_and_reset_signatures) ... ok
+test_rejects_second_boot (tools.simulation.test_qemu_feasibility.MarkerTests.test_rejects_second_boot) ... ok
+test_rejects_target_fail (tools.simulation.test_qemu_feasibility.MarkerTests.test_rejects_target_fail) ... ok
+test_rejects_unknown_schema_field (tools.simulation.test_qemu_feasibility.MarkerTests.test_rejects_unknown_schema_field) ... ok
+test_signature_retains_relative_scheduler_values (tools.simulation.test_qemu_feasibility.MarkerTests.test_signature_retains_relative_scheduler_values) ... ok
+test_signature_retains_structural_values (tools.simulation.test_qemu_feasibility.MarkerTests.test_signature_retains_structural_values) ... ok
+test_valid_log_produces_normalized_signature (tools.simulation.test_qemu_feasibility.MarkerTests.test_valid_log_produces_normalized_signature) ... ok
+test_rejects_artifacts_inside_build (tools.simulation.test_qemu_feasibility.PathTests.test_rejects_artifacts_inside_build) ... ok
+test_rejects_build_inside_artifacts (tools.simulation.test_qemu_feasibility.PathTests.test_rejects_build_inside_artifacts) ... ok
+test_rejects_equal_build_and_artifact_paths (tools.simulation.test_qemu_feasibility.PathTests.test_rejects_equal_build_and_artifact_paths) ... ok
+test_idf_pin_is_exact (tools.simulation.test_qemu_feasibility.PinTests.test_idf_pin_is_exact) ... ok
+test_qemu_pin_is_exact (tools.simulation.test_qemu_feasibility.PinTests.test_qemu_pin_is_exact) ... ok
+test_toolchain_identity_ignores_randomized_ldd_load_addresses (tools.simulation.test_qemu_feasibility.PinTests.test_toolchain_identity_ignores_randomized_ldd_load_addresses) ... ok
+test_execute_rejects_process_exit (tools.simulation.test_qemu_feasibility.ProcessTests.test_execute_rejects_process_exit) ... ok
+test_execute_rejects_timeout (tools.simulation.test_qemu_feasibility.ProcessTests.test_execute_rejects_timeout) ... ok
+test_interrupt_handler_terminates_registered_qemu_group (tools.simulation.test_qemu_feasibility.ProcessTests.test_interrupt_handler_terminates_registered_qemu_group) ... ok
+test_terminate_handles_process_lookup_race (tools.simulation.test_qemu_feasibility.ProcessTests.test_terminate_handles_process_lookup_race) ... ok
+test_identity_revalidation_rejects_build_mutation (tools.simulation.test_qemu_feasibility.ReportTests.test_identity_revalidation_rejects_build_mutation) ... ok
+test_identity_revalidation_rejects_source_mutation (tools.simulation.test_qemu_feasibility.ReportTests.test_identity_revalidation_rejects_source_mutation) ... ok
+test_observation_ranges_retain_raw_min_and_max (tools.simulation.test_qemu_feasibility.ReportTests.test_observation_ranges_retain_raw_min_and_max) ... ok
+
+----------------------------------------------------------------------
+Ran 31 tests in 0.074s
+
+OK
+
+Script done on 2026-08-04 18:35:58-07:00 [COMMAND_EXIT_CODE="0"]

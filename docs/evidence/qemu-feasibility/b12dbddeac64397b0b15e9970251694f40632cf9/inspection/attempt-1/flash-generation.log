@@ -1,0 +1,4 @@
+esptool.py --chip=esp32s3 merge_bin --output=/home/pncosta/domes/.worktrees/qemu-feasibility/docs/evidence/qemu-feasibility/b12dbddeac64397b0b15e9970251694f40632cf9/inspection/attempt-1/qemu_flash.bin --fill-flash-size=4MB --flash_mode dio --flash_freq 80m --flash_size 4MB 0x0 bootloader/bootloader.bin 0x10000 domes_qemu_probe.bin 0x8000 partition_table/partition-table.bin
+esptool.py v4.12.0
+SHA digest in image updated
+Wrote 0x400000 bytes to file /home/pncosta/domes/.worktrees/qemu-feasibility/docs/evidence/qemu-feasibility/b12dbddeac64397b0b15e9970251694f40632cf9/inspection/attempt-1/qemu_flash.bin, ready to flash to offset 0x0
