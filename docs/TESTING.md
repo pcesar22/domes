@@ -103,6 +103,28 @@ Do not use an existing ignored `firmware/domes/sdkconfig` as release evidence. I
 changed defaults even when the source diff is correct. Software CI, release CI, the hardware
 workflow, `scripts/verify.sh`, and `tools/firmware/flash_and_verify.sh` use isolated SDKCONFIG files.
 
+## ESP32-S3 QEMU Feasibility
+
+The bounded FS-WP-002B target probe is separate from the production firmware build and host
+simulator. On native x86_64 Linux with ESP-IDF v5.4.4 exported and the distro `libslirp` package
+installed:
+
+```bash
+python "$IDF_PATH/tools/idf_tools.py" install qemu-xtensa
+. ~/esp/esp-idf/export.sh
+python3 tools/simulation/qemu_feasibility.py --runs 1
+python3 tools/simulation/qemu_feasibility.py --runs 100
+```
+
+The runner enforces the exact IDF, compiler, and QEMU identities, uses an isolated SDKCONFIG, starts
+100 fresh snapshot-backed QEMU processes, compares structural and relative-timing signatures, and
+retains HMP/GDB and raw-log evidence. Only a clean, committed, exactly 100-run execution can report
+`acceptance.status=PASS`; shorter, build-only, and `--allow-dirty` invocations are explicitly
+non-acceptance evidence. See
+[`firmware/qemu_probe/README.md`](../firmware/qemu_probe/README.md) for setup, outputs, and claim
+boundaries. This manual feasibility gate does not replace the production ESP-IDF build, host tests,
+hardware verification, or a future admitted QEMU CI lane.
+
 ## CLI Checks
 
 ```bash
