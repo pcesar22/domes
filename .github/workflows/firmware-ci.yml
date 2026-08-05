@@ -172,6 +172,47 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  qemu-runtime:
+    name: Execute ESP32-S3 QEMU Runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: espressif/idf:v5.4.4@sha256:8d1846f61ff8db00ba6530501f90bf43604d923072a616c806fef8e85a88ed82
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Execute deterministic production runtime
+        run: |
+          . "$IDF_PATH/export.sh"
+          artifact_root="$GITHUB_WORKSPACE/.artifacts/qemu-ci"
+          rm -rf "$artifact_root"
+          mkdir -p "$artifact_root"
+          python3 tools/simulation/qemu_runtime.py run \
+            --build-dir "$artifact_root/build" \
+            --artifact-dir "$artifact_root/runtime" \
+            --runs 100 \
+            --timeout 15 \
+            2>&1 | tee "$artifact_root/runner.log"
+
+          python3 tools/simulation/qemu_runtime.py verify-ci-report \
+            --report "$artifact_root/runtime/runtime-report.json" \
+            --expected-head "$GITHUB_SHA"
+
+      - name: Upload QEMU failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: domes-qemu-failure-${{ github.sha }}-${{ github.run_attempt }}
+          path: .artifacts/qemu-ci/
+          if-no-files-found: error
+          retention-days: 14
+
   unit-tests:
     name: Run Unit Tests
     runs-on: ubuntu-24.04
@@ -297,7 +338,7 @@ jobs:
   ci-gate:
     name: CI Gate
     if: ${{ always() }}
-    needs: [firmware-build, unit-tests, cli-build, host-tooling, flutter]
+    needs: [firmware-build, qemu-runtime, unit-tests, cli-build, host-tooling, flutter]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
@@ -309,11 +350,13 @@ jobs:
           FIRMWARE_RESULT: ${{ needs.firmware-build.result }}
           FLUTTER_RESULT: ${{ needs.flutter.result }}
           HOST_TOOLING_RESULT: ${{ needs.host-tooling.result }}
+          QEMU_RUNTIME_RESULT: ${{ needs.qemu-runtime.result }}
           UNIT_TEST_RESULT: ${{ needs.unit-tests.result }}
         run: |
           failed=0
           for result in \
             "$FIRMWARE_RESULT" \
+            "$QEMU_RUNTIME_RESULT" \
             "$UNIT_TEST_RESULT" \
             "$CLI_RESULT" \
             "$HOST_TOOLING_RESULT" \

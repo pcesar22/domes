@@ -123,14 +123,16 @@ writes HMP/GDB output and raw logs to its artifact directory. Only a clean, comm
 invocations cannot report acceptance. See
 [`firmware/qemu_probe/README.md`](../firmware/qemu_probe/README.md) for setup, outputs, and claim
 boundaries. This manual feasibility gate does not replace the production ESP-IDF build, host tests,
-hardware verification, or a future admitted QEMU CI lane.
+hardware verification, or the production-runtime QEMU CI gate below.
 
 ## DOMES QEMU Runtime Profile
 
 FS-WP-002D builds `firmware/domes` with mutually exclusive physical and QEMU composition roots.
-Software CI builds both roots and runs the build/manifest/source-closure validator, but it does not
-install or execute QEMU. Reproduce that blocking build contract locally with isolated SDKCONFIG
-files:
+Software CI builds both roots and runs the build/manifest/source-closure validator. Its required
+`Execute ESP32-S3 QEMU Runtime` job also rebuilds the QEMU root from the exact checkout, executes
+100 fresh `service_ready_v1` target processes under the pinned emulator, verifies the accepted
+report against `GITHUB_SHA`, and blocks `CI Gate` on any failure. Reproduce the paired build contract
+locally with isolated SDKCONFIG files:
 
 ```bash
 . ~/esp/esp-idf/export.sh
@@ -174,9 +176,10 @@ trace coverage, RF/peripheral fidelity, cycle accuracy, hardware equivalence, or
 prediction.
 
 Generated simulation output is not source. Keep reports, raw logs, ELFs, flash images, resolved
-SDKCONFIG files, traces, and run directories under ignored `.artifacts/` or `/tmp`. Automated CI
-results remain in workflow logs or uploaded artifacts; CI does not retain manual QEMU campaigns.
-Commit only the runner, tests, reproducible commands, architecture, and current program status.
+SDKCONFIG files, traces, and run directories under ignored `.artifacts/` or `/tmp`. Successful CI
+results remain in workflow logs; the QEMU job uploads its generated diagnostics only on failure.
+Manual campaigns remain outside Git. Commit only the runner, tests, reproducible commands,
+architecture, and current program status.
 
 ## CLI Checks
 
@@ -314,7 +317,7 @@ Flash coredumps and clean-restart snapshots are separate diagnostics. The active
 
 | Workflow | Purpose | Trigger scope |
 | --- | --- | --- |
-| [`firmware-ci.yml`](../.github/workflows/firmware-ci.yml) | Aggregate Software CI: physical and QEMU-profile ESP-IDF builds, runtime-profile/source-closure validation, physical release packaging, host tests, CLI checks, host tooling, protocol drift, and Flutter checks, exposed through `CI Gate` | Unfiltered `pull_request`, merge queue entry, and push to `main` |
+| [`firmware-ci.yml`](../.github/workflows/firmware-ci.yml) | Aggregate Software CI: physical and QEMU-profile ESP-IDF builds, 100-process deterministic production-runtime QEMU execution, runtime-profile/source-closure validation, physical release packaging, host tests, CLI checks, host tooling, protocol drift, and Flutter checks, exposed through `CI Gate` | Unfiltered `pull_request`, merge queue entry, and push to `main` |
 | [`flutter-ci.yml`](../.github/workflows/flutter-ci.yml) | Reusable generated-binding, analysis, Flutter test, Linux release-build, and no-codesign iOS release-build jobs called by Software CI | `workflow_call` only |
 | [`firmware-hw-test.yml`](../.github/workflows/firmware-hw-test.yml) | Self-hosted device checks | `hw-test` label and subsequent synchronize/reopen events while labeled, or manual run |
 | [`firmware-release.yml`](../.github/workflows/firmware-release.yml) | Tag validation, the complete reusable Software CI gate, then OTA app, merged factory image, exact ELF/build identity, and checksums | Stable `vMAJOR.MINOR.PATCH` tags on `main` |

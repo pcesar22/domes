@@ -193,7 +193,11 @@ class ReleaseContractTest(unittest.TestCase):
         self.assertIn("    branches: [main]\n", self.software_workflow)
         self.assertIn("    name: CI Gate\n", self.software_workflow)
         self.assertIn(
-            "needs: [firmware-build, unit-tests, cli-build, host-tooling, flutter]",
+            "needs: [firmware-build, qemu-runtime, unit-tests, cli-build, host-tooling, flutter]",
+            self.software_workflow,
+        )
+        self.assertIn(
+            "QEMU_RUNTIME_RESULT: ${{ needs.qemu-runtime.result }}",
             self.software_workflow,
         )
         self.assertIn('if [[ "$result" != "success" ]]', self.software_workflow)
@@ -220,9 +224,7 @@ class ReleaseContractTest(unittest.TestCase):
                 self.assertIn(command, self.software_workflow)
                 self.assertIn(command, self.verify_script)
 
-    def test_software_ci_builds_both_runtime_profiles_without_running_qemu(
-        self,
-    ) -> None:
+    def test_software_ci_builds_both_profiles_and_executes_qemu(self) -> None:
         self.assertIn("idf.py -B build \\", self.software_workflow)
         self.assertIn("idf.py -B build-qemu \\", self.software_workflow)
         self.assertIn("domes-qemu-ci-sdkconfig", self.software_workflow)
@@ -236,8 +238,21 @@ class ReleaseContractTest(unittest.TestCase):
         )
         self.assertIn(validation, self.software_workflow)
         self.assertIn('qemu_runtime.py" validate-builds', self.verify_script)
-        self.assertNotIn("qemu-system-xtensa", self.software_workflow)
-        self.assertNotIn("install qemu-xtensa", self.software_workflow)
+        self.assertIn("  qemu-runtime:\n", self.software_workflow)
+        self.assertIn("name: Execute ESP32-S3 QEMU Runtime", self.software_workflow)
+        self.assertIn(
+            "python3 tools/simulation/qemu_runtime.py run \\",
+            self.software_workflow,
+        )
+        self.assertIn("--runs 100", self.software_workflow)
+        self.assertIn("--timeout 15", self.software_workflow)
+        self.assertNotIn("--skip-build", self.software_workflow)
+        self.assertNotIn("--allow-dirty", self.software_workflow)
+        self.assertIn("qemu_runtime.py verify-ci-report", self.software_workflow)
+        self.assertIn('--expected-head "$GITHUB_SHA"', self.software_workflow)
+        self.assertIn("if: ${{ failure() }}", self.software_workflow)
+        self.assertIn("path: .artifacts/qemu-ci/", self.software_workflow)
+        self.assertIn("if-no-files-found: error", self.software_workflow)
         self.assertIn("path: firmware/domes/build/release/", self.software_workflow)
 
     def test_ios_swift_package_resolution_is_locked_consistently(self) -> None:

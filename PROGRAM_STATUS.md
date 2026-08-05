@@ -12,11 +12,12 @@ belong in [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md), ta
 in [`docs/TESTING.md`](docs/TESTING.md).
 
 **As of:** 2026-08-05, FS-WP-002B and FS-WP-002D are consolidated in one simulation delivery,
-[PR 100](https://github.com/pcesar22/domes/pull/100), against `main`. FS-WP-002D is `Complete` /
-`Green`; its qualified `firmware/domes` source tree is
+[PR 100](https://github.com/pcesar22/domes/pull/100), against `main`. FS-WP-002D is `Active` /
+`Amber` while its new required QEMU execution check awaits its first GitHub result; its qualified
+`firmware/domes` source tree is
 `f0db7c5516879de37a5a04ec2ee052ace8ebe0f2`. Generated qualification output is not stored in Git;
-the PR records the manual campaign outcomes, CI retains current-head build and test results, and the
-current PR head must pass CI before merge.
+the PR records the manual campaign outcomes, CI retains exact-checkout results, and the checked-out
+`GITHUB_SHA` must pass the complete CI gate before merge.
 
 ## CEO Control Panel
 
@@ -29,10 +30,10 @@ current PR head must pass CI before merge.
 | Next program gate | G1 System Architecture Baseline and Schematic Authorization |
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
-| Current execution package | `FS-WP-002D`, `Complete` / `Green`; consolidated [PR 100](https://github.com/pcesar22/domes/pull/100), issue [99](https://github.com/pcesar22/domes/issues/99), and [plan](docs/plans/qemu-simulation.md); no successor package is active |
+| Current execution package | `FS-WP-002D`, `Active` / `Amber`; consolidated [PR 100](https://github.com/pcesar22/domes/pull/100), issue [99](https://github.com/pcesar22/domes/issues/99), and [plan](docs/plans/qemu-simulation.md); required QEMU CI execution is pending |
 | Next program action | Select and start VC1 now; in parallel, record the HW owner/budget decision and then start HW-WP-001 while active PS1 and FS1 work continues |
-| Next autonomous execution delivery | `FS-WP-002C` is the next eligible software/validation package; select it only in a new execution cycle |
-| Current AI execution blocker | None; PR 100 is ready for review and FS-WP-002C is eligible but unselected |
+| Next autonomous execution delivery | `FS-WP-002C` is next after FS-WP-002D's required QEMU execution check passes; select it only in a new execution cycle |
+| Current AI execution blocker | PR 100 must pass its new required 100-process QEMU runtime job and aggregate `CI Gate` |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
 | First product-hardware purchase authorization | G2 EVT Release to Fab, forecast 2026-11-02 |
@@ -56,12 +57,12 @@ start PCB layout, or order EVT boards until the corresponding gates pass.
 | HW-WP-001 NFF Characterization and Product Architecture Downselect | `Ready now` | HR0-HR2 evidence; analysis, supplier work, evaluation kits, and coupons only |
 | Product/system requirement allocation | `Active` | Stabilize hardware-driving values or explicit ranges/fallbacks for G1 |
 | Physical NFF closure | `Active` | Both boards, all peripherals, exact populated parts, current/power/timing/RF evidence |
-| Deterministic virtual platform | `Active` | A, B, and D are complete; C is eligible but unselected; predictive claims still require the remaining FS2 ladder and independent held-out qualification |
+| Deterministic virtual platform | `Active` | A and B are complete; D implementation is complete with required QEMU CI execution pending; predictive claims still require the remaining FS2 ladder and independent held-out qualification |
 | General drill/protocol convergence | `Ready now` | One protobuf-owned drill, timing, authority, result, and recovery contract across firmware/sim/app |
 | Four economical ESP32-S3 alpha nodes | `Ready now` | System-scale development inventory, not product hardware |
 | FMEA, compliance, supply, CM, DFM/DFT, and test planning | `Ready now` | Planning and risk closure; no approval or production claim |
 
-### Latest Completed Execution Delivery
+### Current Execution Delivery
 
 #### FS-WP-002D: Simulation Composition And Platform Inputs
 
@@ -72,18 +73,19 @@ validation, and preserved physical behavior.
 | Contract | Current state |
 | --- | --- |
 | Owner | AI simulation lead |
-| State / health | `Complete` / `Green` |
+| State / health | `Active` / `Amber` pending required QEMU CI execution |
 | Execution issue / review package | Issue [99](https://github.com/pcesar22/domes/issues/99); one consolidated [PR 100](https://github.com/pcesar22/domes/pull/100) |
 | Inputs | FS-WP-002B feasibility foundation in the same PR; ESP-IDF v5.4.4; two registered NFF boards and Intel AX210 |
-| Dependencies/blockers | Delivery complete; current-head software CI must be green before merge |
-| Gate/risk unlocked | Scheduler/ISR/causality observability package `FS-WP-002C` is eligible for separate selection |
-| Stop condition | Reached; C and later radio/predictive work remain outside this delivery |
+| Dependencies/blockers | The checked-out `GITHUB_SHA` must pass 100 fresh QEMU runtime processes and aggregate `CI Gate` |
+| Gate/risk unlocked | Scheduler/ISR/causality observability package `FS-WP-002C` becomes eligible after the required check passes |
+| Stop condition | Implementation reached; CI execution must pass before closure; C and later radio/predictive work remain outside this delivery |
 
-Acceptance passed with 100/100 fresh QEMU target processes, one normalized readiness signature,
-exact configured and linked closure, and a two-board serial/BLE/ESP-NOW/trace regression against the
-same `firmware/domes` source tree retained by this PR. The campaign completed 600/600 radio benchmark
-rounds and restored device state; the local 6/6 software gate and three independent reviews passed.
-Current-head CI remains mandatory before merge. This is a declared
+The prior manual technical campaign passed with 100/100 fresh QEMU target processes, one normalized
+readiness signature, exact configured and linked closure, and a two-board
+serial/BLE/ESP-NOW/trace regression against the same `firmware/domes` source tree retained by this
+PR. The campaign completed 600/600 radio benchmark rounds and restored device state. Current host
+tooling and independent review pass; exact-checkout CI execution remains mandatory before package
+acceptance, completion, and merge. This is a declared
 production/adapted/modeled/disabled profile, not scheduler coverage, RF/peripheral simulation,
 hardware equivalence, or predictive evidence.
 
@@ -97,8 +99,8 @@ These forecasts are planning targets, not evidence. Entry criteria, not date, au
 | --- | --- | --- | --- | --- | --- | --- |
 | FS-WP-002A | Deterministic host clock, network faults, identity, and exact delivery replay | `Complete` / `Green` | Existing host simulator | Merged [PR 97](https://github.com/pcesar22/domes/pull/97), exact replay and green required CI | 2026-08-04 | 2026-08-04 actual |
 | FS-WP-002B | ESP32-S3 QEMU feasibility and adoption decision | `Complete` / `Green` | `A` complete | `Viable`: 100/100 fixed runs, HMP/GDB, immutable pinned engine, complete fidelity inventory and numeric adoption budget | 2026-08-14 | 2026-08-04 actual |
-| FS-WP-002D | Physical/QEMU composition roots and deterministic platform inputs | `Complete` / `Green` | `B` is `Viable`; issue [99](https://github.com/pcesar22/domes/issues/99) | 100/100 QEMU runs, source-equivalent two-board regression, and green current-head PR 100 CI before merge | 2026-08-25 | 2026-08-05 actual |
-| FS-WP-002C | Stable scheduler, ISR, synchronization, causality, and trace normalization | `Ready` / `Amber` | `D` complete; eligible for separate selection but not started | QEMU and hardware use one bounded raw/normalized trace contract with stable IDs, full causal graph, overflow failure, and measured overhead | 2026-09-04 | 2026-09-04 |
+| FS-WP-002D | Physical/QEMU composition roots and deterministic platform inputs | `Active` / `Amber` | `B` is `Viable`; issue [99](https://github.com/pcesar22/domes/issues/99) | 100/100 QEMU runs, source-equivalent two-board regression, and a required exact-checkout 100-process QEMU runtime CI gate before merge | 2026-08-25 | 2026-08-05 |
+| FS-WP-002C | Stable scheduler, ISR, synchronization, causality, and trace normalization | `Blocked` / `Amber` | `D` required QEMU CI execution passes; not started | QEMU and hardware use one bounded raw/normalized trace contract with stable IDs, full causal graph, overflow failure, and measured overhead | 2026-09-04 | 2026-09-04 |
 | FS-WP-002E | Production `IEspNowRadio` seam and trace correlation below `EspNowTransport` | `Not due` / `Not rated` | `C` passes and this package is selected | Physical path passes two-board regression; causal tokens cross callback/ring/dequeue without wire or pending-frame-capacity change | 2026-09-11 | 2026-09-11 |
 | FS-WP-003A | Portable protobuf-owned peer/drill codec and role semantics, required FS3 input | `Ready` / `Red` | Current physical/simulator/app contracts and compatibility baseline identified | Generated nanopb/prost/Dart contract replaces duplicated semantics and passes host/app/CLI/build/two-board migration regression | 2026-09-15 | 2026-09-15 |
 | FS-WP-002F | One real QEMU DUT plus deterministic in-process peer backplane | `Not due` / `Not rated` | `E` and `FS-WP-003A` pass | Production transport/task/codec path passes complete deterministic fault and exact-replay matrix with role rotation inside patch budget | 2026-09-28 | 2026-09-28 |
@@ -211,7 +213,7 @@ laundering a failed model into gate evidence.
 | --- | --- | --- | --- | --- | --- | --- |
 | FS0 | Reproducible CI and automated two-board platform | AI firmware/software lead | `Complete` | `Green` | 2026-08-03 actual | Preserve required CI and rerun hardware evidence after behavioral change |
 | FS1 | Complete physical NFF reference and product-interface inventory | AI firmware/software lead | `Active` | `Amber` | 2026-08-24 | Finish audio/volume; observe peripherals; capture current/power/timing; confirm exact parts |
-| FS2 | Layered deterministic virtual platform with a measured prediction envelope | AI simulation lead | `Active` | `Amber` | 2026-10-30 | `A`, `B`, and `D` complete; C is the next eligible package but remains unselected; confidence remains `Low` until the full ladder and independent qualification pass |
+| FS2 | Layered deterministic virtual platform with a measured prediction envelope | AI simulation lead | `Active` | `Amber` | 2026-10-30 | `A` and `B` are complete; D awaits required QEMU CI execution; C is blocked on D; confidence remains `Low` until the full ladder and independent qualification pass |
 | FS3 | One production-owned drill/runtime contract across firmware, simulator and app | AI firmware/software lead | `Ready` | `Red` | 2026-10-19 | Deliver `FS-WP-003A` portable protobuf peer/drill contract by 2026-09-15, then close fixed two-pod and host-wall-clock scoring divergence |
 | FS4 | Six-node runtime, mobile/control, diagnostics, failure recovery and soak | AI systems/software lead | `Ready` | `Amber` | 2026-10-19 | Execute on NFF plus economical alpha nodes; feed critical results into G2 |
 | FS5 | EVT BSP, board profile, factory/service tooling and bring-up | AI firmware lead | `Not due` | `Not rated` | 2027-02-08 | Scaffold after G1; exact profile must build before G2 and remain separate from NFF |
@@ -284,7 +286,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 
 | Date | Integrated result | Decision impact |
 | --- | --- | --- |
-| 2026-08-05 | FS-WP-002B and D consolidated into one reviewable simulation delivery with reproducible tooling, concise qualification, independent reviews, and current-head CI required before merge | C becomes eligible for separate selection; no scheduler, hardware-equivalence, or predictive claim is created |
+| 2026-08-05 | FS-WP-002B and D consolidated into one reviewable simulation delivery with reproducible tooling, concise qualification, independent reviews, and exact-checkout QEMU CI required before merge | C becomes eligible only after D's required execution gate passes; no scheduler, hardware-equivalence, or predictive claim is created |
 | 2026-08-14 | Product brief, hardware-driving requirement draft, and initial risk register | Conflicts and missing measurements surface early while simulation implementation proceeds on its separate ladder |
 | 2026-08-24 | NFF physical/peripheral/electrical characterization baseline | Guesses are replaced before selection freeze |
 | 2026-08-31 | Architecture/component shortlist and bounded risk-coupon review | Weak candidates are removed |
@@ -307,7 +309,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | --- | --- | --- | --- |
 | Current main software CI | Commit `c0691f34f68c8e671f1023f1dabc05cea1526344`, [run 30943047671](https://github.com/pcesar22/domes/actions/runs/30943047671) | Passed | Builds, tests, generated artifacts, lint, docs, Flutter Linux/iOS, ESP-IDF release checks, and aggregate `CI Gate` |
 | Deterministic replay foundation | [PR 97](https://github.com/pcesar22/domes/pull/97), merged 2026-08-04 | Accepted | FS-WP-002A only: explicit host time, deterministic faults, delivery identity, and exact delivery replay; no trace-normalization, target-scheduler, or predictive claim |
-| ESP32-S3 QEMU simulation delivery | [PR 100](https://github.com/pcesar22/domes/pull/100) | `B` is `Viable` and `D` is `Complete` / `Green`: 100/100 feasibility and runtime campaigns, enforced linked closure, source-equivalent two-board serial/BLE/ESP-NOW/trace regression, local gate 6/6, and current-head CI required before merge | Target execution and declared production/adapted/modeled/disabled runtime profile only; raw generated output is external to Git; no scheduler-trace, radio/RF, peripheral-actuation, cycle-accuracy, hardware-equivalence, or predictive claim |
+| ESP32-S3 QEMU simulation delivery | [PR 100](https://github.com/pcesar22/domes/pull/100) | `B` is `Viable`; `D` is `Active` / `Amber` pending required exact-checkout CI that rebuilds and executes 100 fresh production-runtime QEMU processes; prior manual 100/100 campaigns, linked closure, source-equivalent two-board regression, current host tooling, and independent review passed | Target execution and declared production/adapted/modeled/disabled runtime profile only; successful results stay in CI logs and failure diagnostics are uploaded outside Git; no scheduler-trace, radio/RF, peripheral-actuation, cycle-accuracy, hardware-equivalence, or predictive claim |
 | Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains and CI behavior |
 | Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
 

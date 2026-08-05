@@ -494,11 +494,14 @@ The intended CI tiers are:
 | Hardware workflow | Selected two-board differential scenarios and model-drift checks | Calibration and physical boundary validation |
 | Release candidate | Pinned qualification suite plus applicable product-hardware regression | Re-establish the declared prediction envelope |
 
-The QEMU lane is not added to required pull-request CI until its toolchain is pinned, its cache and
-runtime are measured, failures are reproducible locally, and the aggregate `CI Gate` reports it. A
-cloud-only or manually interpreted result cannot become a required gate.
+The fixed production-runtime QEMU lane is a required pull-request check once its toolchain and
+container are immutable, a clean 100-process baseline passes, execution is reproducible locally in
+that exact container, failure diagnostics are retained outside Git, and the aggregate `CI Gate`
+reports it. The required lane rebuilds the exact checkout and accepts only 100 identical
+`service_ready_v1` executions tied to `GITHUB_SHA`; a cloud-only or manually interpreted result
+cannot become a required gate.
 
-Admission to required pull-request CI additionally requires:
+Expansion beyond that fixed runtime gate additionally requires:
 
 - zero test flakes or replay/signature mismatches across 20 consecutive shadow CI jobs and at least
   1,000 repetitions of the fixed deterministic smoke corpus;
@@ -508,10 +511,16 @@ Admission to required pull-request CI additionally requires:
 - retained replay identity, raw/normalized traces, manifest, assertion, and termination artifacts on
   every failure.
 
-Infrastructure outages are reported separately but do not lower the zero test-flake threshold. If a
-required lane later exceeds either runtime bound or produces one unexplained nondeterministic result,
-it remains visible but is removed from merge blocking until the cause is fixed and the shadow window
-passes again.
+**CI admission decision, 2026-08-05:** the earlier design applied the expansion threshold to all
+QEMU execution, leaving pull requests protected only by compilation. The fixed 100-process
+`service_ready_v1` runtime is admitted as a blocking baseline after the pinned-container local
+campaign passes; the 20-job, 1,000-repetition, performance, trace, mutation, and fault thresholds
+remain mandatory before the gate expands beyond that one declared scenario. This separates basic
+target execution from later coverage and predictive-trust claims instead of delaying all execution.
+
+Infrastructure outages are reported separately but do not lower the zero test-flake threshold. A
+runtime regression or unexplained nondeterministic result remains merge-blocking until its cause is
+fixed; the invariant or repetition count is not weakened to make CI green.
 
 ## FS2 Delivery Sequence
 
@@ -568,13 +577,14 @@ kernel, transport, service, or runtime logic.
 
 ### FS-WP-002D: Simulation Composition And Platform Inputs
 
-**State at 2026-08-05 completion:** FS-WP-002B and D are consolidated in
+**State at 2026-08-05:** FS-WP-002B and D are consolidated in
 [PR 100](https://github.com/pcesar22/domes/pull/100). The `firmware/domes` source tree
 `f0db7c5516879de37a5a04ec2ee052ace8ebe0f2` passed the bounded 100-run QEMU and two-board technical
 qualification. The PR and `PROGRAM_STATUS.md` record the result and claim boundary; generated run
-output is not stored in Git. D is `Complete` / `Green`, and current-head PR CI is required before
-merge. `PROGRAM_STATUS.md` is authoritative for live state. FS-WP-002C is eligible but does not
-enter until selected in a separate execution cycle.
+output is not stored in Git. D is `Active` / `Amber` until the new exact-checkout 100-process QEMU
+runtime check and aggregate `CI Gate` pass. `PROGRAM_STATUS.md` is authoritative for live state.
+FS-WP-002C remains blocked on that exit and does not enter until selected in a separate execution
+cycle.
 
 **Entry:** FS-WP-002B is complete with a `Viable` result; current physical startup order and the
 QEMU peripheral inventory are recorded.
@@ -695,7 +705,8 @@ actor, or claiming calibrated radio/timing accuracy.
 - Demonstrate 100 percent detection of a predeclared critical scheduler/transport mutation set and
   report overall mutation score without suppressing surviving mutants.
 - Pass the explicit 1,000-repetition, 20-shadow-job, zero-flake, cached-p95, cold-p95, local
-  reproduction, and failure-artifact admission limits above before becoming required CI.
+  reproduction, and failure-artifact limits above before expanding the fixed runtime gate into the
+  complete scheduler, transport, and mutation suite.
 - Run broad seed, mutation, sanitizer, and parallel campaigns on scheduled CI and retain compact
   failure artifacts.
 

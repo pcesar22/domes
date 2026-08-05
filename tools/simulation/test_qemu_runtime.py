@@ -101,6 +101,41 @@ def valid_log(**overrides: str) -> str:
     return f"ESP-ROM:esp32s3-20210327\nI (697) qemu_root: {runtime.READY_MARKER} {marker}\n"
 
 
+def write_ci_report(root: Path, head: str = "a" * 40) -> Path:
+    for relative in runtime.CI_REQUIRED_ARTIFACTS - {"runtime-report.json"}:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"fixture:{relative}\n", encoding="utf-8")
+    signature = "b" * 64
+    run_evidence = [
+        {
+            "index": index,
+            "ready_signature": signature,
+            "execution": {"qemu_returncode": 0},
+            "result": {"status": "PASS", "failure_mask": 0},
+        }
+        for index in range(1, runtime.ACCEPTANCE_RUNS + 1)
+    ]
+    report_path = root / "runtime-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": "PASS",
+                "qualification": "accepted",
+                "runs": runtime.ACCEPTANCE_RUNS,
+                "required_acceptance_runs": runtime.ACCEPTANCE_RUNS,
+                "ready_signature": signature,
+                "git": {"head": head, "dirty": False},
+                "run_evidence": run_evidence,
+            }
+        ),
+        encoding="utf-8",
+    )
+    runtime._write_artifact_manifest(root)
+    return report_path
+
+
 class RuntimeLogTests(unittest.TestCase):
     def test_accepts_complete_ready_marker(self) -> None:
         result = runtime.analyze_runtime_log(valid_log(), manifest(), "0" * 64)
@@ -350,6 +385,49 @@ class QualificationTests(unittest.TestCase):
             retained = runtime._retain_fidelity_manifest(build, artifacts, expected)
             self.assertEqual(retained.read_bytes(), source.read_bytes())
             self.assertEqual(runtime.sha256_file(retained), expected)
+
+
+class CiReportTests(unittest.TestCase):
+    def test_accepts_complete_exact_commit_report_and_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = write_ci_report(root)
+            result = runtime.verify_ci_report(report, "a" * 40)
+
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["runs"], runtime.ACCEPTANCE_RUNS)
+        self.assertEqual(result["artifact_count"], len(runtime.CI_REQUIRED_ARTIFACTS))
+
+    def test_rejects_empty_artifact_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = write_ci_report(root)
+            (root / "artifact-manifest.json").write_text(
+                '{"schema_version":1,"files":{}}\n', encoding="utf-8"
+            )
+            with self.assertRaisesRegex(runtime.RuntimeProfileError, "contain files"):
+                runtime.verify_ci_report(report, "a" * 40)
+
+    def test_rejects_nonzero_qemu_returncode(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report_path = write_ci_report(root)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report["run_evidence"][4]["execution"]["qemu_returncode"] = 7
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            runtime._write_artifact_manifest(root)
+            with self.assertRaisesRegex(runtime.RuntimeProfileError, "run 5"):
+                runtime.verify_ci_report(report_path, "a" * 40)
+
+    def test_rejects_unmanifested_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = write_ci_report(root)
+            (root / "unexpected.log").write_text("not manifested\n", encoding="utf-8")
+            with self.assertRaisesRegex(
+                runtime.RuntimeProfileError, "file set differs"
+            ):
+                runtime.verify_ci_report(report, "a" * 40)
 
 
 class MainTests(unittest.TestCase):

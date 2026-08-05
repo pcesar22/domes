@@ -1,6 +1,6 @@
 # Deliver Deterministic ESP32-S3 QEMU Execution
 
-**Status:** complete
+**Status:** active; implementation complete, required QEMU CI execution pending
 
 **Delivery:** [PR 100](https://github.com/pcesar22/domes/pull/100)
 
@@ -28,7 +28,8 @@ without weakening or contaminating the physical NFF firmware path.
   transport, OTA, and vendor paths remain disabled.
 - Build validators for profile consistency, source and linker closure, direct objects, archive
   identity, disabled symbols, and root separation.
-- Host tests and CI coverage for both firmware profiles, release packaging, and repository gates.
+- Host tests and CI coverage for both firmware profiles, required 100-process QEMU execution,
+  release packaging, and repository gates.
 - Concise architecture, testing, and program-status updates.
 
 ## Acceptance
@@ -38,7 +39,7 @@ without weakening or contaminating the physical NFF firmware path.
 | Feasibility | 100/100 fresh target processes; one structural and normalized signature; both CPUs, synchronization, target time, GPTimer ISR, HMP, and GDB pass |
 | Runtime | 100/100 fresh target processes; 9/9 task entries; deterministic readiness scenario; zero panic/reset/drop/failure; complete fidelity and linked closure |
 | Physical regression | Exact firmware tree passes two-board serial/BLE diagnostics, self-test, ESP-NOW, trace, and cleanup checks |
-| Software | Host firmware, CLI, simulation tooling, Flutter, physical/QEMU ESP-IDF builds, release packaging, and CI gate pass |
+| Software | Host firmware, CLI, simulation tooling, Flutter, physical/QEMU ESP-IDF builds, 100-process exact-checkout QEMU runtime execution, release packaging, and CI gate pass |
 | Reviewability | One PR against `main`; generated logs and binaries excluded; manual campaign outcomes recorded in the PR and automated results retained by CI |
 
 ## Generated Output Policy
@@ -48,7 +49,7 @@ current program status. It does not contain generated run directories, raw logs,
 flash images, SDKCONFIG dumps, campaign reports, or trace captures.
 
 - Local generated output goes under ignored `.artifacts/` or `/tmp`.
-- CI-generated output is retained through GitHub Actions logs or uploaded workflow artifacts.
+- CI results are retained in GitHub Actions logs; generated diagnostics are uploaded on failure.
 - The PR records manual campaign outcomes, CI retains automated build and test results, and
   `PROGRAM_STATUS.md` records only current state and the bounded claim.
 
@@ -64,6 +65,6 @@ flash images, SDKCONFIG dumps, campaign reports, or trace captures.
 
 ## Next Package
 
-`FS-WP-002C`, scheduler/ISR/synchronization causality and trace normalization, is eligible but has
-not been selected or started. It requires a separate execution cycle and must preserve the claim
-boundaries above.
+`FS-WP-002C`, scheduler/ISR/synchronization causality and trace normalization, becomes eligible when
+the required QEMU execution check and aggregate `CI Gate` pass. It has not been selected or started;
+it requires a separate execution cycle and must preserve the claim boundaries above.

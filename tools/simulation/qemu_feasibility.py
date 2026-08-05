@@ -1079,6 +1079,10 @@ def execute_until_marker(
         raise FeasibilityError(
             f"QEMU required unexpected runner termination action {termination_action}; see {log_path}"
         )
+    if returncode != 0:
+        raise FeasibilityError(
+            f"QEMU returned {returncode} after runner termination; see {log_path}"
+        )
     return {
         "seconds": elapsed,
         "termination": "marker_observed_then_runner_sigterm",

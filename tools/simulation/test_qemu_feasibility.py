@@ -139,6 +139,23 @@ class ProcessTests(unittest.TestCase):
                 qemu_feasibility.execute_probe(command, log, 1.0)
             self.assertIn("exited", log.read_text(encoding="utf-8"))
 
+    def test_execute_rejects_nonzero_runner_termination(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "qemu.log"
+            command = [
+                sys.executable,
+                "-c",
+                (
+                    "import signal,sys,time; "
+                    "signal.signal(signal.SIGTERM, lambda *_: sys.exit(7)); "
+                    "print('READY', flush=True); time.sleep(10)"
+                ),
+            ]
+            with self.assertRaisesRegex(
+                qemu_feasibility.FeasibilityError, "returned 7"
+            ):
+                qemu_feasibility.execute_until_marker(command, log, 1.0, "READY")
+
     def test_interrupt_handler_terminates_registered_qemu_group(self) -> None:
         process = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(60)"],

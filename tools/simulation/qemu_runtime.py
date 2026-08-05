@@ -42,6 +42,16 @@ READY_MARKER = "DOMES_QEMU_READY"
 MARKER_SCHEMA = 1
 ACCEPTANCE_RUNS = 100
 EXPECTED_FLASH_SIZE = "8MB"
+CI_REQUIRED_ARTIFACTS = frozenset(
+    {
+        "build.log",
+        "domes-fidelity-manifest.json",
+        "runtime-report.json",
+        "sdkconfig.qemu",
+        "runs/001/qemu.log",
+        "runs/100/qemu.log",
+    }
+)
 
 SHARED_MAIN_SOURCES = frozenset(
     {
@@ -1029,6 +1039,114 @@ def _write_artifact_manifest(artifact_dir: Path) -> Path:
     return path
 
 
+def verify_ci_report(report_path: Path, expected_head: str) -> Mapping[str, Any]:
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_head):
+        raise RuntimeProfileError(f"invalid expected CI commit: {expected_head!r}")
+
+    report_path = report_path.resolve()
+    artifact_dir = report_path.parent
+    report = _read_json(report_path, "QEMU runtime report")
+    expected: Mapping[str, Any] = {
+        "schema_version": 1,
+        "status": "PASS",
+        "qualification": "accepted",
+        "runs": ACCEPTANCE_RUNS,
+        "required_acceptance_runs": ACCEPTANCE_RUNS,
+    }
+    for key, value in expected.items():
+        if report.get(key) != value:
+            raise RuntimeProfileError(
+                f"QEMU runtime report {key} expected {value!r}, found {report.get(key)!r}"
+            )
+
+    git = report.get("git")
+    if (
+        not isinstance(git, dict)
+        or git.get("head") != expected_head
+        or git.get("dirty") is not False
+    ):
+        raise RuntimeProfileError(
+            "QEMU runtime report is not tied to the clean expected CI commit"
+        )
+
+    signature = report.get("ready_signature")
+    if not isinstance(signature, str) or not HASH.fullmatch(signature):
+        raise RuntimeProfileError(
+            "QEMU runtime report has an invalid readiness signature"
+        )
+    run_evidence = report.get("run_evidence")
+    if not isinstance(run_evidence, list) or len(run_evidence) != ACCEPTANCE_RUNS:
+        count = len(run_evidence) if isinstance(run_evidence, list) else "invalid"
+        raise RuntimeProfileError(
+            f"expected {ACCEPTANCE_RUNS} QEMU run records, found {count}"
+        )
+    for expected_index, run in enumerate(run_evidence, start=1):
+        if not isinstance(run, dict) or run.get("index") != expected_index:
+            raise RuntimeProfileError(
+                f"QEMU run record {expected_index} is missing or out of order"
+            )
+        if run.get("ready_signature") != signature:
+            raise RuntimeProfileError(
+                "QEMU runtime readiness signatures are not identical"
+            )
+        execution = run.get("execution")
+        if not isinstance(execution, dict) or execution.get("qemu_returncode") != 0:
+            raise RuntimeProfileError(
+                f"QEMU run {expected_index} did not terminate cleanly"
+            )
+        result = run.get("result")
+        if (
+            not isinstance(result, dict)
+            or result.get("status") != "PASS"
+            or result.get("failure_mask") != 0
+        ):
+            raise RuntimeProfileError(f"QEMU run {expected_index} did not report PASS")
+
+    manifest_path = artifact_dir / "artifact-manifest.json"
+    manifest = _read_json(manifest_path, "QEMU artifact manifest")
+    if manifest.get("schema_version") != 1:
+        raise RuntimeProfileError("QEMU artifact manifest schema must be 1")
+    files = manifest.get("files")
+    if not isinstance(files, dict) or not files:
+        raise RuntimeProfileError("QEMU artifact manifest must contain files")
+    manifest_files = set(files)
+    missing = CI_REQUIRED_ARTIFACTS - manifest_files
+    if missing:
+        raise RuntimeProfileError(
+            f"QEMU artifact manifest omits required files: {sorted(missing)}"
+        )
+    actual_files = {
+        str(candidate.relative_to(artifact_dir))
+        for candidate in artifact_dir.rglob("*")
+        if candidate.is_file() and candidate != manifest_path
+    }
+    if manifest_files != actual_files:
+        raise RuntimeProfileError(
+            "QEMU artifact manifest file set differs from generated output: "
+            f"missing={sorted(actual_files - manifest_files)} "
+            f"extra={sorted(manifest_files - actual_files)}"
+        )
+    for relative, expected_hash in files.items():
+        relative_path = Path(relative)
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise RuntimeProfileError(
+                f"QEMU artifact path escapes output directory: {relative!r}"
+            )
+        if not isinstance(expected_hash, str) or not HASH.fullmatch(expected_hash):
+            raise RuntimeProfileError(f"QEMU artifact has invalid SHA-256: {relative}")
+        candidate = artifact_dir / relative_path
+        if sha256_file(candidate) != expected_hash:
+            raise RuntimeProfileError(f"QEMU artifact hash mismatch: {relative}")
+
+    return {
+        "status": "PASS",
+        "commit": expected_head,
+        "runs": len(run_evidence),
+        "ready_signature": signature,
+        "artifact_count": len(files),
+    }
+
+
 def _retain_fidelity_manifest(
     build_dir: Path, artifact_dir: Path, expected_sha256: str
 ) -> Path:
@@ -1206,6 +1324,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     validate_single.add_argument("--build-dir", type=Path, required=True)
 
+    verify_ci = subparsers.add_parser(
+        "verify-ci-report", help="verify an accepted exact-checkout QEMU CI report"
+    )
+    verify_ci.add_argument("--report", type=Path, required=True)
+    verify_ci.add_argument("--expected-head", required=True)
+
     run = subparsers.add_parser(
         "run", help="build and execute the QEMU runtime profile"
     )
@@ -1237,6 +1361,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "status": "PASS",
                 **{key: value for key, value in validated.items() if key != "manifest"},
             }
+            print(json.dumps(report, sort_keys=True, indent=2))
+            return 0
+        if args.command == "verify-ci-report":
+            report = verify_ci_report(args.report, args.expected_head)
             print(json.dumps(report, sort_keys=True, indent=2))
             return 0
         return run_runtime(args)
