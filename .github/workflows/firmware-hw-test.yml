@@ -1393,7 +1393,11 @@ jobs:
               'trace stop' \
               'espnow sim-mode off' \
               'feature disable esp-now' \
-              'feature enable haptic' \
+              'feature enable led-effects' \
+              'feature enable ble' \
+              'feature disable touch' \
+              'feature disable haptic' \
+              'feature disable audio' \
               'led off' \
               'system set-mode idle'; do
               read -ra args <<< "$command"
@@ -1443,6 +1447,56 @@ jobs:
                 echo "::error::Final device mode is not idle on $port"
                 cleanup_failed=1
               fi
+              if ! grep -Eq '^[[:space:]]*Features:[[:space:]]+0x00000006[[:space:]]*$' <<< "$final_info"; then
+                echo "::error::Final device feature mask is not 0x00000006 on $port"
+                cleanup_failed=1
+              fi
+            fi
+
+            if ! final_features=$("$CLI" --port "$port" feature list); then
+              echo "::error::Final feature list failed on $port"
+              cleanup_failed=1
+            else
+              printf '%s\n' "$final_features"
+              for expected in \
+                'led-effects[[:space:]]+enabled' \
+                'ble[[:space:]]+enabled' \
+                'esp-now[[:space:]]+disabled' \
+                'touch[[:space:]]+disabled' \
+                'haptic[[:space:]]+disabled' \
+                'audio[[:space:]]+disabled'; do
+                if ! grep -Eq "^[[:space:]]*${expected}[[:space:]]*$" <<< "$final_features"; then
+                  echo "::error::Final feature state '$expected' is missing on $port"
+                  cleanup_failed=1
+                fi
+              done
+            fi
+
+            if ! final_espnow=$("$CLI" --port "$port" espnow status); then
+              echo "::error::Final ESP-NOW status failed on $port"
+              cleanup_failed=1
+            else
+              printf '%s\n' "$final_espnow"
+              if ! grep -Eq 'State:[[:space:]]+disabled' <<< "$final_espnow"; then
+                echo "::error::Final ESP-NOW state is not disabled on $port"
+                cleanup_failed=1
+              fi
+            fi
+
+            if ! final_trace=$("$CLI" --port "$port" trace status); then
+              echo "::error::Final trace status failed on $port"
+              cleanup_failed=1
+            else
+              printf '%s\n' "$final_trace"
+              for expected in \
+                'Enabled:[[:space:]]+false' \
+                'Streaming:[[:space:]]+false' \
+                'Dropped:[[:space:]]+0'; do
+                if ! grep -Eq "^[[:space:]]*${expected}[[:space:]]*$" <<< "$final_trace"; then
+                  echo "::error::Final trace state '$expected' is missing on $port"
+                  cleanup_failed=1
+                fi
+              done
             fi
           done
 

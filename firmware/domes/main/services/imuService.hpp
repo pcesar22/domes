@@ -12,6 +12,8 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "infra/taskStartEvidence.hpp"
+#include "infra/taskTopology.hpp"
 #include "interfaces/iHapticDriver.hpp"
 #include "interfaces/iImuDriver.hpp"
 #include "services/audioService.hpp"
@@ -79,9 +81,9 @@ public:
         }
 
         running_ = true;
-        BaseType_t ret =
-            xTaskCreatePinnedToCore(taskEntry, "imu_svc", 3072, this, 5, &taskHandle_, 1  // Core 1
-            );
+        const auto& task = infra::task::kImuService;
+        BaseType_t ret = xTaskCreatePinnedToCore(taskEntry, task.name, task.stackSize, this,
+                                                 task.priority, &taskHandle_, task.coreAffinity);
 
         if (ret != pdPASS) {
             running_ = false;
@@ -151,7 +153,10 @@ public:
 private:
     static constexpr const char* kTag = "imu_svc";
 
-    static void taskEntry(void* arg) { static_cast<ImuService*>(arg)->taskLoop(); }
+    static void taskEntry(void* arg) {
+        infra::TaskStartEvidence::markStarted(infra::task::kImuService);
+        static_cast<ImuService*>(arg)->taskLoop();
+    }
 
     void taskLoop() {
         const TickType_t pollDelay = pdMS_TO_TICKS(10);  // 100 Hz polling

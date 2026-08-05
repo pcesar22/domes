@@ -17,6 +17,8 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "infra/taskStartEvidence.hpp"
+#include "infra/taskTopology.hpp"
 #include "interfaces/iTouchDriver.hpp"
 #include "services/ledService.hpp"
 #include "trace/traceApi.hpp"
@@ -73,9 +75,9 @@ public:
         }
 
         running_ = true;
-        BaseType_t ret = xTaskCreatePinnedToCore(
-            taskEntry, "touch_svc", 3072, this, 5, &taskHandle_, 1  // Core 1 for responsive input
-        );
+        const auto& task = infra::task::kTouchService;
+        BaseType_t ret = xTaskCreatePinnedToCore(taskEntry, task.name, task.stackSize, this,
+                                                 task.priority, &taskHandle_, task.coreAffinity);
 
         if (ret != pdPASS) {
             running_ = false;
@@ -122,7 +124,10 @@ private:
         Color::yellow(),  // Pad 4 (GPIO6)
     };
 
-    static void taskEntry(void* arg) { static_cast<TouchService*>(arg)->taskLoop(); }
+    static void taskEntry(void* arg) {
+        infra::TaskStartEvidence::markStarted(infra::task::kTouchService);
+        static_cast<TouchService*>(arg)->taskLoop();
+    }
 
     void taskLoop() {
         const TickType_t delay = pdMS_TO_TICKS(10);  // 100 Hz polling

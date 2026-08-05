@@ -117,6 +117,8 @@ def classify_path(path: str) -> tuple[set[str], list[str]]:
         return set(ALL_CHECKS), hardware
     if _is_documentation(path):
         return {"host_tooling"}, hardware
+    if path.startswith("tools/simulation/"):
+        return {"host_tooling", "firmware"}, hardware
     if path.startswith("firmware/"):
         hardware.append("single_device")
         return {"host_firmware", "host_tooling", "firmware"}, hardware

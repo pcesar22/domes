@@ -202,6 +202,7 @@ check_host_tooling() {
             python3 -m unittest discover -s tools/doctor -p 'test_*.py' -v &&
             python3 -m unittest discover -s tools/docs -p 'test_*.py' -v &&
             python3 -m unittest discover -s tools/verify -p 'test_*.py' -v &&
+            python3 -m unittest discover -s tools/simulation -p 'test_*.py' -v &&
             python3 tools/docs/check_markdown_links.py &&
             python3 -m unittest discover -s tools/trace -p 'test_*.py' -v &&
             python3 tools/trace/generate_trace_names.py --check &&
@@ -234,8 +235,10 @@ check_flutter() {
 
 check_firmware() {
     local idf_build_dir="$VERIFY_TMP/idf-build"
+    local idf_qemu_build_dir="$VERIFY_TMP/idf-qemu-build"
     local idf_release_dir="$VERIFY_TMP/firmware-release"
     local idf_sdkconfig="$VERIFY_TMP/sdkconfig"
+    local idf_qemu_sdkconfig="$VERIFY_TMP/sdkconfig-qemu"
     local idf_version
     local size
     local max_size=1966080
@@ -273,6 +276,21 @@ PY
         return 1
     fi
 
+    idf.py \
+        -B "$idf_qemu_build_dir" \
+        -D "IDF_TARGET=esp32s3" \
+        -D "SDKCONFIG=$idf_qemu_sdkconfig" \
+        -D "SDKCONFIG_DEFAULTS=$ROOT_DIR/firmware/domes/sdkconfig.qemu.defaults" \
+        build || return 1
+    python3 "$ROOT_DIR/tools/simulation/qemu_runtime.py" validate-builds \
+        --physical-build "$idf_build_dir" \
+        --qemu-build "$idf_qemu_build_dir" || return 1
+    if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+        echo "ESP-IDF rewrote firmware/domes/dependencies.lock" >&2
+        git diff -- dependencies.lock >&2
+        return 1
+    fi
+
     size=$(stat -c%s "$idf_build_dir/domes.bin") || return 1
     echo "Binary size: $size / $max_size bytes"
     if ((size > max_size)); then
@@ -289,6 +307,8 @@ PY
         "$idf_release_dir/domes-factory.bin" || return 1
 
     cp domes.bin "$idf_release_dir/domes.bin" || return 1
+    cp domes-fidelity-manifest.json \
+        "$idf_release_dir/domes-fidelity-manifest.json" || return 1
     cp bootloader/bootloader.bin "$idf_release_dir/bootloader.bin" || return 1
     cp partition_table/partition-table.bin \
         "$idf_release_dir/partition-table.bin" || return 1
@@ -300,12 +320,14 @@ PY
 
     cd "$idf_release_dir" || return 1
     test -s domes.bin || return 1
+    test -s domes-fidelity-manifest.json || return 1
     test -s domes-factory.bin || return 1
     test -s bootloader.bin || return 1
     test -s partition-table.bin || return 1
     test -s ota_data_initial.bin || return 1
     sha256sum \
         domes.bin \
+        domes-fidelity-manifest.json \
         domes-factory.bin \
         bootloader.bin \
         partition-table.bin \

@@ -37,13 +37,20 @@ gantt
 
     section Firmware software simulation
     NFF reference closure                     :active, fs1, 2026-08-04, 2026-08-24
-    Shared drill protocol and runtime         :fs3, 2026-08-04, 2026-10-19
-    Deterministic model and validation        :fs2, 2026-08-04, 2026-10-19
+    B QEMU feasibility                        :fs2b, 2026-08-04, 2026-08-14
+    D simulation composition roots            :fs2d, after fs2b, 2026-08-25
+    C scheduler ISR causal trace              :fs2c, after fs2d, 2026-09-04
+    E production radio seam                   :fs2e, after fs2c, 2026-09-11
+    FS3A portable peer drill contract         :fs3a, 2026-08-04, 2026-09-15
+    Shared drill protocol and runtime         :fs3, 2026-09-16, 2026-10-19
+    F QEMU DUT and virtual backplane          :fs2f, 2026-09-16, 2026-09-28
+    G scheduling fault and CI campaigns       :fs2g, after fs2f, 2026-10-12
+    H hardware calibrated candidate           :fs2h, 2026-10-20, 2026-10-26
     EVT profile and board support             :fs5, 2026-09-16, 2027-02-08
     DVT PVT release candidates                :fs6, 2027-02-09, 2027-12-13
 
     section Hardware and NPI
-    HW-WP-001 architecture and parts          :active, hw1, 2026-08-04, 2026-09-15
+    HW-WP-001 architecture and parts          :hw1, 2026-08-04, 2026-09-15
     EVT schematic layout and release          :hw2, 2026-09-16, 2026-11-02
     EVT fabrication and assembly              :hw3, 2026-11-03, 2026-12-14
     EVT bring-up and correction               :hw4, 2026-12-15, 2027-02-08
@@ -51,8 +58,8 @@ gantt
     PVT intended-line pilot                   :hw6, 2027-08-03, 2027-11-01
 
     section Verification compliance operations
-    V matrix FMEA compliance plan             :active, vc1, 2026-08-04, 2026-09-15
-    Alpha timing fault and soak evidence      :vc2, 2026-09-16, 2026-10-19
+    V matrix FMEA compliance plan             :vc1, 2026-08-04, 2026-09-15
+    Alpha evidence and sim trust verdict      :vc2, 2026-09-16, 2026-10-30
     EVT verification and defect closure       :vc3, 2026-12-15, 2027-02-08
     DVT reliability security compliance       :vc4, 2027-02-09, 2027-08-02
     PVT process and release acceptance        :vc5, 2027-08-03, 2027-11-01

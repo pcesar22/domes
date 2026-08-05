@@ -24,6 +24,7 @@ when documents disagree; do not resolve conflicts by copying the same fact into 
 | Panic coredumps and clean-restart snapshots | `firmware/domes/partitions.csv`, `sdkconfig.defaults`, and the owning firmware implementation | [`firmware/README.md`](../firmware/README.md) and project debug runbooks |
 | System design and hardware targets | [`research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md) | Hardware files under [`hardware/`](../hardware/) |
 | As-built software boundaries and decisions | [`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md) | Implementation source and tests |
+| Deterministic firmware virtual-platform target | [`research/architecture/13-deterministic-virtual-platform.md`](../research/architecture/13-deterministic-virtual-platform.md) | Current host boundary in [`research/architecture/10-host-simulation.md`](../research/architecture/10-host-simulation.md) and delivery state in [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) |
 | Detailed design-document lifecycle | [`research/architecture/README.md`](../research/architecture/README.md) | [`research/README.md`](../research/README.md) |
 
 Generated protobuf files are build artifacts derived from `.proto` files. They are never the place
@@ -46,6 +47,7 @@ to introduce a message or enum.
 | --- | --- |
 | Build, flash, or modify firmware | [`firmware/README.md`](../firmware/README.md) |
 | Run or extend tests | [`TESTING.md`](TESTING.md) |
+| Implement or audit deterministic ESP32-S3 simulation | [`research/architecture/13-deterministic-virtual-platform.md`](../research/architecture/13-deterministic-virtual-platform.md) |
 | Use or extend the host CLI | [`tools/domes-cli/README.md`](../tools/domes-cli/README.md) |
 | Build or extend the Flutter app | [`ios/domes_app/README.md`](../ios/domes_app/README.md) |
 | Work with multiple pods, BLE, or Linux device setup | [`.codex/PLATFORM.md`](../.codex/PLATFORM.md) |

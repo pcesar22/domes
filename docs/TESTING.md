@@ -103,6 +103,85 @@ Do not use an existing ignored `firmware/domes/sdkconfig` as release evidence. I
 changed defaults even when the source diff is correct. Software CI, release CI, the hardware
 workflow, `scripts/verify.sh`, and `tools/firmware/flash_and_verify.sh` use isolated SDKCONFIG files.
 
+## ESP32-S3 QEMU Feasibility
+
+The bounded FS-WP-002B target probe is separate from the production firmware build and host
+simulator. On native x86_64 Linux with ESP-IDF v5.4.4 exported and the distro `libslirp` package
+installed:
+
+```bash
+python "$IDF_PATH/tools/idf_tools.py" install qemu-xtensa
+. ~/esp/esp-idf/export.sh
+python3 tools/simulation/qemu_feasibility.py --runs 1
+python3 tools/simulation/qemu_feasibility.py --runs 100
+```
+
+The runner enforces the exact IDF, compiler, and QEMU identities, uses an isolated SDKCONFIG, starts
+100 fresh snapshot-backed QEMU processes, compares structural and relative-timing signatures, and
+writes HMP/GDB output and raw logs to its artifact directory. Only a clean, committed, exactly
+100-run execution can report `acceptance.status=PASS`; shorter, build-only, and `--allow-dirty`
+invocations cannot report acceptance. See
+[`firmware/qemu_probe/README.md`](../firmware/qemu_probe/README.md) for setup, outputs, and claim
+boundaries. This manual feasibility gate does not replace the production ESP-IDF build, host tests,
+hardware verification, or the production-runtime QEMU CI gate below.
+
+## DOMES QEMU Runtime Profile
+
+FS-WP-002D builds `firmware/domes` with mutually exclusive physical and QEMU composition roots.
+Software CI builds both roots and runs the build/manifest/source-closure validator. Its required
+`Execute ESP32-S3 QEMU Runtime` job also rebuilds the QEMU root from the exact checkout, executes
+100 fresh `service_ready_v1` target processes under the pinned emulator, verifies the accepted
+report against `GITHUB_SHA`, and blocks `CI Gate` on any failure. The verifier requires and reparses
+all 100 hash-bound target logs against the retained fidelity manifest; a summary count or partial
+campaign cannot pass. Reproduce the paired build contract locally with isolated SDKCONFIG files:
+
+```bash
+. ~/esp/esp-idf/export.sh
+root="$(mktemp -d)"
+idf.py -C firmware/domes -B "$root/physical" \
+  -D "IDF_TARGET=esp32s3" -D "SDKCONFIG=$root/sdkconfig.physical" build
+idf.py -C firmware/domes -B "$root/qemu" \
+  -D "IDF_TARGET=esp32s3" -D "SDKCONFIG=$root/sdkconfig.qemu" \
+  -D "SDKCONFIG_DEFAULTS=$PWD/firmware/domes/sdkconfig.qemu.defaults" build
+python3 tools/simulation/qemu_runtime.py validate-builds \
+  --physical-build "$root/physical" --qemu-build "$root/qemu"
+```
+
+On native x86_64 Linux with the pinned QEMU package and distro `libslirp` installed, execute the
+bounded `service_ready_v1` scenario with a new artifact directory:
+
+```bash
+python "$IDF_PATH/tools/idf_tools.py" install qemu-xtensa
+. ~/esp/esp-idf/export.sh
+python3 tools/simulation/qemu_runtime.py run \
+  --build-dir /tmp/domes-qemu-runtime-build \
+  --artifact-dir /tmp/domes-qemu-runtime-output \
+  --runs 1
+```
+
+Use `--runs 100` on a clean committed candidate for FS-WP-002D acceptance. `--skip-build` and
+`--allow-dirty` exist for development only. The runner enforces the pinned IDF/compiler/QEMU
+identity, exact 8 MB flash geometry, canonical fidelity manifest, disjoint roots and sources, one
+`app_main`, generated initialization order, embedded profile hashes, 9/9 required task configurations,
+duplicate-free and disjoint core-affinity entry handshakes, one consumed GameEngine hit on the
+scripted pad with zero misses and return to `READY`, target-time dwell, NVS, adapter progress,
+final-ELF denial of disabled vendor/service symbols, immutable media, one boot/marker, and identical
+normalized readiness signatures. Each accepted artifact directory keeps the exact validated
+`domes-fidelity-manifest.json` and hashes it in `artifact-manifest.json`.
+
+This profile executes production FreeRTOS, timers, runtime, trace, and supported service sources.
+Its main readiness workload is `synthetic-load`; identity, random, LED, touch, IMU, haptic, and
+audio are declared adapters; CPU/interrupt/flash/console behavior is modeled; radio, BLE, network,
+OTA, and production transports are disabled. It is deterministic target execution, not scheduler
+trace coverage, RF/peripheral fidelity, cycle accuracy, hardware equivalence, or a real-world
+prediction.
+
+Generated simulation output is not source. Keep reports, raw logs, ELFs, flash images, resolved
+SDKCONFIG files, traces, and run directories under ignored `.artifacts/` or `/tmp`. Successful CI
+results remain in workflow logs; the QEMU job uploads its generated diagnostics only on failure.
+Manual campaigns remain outside Git. Commit only the runner, tests, reproducible commands,
+architecture, and current program status.
+
 ## CLI Checks
 
 ```bash
@@ -239,7 +318,7 @@ Flash coredumps and clean-restart snapshots are separate diagnostics. The active
 
 | Workflow | Purpose | Trigger scope |
 | --- | --- | --- |
-| [`firmware-ci.yml`](../.github/workflows/firmware-ci.yml) | Aggregate Software CI: ESP-IDF build/package validation, host tests, CLI checks, host tooling, protocol drift, and Flutter checks, exposed through `CI Gate` | Unfiltered `pull_request`, merge queue entry, and push to `main` |
+| [`firmware-ci.yml`](../.github/workflows/firmware-ci.yml) | Aggregate Software CI: physical and QEMU-profile ESP-IDF builds, 100-process deterministic production-runtime QEMU execution, runtime-profile/source-closure validation, physical release packaging, host tests, CLI checks, host tooling, protocol drift, and Flutter checks, exposed through `CI Gate` | Unfiltered `pull_request`, merge queue entry, and push to `main` |
 | [`flutter-ci.yml`](../.github/workflows/flutter-ci.yml) | Reusable generated-binding, analysis, Flutter test, Linux release-build, and no-codesign iOS release-build jobs called by Software CI | `workflow_call` only |
 | [`firmware-hw-test.yml`](../.github/workflows/firmware-hw-test.yml) | Self-hosted device checks | `hw-test` label and subsequent synchronize/reopen events while labeled, or manual run |
 | [`firmware-release.yml`](../.github/workflows/firmware-release.yml) | Tag validation, the complete reusable Software CI gate, then OTA app, merged factory image, exact ELF/build identity, and checksums | Stable `vMAJOR.MINOR.PATCH` tags on `main` |

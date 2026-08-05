@@ -29,8 +29,8 @@ company-wide phase, or mixes hardware definition with release-to-fab authorizati
 ## Gather Current Evidence
 
 1. Read root and applicable nested `AGENTS.md` files.
-2. Read `PROGRAM_STATUS.md`, the framework, product definition, system/software architecture, and
-   `docs/TESTING.md`.
+2. Read `PROGRAM_STATUS.md`, the framework, product definition, system/software architecture,
+   `docs/TESTING.md`, and every authoritative target design linked by the selected package.
 3. Read the owning hardware request/design files and current firmware/CLI/app/protocol code for the
    decision under review.
 4. Inspect current CI/PR state and retained software/hardware evidence.
@@ -217,7 +217,8 @@ Return `Meets intent`, `Needs revision`, or `Not verifiable` for each reviewed o
 - Program status: `PROGRAM_STATUS.md`.
 - Product hypotheses/requirements: `research/PRODUCT_DEFINITION.md` and accepted records it links.
 - Target architecture: `research/SYSTEM_ARCHITECTURE.md`; as-built boundaries: implementation and
-  `research/SOFTWARE_ARCHITECTURE.md`.
+  `research/SOFTWARE_ARCHITECTURE.md`; detailed target designs:
+  `research/architecture/README.md` and the selected package's linked record.
 - Hardware definition/NPI: `hardware/NEXT_ITERATION_REQUEST.md` and controlled design packages.
 - Verification procedures: `docs/TESTING.md`; evidence stays linked, not recopied.
 - Work execution: issues and PRs; they do not replace gate or status records.

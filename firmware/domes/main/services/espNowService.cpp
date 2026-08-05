@@ -14,7 +14,6 @@
 #include "drivers/injectableTouchDriver.hpp"
 #include "espNowProtocol.hpp"
 #include "esp_log.h"
-#include "esp_random.h"
 #include "game/gameEngine.hpp"
 #include "infra/logging.hpp"
 #include "services/ledService.hpp"
@@ -44,12 +43,35 @@ namespace domes {
 // Construction
 // ============================================================================
 
-EspNowService::EspNowService(EspNowTransport& transport, config::FeatureManager& features)
-    : transport_(transport), features_(features) {
-    esp_wifi_get_mac(WIFI_IF_STA, ourMac_);
-    roundTokenCounter_ = esp_random();
+EspNowService::EspNowService(EspNowTransport& transport, config::FeatureManager& features,
+                             IPlatformIdentity& identity, IRandomSource& random)
+    : transport_(transport), features_(features), identity_(identity), random_(random) {}
+
+esp_err_t EspNowService::init() {
+    if (platformInputsReady_) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    PlatformIdentity identity = {};
+    esp_err_t err = identity_.read(identity);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Cannot resolve ESP-NOW platform identity: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    uint32_t randomSeed = 0;
+    err = random_.nextU32(randomSeed);
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "Cannot resolve ESP-NOW random seed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    std::memcpy(ourMac_, identity.data(), identity.size());
+    roundTokens_.reset(randomSeed);
+    platformInputsReady_ = true;
     ESP_LOGI(kTag, "EspNowService: our MAC = %02X:%02X:%02X:%02X:%02X:%02X", ourMac_[0], ourMac_[1],
              ourMac_[2], ourMac_[3], ourMac_[4], ourMac_[5]);
+    return ESP_OK;
 }
 
 // ============================================================================
@@ -126,6 +148,12 @@ bool EspNowService::takeBenchmarkResult(BenchmarkResult& result) {
 }
 
 void EspNowService::run() {
+    if (!platformInputsReady_) {
+        ESP_LOGE(kTag, "ESP-NOW service started before platform inputs were initialized");
+        running_ = false;
+        return;
+    }
+
     while (running_) {
         // Complete pending benchmark requests even when a mode transition has
         // just disabled ESP-NOW; runBenchmark() records an immediate cancel.
@@ -1387,10 +1415,7 @@ bool EspNowService::isSelectedPeer(const uint8_t mac[ESP_NOW_ETH_ALEN]) const {
 }
 
 uint32_t EspNowService::allocateRoundToken() {
-    do {
-        ++roundTokenCounter_;
-    } while (roundTokenCounter_ == 0);
-    return roundTokenCounter_;
+    return roundTokens_.next();
 }
 
 bool EspNowService::enterPeerGameMode() {

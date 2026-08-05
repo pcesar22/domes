@@ -111,8 +111,10 @@ class ReleaseContractTest(unittest.TestCase):
         release_fragments = (
             'cp domes.elf "$release_dir/domes.elf"',
             'cp project_description.json "$release_dir/project_description.json"',
+            'cp domes-fidelity-manifest.json "$release_dir/domes-fidelity-manifest.json"',
             "test -s domes.elf",
             "test -s project_description.json",
+            "test -s domes-fidelity-manifest.json",
             "sha256sum -- *.bin *.elf *.json flash_args > SHA256SUMS",
             'metadata.get("project_version") != os.environ["RELEASE_VERSION"]',
         )
@@ -122,10 +124,13 @@ class ReleaseContractTest(unittest.TestCase):
         ci_fragments = (
             'cp domes.elf "$release_dir/domes.elf"',
             'cp project_description.json "$release_dir/project_description.json"',
+            'cp domes-fidelity-manifest.json "$release_dir/domes-fidelity-manifest.json"',
             "test -s domes.elf",
             "test -s project_description.json",
+            "test -s domes-fidelity-manifest.json",
             "            domes.elf \\",
             "            project_description.json \\",
+            "            domes-fidelity-manifest.json \\",
         )
         for fragment in ci_fragments:
             self.assertIn(fragment, self.software_workflow)
@@ -133,6 +138,14 @@ class ReleaseContractTest(unittest.TestCase):
         for workflow in (self.workflow, self.software_workflow):
             self.assertIn('metadata.get("app_elf", "")', workflow)
             self.assertIn('metadata_elf != root / "domes.elf"', workflow)
+
+        for fragment in (
+            "cp domes-fidelity-manifest.json \\",
+            '"$idf_release_dir/domes-fidelity-manifest.json"',
+            "test -s domes-fidelity-manifest.json",
+            "        domes-fidelity-manifest.json \\",
+        ):
+            self.assertIn(fragment, self.verify_script)
 
     def test_release_build_embeds_the_validated_tag(self) -> None:
         self.assertIn(
@@ -146,6 +159,18 @@ class ReleaseContractTest(unittest.TestCase):
         self.assertIn("SDKCONFIG=$sdkconfig_path", self.workflow)
         self.assertIn("embedded_version=$(", self.workflow)
         self.assertIn('[[ "$embedded_version" != "$RELEASE_VERSION" ]]', self.workflow)
+
+    def test_release_validates_the_exact_build_before_packaging(self) -> None:
+        validation = (
+            "python tools/simulation/qemu_runtime.py validate-build \\\n"
+            "            --profile physical \\\n"
+            "            --build-dir firmware/domes/build"
+        )
+        self.assertIn(validation, self.workflow)
+        self.assertLess(
+            self.workflow.index(validation),
+            self.workflow.index("- name: Package and validate release images"),
+        )
 
     def test_release_accepts_stable_tags_only_and_documents_that_policy(self) -> None:
         self.assertIn(
@@ -168,7 +193,11 @@ class ReleaseContractTest(unittest.TestCase):
         self.assertIn("    branches: [main]\n", self.software_workflow)
         self.assertIn("    name: CI Gate\n", self.software_workflow)
         self.assertIn(
-            "needs: [firmware-build, unit-tests, cli-build, host-tooling, flutter]",
+            "needs: [firmware-build, qemu-runtime, unit-tests, cli-build, host-tooling, flutter]",
+            self.software_workflow,
+        )
+        self.assertIn(
+            "QEMU_RUNTIME_RESULT: ${{ needs.qemu-runtime.result }}",
             self.software_workflow,
         )
         self.assertIn('if [[ "$result" != "success" ]]', self.software_workflow)
@@ -181,11 +210,58 @@ class ReleaseContractTest(unittest.TestCase):
         self.assertNotIn("  push:\n", self.flutter_workflow)
 
     def test_software_ci_runs_every_host_tool_unit_suite(self) -> None:
-        agent_eval_test = (
-            "python3 -m unittest discover -s tools/agent_eval -p 'test_*.py' -v"
+        for suite in (
+            "agent_eval",
+            "ci",
+            "doctor",
+            "docs",
+            "verify",
+            "simulation",
+            "trace",
+        ):
+            command = f"python3 -m unittest discover -s tools/{suite} -p 'test_*.py' -v"
+            with self.subTest(suite=suite):
+                self.assertIn(command, self.software_workflow)
+                self.assertIn(command, self.verify_script)
+
+    def test_software_ci_builds_both_profiles_and_executes_qemu(self) -> None:
+        self.assertIn("idf.py -B build \\", self.software_workflow)
+        self.assertIn("idf.py -B build-qemu \\", self.software_workflow)
+        self.assertIn("domes-qemu-ci-sdkconfig", self.software_workflow)
+        self.assertIn(
+            "SDKCONFIG_DEFAULTS=$PWD/sdkconfig.qemu.defaults", self.software_workflow
         )
-        self.assertIn(agent_eval_test, self.software_workflow)
-        self.assertIn(agent_eval_test, self.verify_script)
+        validation = (
+            "python tools/simulation/qemu_runtime.py validate-builds \\\n"
+            "            --physical-build firmware/domes/build \\\n"
+            "            --qemu-build firmware/domes/build-qemu"
+        )
+        self.assertIn(validation, self.software_workflow)
+        self.assertIn('qemu_runtime.py" validate-builds', self.verify_script)
+        self.assertIn("  qemu-runtime:\n", self.software_workflow)
+        self.assertIn("name: Execute ESP32-S3 QEMU Runtime", self.software_workflow)
+        self.assertIn(
+            "python3 tools/simulation/qemu_runtime.py run \\",
+            self.software_workflow,
+        )
+        self.assertIn("--runs 100", self.software_workflow)
+        self.assertIn("--timeout 15", self.software_workflow)
+        self.assertNotIn("--skip-build", self.software_workflow)
+        self.assertNotIn("--allow-dirty", self.software_workflow)
+        self.assertIn(
+            'git config --global --add safe.directory "$GITHUB_WORKSPACE"',
+            self.software_workflow,
+        )
+        self.assertIn(
+            'git config --global --add safe.directory "$IDF_PATH"',
+            self.software_workflow,
+        )
+        self.assertIn("qemu_runtime.py verify-ci-report", self.software_workflow)
+        self.assertIn('--expected-head "$GITHUB_SHA"', self.software_workflow)
+        self.assertIn("if: ${{ failure() }}", self.software_workflow)
+        self.assertIn("path: .artifacts/qemu-ci/", self.software_workflow)
+        self.assertIn("if-no-files-found: error", self.software_workflow)
+        self.assertIn("path: firmware/domes/build/release/", self.software_workflow)
 
     def test_ios_swift_package_resolution_is_locked_consistently(self) -> None:
         self.assertIn("readonly version=3.44.8", self.flutter_installer)
@@ -471,7 +547,6 @@ class ReleaseContractTest(unittest.TestCase):
             "id: wifi_capability",
             "WIFI_CAPABILITY_OUTCOME: ${{ steps.wifi_capability.outcome }}",
             'report "Default-build WiFi capability contract" "$WIFI_CAPABILITY_OUTCOME"',
-            "'feature enable haptic'",
             "'feature enable wifi'",
             "'ota auto-update --enable'",
             '"$CLI" --port "$port" ota auto-update --disable',
@@ -516,6 +591,45 @@ class ReleaseContractTest(unittest.TestCase):
         self.assertIn("for attempt in {1..20}", cleanup_workflow)
         self.assertIn("State:[[:space:]]+disabled", cleanup_workflow)
         self.assertIn("ESP-NOW cleanup did not reach disabled", cleanup_workflow)
+        for fragment in (
+            "'feature enable led-effects'",
+            "'feature enable ble'",
+            "'feature disable touch'",
+            "'feature disable haptic'",
+            "'feature disable audio'",
+            "^[[:space:]]*Features:[[:space:]]+0x00000006[[:space:]]*$",
+            "Final device feature mask is not 0x00000006",
+            "Final feature state",
+        ):
+            self.assertIn(fragment, cleanup_workflow)
+        command_loop = cleanup_workflow[: cleanup_workflow.index("disabled=false")]
+        idle_index = command_loop.index("'system set-mode idle'")
+        for fragment in (
+            "'feature enable led-effects'",
+            "'feature enable ble'",
+            "'feature disable touch'",
+            "'feature disable haptic'",
+            "'feature disable audio'",
+            "'led off'",
+        ):
+            self.assertLess(command_loop.index(fragment), idle_index)
+        verification = cleanup_workflow[
+            cleanup_workflow.index("Capturing final health and feature state") :
+        ]
+        self.assertLess(
+            verification.index("'system self-test'"),
+            verification.index("'system set-mode idle'"),
+        )
+        for fragment in (
+            'final_espnow=$("$CLI" --port "$port" espnow status)',
+            "Final ESP-NOW state is not disabled",
+            'final_trace=$("$CLI" --port "$port" trace status)',
+            "Enabled:[[:space:]]+false",
+            "Streaming:[[:space:]]+false",
+            "Dropped:[[:space:]]+0",
+        ):
+            self.assertIn(fragment, verification)
+        self.assertNotIn("'feature enable haptic'", cleanup_workflow)
 
     def test_all_ci_firmware_builds_select_esp32s3_explicitly(self) -> None:
         for workflow in (
