@@ -5,7 +5,7 @@
 > [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md); historical designs live under
 > [`architecture/`](architecture/README.md).
 
-Last checked against the repository: 2026-08-02.
+Last checked against the repository: 2026-08-04.
 
 ## System Context
 
@@ -22,22 +22,27 @@ own feature, mode, game, and trace state.
 
 ## Firmware Composition
 
-[`firmware/domes/main/main.cpp`](../firmware/domes/main/main.cpp) is the composition root. It creates
-long-lived drivers and services, wires their dependencies, starts managed tasks, and preserves the
-initialization order required by WiFi, BLE, ESP-NOW, native USB console, and UART config/OTA.
+`firmware/domes` has two compile-time-exclusive composition roots. The default physical root is
+[`main.cpp`](../firmware/domes/main/main.cpp); it creates long-lived drivers and transports and
+preserves the initialization order required by WiFi, BLE, ESP-NOW, native USB console, and UART
+config/OTA. The QEMU root is
+[`composition/qemuRoot.cpp`](../firmware/domes/main/composition/qemuRoot.cpp); it binds deterministic
+inputs and declared peripheral adapters without initializing disabled vendor or transport stacks.
+Both roots use the staged `RuntimeAssembly` production-service wiring under `main/runtime/`.
 
 The current runtime is organized as follows:
 
 | Layer | Current implementation |
 | --- | --- |
-| Board configuration | `main/config.hpp` supplies the sole supported NFF profile's compiled pins and peripheral constants |
-| Driver contracts | `main/interfaces/` contains hardware-facing interfaces used by services and host tests |
+| Build profiles | `main/Kconfig.projbuild`, `main/CMakeLists.txt`, and `profiles/runtime_profiles.json` select exactly one physical or QEMU root and generate its fidelity/task contract |
+| Board configuration | `main/config.hpp` supplies the sole supported physical NFF profile's compiled pins and peripheral constants |
+| Driver contracts | `main/interfaces/` contains hardware-facing service, platform-identity, and random-source interfaces |
 | Concrete drivers | `main/drivers/` implements LED, touch, IMU, haptic, and audio hardware access |
 | Services | `main/services/` owns LED animation, touch/IMU polling, audio, build-gated WiFi, OTA, and ESP-NOW behavior |
 | Device state | `FeatureManager` exposes and applies only build-supported runtime features; `ModeManager` controls system mode and its mode-owned feature mask |
 | Game state | `GameEngine` runs the per-pod arm, touch-or-timeout, and feedback state machine |
 | Transports | CP2102N-backed UART exposes config/trace/OTA; build-gated TCP exposes config only; BLE exposes config/trace/OTA; ESP-NOW provides pod-to-pod discovery and the current fixed drill |
-| Infrastructure | NVS, task management, watchdog, diagnostics, shutdown snapshots, and memory profiling live under `main/infra/` |
+| Infrastructure | NVS, task management, one-shot task-entry evidence, watchdog, diagnostics, shutdown snapshots, and memory profiling live under `main/infra/` |
 | Observability | The trace recorder, command handler, Perfetto export data, and optional TCP stream live under `main/trace/` |
 
 `FeatureManager`, `ModeManager`, `GameEngine`, and the trace recorder are per-pod state. The current
@@ -58,6 +63,15 @@ ESP-NOW, and BLE advertising state gates the corresponding runtime path. WiFi ap
 responses only for `CONFIG_DOMES_WIFI_AUTO_CONNECT` builds; those builds connect and disconnect the
 station client with stored credentials, and mode transitions preserve that client state. The
 default build omits WiFi from `feature list` and rejects attempts to set it.
+
+The QEMU profile is a target-execution test composition, not another physical board profile. It uses
+the production ESP-IDF FreeRTOS/timer, NVS, feature/mode/game, trace, diagnostics, memory, LED, IMU,
+audio, and touch sources. Its identity, finite random input, and five peripheral drivers are
+QEMU-only implementations linked from QEMU-only translation units. The versioned readiness workload
+is classified `synthetic-load`; radios, BLE, TCP, serial/OTA, mDNS, trace streaming, GitHub OTA,
+watchdog, and shutdown dump are disabled. Build validation proves disjoint source/root closure and
+embedded profile hashes. Runtime validation proves duplicate-free entry for every required task and
+one complete scripted GameEngine hit, not a scheduler/context-switch trace or physical fidelity.
 
 ## Protocol Boundaries
 
@@ -144,7 +158,9 @@ app layers, but a physical app drill and mobile OTA remain hardware-verification
 ## Board Profile
 
 The NFF carrier profile compiled directly in `config.hpp`, plus the checked-in 8 MB partition
-table, is the only supported target. There is no board-selection mechanism or production profile.
+table, is the only supported physical target. There is no physical board-selection mechanism or
+production form-factor profile. The separate QEMU runtime selection changes composition, not NFF
+pins or product hardware identity.
 A production 16 MB pin/config/partition profile must be implemented explicitly and verified before
 it is treated as a build target.
 
@@ -179,7 +195,7 @@ Use the following source when documents disagree:
 | Firmware coding and initialization rules | [`firmware/AGENTS.md`](../firmware/AGENTS.md) |
 | CLI coding and test rules | [`tools/domes-cli/AGENTS.md`](../tools/domes-cli/AGENTS.md) |
 | Current software boundaries | This document and the implementation it links |
-| Runtime composition and initialization | `firmware/domes/main/main.cpp` |
+| Runtime composition and initialization | `firmware/domes/main/CMakeLists.txt`, `firmware/domes/profiles/runtime_profiles.json`, `firmware/domes/main/main.cpp`, `firmware/domes/main/composition/qemuRoot.cpp`, and `firmware/domes/main/runtime/` |
 | Active compiled board profile and GPIO values | `firmware/domes/main/config.hpp`, verified against the board schematic |
 | Physical NFF wiring | `hardware/nff-devboard/docs/schematic.pdf` |
 | Config and trace message schemas | `firmware/common/proto/*.proto` |

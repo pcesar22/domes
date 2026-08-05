@@ -121,9 +121,34 @@ invalidation conditions.
 | P6 Open Product Release | G6 Product Release | Offer, documentation and launch operations | GA firmware, CLI/app, security and update process | Released design/manufacturing package and launch inventory | Candidate regression, approvals, open-source and support evidence |
 | P7 Sustainment | G7 Sustainment Handoff | Customer learning and roadmap | Incidents, vulnerabilities and supported updates | Ramp, spares, returns and quality escapes | Post-market monitoring, evidence retention and continuing compliance |
 
-The deterministic model is an `FS` work package across P1-P2. It informs decisions but is not a
-company-wide phase that blocks product discovery, hardware definition, supplier engagement, or
-compliance risk reduction.
+The deterministic virtual platform is an `FS` work-package ladder across P1-P2. It informs decisions
+but is not a company-wide phase that blocks product discovery, hardware definition, supplier
+engagement, or compliance risk reduction.
+
+### Deterministic Virtual Platform Placement
+
+The target architecture and executable package contracts are defined in
+[`../research/architecture/13-deterministic-virtual-platform.md`](../research/architecture/13-deterministic-virtual-platform.md).
+Program state and forecasts are controlled in [`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md).
+
+| Program interval | Simulation packages | Result used by the program |
+| --- | --- | --- |
+| P1, before G1 | `FS-WP-002A` replay foundation; `B` QEMU feasibility; ordered `D` simulation composition, `C` scheduler/ISR observability, and `E` production radio seam; parallel FS3 input `FS-WP-003A` | Establish whether target execution is viable and freeze only the composition, production protocol, traceability, toolchain, and patch boundaries that can affect product architecture |
+| P2, before G2 | `F` one-DUT virtual backplane; `G` scheduling/concurrency/fault campaigns and CI; `H` hardware-calibrated candidate | Exercise the production runtime under controlled target scheduling and faults, then freeze a candidate prediction envelope using measured hardware |
+| P2 verification, before G2 | Independent `VC-WP-002A` held-out qualification | Publish the trust verdict; a pass completes FS2 and the simulation criterion inside VC2 and permits claims inside the named prediction envelope; VC2 also requires six-node alpha evidence |
+
+The package dependency is `A -> B -> D -> C -> E`, with `FS-WP-003A` proceeding independently;
+then `(E + FS-WP-003A) -> F -> G`, then
+`(FS1 + FS3 + G) -> H -> VC-WP-002A`. A `Not viable` result from `B` requires a recorded architecture
+disposition before more target-simulation investment. It affects G1 only when that disposition changes a
+hardware/firmware interface or resource allocation. A failed independent qualification removes the
+predictive claim and blocks FS2 completion and the simulation criterion in VC2; it does not
+invalidate correctly bounded deterministic tests or independently passing hardware evidence.
+
+FS2 predictiveness is not a mandatory G2 criterion when direct physical evidence closes the same
+critical risks. A failed qualification removes every model prediction from the G2 evidence set;
+physical six-node timing, fault, soak, and recovery evidence must then stand alone. An unexplained
+simulator/hardware divergence remains a critical design risk and prevents G2 `Go` until resolved.
 
 ## Hardware Authorization Ladder
 

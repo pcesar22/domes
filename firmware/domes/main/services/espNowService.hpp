@@ -14,8 +14,10 @@
 #include "espNowProtocol.hpp"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "esp_wifi.h"
+#include "interfaces/iPlatformIdentity.hpp"
+#include "interfaces/iRandomSource.hpp"
 #include "interfaces/iTaskRunner.hpp"
+#include "roundTokenSequence.hpp"
 #include "trace/traceApi.hpp"
 #include "transport/espNowTransport.hpp"
 #include "utils/mutex.hpp"
@@ -84,7 +86,11 @@ class EspNowService : public ITaskRunner {
 public:
     static constexpr uint32_t kMaxSimDelayMs = 3000;
 
-    EspNowService(EspNowTransport& transport, config::FeatureManager& features);
+    EspNowService(EspNowTransport& transport, config::FeatureManager& features,
+                  IPlatformIdentity& identity, IRandomSource& random);
+
+    /** Resolve immutable platform inputs before the service task is created. */
+    esp_err_t init();
 
     /// Wire dependencies (set before task starts)
     void setGameEngine(game::GameEngine* engine) { gameEngine_ = engine; }
@@ -239,6 +245,8 @@ private:
     // =========================================================================
     EspNowTransport& transport_;
     config::FeatureManager& features_;
+    IPlatformIdentity& identity_;
+    IRandomSource& random_;
     game::GameEngine* gameEngine_ = nullptr;
     LedService* ledService_ = nullptr;
     config::ModeManager* modeManager_ = nullptr;
@@ -277,7 +285,8 @@ private:
     uint32_t lastReactionTimeUs_ = 0;
     uint8_t lastPadIndex_ = 0;
     uint32_t expectedPeerRoundToken_ = 0;
-    uint32_t roundTokenCounter_ = 0;
+    RoundTokenSequence roundTokens_;
+    bool platformInputsReady_ = false;
 
     // Slave event state — written by game_tick callback (Core 1), read by
     // runSlave loop (Core 0). slaveEventPending_ is the release/acquire fence.

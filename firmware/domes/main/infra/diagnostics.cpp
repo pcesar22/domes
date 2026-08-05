@@ -10,6 +10,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "infra/taskConfig.hpp"
+#include "infra/taskStartEvidence.hpp"
+#include "infra/taskTopology.hpp"
 #include "trace/traceApi.hpp"
 
 static constexpr const char* kTag = "diag";
@@ -35,12 +37,10 @@ esp_err_t Diagnostics::startTask() {
         return ESP_ERR_INVALID_STATE;
     }
 
+    const auto& taskConfig = task::kDiagnostics;
     const BaseType_t created =
-        xTaskCreatePinnedToCore(taskFunc, "diagnostics",
-                                3072,  // Stack size
-                                nullptr,
-                                priority::kIdle,  // Lowest priority - background task
-                                nullptr, core::kAny);
+        xTaskCreatePinnedToCore(taskFunc, taskConfig.name, taskConfig.stackSize, nullptr,
+                                taskConfig.priority, nullptr, taskConfig.coreAffinity);
     if (created != pdPASS) {
         ESP_LOGE(kTag, "Failed to create diagnostics task");
         return ESP_ERR_NO_MEM;
@@ -51,6 +51,7 @@ esp_err_t Diagnostics::startTask() {
 }
 
 void Diagnostics::taskFunc(void* /*param*/) {
+    TaskStartEvidence::markStarted(task::kDiagnostics);
     // Delay initial report to let system settle
     vTaskDelay(pdMS_TO_TICKS(5000));
 

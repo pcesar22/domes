@@ -63,6 +63,7 @@ struct TaskConfig {
     UBaseType_t priority;      ///< Task priority
     BaseType_t coreAffinity;   ///< Core to pin task to (or tskNO_AFFINITY)
     bool subscribeToWatchdog;  ///< Whether to subscribe to TWDT
+    uint32_t evidenceMask;     ///< One-shot task-entry evidence bit
 };
 
 }  // namespace domes::infra

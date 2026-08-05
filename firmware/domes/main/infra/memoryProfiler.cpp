@@ -9,14 +9,14 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "infra/taskStartEvidence.hpp"
+#include "infra/taskTopology.hpp"
 #include "trace/traceApi.hpp"
 
 #include <algorithm>
 
 namespace {
 constexpr const char* kTag = "mem_prof";
-constexpr size_t kTaskStackSize = 4096;
-constexpr UBaseType_t kTaskPriority = 1;  // Low priority
 constexpr uint32_t kProfileHeapCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
 }  // namespace
 
@@ -49,8 +49,10 @@ esp_err_t MemoryProfiler::startTask() {
         return ESP_ERR_INVALID_STATE;
     }
 
-    const BaseType_t created = xTaskCreatePinnedToCore(
-        taskFunc, "mem_prof", kTaskStackSize, nullptr, kTaskPriority, nullptr, tskNO_AFFINITY);
+    const auto& taskConfig = task::kMemoryProfiler;
+    const BaseType_t created =
+        xTaskCreatePinnedToCore(taskFunc, taskConfig.name, taskConfig.stackSize, nullptr,
+                                taskConfig.priority, nullptr, taskConfig.coreAffinity);
 
     if (created != pdPASS) {
         ESP_LOGE(kTag, "Failed to create memory profiler task");
@@ -107,6 +109,8 @@ uint32_t MemoryProfiler::totalHeapSize() {
 
 void MemoryProfiler::taskFunc(void* param) {
     (void)param;
+
+    TaskStartEvidence::markStarted(task::kMemoryProfiler);
 
     ESP_LOGI(kTag, "Memory profiler task started");
 

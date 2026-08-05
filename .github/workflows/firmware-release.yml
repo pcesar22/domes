@@ -133,6 +133,12 @@ jobs:
             exit 1
           fi
 
+      - name: Validate exact release runtime profile
+        run: |
+          python tools/simulation/qemu_runtime.py validate-build \
+            --profile physical \
+            --build-dir firmware/domes/build
+
       - name: Verify binary size
         run: |
           size=$(stat -c%s firmware/domes/build/domes.bin)
@@ -171,6 +177,7 @@ jobs:
           cp domes.bin "$release_dir/domes-${RELEASE_VERSION}.bin"
           cp domes.elf "$release_dir/domes.elf"
           cp project_description.json "$release_dir/project_description.json"
+          cp domes-fidelity-manifest.json "$release_dir/domes-fidelity-manifest.json"
           cp bootloader/bootloader.bin "$release_dir/bootloader.bin"
           cp partition_table/partition-table.bin "$release_dir/partition-table.bin"
           cp ota_data_initial.bin "$release_dir/ota_data_initial.bin"
@@ -184,6 +191,7 @@ jobs:
           test -s "domes-${RELEASE_VERSION}.bin"
           test -s domes.elf
           test -s project_description.json
+          test -s domes-fidelity-manifest.json
           test -s "domes-${RELEASE_VERSION}-factory.bin"
           manual_flash_image="${RUNNER_TEMP:-/tmp}/domes-release-flash-args.bin"
           python -m esptool --chip esp32s3 merge_bin -o "$manual_flash_image" @flash_args
@@ -218,8 +226,8 @@ jobs:
 
             - `domes-${{ needs.validate-release.outputs.version }}.bin` is the OTA application image.
             - `domes-${{ needs.validate-release.outputs.version }}-factory.bin` is the complete factory image.
-            - `domes.elf` and `project_description.json` retain the exact symbols and build identity
-              needed for restart snapshots and panic dumps.
+            - `domes.elf`, `project_description.json`, and `domes-fidelity-manifest.json` retain the
+              exact symbols, build identity, and profile contract needed for independent diagnosis.
             - `SHA256SUMS` verifies every published image, diagnostic artifact, and the manual flash arguments.
 
             SHA-256: ${{ steps.package.outputs.app_sha256 }}

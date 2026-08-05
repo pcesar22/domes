@@ -46,6 +46,7 @@ Contributor rules live in [`../../AGENTS.md`](../../AGENTS.md), firmware-specifi
 | [`10-host-simulation.md`](10-host-simulation.md) | Current reference | Describes the GoogleTest/CTest host project, deterministic multi-pod simulation, trace generator, and hardware boundary. |
 | [`11-system-modes.md`](11-system-modes.md) | Retired decision record | Mixed current and proposed mode guidance was removed; the page separates the implemented `ModeManager` boundary from unadopted power and orchestration targets. |
 | [`12-multi-pod-orchestration.md`](12-multi-pod-orchestration.md) | Target design, partially implemented | Separates the current two-pod fixed workflow from app-selected master, general drill, six-pod, and synchronized-clock targets. |
+| [`13-deterministic-virtual-platform.md`](13-deterministic-virtual-platform.md) | Target design | Defines conditional QEMU adoption, physical/QEMU composition roots, the production radio and peer-contract seams, scheduler/causal observability, deterministic transport, CI, and hardware-calibrated qualification; implementation state remains in `PROGRAM_STATUS.md`. |
 | [`trace-overhaul-architecture.md`](trace-overhaul-architecture.md) | Current reference | Describes the separate console/UART topology, trace protobuf and binary event boundary, retained dump snapshot, streaming, and local-only merge behavior. |
 
 ## Promotion And Retirement

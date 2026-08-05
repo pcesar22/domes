@@ -764,7 +764,11 @@ void ConfigCommandHandler::handleGetHealth() {
         strncpy(t.name, taskStatuses[i].pcTaskName, sizeof(t.name) - 1);
         t.stack_high_water = taskStatuses[i].usStackHighWaterMark;
         t.priority = taskStatuses[i].uxCurrentPriority;
-#if (configUSE_CORE_AFFINITY == 1) && (configNUMBER_OF_CORES > 1)
+#if defined(configTASKLIST_INCLUDE_COREID) && (configTASKLIST_INCLUDE_COREID == 1)
+        const BaseType_t coreId = taskStatuses[i].xCoreID;
+        t.core = coreId == tskNO_AFFINITY ? 0xFF : static_cast<uint32_t>(coreId);
+#elif defined(configUSE_CORE_AFFINITY) && (configUSE_CORE_AFFINITY == 1) && \
+    (configNUMBER_OF_CORES > 1)
         // Convert affinity mask to core number (0=core0, 1=core1, 0xFF=any)
         auto mask = taskStatuses[i].uxCoreAffinityMask;
         if (mask == 0x01)

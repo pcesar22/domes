@@ -34,6 +34,7 @@ struct TaskSlot {
     TaskHandle_t handle = nullptr;
     ITaskRunner* runner = nullptr;
     const char* name = nullptr;
+    uint32_t evidenceMask = 0;
     bool watchdogSubscribed = false;
     std::atomic<bool> active{false};
     class TaskManager* owner = nullptr;

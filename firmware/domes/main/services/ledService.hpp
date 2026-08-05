@@ -16,6 +16,8 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "infra/taskStartEvidence.hpp"
+#include "infra/taskTopology.hpp"
 #include "interfaces/iLedDriver.hpp"
 #include "trace/traceApi.hpp"
 #include "utils/ledAnimator.hpp"
@@ -82,9 +84,9 @@ public:
         }
 
         running_ = true;
-        BaseType_t ret = xTaskCreatePinnedToCore(
-            taskEntry, "led_svc", 4096, this, 5, &taskHandle_, 1  // Core 1 for responsive LEDs
-        );
+        const auto& task = infra::task::kLedService;
+        BaseType_t ret = xTaskCreatePinnedToCore(taskEntry, task.name, task.stackSize, this,
+                                                 task.priority, &taskHandle_, task.coreAffinity);
 
         if (ret != pdPASS) {
             running_ = false;
@@ -219,7 +221,10 @@ public:
     }
 
 private:
-    static void taskEntry(void* arg) { static_cast<LedService*>(arg)->taskLoop(); }
+    static void taskEntry(void* arg) {
+        infra::TaskStartEvidence::markStarted(infra::task::kLedService);
+        static_cast<LedService*>(arg)->taskLoop();
+    }
 
     void taskLoop() {
         const TickType_t delay = pdMS_TO_TICKS(16);  // ~60fps

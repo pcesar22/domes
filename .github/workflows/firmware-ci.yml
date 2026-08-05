@@ -44,7 +44,7 @@ jobs:
           PYTHONPATH="$GENERATOR_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}" \
             tools/generate_protocols.sh --check nanopb
 
-      - name: Build firmware
+      - name: Build physical firmware
         working-directory: firmware/domes
         run: |
           . "$IDF_PATH/export.sh"
@@ -75,6 +75,30 @@ jobs:
             exit 1
           fi
 
+      - name: Build QEMU firmware profile
+        working-directory: firmware/domes
+        run: |
+          . "$IDF_PATH/export.sh"
+          qemu_sdkconfig_path="${RUNNER_TEMP:-/tmp}/domes-qemu-ci-sdkconfig"
+          rm -rf build-qemu
+          rm -f "$qemu_sdkconfig_path"
+          idf.py -B build-qemu \
+            -D "IDF_TARGET=esp32s3" \
+            -D "SDKCONFIG=$qemu_sdkconfig_path" \
+            -D "SDKCONFIG_DEFAULTS=$PWD/sdkconfig.qemu.defaults" \
+            build
+          if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+            echo "::error::ESP-IDF rewrote firmware/domes/dependencies.lock"
+            git diff -- dependencies.lock
+            exit 1
+          fi
+
+      - name: Validate runtime profiles and source closure
+        run: |
+          python tools/simulation/qemu_runtime.py validate-builds \
+            --physical-build firmware/domes/build \
+            --qemu-build firmware/domes/build-qemu
+
       - name: Check binary size
         run: |
           size=$(stat -c%s firmware/domes/build/domes.bin)
@@ -100,6 +124,7 @@ jobs:
           cp domes.bin "$release_dir/domes.bin"
           cp domes.elf "$release_dir/domes.elf"
           cp project_description.json "$release_dir/project_description.json"
+          cp domes-fidelity-manifest.json "$release_dir/domes-fidelity-manifest.json"
           cp bootloader/bootloader.bin "$release_dir/bootloader.bin"
           cp partition_table/partition-table.bin "$release_dir/partition-table.bin"
           cp ota_data_initial.bin "$release_dir/ota_data_initial.bin"
@@ -112,6 +137,7 @@ jobs:
           test -s domes.bin
           test -s domes.elf
           test -s project_description.json
+          test -s domes-fidelity-manifest.json
           test -s domes-factory.bin
           test -s bootloader.bin
           test -s partition-table.bin
@@ -120,6 +146,7 @@ jobs:
             domes.bin \
             domes.elf \
             project_description.json \
+            domes-fidelity-manifest.json \
             domes-factory.bin \
             bootloader.bin \
             partition-table.bin \
@@ -248,6 +275,7 @@ jobs:
           python3 -m unittest discover -s tools/doctor -p 'test_*.py' -v
           python3 -m unittest discover -s tools/docs -p 'test_*.py' -v
           python3 -m unittest discover -s tools/verify -p 'test_*.py' -v
+          python3 -m unittest discover -s tools/simulation -p 'test_*.py' -v
           python3 tools/docs/check_markdown_links.py
           python3 -m unittest discover -s tools/trace -p 'test_*.py' -v
           python3 tools/trace/generate_trace_names.py --check

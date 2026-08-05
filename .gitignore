@@ -27,5 +27,8 @@ Thumbs.db
 # Trace artifacts
 trace.json
 
+# Local verification output. CI retains generated logs and artifacts.
+/.artifacts/
+
 # Secrets (WiFi credentials, API keys, etc.)
 **/secrets.hpp

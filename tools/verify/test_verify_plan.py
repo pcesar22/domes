@@ -63,6 +63,7 @@ class VerifyPlanTest(unittest.TestCase):
                 "host_tooling",
             },
             "tools/doctor/doctor.py": {"host_tooling"},
+            "tools/simulation/qemu_runtime.py": {"host_tooling", "firmware"},
         }
         for path, checks in expected.items():
             with self.subTest(path=path):

@@ -13,6 +13,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "infra/taskStartEvidence.hpp"
+#include "infra/taskTopology.hpp"
 #include "interfaces/iAudioDriver.hpp"
 #include "trace/traceApi.hpp"
 
@@ -83,9 +85,9 @@ public:
         }
 
         running_ = true;
-        BaseType_t ret = xTaskCreatePinnedToCore(
-            taskEntry, "audio_svc", kStackSize, this, 5, &taskHandle_, 1  // Core 1
-        );
+        const auto& task = infra::task::kAudioService;
+        BaseType_t ret = xTaskCreatePinnedToCore(taskEntry, task.name, task.stackSize, this,
+                                                 task.priority, &taskHandle_, task.coreAffinity);
 
         if (ret != pdPASS) {
             running_ = false;
@@ -201,7 +203,6 @@ public:
 
 private:
     static constexpr const char* kTag = "audio_svc";
-    static constexpr size_t kStackSize = 4096;
     static constexpr size_t kQueueDepth = 4;
     static constexpr uint32_t kSampleRate = 16000;
     static constexpr size_t kMaxToneSamples = 16000;  // 1 second max
@@ -217,7 +218,10 @@ private:
         uint16_t toneDuration;
     };
 
-    static void taskEntry(void* arg) { static_cast<AudioService*>(arg)->taskLoop(); }
+    static void taskEntry(void* arg) {
+        infra::TaskStartEvidence::markStarted(infra::task::kAudioService);
+        static_cast<AudioService*>(arg)->taskLoop();
+    }
 
     void taskLoop() {
         ESP_LOGI(kTag, "Audio task starting");

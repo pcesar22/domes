@@ -1,7 +1,19 @@
 menu "DOMES Configuration"
 
+    choice DOMES_RUNTIME_PROFILE
+        prompt "DOMES runtime composition profile"
+        default DOMES_RUNTIME_PROFILE_PHYSICAL
+
+        config DOMES_RUNTIME_PROFILE_PHYSICAL
+            bool "Physical NFF development board"
+
+        config DOMES_RUNTIME_PROFILE_QEMU
+            bool "Deterministic ESP32-S3 QEMU"
+    endchoice
+
     config DOMES_OTA_AUTO_CHECK
         bool "Enable automatic OTA update check on boot"
+        depends on DOMES_RUNTIME_PROFILE_PHYSICAL
         default n
         help
             When enabled, the firmware will automatically check GitHub
@@ -14,6 +26,7 @@ menu "DOMES Configuration"
 
     config DOMES_WIFI_AUTO_CONNECT
         bool "Enable automatic WiFi connection on boot"
+        depends on DOMES_RUNTIME_PROFILE_PHYSICAL
         default n
         help
             When enabled, the firmware will automatically connect to WiFi

@@ -6,6 +6,7 @@
 #include "infra/taskManager.hpp"
 
 #include "infra/logging.hpp"
+#include "infra/taskStartEvidence.hpp"
 #include "infra/watchdog.hpp"
 
 #include <cstring>
@@ -28,6 +29,7 @@ esp_err_t TaskManager::createTask(const TaskConfig& config, ITaskRunner& runner)
     TaskSlot& slot = slots_[slotIdx];
     slot.runner = &runner;
     slot.name = config.name;
+    slot.evidenceMask = config.evidenceMask;
     slot.watchdogSubscribed = config.subscribeToWatchdog;
     slot.owner = this;
     slot.active.store(true, std::memory_order_release);
@@ -50,6 +52,7 @@ esp_err_t TaskManager::createTask(const TaskConfig& config, ITaskRunner& runner)
         activeCount_.fetch_sub(1, std::memory_order_acq_rel);
         slot.runner = nullptr;
         slot.owner = nullptr;
+        slot.evidenceMask = 0;
         return ESP_FAIL;
     }
 
@@ -95,6 +98,7 @@ esp_err_t TaskManager::stopAllTasks(uint32_t timeoutMs) {
         slot.handle = nullptr;
         slot.runner = nullptr;
         slot.name = nullptr;
+        slot.evidenceMask = 0;
         slot.owner = nullptr;
     }
 
@@ -127,6 +131,7 @@ size_t TaskManager::findFreeSlot() const {
 
 void TaskManager::taskEntryPoint(void* param) {
     TaskSlot* slot = static_cast<TaskSlot*>(param);
+    TaskStartEvidence::markStarted(slot->evidenceMask);
 
     // Subscribe to watchdog if requested
     if (slot->watchdogSubscribed && Watchdog::isInitialized()) {
