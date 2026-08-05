@@ -25,6 +25,12 @@ It cannot establish ESP-IDF integration, flash layout, UART/BLE/WiFi behavior, r
 FreeRTOS scheduling, watchdog behavior, or physical peripheral output. Those require the builds and
 hardware gates in [`../../docs/TESTING.md`](../../docs/TESTING.md).
 
+The target architecture for adding deterministic ESP32-S3/IDF FreeRTOS execution without
+misrepresenting this host model is
+[`13-deterministic-virtual-platform.md`](13-deterministic-virtual-platform.md). Its QEMU,
+target-scheduler, virtual-radio, sanitizer, and predictive-qualification tiers are not implemented
+unless `PROGRAM_STATUS.md` records direct evidence otherwise.
+
 ## Project Composition
 
 ```text
