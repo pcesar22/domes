@@ -189,6 +189,8 @@ jobs:
 
       - name: Execute deterministic production runtime
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$IDF_PATH"
           . "$IDF_PATH/export.sh"
           artifact_root="$GITHUB_WORKSPACE/.artifacts/qemu-ci"
           rm -rf "$artifact_root"

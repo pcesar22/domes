@@ -248,6 +248,14 @@ class ReleaseContractTest(unittest.TestCase):
         self.assertIn("--timeout 15", self.software_workflow)
         self.assertNotIn("--skip-build", self.software_workflow)
         self.assertNotIn("--allow-dirty", self.software_workflow)
+        self.assertIn(
+            'git config --global --add safe.directory "$GITHUB_WORKSPACE"',
+            self.software_workflow,
+        )
+        self.assertIn(
+            'git config --global --add safe.directory "$IDF_PATH"',
+            self.software_workflow,
+        )
         self.assertIn("qemu_runtime.py verify-ci-report", self.software_workflow)
         self.assertIn('--expected-head "$GITHUB_SHA"', self.software_workflow)
         self.assertIn("if: ${{ failure() }}", self.software_workflow)
