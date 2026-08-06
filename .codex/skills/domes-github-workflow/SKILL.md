@@ -91,25 +91,17 @@ Title format should match the main commit subject:
 <type>(<scope>): <description>
 ```
 
-PR body:
+Use the CEO-first structure in `.github/pull_request_template.md` and the filled reference in
+`references/templates.md`. Lead with plain-language purpose, outcome, and decision context. Put
+internal package codes, hashes, commands, protocol details, and long test evidence in the collapsed
+technical appendix. Define unavoidable acronyms and specialized terms.
 
-```markdown
-## Summary
-Brief description of what this PR does.
+Every description must distinguish:
 
-## Changes
-- Specific change 1
-- Specific change 2
-
-## Testing
-- [ ] Unit tests pass
-- [ ] Builds for ESP32-S3
-- [ ] Tested on hardware, if applicable
-- [ ] No new compiler warnings
-
-## Notes
-Trade-offs, follow-up work, or hardware limits.
-```
+- what the PR changes and why the company should care;
+- passed, failed, provisional, pending, and not-run evidence;
+- what approval authorizes and explicitly does not authorize; and
+- remaining work, ownership, and the next decision or dependency.
 
 Keep PRs focused. Self-review before requesting review. Link issues with `Fixes #123` or
 `Relates to #123`. Avoid force-pushing after review unless the user or maintainer requests it.
