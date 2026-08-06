@@ -163,6 +163,10 @@ message TraceSessionInfo {
     uint32 trace_event_format_version = 9; // 1 for scheduler/causality flags and IDs
     repeated ObjectEntry objects = 10;
     uint32 discontinuity_count = 11;
+    string firmware_version = 12;     // Running esp_app_desc_t version
+    bytes app_elf_sha256 = 13;        // Running esp_app_desc_t ELF SHA-256 (32 bytes)
+    bytes app_image_sha256 = 14;      // Verified running app image SHA-256 (32 bytes)
+    bytes device_uid = 15;            // Factory base MAC, not a transport-derived MAC (6 bytes)
 }
 
 // Chunk of binary trace events (MsgType: DATA 0x13)

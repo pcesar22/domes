@@ -172,7 +172,8 @@ $CLI --port "$PORT" trace status
 $CLI --port "$PORT" system health
 $CLI --port "$PORT" trace stop
 $CLI --port "$PORT" trace dump \
-  --output trace.json --names tools/trace/trace_names.json
+  --output trace.json --names tools/trace/trace_names.json \
+  --firmware-bin path/to/domes.bin
 
 $CLI trace stream --wifi 192.168.1.100:5001
 $CLI --port "$PORT" sniff --filter config,trace --json
@@ -181,6 +182,13 @@ $CLI --port "$PORT" sniff --filter config,trace --json
 Open dump output in [Perfetto](https://ui.perfetto.dev). The sniffer is a passive serial reader: it
 does not proxy commands and cannot share an exclusively opened UART with a command-producing CLI
 process. Use it only with traffic mirrored or produced on the port it opens.
+
+Every accepted dump retains device-originated firmware version, ELF SHA-256, running app-image
+SHA-256, and factory base MAC in `<output>.raw.session.json`. With `--firmware-bin`, the CLI also
+verifies the candidate's embedded application descriptor and appended image hash against the
+running device before recording the candidate file's full SHA-256 and transport endpoint. Use a
+registered `/dev/serial/by-id/usb-Silicon_Labs_CP2102N_*` address when the host-side bridge identity
+must remain stable across re-enumeration.
 
 Trace merge is a separate Python tool, not a CLI subcommand. Export one file per pod, then run:
 

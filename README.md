@@ -121,8 +121,13 @@ $CLI --port "$PORT" trace start
 $CLI --port "$PORT" system health
 $CLI --port "$PORT" trace stop
 $CLI --port "$PORT" trace dump -o trace.json \
-  --names tools/trace/trace_names.json
+  --names tools/trace/trace_names.json \
+  --firmware-bin "$FIRMWARE_BIN"
 ```
+
+Supplying `--firmware-bin` makes the dump fail closed unless the file's embedded version, ELF hash,
+and app-image hash match the running pod. The retained session also records the pod's factory base
+MAC, selected transport endpoint, raw-trace hash, and full candidate-file hash.
 
 The WiFi example requires a `CONFIG_DOMES_WIFI_AUTO_CONNECT` build and stored credentials. The
 default profile omits the WiFi runtime feature; enabled development builds prefer stored credentials

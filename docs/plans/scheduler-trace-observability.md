@@ -2,7 +2,7 @@
 
 Status: implementation merged; post-merge registered-NFF evidence captured with closure gaps
 Current phase: bind physical identity and pass the required default-image verification
-Repository state: PR 102 merged as `7b1554a`; accepted implementation head `b3cb19c`
+Repository state: PR 102 merged as `7b1554a`; closure branch `codex/fix/trace-evidence-closure`
 Last updated: 2026-08-05; trace semantics passed, but physical identity and restoration are open
 
 ## Objective and observable outcome
@@ -51,16 +51,21 @@ predictive claim.
   run 31067343275, including the accepted 100-process QEMU job and aggregate `CI Gate`.
 - [x] Capture and normalize a fresh registered-NFF trace from final implementation `b3cb19c`, then
   restore the default image without making physical-output claims.
+- [x] Add device-originated firmware/image/hardware identity, candidate-image verification, and
+  transport identity to the retained trace session; pass focused host and paired-profile builds.
 - [ ] Bind the retained physical session to the exact flashed-image hash and stable hardware
   identity instead of relying on operator-correlated commands.
 - [ ] Retain the post-restoration command evidence and pass the repository-required `system health`
   and complete `system self-test` checks before technical exit.
+- [x] Reclaim the redundant 16 KiB trace merge buffer without changing event ordering, then measure
+  the default image again instead of weakening either heap threshold.
 
 ## Verification
 
 | Evidence level | Command or observation | Status and artifact |
 | --- | --- | --- |
 | Automated | Full pre-commit suite; 53 focused Python tests; 294 host firmware tests; 98 Rust unit and 10 integration tests plus clippy; generated protocols; trace generator; fresh ESP-IDF v5.4.4 physical build | passed on final implementation head `b3cb19c`; the final head's documentation-only delta was also covered by exact-checkout CI |
+| Closure implementation | Generated nanopb/Dart drift checks; 296 host-firmware tests; 100 Rust unit and 10 integration tests plus clippy; 22 trace-tool tests; pre-commit hooks; fresh ESP-IDF v5.4.4 physical and QEMU builds; paired-profile validator | passed on the uncommitted closure candidate. Physical ELF SHA-256 `cf9290c5...479a5`; full physical `domes.bin` SHA-256 `e9db98c7...5ba5`. These hashes are compile evidence only and will be replaced by a clean exact-commit candidate before device use. Local aggregate Flutter remained unavailable because the host has 3.38.9 instead of 3.44.8; local shellcheck is also absent. |
 | Target execution | `tools/simulation/qemu_runtime.py` final fixed 100-run trace campaign | passed 100/100 in Software CI run 31068033646 with ready signature `505b529d...de1be` and trace signature `a9800774...85d4`; separate final local development run passed with 68 events, zero drops/discontinuities, and 101/160 us disabled/enabled measurements |
 | Historical accepted command | pre-fix serial raw trace dump and normalization from registered NFF pod 2 | retained: 74 events, SHA-256 `5a37fe73...0505`, zero drops/discontinuities, complete causal chain, and 92/177 us measurements; this predates `5ea561c` and does not verify the corrected implementation |
 | Registered-NFF target execution | fresh isolated ESP-IDF v5.4.4 probe build and serial capture, operator-correlated to registered pod 2 and final PR head `b3cb19c` | trace semantics passed: 75 events, zero drops/discontinuities, one complete causal chain at raw positions 49/58/59/62/64/65/66/69/71/72, 12 task mappings, 6 object mappings, and 154/267 us disabled/enabled overhead for 32 records; raw SHA-256 `b3232cf4eb39ddaa69168b7503c16395bdb9032f0c0e44bcb64c7039b92d98ec`, normalizer-declared content SHA-256 `78d2694b97aec7a22a15576b2f3b0d8c4fde1be6baf55c823b1c234577177225`. The session itself does not bind the image hash or CP2102N identity, so it is not final physical-differential evidence |
@@ -97,11 +102,19 @@ predictive claim.
   free heap. Both required checks failed after restoration. The prior main image also missed the
   health threshold, but no retained pre/post record proves non-regression and a prior failure is not
   a passing restoration result.
+- The physical evidence record will use device-originated base-MAC, firmware-version, ELF-hash, and
+  running-app-image-hash fields. When given the candidate `domes.bin`, the CLI will verify its
+  embedded application descriptor and appended image hash against those device fields, then retain
+  the artifact's full-file SHA-256 and the selected transport endpoint in the same session record.
+- The two per-core capture buffers are required for bounded SMP hook recording, but the additional
+  16 KiB global merge buffer is not. Stable in-place sorting per core followed by a stable two-way
+  merge preserves the existing timestamp and equal-timestamp ordering contract while returning that
+  internal DRAM to the default image.
 
 ## Resume checkpoint
 
-FS-WP-002C remains active after its implementation merge. Extend the evidence session so one
-retained record binds the raw trace to the flashed-image hash, stable CP2102N identity, and queried
-firmware identity. Repeat the registered-pod capture, retain post-restoration command results, and
-pass `system health` plus the complete `system self-test`. Do not select FS-WP-002E until those gaps
-close.
+FS-WP-002C remains active after its implementation merge. Implement and verify the device-originated
+identity fields, candidate-image binding, and allocation-free merge path on
+`codex/fix/trace-evidence-closure`. Repeat the registered-pod capture, retain post-restoration command
+results, and pass `system health` plus the complete `system self-test`. Do not select FS-WP-002E
+until those gaps close.

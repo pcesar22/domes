@@ -9,6 +9,12 @@
 #include "traceCommandHandler.hpp"
 
 #include "esp_log.h"
+#if defined(ESP_PLATFORM)
+#include "esp_mac.h"
+#include "esp_ota_ops.h"
+#include "esp_partition.h"
+#include "infra/appMetadata.hpp"
+#endif
 #include "kernelTrace.hpp"
 #include "pb_encode.h"
 #include "protocol/frameCodec.hpp"
@@ -22,6 +28,41 @@
 namespace {
 constexpr const char* kTag = "trace_cmd";
 std::atomic<uint32_t> gTraceCommandBusy{0};
+
+bool populateEvidenceIdentity(domes_trace_TraceSessionInfo& msg) {
+#if defined(ESP_PLATFORM)
+    const auto& app = domes::infra::appMetadata();
+    std::strncpy(msg.firmware_version, app.version, sizeof(msg.firmware_version) - 1);
+    std::memcpy(msg.app_elf_sha256.bytes, app.app_elf_sha256, sizeof(app.app_elf_sha256));
+    msg.app_elf_sha256.size = sizeof(app.app_elf_sha256);
+
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    if (running == nullptr ||
+        esp_partition_get_sha256(running, msg.app_image_sha256.bytes) != ESP_OK) {
+        ESP_LOGE(kTag, "Unable to hash the running app image for trace evidence");
+        return false;
+    }
+    msg.app_image_sha256.size = sizeof(msg.app_image_sha256.bytes);
+
+    if (esp_efuse_mac_get_default(msg.device_uid.bytes) != ESP_OK) {
+        ESP_LOGE(kTag, "Unable to read the factory base MAC for trace evidence");
+        return false;
+    }
+    msg.device_uid.size = 6;
+#else
+    // Host-only unit tests do not have an ESP image or eFuse. Keep their
+    // metadata deterministic and unmistakably synthetic.
+    std::strncpy(msg.firmware_version, "host-test", sizeof(msg.firmware_version) - 1);
+    std::memset(msg.app_elf_sha256.bytes, 0xA5, sizeof(msg.app_elf_sha256.bytes));
+    msg.app_elf_sha256.size = sizeof(msg.app_elf_sha256.bytes);
+    std::memset(msg.app_image_sha256.bytes, 0x5A, sizeof(msg.app_image_sha256.bytes));
+    msg.app_image_sha256.size = sizeof(msg.app_image_sha256.bytes);
+    constexpr std::array<uint8_t, 6> kHostUid{0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::memcpy(msg.device_uid.bytes, kHostUid.data(), kHostUid.size());
+    msg.device_uid.size = kHostUid.size();
+#endif
+    return true;
+}
 
 class TraceCommandLock {
 public:
@@ -338,6 +379,9 @@ bool CommandHandler::sendSessionInfo(uint32_t eventCount, uint32_t droppedCount,
     msg.buffer_size_bytes = KernelTrace::kCaptureCapacityBytes;
     msg.trace_event_format_version = kTraceEventFormatVersion;
     msg.discontinuity_count = Recorder::discontinuityCount();
+    if (!populateEvidenceIdentity(msg)) {
+        return false;
+    }
     // Fill task entries
     std::array<bool, 32> referencedTasks{};
     for (uint32_t index = 0; index < eventCount; ++index) {
