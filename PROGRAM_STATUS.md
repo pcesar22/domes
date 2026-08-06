@@ -82,23 +82,24 @@ edges, fail-closed evidence validation, and measured enabled/disabled overhead o
 | Contract | Current state |
 | --- | --- |
 | Owner | AI simulation/firmware lead |
-| State / health | `Complete` / `Green` |
+| State / health | `Active` / `Amber` |
 | Execution issue / plan | Issue [101](https://github.com/pcesar22/domes/issues/101); [execution plan](docs/plans/scheduler-trace-observability.md) |
 | Inputs | Merged FS-WP-002D target runtime, existing 16-byte trace ABI, ESP-IDF v5.4.4 trace facility, registered NFF boards |
-| Dependencies/blockers | None for technical exit; PR 102 head `e6c3204` passed required Software CI run 31060325636; review/merge remains |
+| Dependencies/blockers | Reviewed implementation `5ea561c` passed Software CI run 31067343275; a registered-NFF capture and restoration check on that implementation remain before technical exit and merge |
 | Gate/risk unlocked | FS-WP-002E production radio seam and the later deterministic scheduler/fault campaign |
 | Stop condition | No scheduler replacement, unbounded hook/ISR work, reserved protobuf reuse, unmeasured 16-byte ABI migration, FS-WP-002E work, or hardware-equivalence/predictive claim |
 
 Acceptance requires stable mappings, per-core task/ISR/queue/semaphore/timeout/callback evidence, one
 synthetic interrupt causal chain, retained raw hashes, a versioned zero-exclusion normalizer, 100
 identical complete fixed QEMU traces, hard failure on invalid evidence, measured QEMU/NFF overhead,
-and preservation of default physical behavior. Local acceptance passed: 100/100 QEMU processes had
-one 62-event trace signature with zero drops/discontinuities, while registered pod 2 produced a
-74-event raw artifact with a complete causal chain, zero drops/discontinuities, and measured
-disabled/enabled overhead. Pod identity and restoration are corroborated rather than embedded in a
-firmware-hash-bound artifact. This remains target-runtime/framed-command evidence, not physical
-actuation, RF, hardware-equivalence, or predictive evidence. Required exact-checkout Software CI
-passed all eight software checks, including the 100-process QEMU job and aggregate `CI Gate`.
+and preservation of default physical behavior. Reviewed implementation `5ea561c` passed 100/100
+accepted QEMU processes with one complete trace signature and passed all eight software checks in
+Software CI run 31067343275, including the aggregate `CI Gate`. The earlier registered-pod-2
+74-event artifact has a complete causal chain, zero drops/discontinuities, and measured overhead,
+but it predates the corrective implementation commit and therefore does not verify it. A fresh
+registered-NFF capture plus default-image restoration check remains required. Any NFF result stays
+target-runtime/framed-command evidence, not physical actuation, RF, hardware-equivalence, or
+predictive evidence.
 
 ### Latest Completed Execution Delivery
 
@@ -138,7 +139,7 @@ These forecasts are planning targets, not evidence. Entry criteria, not date, au
 | FS-WP-002A | Deterministic host clock, network faults, identity, and exact delivery replay | `Complete` / `Green` | Existing host simulator | Merged [PR 97](https://github.com/pcesar22/domes/pull/97), exact replay and green required CI | 2026-08-04 | 2026-08-04 actual |
 | FS-WP-002B | ESP32-S3 QEMU feasibility and adoption decision | `Complete` / `Green` | `A` complete | `Viable`: 100/100 fixed runs, HMP/GDB, immutable pinned engine, complete fidelity inventory and numeric adoption budget | 2026-08-14 | 2026-08-04 actual |
 | FS-WP-002D | Physical/QEMU composition roots and deterministic platform inputs | `Complete` / `Green` | `B` is `Viable`; issue [99](https://github.com/pcesar22/domes/issues/99) | 100/100 QEMU runs, source-equivalent two-board regression, and required exact-checkout 100-process QEMU runtime CI and aggregate gate passed | 2026-08-25 | 2026-08-05 actual |
-| FS-WP-002C | Stable scheduler, ISR, synchronization, causality, and trace normalization | `Complete` / `Green` | `D` passed; PR 102 exact-checkout Software CI passed | QEMU and hardware use one bounded raw/normalized trace contract with stable IDs, full causal graph, overflow failure, and measured overhead | 2026-09-04 | 2026-08-05 actual |
+| FS-WP-002C | Stable scheduler, ISR, synchronization, causality, and trace normalization | `Active` / `Amber` | `D` passed; reviewed code and exact-checkout Software CI passed; final registered-NFF evidence pending | QEMU and hardware use one bounded raw/normalized trace contract with stable IDs, full causal graph, overflow failure, and measured overhead | 2026-09-04 | 2026-08-05 baseline; reopened 2026-08-05 |
 | FS-WP-002E | Production `IEspNowRadio` seam and trace correlation below `EspNowTransport` | `Not due` / `Not rated` | `C` passes and this package is selected | Physical path passes two-board regression; causal tokens cross callback/ring/dequeue without wire or pending-frame-capacity change | 2026-09-11 | 2026-09-11 |
 | FS-WP-003A | Portable protobuf-owned peer/drill codec and role semantics, required FS3 input | `Ready` / `Red` | Current physical/simulator/app contracts and compatibility baseline identified | Generated nanopb/prost/Dart contract replaces duplicated semantics and passes host/app/CLI/build/two-board migration regression | 2026-09-15 | 2026-09-15 |
 | FS-WP-002F | One real QEMU DUT plus deterministic in-process peer backplane | `Not due` / `Not rated` | `E` and `FS-WP-003A` pass | Production transport/task/codec path passes complete deterministic fault and exact-replay matrix with role rotation inside patch budget | 2026-09-28 | 2026-09-28 |
@@ -325,7 +326,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | Date | Integrated result | Decision impact |
 | --- | --- | --- |
 | 2026-08-05 | FS-WP-002B and D consolidated into one reviewable simulation delivery with reproducible tooling, concise qualification, independent reviews, and passing exact-checkout QEMU CI | D is complete and C is eligible but unselected; no scheduler, hardware-equivalence, or predictive claim is created |
-| 2026-08-05 | FS-WP-002C bounded scheduler/ISR/synchronization/callback capture, raw retention, fail-closed normalization, 100/100 QEMU campaign, qualified pod-2 target-runtime evidence, and passing exact-checkout CI | C reaches technical exit; no actuation, hardware-equivalence, or predictive claim is created |
+| 2026-08-05 | FS-WP-002C review repaired scheduler identities, cache-safe hook access, raw-evidence bounds, and fail-closed normalization; corrected code passed 100/100 QEMU and exact-checkout CI | C remains active until the corrected implementation has a fresh registered-NFF capture and restoration check; no actuation, hardware-equivalence, or predictive claim is created |
 | 2026-08-14 | Product brief, hardware-driving requirement draft, and initial risk register | Conflicts and missing measurements surface early while simulation implementation proceeds on its separate ladder |
 | 2026-08-24 | NFF physical/peripheral/electrical characterization baseline | Guesses are replaced before selection freeze |
 | 2026-08-31 | Architecture/component shortlist and bounded risk-coupon review | Weak candidates are removed |
@@ -349,7 +350,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | Current main software CI | Commit `c0691f34f68c8e671f1023f1dabc05cea1526344`, [run 30943047671](https://github.com/pcesar22/domes/actions/runs/30943047671) | Passed | Builds, tests, generated artifacts, lint, docs, Flutter Linux/iOS, ESP-IDF release checks, and aggregate `CI Gate` |
 | Deterministic replay foundation | [PR 97](https://github.com/pcesar22/domes/pull/97), merged 2026-08-04 | Accepted | FS-WP-002A only: explicit host time, deterministic faults, delivery identity, and exact delivery replay; no trace-normalization, target-scheduler, or predictive claim |
 | ESP32-S3 QEMU simulation delivery | [PR 100](https://github.com/pcesar22/domes/pull/100), [Software CI run 31039047667](https://github.com/pcesar22/domes/actions/runs/31039047667) | `B` is `Viable`; `D` is `Complete` / `Green`; exact-checkout CI rebuilt runtime implementation head `f36447f931f9216b7733ff4685ffc5ccaab895ce`, executed 100 identical fresh production-runtime QEMU processes, and passed aggregate `CI Gate`; manual 100/100 campaigns, linked closure, source-equivalent two-board regression, current host tooling, and independent review also passed; every later PR head remains gated before merge | Target execution and declared production/adapted/modeled/disabled runtime profile only; successful results stay in CI logs and failure diagnostics are uploaded outside Git; no scheduler-trace, radio/RF, peripheral-actuation, cycle-accuracy, hardware-equivalence, or predictive claim |
-| Scheduler and causality trace implementation | [PR 102](https://github.com/pcesar22/domes/pull/102), issue [101](https://github.com/pcesar22/domes/issues/101), [Software CI run 31060325636](https://github.com/pcesar22/domes/actions/runs/31060325636), ignored local QEMU report, and pod-2 raw/normalized artifacts | Local code gates and fresh physical/QEMU ESP-IDF v5.4.4 builds passed; 100/100 QEMU processes produced one complete 62-event trace signature (`4bb920d7...e8d`) with zero drops/discontinuities and 59/130 us disabled/enabled 32-record measurements; pod 2 produced a 74-event raw trace (`5a37fe73...0505`) with the full causal chain, zero drops/discontinuities, and 92/177 us disabled/enabled 32-record measurements; independent firmware, protocol, and hardware-evidence reviews performed; exact-checkout CI passed eight software checks including the 100-process QEMU job and aggregate `CI Gate` | Target-runtime and framed-command evidence only; pod identity/restoration are corroborated rather than firmware-hash-bound; no physical actuation, RF, hardware-equivalence, or predictive claim |
+| Scheduler and causality trace implementation | [PR 102](https://github.com/pcesar22/domes/pull/102), issue [101](https://github.com/pcesar22/domes/issues/101), reviewed implementation `5ea561c`, and [Software CI run 31067343275](https://github.com/pcesar22/domes/actions/runs/31067343275) | Local format, 53 focused Python, 294 host, 98 Rust unit plus 10 integration checks, clippy, trace generation, fresh physical build, and a development QEMU run passed; CI rebuilt the PR merge ref from head `5ea561c`, passed 100/100 accepted QEMU runs with trace signature `e8a211a3...8fced`, and passed all eight software checks plus `CI Gate` | Current software and QEMU evidence only. The earlier pod-2 74-event artifact (`5a37fe73...0505`) predates `5ea561c` and is not current implementation evidence; fresh registered-NFF capture/restoration remains. No physical actuation, RF, hardware-equivalence, or predictive claim |
 | Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains and CI behavior |
 | Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
 

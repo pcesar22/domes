@@ -1,9 +1,9 @@
 # Deliver Scheduler And Causality Trace Evidence
 
-Status: technical exit complete; review and merge pending
-Current phase: review-ready delivery with required exact-checkout CI passed
-Repository state: `codex/feat/scheduler-trace-observability` based on `d4251d5`
-Last updated: 2026-08-05; local software, 100-process QEMU, and bounded NFF runtime evidence passed
+Status: implementation review complete; final registered-NFF evidence and merge pending
+Current phase: corrected implementation and exact-checkout software CI passed; physical rerun open
+Repository state: reviewed implementation `5ea561c` on `codex/feat/scheduler-trace-observability`
+Last updated: 2026-08-05; current software/QEMU passed, earlier NFF artifact is pre-fix
 
 ## Objective and observable outcome
 
@@ -45,19 +45,23 @@ predictive claim.
 - [x] Implement stable manifest IDs and bounded target hook capture.
 - [x] Implement raw artifact hashing, normalization, causal validation, and rejection tests.
 - [x] Run focused host tests and isolated ESP-IDF v5.4.4 physical/QEMU builds.
-- [x] Run 100-process QEMU identity/overhead acceptance and bounded registered-NFF runtime capture.
-- [x] Self-review, commit, push, open linked PR 102, and pass required exact-checkout Software CI
-  run 31060325636, including the 100-process QEMU job and aggregate `CI Gate`.
+- [x] Run the original 100-process QEMU identity/overhead acceptance and bounded registered-NFF
+  runtime capture; retain the NFF result as pre-fix history after review changed the implementation.
+- [x] Complete corrective review, push implementation `5ea561c`, and pass exact-checkout Software CI
+  run 31067343275, including the accepted 100-process QEMU job and aggregate `CI Gate`.
+- [ ] Capture and normalize a fresh registered-NFF trace from implementation `5ea561c` (or a
+  docs-only descendant), then restore and verify the default image without making physical-output
+  claims.
 
 ## Verification
 
 | Evidence level | Command or observation | Status and artifact |
 | --- | --- | --- |
-| Automated | 67 focused Python tests; 289 host firmware tests; 91 Rust unit and 10 integration tests; generated protocols; fresh ESP-IDF v5.4.4 physical/QEMU builds | passed; `scripts/verify.sh` code gates passed, while host tooling could not run because `pre-commit` is absent and Flutter 3.38.9 is older than required 3.44.8 |
-| Target execution | `tools/simulation/qemu_runtime.py` fixed 100-run trace campaign | passed 100/100 with one ready signature `dc56c865...51b3`, one 62-event trace signature `4bb920d7...e8d`, zero drops/discontinuities, and 59/130 us disabled/enabled 32-record measurements; ignored report `/tmp/tmp.8Ru93ygX7k/evidence/runtime-report.json` |
-| Accepted command | serial raw trace dump and versioned normalization from registered NFF pod 2 | passed: 74 events, SHA-256 `5a37fe73...0505`, zero drops/discontinuities, complete causal chain, and 92/177 us disabled/enabled 32-record measurements; target-runtime/framed-command evidence only |
-| Physical/runtime boundary | independent read-only evidence review plus post-capture pod query | accepted with qualification: pod identity is corroborated rather than bound into the artifact; default-image restoration is corroborated, not proven by a retained flash hash; no actuation, RF, hardware-equivalence, or predictive claim |
-| Exact checkout | [Software CI run 31060325636](https://github.com/pcesar22/domes/actions/runs/31060325636) on PR 102 head `e6c3204` | passed: eight software checks including fresh physical/QEMU builds, 100-process QEMU runtime execution, and aggregate `CI Gate`; hardware CI intentionally skipped |
+| Automated | Full pre-commit suite; 53 focused Python tests; 294 host firmware tests; 98 Rust unit and 10 integration tests plus clippy; generated protocols; trace generator; fresh ESP-IDF v5.4.4 physical build | passed on reviewed implementation `5ea561c` |
+| Target execution | `tools/simulation/qemu_runtime.py` current fixed 100-run trace campaign | passed 100/100 in Software CI with one ready signature `45b54e96...0964` and one trace signature `e8a211a3...8fced`; separate final local development run passed with 68 events, zero drops/discontinuities, and 101/160 us disabled/enabled measurements |
+| Historical accepted command | pre-fix serial raw trace dump and normalization from registered NFF pod 2 | retained: 74 events, SHA-256 `5a37fe73...0505`, zero drops/discontinuities, complete causal chain, and 92/177 us measurements; this predates `5ea561c` and does not verify the corrected implementation |
+| Physical/runtime boundary | final registered-NFF capture and default-image restoration on the corrected implementation | not run; required before technical exit, with no actuation, RF, hardware-equivalence, or predictive claim |
+| Exact checkout | [Software CI run 31067343275](https://github.com/pcesar22/domes/actions/runs/31067343275) on PR 102 head `5ea561c` (merge ref `f5c2d2b`) | passed: eight software checks including fresh physical/QEMU builds, 100-process accepted QEMU execution, and aggregate `CI Gate`; hardware CI intentionally skipped |
 
 ## Decisions, discoveries, and deviations
 
@@ -65,19 +69,24 @@ predictive claim.
   the program ledger names C as the next autonomous execution delivery.
 - Issue 101 is the only execution issue authorized by this continuation cycle.
 - ESP-IDF v5.4.4 compiles the forced hook header through the SMP FreeRTOS kernel and links the
-  QEMU profile. Portable callbacks resolve the current task through the public task API because
-  ESP-IDF keeps the per-core current-TCB array private.
+  QEMU profile. Hooks use passed TCB pointers plus bounded DRAM registries protected by
+  cache-disabled-safe critical sections; they do not call flash-resident FreeRTOS task APIs.
 - The existing 350 ms readiness drill is too broad for bounded scheduler capture. A short GPTimer
   interrupt-to-production-main-task probe will run after readiness, retain raw events, and measure
   tracing separately without changing readiness behavior.
 - The retained raw artifact is written and hashed before semantic interpretation. The normalizer is
   versioned, retains every event field, rejects incomplete mappings/lifecycles/causal chains and any
   drop or discontinuity, and produces separate replay and cross-target semantic projections.
+- Corrective review made task/object identity immutable, bounded host allocation and chunk
+  retention, bound session catalogs/timestamps to raw events, and required strictly positive
+  enabled-over-disabled overhead. These behavioral changes invalidate the earlier NFF artifact as
+  final implementation evidence even though it remains useful pre-fix history.
 - Physical capture metadata identifies pod 2 but does not embed the CP2102N serial or firmware hash.
   The registered identity and restored idle/trace-disabled state were independently corroborated;
   neither is promoted to cryptographically bound artifact evidence.
 
 ## Resume checkpoint
 
-Review and merge PR 102. After merge, select FS-WP-002E through the program ledger before beginning
-its production-radio-seam scope.
+With explicit device authorization, capture and normalize the registered-NFF trace for reviewed
+implementation `5ea561c`, restore and query the default image, then update evidence and complete PR
+102 review. Do not merge or select FS-WP-002E until that acceptance gap is closed.
