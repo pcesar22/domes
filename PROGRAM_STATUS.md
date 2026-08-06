@@ -70,7 +70,7 @@ start PCB layout, or order EVT boards until the corresponding gates pass.
 | HW-WP-001 NFF Characterization and Product Architecture Downselect | `Ready now` | HR0-HR2 evidence; analysis, supplier work, evaluation kits, and coupons only |
 | Product/system requirement allocation | `Active` | Stabilize hardware-driving values or explicit ranges/fallbacks for G1 |
 | Physical NFF closure | `Active` | Both boards, all peripherals, exact populated parts, current/power/timing/RF evidence |
-| Deterministic virtual platform | `Active` | A, B, C, and D are complete; predictive claims still require the remaining FS2 ladder and independent held-out qualification |
+| Deterministic virtual platform | `Active` | A, B, and D are complete; C implementation is merged but its physical exit remains open, and predictive claims still require the remaining FS2 ladder plus independent held-out qualification |
 | General drill/protocol convergence | `Ready now` | One protobuf-owned drill, timing, authority, result, and recovery contract across firmware/sim/app |
 | Four economical ESP32-S3 alpha nodes | `Ready now` | System-scale development inventory, not product hardware |
 | FMEA, compliance, supply, CM, DFM/DFT, and test planning | `Ready now` | Planning and risk closure; no approval or production claim |
@@ -90,7 +90,7 @@ edges, fail-closed evidence validation, and measured enabled/disabled overhead o
 | Execution issue / plan | Issue [101](https://github.com/pcesar22/domes/issues/101); [execution plan](docs/plans/scheduler-trace-observability.md) |
 | Inputs | Merged FS-WP-002D target runtime, existing 16-byte trace ABI, ESP-IDF v5.4.4 trace facility, registered NFF boards |
 | Dependencies/blockers | Final head `b3cb19c` passed Software CI run 31068033646 and PR 102 merged; the physical session lacks exact image/hardware binding, retained restoration output is incomplete, and required health/self-test checks fail on heap |
-| Gate/risk unlocked | FS-WP-002E production radio seam and the later deterministic scheduler/fault campaign |
+| Gate/risk unlocked | None yet; passing the remaining physical exit criteria will unlock FS-WP-002E production radio seam work |
 | Stop condition | No scheduler replacement, unbounded hook/ISR work, reserved protobuf reuse, unmeasured 16-byte ABI migration, FS-WP-002E work, or hardware-equivalence/predictive claim |
 
 Acceptance requires stable mappings, per-core task/ISR/queue/semaphore/timeout/callback evidence, one
@@ -120,7 +120,7 @@ validation, and preserved physical behavior.
 | Execution issue / review package | Issue [99](https://github.com/pcesar22/domes/issues/99); one consolidated [PR 100](https://github.com/pcesar22/domes/pull/100) |
 | Inputs | FS-WP-002B feasibility foundation in the same PR; ESP-IDF v5.4.4; two registered NFF boards and Intel AX210 |
 | Dependencies/blockers | None for D's technical exit; runtime implementation head `f36447f931f9216b7733ff4685ffc5ccaab895ce` passed 100 fresh QEMU runtime processes and aggregate `CI Gate` in [run 31039047667](https://github.com/pcesar22/domes/actions/runs/31039047667); the final PR head still requires green CI before merge |
-| Gate/risk unlocked | Scheduler/ISR/causality observability package `FS-WP-002C`, completed and merged in PR 102 |
+| Gate/risk unlocked | Scheduler/ISR/causality observability package `FS-WP-002C`; its implementation merged in PR 102, while physical exit remains open |
 | Stop condition | Met; C and later radio/predictive work remain outside this delivery |
 
 The prior manual technical campaign passed with 100/100 fresh QEMU target processes, one normalized
@@ -256,7 +256,7 @@ laundering a failed model into gate evidence.
 | --- | --- | --- | --- | --- | --- | --- |
 | FS0 | Reproducible CI and automated two-board platform | AI firmware/software lead | `Complete` | `Green` | 2026-08-03 actual | Preserve required CI and rerun hardware evidence after behavioral change |
 | FS1 | Complete physical NFF reference and product-interface inventory | AI firmware/software lead | `Active` | `Amber` | 2026-08-24 | Finish audio/volume; observe peripherals; capture current/power/timing; confirm exact parts |
-| FS2 | Layered deterministic virtual platform with a measured prediction envelope | AI simulation lead | `Active` | `Amber` | 2026-10-30 | `A`, `B`, `C`, and `D` are complete; confidence remains `Low` until the full ladder and independent qualification pass |
+| FS2 | Layered deterministic virtual platform with a measured prediction envelope | AI simulation lead | `Active` | `Amber` | 2026-10-30 | `A`, `B`, and `D` are complete; close C's physical exit before E, and retain `Low` confidence until the full ladder and independent qualification pass |
 | FS3 | One production-owned drill/runtime contract across firmware, simulator and app | AI firmware/software lead | `Ready` | `Red` | 2026-10-19 | Deliver `FS-WP-003A` portable protobuf peer/drill contract by 2026-09-15, then close fixed two-pod and host-wall-clock scoring divergence |
 | FS4 | Six-node runtime, mobile/control, diagnostics, failure recovery and soak | AI systems/software lead | `Ready` | `Amber` | 2026-10-19 | Execute on NFF plus economical alpha nodes; feed critical results into G2 |
 | FS5 | EVT BSP, board profile, factory/service tooling and bring-up | AI firmware lead | `Not due` | `Not rated` | 2027-02-08 | Scaffold after G1; exact profile must build before G2 and remain separate from NFF |
