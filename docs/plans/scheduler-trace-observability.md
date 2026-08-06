@@ -1,7 +1,7 @@
 # Deliver Scheduler And Causality Trace Evidence
 
-Status: implementation complete; review and required exact-checkout CI pending
-Current phase: publish review-ready delivery and qualify its final commit
+Status: technical exit complete; review and merge pending
+Current phase: review-ready delivery with required exact-checkout CI passed
 Repository state: `codex/feat/scheduler-trace-observability` based on `d4251d5`
 Last updated: 2026-08-05; local software, 100-process QEMU, and bounded NFF runtime evidence passed
 
@@ -46,8 +46,8 @@ predictive claim.
 - [x] Implement raw artifact hashing, normalization, causal validation, and rejection tests.
 - [x] Run focused host tests and isolated ESP-IDF v5.4.4 physical/QEMU builds.
 - [x] Run 100-process QEMU identity/overhead acceptance and bounded registered-NFF runtime capture.
-- [ ] **Current:** Self-review, commit, push, open the linked review-ready PR, and monitor required
-  exact-checkout CI.
+- [x] Self-review, commit, push, open linked PR 102, and pass required exact-checkout Software CI
+  run 31060325636, including the 100-process QEMU job and aggregate `CI Gate`.
 
 ## Verification
 
@@ -57,6 +57,7 @@ predictive claim.
 | Target execution | `tools/simulation/qemu_runtime.py` fixed 100-run trace campaign | passed 100/100 with one ready signature `dc56c865...51b3`, one 62-event trace signature `4bb920d7...e8d`, zero drops/discontinuities, and 59/130 us disabled/enabled 32-record measurements; ignored report `/tmp/tmp.8Ru93ygX7k/evidence/runtime-report.json` |
 | Accepted command | serial raw trace dump and versioned normalization from registered NFF pod 2 | passed: 74 events, SHA-256 `5a37fe73...0505`, zero drops/discontinuities, complete causal chain, and 92/177 us disabled/enabled 32-record measurements; target-runtime/framed-command evidence only |
 | Physical/runtime boundary | independent read-only evidence review plus post-capture pod query | accepted with qualification: pod identity is corroborated rather than bound into the artifact; default-image restoration is corroborated, not proven by a retained flash hash; no actuation, RF, hardware-equivalence, or predictive claim |
+| Exact checkout | [Software CI run 31060325636](https://github.com/pcesar22/domes/actions/runs/31060325636) on PR 102 head `e6c3204` | passed: eight software checks including fresh physical/QEMU builds, 100-process QEMU runtime execution, and aggregate `CI Gate`; hardware CI intentionally skipped |
 
 ## Decisions, discoveries, and deviations
 
@@ -78,5 +79,5 @@ predictive claim.
 
 ## Resume checkpoint
 
-Commit and publish the review-ready FS-WP-002C delivery, then require Software CI to rebuild and run
-the exact PR head before changing the package from `Active` / `Amber` to `Complete` / `Green`.
+Review and merge PR 102. After merge, select FS-WP-002E through the program ledger before beginning
+its production-radio-seam scope.
