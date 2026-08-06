@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import struct
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -22,6 +23,7 @@ def manifest() -> dict:
         {
             "id": "main",
             "name": "main",
+            "trace_id": 1,
             "stack_size": 4096,
             "priority": 1,
             "core_affinity": 0,
@@ -32,6 +34,7 @@ def manifest() -> dict:
         {
             "id": "worker",
             "name": "worker",
+            "trace_id": 2,
             "stack_size": 4096,
             "priority": 5,
             "core_affinity": 1,
@@ -54,6 +57,44 @@ def manifest() -> dict:
             "touch_pad": 0,
         },
     }
+
+
+def raw_trace() -> bytes:
+    chain = [
+        (0x1B, 6),
+        (0x16, 3),
+        (0x1C, 4),
+        (0x19, 1),
+        (0x0D, 2),
+        (0x1D, 4),
+        (0x17, 3),
+        (0x1A, 1),
+        (0x0C, 2),
+        (0x1E, 5),
+    ]
+    preamble = struct.pack("<IHBBII", 90, 1, 0x10, 1, 1, 1) + struct.pack(
+        "<IHBBII", 91, 2, 0x10, 1, 5, 2
+    )
+    return (
+        preamble
+        + b"".join(
+            struct.pack(
+                "<IHBBII",
+                100 + index,
+                0 if kind in (0x16, 0x17, 0x1C, 0x1D, 0x19, 0x0D) else 1,
+                kind,
+                (
+                    5
+                    if kind in (0x16, 0x17, 0x19, 0x0D)
+                    else (9 if kind in (0x1C, 0x1D) else 1)
+                ),
+                object_id,
+                1,
+            )
+            for index, (kind, object_id) in enumerate(chain)
+        )
+        + struct.pack("<IHBBII", 112, 1, 0x25, 1, 4, 20)
+    )
 
 
 def valid_log(**overrides: str) -> str:
@@ -92,13 +133,27 @@ def valid_log(**overrides: str) -> str:
         "game_misses": "0",
         "game_pad_mask": "0x00000001",
         "nvs_roundtrip": "1",
-        "trace_count": "20",
+        "trace_count": "13",
         "trace_drops": "0",
+        "trace_schema": "1",
+        "trace_causal_id": "1",
+        "trace_discontinuities": "0",
+        "trace_disabled_us": "4",
+        "trace_enabled_us": "20",
         "failure_mask": "0x00000000",
     }
     fields.update(overrides)
     marker = " ".join(f"{key}={value}" for key, value in fields.items())
-    return f"ESP-ROM:esp32s3-20210327\nI (697) qemu_root: {runtime.READY_MARKER} {marker}\n"
+    trace_rows = "".join(
+        f"I trace: DOMES_QEMU_TRACE schema=1 index={index} raw={raw_trace()[offset:offset + 16].hex()}\n"
+        for index, offset in enumerate(range(0, len(raw_trace()), 16))
+    )
+    session = (
+        "I trace: DOMES_QEMU_TRACE_SESSION schema=1 "
+        "objects=1:1:probe_queue,2:2:probe_sem,3:3:probe_irq,4:4:probe_callback,"
+        "5:5:probe_action,6:7:probe_timeout\n"
+    )
+    return f"ESP-ROM:esp32s3-20210327\n{session}{trace_rows}I (697) qemu_root: {runtime.READY_MARKER} {marker}\n"
 
 
 def write_ci_report(root: Path, head: str = "a" * 40) -> Path:
@@ -111,11 +166,27 @@ def write_ci_report(root: Path, head: str = "a" * 40) -> Path:
     log_text = valid_log(manifest_sha256=fidelity_sha256)
     result = runtime.analyze_runtime_log(log_text, fidelity_manifest, fidelity_sha256)
     signature = runtime.canonical_ready_signature(result)
+    objects = runtime.object_map_from_qemu_log(log_text)
+    normalized = runtime.normalize_trace(
+        raw_trace(), fidelity_manifest, objects=objects
+    )
+    trace_signature = normalized["normalized_sha256"]
     run_evidence = []
     for index in range(1, runtime.ACCEPTANCE_RUNS + 1):
         log_path = root / f"runs/{index:03d}/qemu.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text(log_text, encoding="utf-8")
+        raw_path = root / f"runs/{index:03d}/trace.raw"
+        normalized_path = root / f"runs/{index:03d}/trace.normalized.json"
+        semantic_path = root / f"runs/{index:03d}/trace.semantic.json"
+        raw_path.write_bytes(raw_trace())
+        raw_path.with_suffix(".raw.sha256").write_text(
+            f"{normalized['raw_sha256']}  {raw_path.name}\n", encoding="utf-8"
+        )
+        normalized_path.write_bytes(runtime.canonical_json(normalized))
+        semantic_path.write_bytes(
+            runtime.canonical_json(runtime.semantic_projection(normalized))
+        )
         run_evidence.append(
             {
                 "index": index,
@@ -129,6 +200,15 @@ def write_ci_report(root: Path, head: str = "a" * 40) -> Path:
                     "log_sha256": runtime.sha256_file(log_path),
                 },
                 "result": result,
+                "trace": {
+                    "raw": str(raw_path.resolve()),
+                    "raw_sha256": normalized["raw_sha256"],
+                    "objects": objects,
+                    "normalized": str(normalized_path.resolve()),
+                    "normalized_sha256": trace_signature,
+                    "semantic": str(semantic_path.resolve()),
+                    "event_count": len(normalized["events"]),
+                },
             }
         )
     report_path = root / "runtime-report.json"
@@ -141,6 +221,7 @@ def write_ci_report(root: Path, head: str = "a" * 40) -> Path:
                 "runs": runtime.ACCEPTANCE_RUNS,
                 "required_acceptance_runs": runtime.ACCEPTANCE_RUNS,
                 "ready_signature": signature,
+                "trace_signature": trace_signature,
                 "git": {"head": head, "dirty": False},
                 "build": {
                     "skipped": False,
@@ -223,6 +304,21 @@ class RuntimeLogTests(unittest.TestCase):
             runtime.analyze_runtime_log(
                 "Guru Meditation Error\n" + valid_log(), manifest(), "0" * 64
             )
+
+    def test_rejects_zero_or_inverted_trace_overhead(self) -> None:
+        for disabled, enabled in (("0", "20"), ("4", "0"), ("20", "4"), ("4", "4")):
+            with self.subTest(disabled=disabled, enabled=enabled):
+                with self.assertRaisesRegex(
+                    runtime.RuntimeProfileError, "must be positive"
+                ):
+                    runtime.analyze_runtime_log(
+                        valid_log(
+                            trace_disabled_us=disabled,
+                            trace_enabled_us=enabled,
+                        ),
+                        manifest(),
+                        "0" * 64,
+                    )
 
     def test_signature_ignores_absolute_tick_origin_only(self) -> None:
         first = runtime.analyze_runtime_log(valid_log(), manifest(), "0" * 64)
@@ -469,6 +565,17 @@ class CiReportTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 runtime.RuntimeProfileError, "omits required files"
             ):
+                runtime.verify_ci_report(report, "a" * 40)
+
+    def test_rejects_raw_hash_sidecar_that_disagrees_with_raw_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = write_ci_report(root)
+            (root / "runs/050/trace.raw.sha256").write_text(
+                f"{'0' * 64}  trace.raw\n", encoding="utf-8"
+            )
+            runtime._write_artifact_manifest(root)
+            with self.assertRaisesRegex(runtime.RuntimeProfileError, "trace artifacts"):
                 runtime.verify_ci_report(report, "a" * 40)
 
     def test_rejects_run_log_that_disagrees_with_report(self) -> None:

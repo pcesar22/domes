@@ -4,11 +4,13 @@
 # TaskEntry: max 16 char task name
 domes.trace.TaskEntry.name  max_size:16
 
-# TraceSessionInfo: max 32 tasks
-domes.trace.TraceSessionInfo.tasks  max_count:32
+# TraceSessionInfo: bounded catalogs that fit the shared 1024-byte frame payload
+domes.trace.TraceSessionInfo.tasks  max_count:16
+domes.trace.ObjectEntry.name  max_size:16
+domes.trace.TraceSessionInfo.objects  max_count:8
 
 # TraceDataChunk: max 256 bytes = 16 events * 16 bytes
 domes.trace.TraceDataChunk.events  max_size:256
 
-# StreamBatch: max 1024 bytes = 64 events * 16 bytes
-domes.trace.StreamBatch.events  max_size:1024
+# StreamBatch: 16 events, bounded below the shared 1024-byte frame payload
+domes.trace.StreamBatch.events  max_size:256

@@ -20,6 +20,9 @@ from typing import Any, Mapping, Sequence
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
+TRACE_DIR = SCRIPT_DIR.parent / "trace"
+if str(TRACE_DIR) not in sys.path:
+    sys.path.insert(0, str(TRACE_DIR))
 
 import generate_runtime_profile as profile_generator
 from qemu_feasibility import (
@@ -32,6 +35,13 @@ from qemu_feasibility import (
     generate_run_images,
     sha256_file,
     verify_run_images_unchanged,
+)
+from trace_normalizer import (
+    canonical_json,
+    normalize_trace,
+    object_map_from_qemu_log,
+    raw_from_qemu_log,
+    semantic_projection,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -50,7 +60,17 @@ CI_REQUIRED_ARTIFACTS = frozenset(
         "runtime-report.json",
         "sdkconfig.qemu",
     }
-    | {f"runs/{index:03d}/qemu.log" for index in range(1, ACCEPTANCE_RUNS + 1)}
+    | {
+        artifact
+        for index in range(1, ACCEPTANCE_RUNS + 1)
+        for artifact in (
+            f"runs/{index:03d}/qemu.log",
+            f"runs/{index:03d}/trace.raw",
+            f"runs/{index:03d}/trace.raw.sha256",
+            f"runs/{index:03d}/trace.normalized.json",
+            f"runs/{index:03d}/trace.semantic.json",
+        )
+    }
 )
 
 SHARED_MAIN_SOURCES = frozenset(
@@ -61,6 +81,9 @@ SHARED_MAIN_SOURCES = frozenset(
         "infra/taskStartEvidence.cpp",
         "runtime/runtimeAssembly.cpp",
         "trace/traceBuffer.cpp",
+        "trace/traceDumpSnapshot.cpp",
+        "trace/kernelTrace.cpp",
+        "trace/traceAcceptanceProbe.cpp",
         "trace/traceRecorder.cpp",
         "config/featureManager.cpp",
         "config/modeManager.cpp",
@@ -94,7 +117,6 @@ PHYSICAL_MAIN_SOURCES = SHARED_MAIN_SOURCES | frozenset(
         "services/espNowService.cpp",
         "platform/physical/espPlatformInputs.cpp",
         "runtime/runtimeEspNowAssembly.cpp",
-        "trace/traceDumpSnapshot.cpp",
         "trace/traceCommandHandler.cpp",
         "trace/traceStreamServer.cpp",
         "config/configCommandHandler.cpp",
@@ -147,6 +169,11 @@ READY_FIELDS = frozenset(
         "nvs_roundtrip",
         "trace_count",
         "trace_drops",
+        "trace_schema",
+        "trace_causal_id",
+        "trace_discontinuities",
+        "trace_disabled_us",
+        "trace_enabled_us",
         "failure_mask",
     }
 )
@@ -194,12 +221,14 @@ QEMU_ALLOWED_ARCHIVE_ORIGINS = frozenset(
         "esp-idf/esp_app_format",
         "esp-idf/esp_common",
         "esp-idf/esp_driver_gpio",
+        "esp-idf/esp_driver_gptimer",
         "esp-idf/esp_driver_spi",
         "esp-idf/esp_driver_uart",
         "esp-idf/esp_driver_usb_serial_jtag",
         "esp-idf/esp_hw_support",
         "esp-idf/esp_mm",
         "esp-idf/esp_partition",
+        "esp-idf/esp_pm",
         "esp-idf/esp_phy",
         "esp-idf/esp_ringbuf",
         "esp-idf/esp_rom",
@@ -263,6 +292,7 @@ def _task_config_sha256(manifest: Mapping[str, Any]) -> str:
             for key in (
                 "id",
                 "name",
+                "trace_id",
                 "stack_size",
                 "priority",
                 "core_affinity",
@@ -860,6 +890,9 @@ def analyze_runtime_log(
         "game_pad_mask": 1 << scenario["touch_pad"],
         "nvs_roundtrip": 1,
         "trace_drops": 0,
+        "trace_schema": 1,
+        "trace_causal_id": 1,
+        "trace_discontinuities": 0,
         "failure_mask": 0,
     }
     for key, expected in exact.items():
@@ -897,6 +930,14 @@ def analyze_runtime_log(
         )
     if int(result["trace_count"]) <= 0:
         raise RuntimeProfileError("readiness drill emitted no target trace evidence")
+    if (
+        int(result["trace_disabled_us"]) <= 0
+        or int(result["trace_enabled_us"]) <= 0
+        or int(result["trace_enabled_us"]) <= int(result["trace_disabled_us"])
+    ):
+        raise RuntimeProfileError(
+            "trace overhead must be positive and enabled must exceed disabled"
+        )
     for key in (
         "manifest_sha256",
         "spec_sha256",
@@ -1121,6 +1162,11 @@ def verify_ci_report(report_path: Path, expected_head: str) -> Mapping[str, Any]
         raise RuntimeProfileError(
             "QEMU runtime report has an invalid readiness signature"
         )
+    trace_signature = report.get("trace_signature")
+    if not isinstance(trace_signature, str) or not HASH.fullmatch(trace_signature):
+        raise RuntimeProfileError(
+            "QEMU runtime report has an invalid normalized trace signature"
+        )
     run_evidence = report.get("run_evidence")
     if not isinstance(run_evidence, list) or len(run_evidence) != ACCEPTANCE_RUNS:
         count = len(run_evidence) if isinstance(run_evidence, list) else "invalid"
@@ -1244,12 +1290,63 @@ def verify_ci_report(report_path: Path, expected_head: str) -> Mapping[str, Any]
             raise RuntimeProfileError(
                 "QEMU runtime readiness signatures are not identical"
             )
+        trace = run.get("trace")
+        raw_relative = f"runs/{expected_index:03d}/trace.raw"
+        raw_hash_relative = f"runs/{expected_index:03d}/trace.raw.sha256"
+        normalized_relative = f"runs/{expected_index:03d}/trace.normalized.json"
+        semantic_relative = f"runs/{expected_index:03d}/trace.semantic.json"
+        raw_path = artifact_dir / raw_relative
+        normalized_path = artifact_dir / normalized_relative
+        semantic_path = artifact_dir / semantic_relative
+        if (
+            not isinstance(trace, dict)
+            or Path(str(trace.get("raw"))).resolve() != raw_path.resolve()
+            or Path(str(trace.get("normalized"))).resolve() != normalized_path.resolve()
+            or Path(str(trace.get("semantic"))).resolve() != semantic_path.resolve()
+            or trace.get("raw_sha256") != files[raw_relative]
+            or raw_hash_relative not in files
+            or (artifact_dir / raw_hash_relative).read_text(encoding="utf-8")
+            != f"{files[raw_relative]}  trace.raw\n"
+            or files[normalized_relative] != sha256_file(normalized_path)
+            or files[semantic_relative] != sha256_file(semantic_path)
+        ):
+            raise RuntimeProfileError(
+                f"QEMU run {expected_index} is not bound to retained trace artifacts"
+            )
+        renormalized = normalize_trace(
+            raw_path.read_bytes(),
+            runtime_manifest,
+            objects=trace.get("objects", {}),
+            dropped=int(reparsed["trace_drops"]),
+            discontinuities=int(reparsed["trace_discontinuities"]),
+        )
+        retained_normalized = _read_json(normalized_path, "normalized trace")
+        if _canonical_bytes(renormalized) != _canonical_bytes(retained_normalized):
+            raise RuntimeProfileError(
+                f"QEMU run {expected_index} normalized trace differs from raw evidence"
+            )
+        if (
+            trace.get("normalized_sha256") != renormalized["normalized_sha256"]
+            or renormalized["normalized_sha256"] != trace_signature
+            or trace.get("event_count") != len(renormalized["events"])
+        ):
+            raise RuntimeProfileError(
+                "QEMU normalized trace signatures are not identical"
+            )
+        retained_semantic = _read_json(semantic_path, "semantic trace")
+        if _canonical_bytes(semantic_projection(renormalized)) != _canonical_bytes(
+            retained_semantic
+        ):
+            raise RuntimeProfileError(
+                f"QEMU run {expected_index} semantic projection differs from raw evidence"
+            )
 
     return {
         "status": "PASS",
         "commit": expected_head,
         "runs": len(run_evidence),
         "ready_signature": signature,
+        "trace_signature": trace_signature,
         "artifact_count": len(files),
     }
 
@@ -1310,6 +1407,7 @@ def run_runtime(args: argparse.Namespace) -> int:
     runs_dir.mkdir()
     run_evidence = []
     signatures = []
+    trace_signatures = []
     flash_hashes = []
     efuse_hashes = []
     for index in range(1, args.runs + 1):
@@ -1323,12 +1421,40 @@ def run_runtime(args: argparse.Namespace) -> int:
         execution = execute_until_marker(
             command, run_dir / "qemu.log", args.timeout, READY_MARKER
         )
-        result = analyze_runtime_log(
-            str(execution.pop("text")), manifest, validated["manifest_sha256"]
+        log_text = str(execution.pop("text"))
+        result = analyze_runtime_log(log_text, manifest, validated["manifest_sha256"])
+        raw_trace = raw_from_qemu_log(log_text)
+        raw_path = run_dir / "trace.raw"
+        raw_path.write_bytes(raw_trace)
+        raw_sha256 = hashlib.sha256(raw_trace).hexdigest()
+        raw_path.with_suffix(".raw.sha256").write_text(
+            f"{raw_sha256}  {raw_path.name}\n", encoding="utf-8"
         )
+        trace_objects = object_map_from_qemu_log(log_text)
+        normalized_trace = normalize_trace(
+            raw_trace,
+            manifest,
+            objects=trace_objects,
+            dropped=int(result["trace_drops"]),
+            discontinuities=int(result["trace_discontinuities"]),
+        )
+        if len(normalized_trace["events"]) != int(result["trace_count"]):
+            raise RuntimeProfileError("raw trace count differs from readiness evidence")
+        if normalized_trace["overhead_us"] != {
+            "disabled_32_records": int(result["trace_disabled_us"]),
+            "enabled_32_records": int(result["trace_enabled_us"]),
+        }:
+            raise RuntimeProfileError(
+                "raw trace overhead differs from readiness evidence"
+            )
+        normalized_path = run_dir / "trace.normalized.json"
+        semantic_path = run_dir / "trace.semantic.json"
+        normalized_path.write_bytes(canonical_json(normalized_trace))
+        semantic_path.write_bytes(canonical_json(semantic_projection(normalized_trace)))
         unchanged = verify_run_images_unchanged(images)
         signature = canonical_ready_signature(result)
         signatures.append(signature)
+        trace_signatures.append(str(normalized_trace["normalized_sha256"]))
         flash_hashes.append(str(images["flash_sha256"]))
         efuse_hashes.append(str(images["efuse_sha256"]))
         run_evidence.append(
@@ -1343,6 +1469,15 @@ def run_runtime(args: argparse.Namespace) -> int:
                 "execution": execution,
                 "result": result,
                 "ready_signature": signature,
+                "trace": {
+                    "raw": str(raw_path),
+                    "raw_sha256": normalized_trace["raw_sha256"],
+                    "objects": trace_objects,
+                    "normalized": str(normalized_path),
+                    "normalized_sha256": normalized_trace["normalized_sha256"],
+                    "semantic": str(semantic_path),
+                    "event_count": len(normalized_trace["events"]),
+                },
             }
         )
         if index > 1:
@@ -1352,6 +1487,10 @@ def run_runtime(args: argparse.Namespace) -> int:
     if len(set(signatures)) != 1:
         raise RuntimeProfileError(
             f"readiness signature drift: {sorted(set(signatures))}"
+        )
+    if len(set(trace_signatures)) != 1:
+        raise RuntimeProfileError(
+            f"normalized trace signature drift: {sorted(set(trace_signatures))}"
         )
     if len(set(flash_hashes)) != 1 or len(set(efuse_hashes)) != 1:
         raise RuntimeProfileError(
@@ -1378,6 +1517,7 @@ def run_runtime(args: argparse.Namespace) -> int:
         "runs": args.runs,
         "required_acceptance_runs": ACCEPTANCE_RUNS,
         "ready_signature": signatures[0],
+        "trace_signature": trace_signatures[0],
         "git": git_before,
         "source_hashes": source_before,
         "build": build_evidence,

@@ -42,7 +42,7 @@ enum Status {
 
 // Categories for trace events (used to filter and color-code in visualization)
 enum Category {
-    CATEGORY_KERNEL = 0;     // Legacy category value; no active kernel-hook producer
+    CATEGORY_KERNEL = 0;     // Scheduler, ISR, callback, and causal lifecycle events
     CATEGORY_TRANSPORT = 1;  // UART/TCP/BLE transport operations
     CATEGORY_OTA = 2;        // OTA update operations
     CATEGORY_WIFI = 3;       // WiFi/ESP-NOW operations
@@ -72,8 +72,27 @@ enum EventType {
 
     // Synchronization events (0x0B-0x0F)
     EVENT_TYPE_MUTEX_CONTENTION = 0x0B; // Mutex contention: arg1=mutexId, arg2=waitTimeUs
-    EVENT_TYPE_SEM_TAKE = 0x0C;         // Semaphore take: arg1=semId
-    EVENT_TYPE_SEM_GIVE = 0x0D;         // Semaphore give: arg1=semId
+    EVENT_TYPE_SEM_TAKE = 0x0C;         // Semaphore take: arg1=semId, arg2=causalId or zero
+    EVENT_TYPE_SEM_GIVE = 0x0D;         // Semaphore give: arg1=semId, arg2=causalId or zero
+
+    // Scheduler and causal observability (format version 1).
+    // 0x18 is intentionally unused to avoid confusion with the reserved frame MsgType.
+    EVENT_TYPE_SCHED_TASK_CREATE = 0x10;     // task_id=stable task ID
+    EVENT_TYPE_SCHED_TASK_DELETE = 0x11;     // task_id=stable task ID
+    EVENT_TYPE_SCHED_TASK_READY = 0x12;      // arg1=cause ID or zero if unavailable, arg2=causal ID or zero
+    EVENT_TYPE_SCHED_TASK_BLOCK = 0x13;      // arg1=stable object ID, arg2=timeout ticks
+    EVENT_TYPE_SCHED_SWITCH_IN = 0x14;       // task_id/core identify selected task
+    EVENT_TYPE_SCHED_SWITCH_OUT = 0x15;      // task_id/core identify descheduled task
+    EVENT_TYPE_SCHED_ISR_ENTER = 0x16;       // arg1=stable interrupt ID, arg2=causal ID
+    EVENT_TYPE_SCHED_ISR_EXIT = 0x17;        // arg1=stable interrupt ID, arg2=causal ID
+    EVENT_TYPE_SCHED_QUEUE_SEND = 0x19;      // arg1=stable queue ID, arg2=causal ID or zero
+    EVENT_TYPE_SCHED_QUEUE_RECEIVE = 0x1A;   // arg1=stable queue ID, arg2=causal ID or zero
+    EVENT_TYPE_SCHED_TIMEOUT = 0x1B;         // arg1=stable object ID, arg2=causal ID
+    EVENT_TYPE_CALLBACK_BEGIN = 0x1C;        // arg1=stable callback ID, arg2=causal ID
+    EVENT_TYPE_CALLBACK_END = 0x1D;          // arg1=stable callback ID, arg2=causal ID
+    EVENT_TYPE_CAUSAL_COMPLETE = 0x1E;       // arg1=stable action ID, arg2=causal ID
+    reserved 0x1F;
+    reserved "EVENT_TYPE_TRACE_DISCONTINUITY";
 
     // Application events (0x20-0x2F)
     EVENT_TYPE_SPAN_BEGIN = 0x20;  // Begin of a duration span
@@ -81,6 +100,7 @@ enum EventType {
     EVENT_TYPE_INSTANT = 0x22;     // Instant/point event
     EVENT_TYPE_COUNTER = 0x23;     // Counter value update
     EVENT_TYPE_COMPLETE = 0x24;    // Complete event (has duration in arg2)
+    EVENT_TYPE_TRACE_OVERHEAD = 0x25; // arg1=disabled and arg2=enabled 32-record time (us)
 }
 
 // ============================================================
@@ -92,7 +112,7 @@ enum EventType {
 // This message is for reference/documentation and host-side processing.
 message Event {
     uint32 timestamp = 1;   // Microseconds since boot
-    uint32 task_id = 2;     // FreeRTOS task number
+    uint32 task_id = 2;     // Immutable task ID assigned during runtime assembly
     EventType event_type = 3;
     Category category = 4;
     uint32 arg1 = 5;        // Primary argument (span, counter, or synchronization ID)
@@ -106,7 +126,26 @@ message Event {
 // Task name mapping (task ID -> human-readable name)
 message TaskEntry {
     uint32 task_id = 1;
-    string name = 2;        // Max 16 chars
+    string name = 2;        // Max 15 UTF-8 bytes
+    uint32 priority = 3;
+    uint32 core_affinity_mask = 4; // bit 0=Core 0, bit 1=Core 1
+}
+
+enum ObjectKind {
+    OBJECT_KIND_UNKNOWN = 0;
+    OBJECT_KIND_QUEUE = 1;
+    OBJECT_KIND_SEMAPHORE = 2;
+    OBJECT_KIND_INTERRUPT = 3;
+    OBJECT_KIND_CALLBACK = 4;
+    OBJECT_KIND_ACTION = 5;
+    OBJECT_KIND_MUTEX = 6;
+    OBJECT_KIND_TIMEOUT = 7;
+}
+
+message ObjectEntry {
+    uint32 object_id = 1;
+    ObjectKind kind = 2;
+    string name = 3; // Max 15 UTF-8 bytes
 }
 
 // Session metadata sent at start of dump (MsgType: SESSION_INFO 0x1A)
@@ -120,7 +159,10 @@ message TraceSessionInfo {
     uint32 start_timestamp_us = 4;  // First event timestamp
     uint32 end_timestamp_us = 5;    // Last event timestamp
     repeated TaskEntry tasks = 6;   // Registered task names
-    uint32 buffer_size_bytes = 7;   // Ring buffer size
+    uint32 buffer_size_bytes = 7;   // Active capture capacity in bytes
+    uint32 trace_event_format_version = 9; // 1 for scheduler/causality flags and IDs
+    repeated ObjectEntry objects = 10;
+    uint32 discontinuity_count = 11;
 }
 
 // Chunk of binary trace events (MsgType: DATA 0x13)
@@ -146,6 +188,7 @@ message TraceStatusResponse {
     uint32 dropped_count = 5;      // Total drops since last clear
     uint32 buffer_size = 6;        // Buffer capacity in bytes
     uint32 stream_category_mask = 7; // Active stream filter (0 = all)
+    uint32 discontinuity_count = 8;  // Unresolved IDs or unbalanced hook state
 }
 
 // ACK response (MsgType: ACK 0x1B)

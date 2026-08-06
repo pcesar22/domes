@@ -1,7 +1,9 @@
 #include "interfaces/iTransport.hpp"
 #include "pb_decode.h"
 #include "protocol/frameCodec.hpp"
+#include "trace/kernelTrace.hpp"
 #include "trace/traceCommandHandler.hpp"
+#include "trace/traceRecorder.hpp"
 
 #include <array>
 #include <cstdint>
@@ -91,6 +93,28 @@ TEST(TraceCommandHandler, AcceptsEmptyControlRequestPayload) {
     EXPECT_TRUE(handler.handleCommand(static_cast<uint8_t>(MsgType::kStart), nullptr, 0));
     ASSERT_EQ(1u, transport.sentFrames.size());
     EXPECT_EQ(Status::kNotInit, decodeAckStatus(transport.sentFrames.front()));
+}
+
+TEST(TraceCommandHandler, StatusReportsActualKernelCaptureCapacity) {
+    Recorder::shutdown();
+    ASSERT_EQ(Recorder::init(), ESP_OK);
+    CapturingTransport transport;
+    CommandHandler handler(transport);
+
+    ASSERT_TRUE(handler.handleCommand(static_cast<uint8_t>(MsgType::kStatusReq), nullptr, 0));
+    ASSERT_EQ(1u, transport.sentFrames.size());
+    FrameDecoder decoder;
+    for (uint8_t byte : transport.sentFrames.front()) {
+        decoder.feedByte(byte);
+    }
+    ASSERT_TRUE(decoder.isComplete());
+    ASSERT_EQ(static_cast<uint8_t>(MsgType::kStatusResp), decoder.getType());
+    domes_trace_TraceStatusResponse response = domes_trace_TraceStatusResponse_init_zero;
+    pb_istream_t stream = pb_istream_from_buffer(decoder.getPayload(), decoder.getPayloadLen());
+    ASSERT_TRUE(pb_decode(&stream, domes_trace_TraceStatusResponse_fields, &response));
+    EXPECT_EQ(KernelTrace::kCaptureCapacityBytes, response.buffer_size);
+
+    Recorder::shutdown();
 }
 
 }  // namespace

@@ -37,9 +37,17 @@ int main(int argc, char* argv[]) {
     sim::globalTraceEvents().clear();
 
     // Initialize trace recorder for firmware TRACE_* events
-    Recorder::init();
-    Recorder::setEnabled(true);
-    Recorder::registerTask(xTaskGetCurrentTaskHandle(), "sim");
+    if (Recorder::init() != ESP_OK ||
+        !Recorder::registerTask(xTaskGetCurrentTaskHandle(), "sim", 1, 1, 0)) {
+        fprintf(stderr, "ERROR: Failed to initialize trace recorder\n");
+        return 1;
+    }
+    Recorder::finalizeTaskCatalog();
+    if (!Recorder::setEnabled(true)) {
+        fprintf(stderr, "ERROR: Failed to enable trace recorder\n");
+        Recorder::shutdown();
+        return 1;
+    }
 
     // --- Set up 5-pod environment ---
     constexpr size_t kNumPods = 5;

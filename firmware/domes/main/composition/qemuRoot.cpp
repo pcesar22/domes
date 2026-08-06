@@ -11,7 +11,10 @@
 #include "platform/qemu/qemuPeripheralAdapters.hpp"
 #include "runtime/initOrderTracker.hpp"
 #include "runtime/runtimeAssembly.hpp"
+#include "runtime/runtimeTraceRegistration.hpp"
 #include "services/imuService.hpp"
+#include "trace/kernelTrace.hpp"
+#include "trace/traceAcceptanceProbe.hpp"
 #include "trace/traceRecorder.hpp"
 
 #include <array>
@@ -38,6 +41,7 @@ enum Failure : uint32_t {
     kTargetTimeFailure = 1U << 9,
     kForbiddenTaskFailure = 1U << 10,
     kInitOrderFailure = 1U << 11,
+    kTraceCausalityFailure = 1U << 12,
 };
 
 std::atomic<uint32_t> gameHitCount{0};
@@ -125,15 +129,15 @@ void emitResult(uint32_t failureMask, const domes::PlatformIdentity& identity,
                 const domes::platform::QemuAdapterEvidence& adapters, size_t presentTasks,
                 const char* taskSnapshotSha, bool nvsPassed, uint32_t enabledMask,
                 uint32_t startedTaskMask, uint32_t duplicateTaskMask, uint32_t core0TaskMask,
-                uint32_t core1TaskMask, const char* gameState) {
+                uint32_t core1TaskMask, const char* gameState,
+                const domes::trace::TraceAcceptanceResult& traceResult) {
     const char* status = failureMask == 0 ? "PASS" : "FAIL";
     const uint32_t traceCount =
         domes::trace::Recorder::isInitialized()
             ? static_cast<uint32_t>(domes::trace::Recorder::buffer().count())
             : 0;
-    const uint32_t traceDrops = domes::trace::Recorder::isInitialized()
-                                    ? domes::trace::Recorder::buffer().droppedCount()
-                                    : 0;
+    const uint32_t traceDrops =
+        domes::trace::Recorder::isInitialized() ? domes::trace::Recorder::droppedCount() : 0;
     ESP_LOGI(
         kTag,
         "DOMES_QEMU_READY schema=1 status=%s profile=%s scenario=%s "
@@ -148,8 +152,9 @@ void emitResult(uint32_t failureMask, const domes::PlatformIdentity& identity,
         " cpu0_progress=%u cpu1_progress=%u "
         "adapter_init_mask=0x%08" PRIx32 " adapter_progress_mask=0x%08" PRIx32
         " game_state=%s game_hits=%" PRIu32 " game_misses=%" PRIu32 " game_pad_mask=0x%08" PRIx32
-        " nvs_roundtrip=%u trace_count=%" PRIu32 " trace_drops=%" PRIu32
-        " failure_mask=0x%08" PRIx32,
+        " nvs_roundtrip=%u trace_count=%" PRIu32 " trace_drops=%" PRIu32 " trace_schema=%" PRIu32
+        " trace_causal_id=%" PRIu32 " trace_discontinuities=%" PRIu32 " trace_disabled_us=%" PRIu32
+        " trace_enabled_us=%" PRIu32 " failure_mask=0x%08" PRIx32,
         status, domes::runtime_profile::kProfileName, domes::runtime_profile::kReadinessScenario,
         domes::runtime_profile::kManifestSha256, domes::runtime_profile::kSpecSha256,
         domes::runtime_profile::kSdkconfigSha256, identity[0], identity[1], identity[2],
@@ -163,7 +168,67 @@ void emitResult(uint32_t failureMask, const domes::PlatformIdentity& identity,
         core1TaskMask != 0 ? 1U : 0U, adapters.initMask(), adapters.progressMask(), gameState,
         gameHitCount.load(std::memory_order_acquire), gameMissCount.load(std::memory_order_acquire),
         gamePadMask.load(std::memory_order_acquire), nvsPassed ? 1U : 0U, traceCount, traceDrops,
+        domes::trace::kTraceEventFormatVersion, traceResult.causalId,
+        traceResult.discontinuityCount, traceResult.disabledRecordUs, traceResult.enabledRecordUs,
         failureMask);
+}
+
+bool emitRawTrace() {
+    static uint8_t owner;
+    auto& buffer = domes::trace::Recorder::buffer();
+    if (!buffer.tryClaimDumpSnapshot(&owner)) {
+        return false;
+    }
+    const size_t count = buffer.captureDumpSnapshot(&owner);
+    std::array<char, 192> objectCatalog{};
+    size_t catalogLength = 0;
+    size_t validObjectCount = 0;
+    for (const auto& entry : domes::trace::KernelTrace::objects()) {
+        if (entry.valid) {
+            ++validObjectCount;
+            if (entry.objectId < 1 || entry.objectId > 6) {
+                return false;
+            }
+        }
+    }
+    if (validObjectCount != 6) {
+        return false;
+    }
+    for (uint32_t objectId = 1; objectId <= 6; ++objectId) {
+        const auto& objects = domes::trace::KernelTrace::objects();
+        const auto* found = static_cast<const domes::trace::ObjectNameEntry*>(nullptr);
+        for (const auto& entry : objects) {
+            if (entry.valid && entry.objectId == objectId) {
+                found = &entry;
+                break;
+            }
+        }
+        if (found == nullptr) {
+            return false;
+        }
+        const int written = std::snprintf(objectCatalog.data() + catalogLength,
+                                          objectCatalog.size() - catalogLength,
+                                          "%s%" PRIu32 ":%u:%s", objectId == 1 ? "" : ",", objectId,
+                                          static_cast<unsigned>(found->kind), found->name);
+        if (written <= 0 || static_cast<size_t>(written) >= objectCatalog.size() - catalogLength) {
+            return false;
+        }
+        catalogLength += static_cast<size_t>(written);
+    }
+    ESP_LOGI(kTag, "DOMES_QEMU_TRACE_SESSION schema=1 objects=%s", objectCatalog.data());
+    for (size_t index = 0; index < count; ++index) {
+        const auto* event = buffer.dumpSnapshotEvent(&owner, index);
+        if (event == nullptr) {
+            return false;
+        }
+        char raw[(sizeof(*event) * 2) + 1] = {};
+        const auto* bytes = reinterpret_cast<const uint8_t*>(event);
+        for (size_t byte = 0; byte < sizeof(*event); ++byte) {
+            std::snprintf(raw + (byte * 2), 3, "%02x", bytes[byte]);
+        }
+        ESP_LOGI(kTag, "DOMES_QEMU_TRACE schema=1 index=%zu raw=%s", index, raw);
+    }
+    return count > 0;
 }
 
 }  // namespace
@@ -181,8 +246,11 @@ extern "C" void app_main() {
     if (domes::trace::Recorder::init() != ESP_OK) {
         failureMask |= kTraceFailure;
     } else {
-        domes::trace::Recorder::setEnabled(true);
-        domes::trace::Recorder::registerTask(xTaskGetCurrentTaskHandle(), "main");
+        domes::trace::Recorder::setEnabled(false);
+        const auto& mainTask = domes::infra::task::kMain;
+        domes::trace::Recorder::registerTask(xTaskGetCurrentTaskHandle(), mainTask.name,
+                                             mainTask.traceId, mainTask.priority,
+                                             mainTask.coreAffinity);
     }
 
     if (!advanceInitStage(initOrder, "nvs")) {
@@ -326,6 +394,8 @@ extern "C" void app_main() {
     if (!advanceInitStage(initOrder, "readiness_probe") || !initOrder.complete()) {
         failureMask |= kInitOrderFailure;
     }
+    const size_t registeredTraceTasks = domes::runtime::registerRuntimeTraceTasks();
+    domes::trace::Recorder::finalizeTaskCatalog();
     const TickType_t tickStart = xTaskGetTickCount();
     if ((failureMask & (kAssemblyFailure | kInitOrderFailure)) == 0) {
         domes::game::ArmConfig arm = {
@@ -370,6 +440,9 @@ extern "C" void app_main() {
     if (presentTasks != domes::runtime_profile::kRequiredTasks.size()) {
         failureMask |= kTaskContractFailure;
     }
+    if (registeredTraceTasks != domes::runtime_profile::kRequiredTasks.size()) {
+        failureMask |= kTaskContractFailure;
+    }
     for (const char* taskName : domes::runtime_profile::kAbsentTaskNames) {
         if (xTaskGetHandle(taskName) != nullptr) {
             failureMask |= kForbiddenTaskFailure;
@@ -407,6 +480,18 @@ extern "C" void app_main() {
         failureMask |= kTraceOverflowFailure;
     }
 
+    domes::trace::TraceAcceptanceResult traceResult{};
+    if (domes::trace::Recorder::isInitialized()) {
+        traceResult = domes::trace::runTraceAcceptanceProbe();
+    }
+    const bool rawTraceEmitted = emitRawTrace();
+    if (!traceResult.passed || !rawTraceEmitted) {
+        failureMask |= kTraceCausalityFailure;
+    }
+    if (traceResult.droppedCount != 0 || traceResult.discontinuityCount != 0) {
+        failureMask |= kTraceOverflowFailure;
+    }
+
     const uint32_t enabledMask =
         runtime.handles().features ? runtime.handles().features->getMask() : 0;
     const char* gameState =
@@ -415,5 +500,5 @@ extern "C" void app_main() {
             : "UNAVAILABLE";
     emitResult(failureMask, identity, randomSource.consumed(), tickStart, tickEnd, adapterEvidence,
                presentTasks, taskSnapshotSha, nvsPassed, enabledMask, startedTaskMask,
-               duplicateTaskMask, core0TaskMask, core1TaskMask, gameState);
+               duplicateTaskMask, core0TaskMask, core1TaskMask, gameState, traceResult);
 }

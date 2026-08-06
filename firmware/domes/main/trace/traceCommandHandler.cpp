@@ -9,6 +9,7 @@
 #include "traceCommandHandler.hpp"
 
 #include "esp_log.h"
+#include "kernelTrace.hpp"
 #include "pb_encode.h"
 #include "protocol/frameCodec.hpp"
 #include "traceRecorder.hpp"
@@ -116,9 +117,12 @@ void CommandHandler::handleStart() {
         sendAck(Status::kAlreadyOn);
         return;
     }
+    if (!Recorder::isTaskCatalogReady()) {
+        sendAck(Status::kNotInit);
+        return;
+    }
 
-    Recorder::setEnabled(true);
-    sendAck(Status::kOk);
+    sendAck(Recorder::setEnabled(true) ? Status::kOk : Status::kError);
 }
 
 void CommandHandler::handleStop() {
@@ -134,8 +138,7 @@ void CommandHandler::handleStop() {
         return;
     }
 
-    Recorder::setEnabled(false);
-    sendAck(Status::kOk);
+    sendAck(Recorder::setEnabled(false) ? Status::kOk : Status::kError);
 }
 
 void CommandHandler::handleDump() {
@@ -145,30 +148,41 @@ void CommandHandler::handleDump() {
         sendAck(Status::kNotInit);
         return;
     }
+    if (!Recorder::acquireSessionLease(this, true)) {
+        sendAck(Status::kError);
+        return;
+    }
 
     TraceBuffer& buffer = Recorder::buffer();
     if (!buffer.tryClaimDumpSnapshot(this)) {
         ESP_LOGW(kTag, "Trace dump snapshot is owned by another transport");
         sendAck(Status::kError);
+        Recorder::releaseSessionLease(this);
         return;
     }
 
     // Pause recording during dump
     bool wasEnabled = Recorder::isEnabled();
-    Recorder::setEnabled(false);
+    if (!Recorder::setEnabledForLease(false, this)) {
+        buffer.completeDumpSnapshot(this);
+        Recorder::releaseSessionLease(this);
+        sendAck(Status::kError);
+        return;
+    }
     buffer.pause();
 
     uint32_t eventCount = static_cast<uint32_t>(buffer.captureDumpSnapshot(this));
-    uint32_t droppedCount = buffer.droppedCount();
+    uint32_t droppedCount = Recorder::droppedCount();
 
     if (eventCount == 0) {
         ESP_LOGI(kTag, "No events to dump");
         sendAck(Status::kBufferEmpty);
         buffer.resume();
-        if (wasEnabled) {
-            Recorder::setEnabled(true);
-        }
         buffer.completeDumpSnapshot(this);
+        if (wasEnabled) {
+            Recorder::setEnabledForLease(true, this);
+        }
+        Recorder::releaseSessionLease(this);
         return;
     }
 
@@ -225,13 +239,20 @@ void CommandHandler::handleDump() {
 
     buffer.resume();
 
-    // Re-enable if it was enabled before
-    if (wasEnabled) {
-        Recorder::setEnabled(true);
-    }
     if (delivered) {
         buffer.completeDumpSnapshot(this);
+        // Starting a new session clears the retained buffer, so release the
+        // completed snapshot before restoring the prior recording state.
+        if (wasEnabled) {
+            Recorder::setEnabledForLease(true, this);
+        }
+        Recorder::releaseSessionLease(this);
+    } else if (wasEnabled) {
+        ESP_LOGW(kTag, "Tracing remains stopped so the failed dump can be retried");
     }
+    // A failed delivery retains both the snapshot and its recorder lease.
+    // Only this handler can retry or clear it, so no new session can clear
+    // acquired ring-buffer items out from under the retained snapshot.
 }
 
 void CommandHandler::handleClear() {
@@ -241,26 +262,39 @@ void CommandHandler::handleClear() {
         sendAck(Status::kNotInit);
         return;
     }
+    if (!Recorder::acquireSessionLease(this, true)) {
+        sendAck(Status::kError);
+        return;
+    }
 
     TraceBuffer& buffer = Recorder::buffer();
     if (!buffer.tryClaimDumpSnapshot(this)) {
         ESP_LOGW(kTag, "Cannot clear trace snapshot owned by another transport");
         sendAck(Status::kError);
+        Recorder::releaseSessionLease(this);
         return;
     }
 
     const bool wasEnabled = Recorder::isEnabled();
-    Recorder::setEnabled(false);
+    if (!Recorder::setEnabledForLease(false, this)) {
+        buffer.completeDumpSnapshot(this);
+        Recorder::releaseSessionLease(this);
+        sendAck(Status::kError);
+        return;
+    }
     if (!buffer.clearDumpSnapshot(this)) {
         sendAck(Status::kError);
         if (wasEnabled) {
-            Recorder::setEnabled(true);
+            Recorder::setEnabledForLease(true, this);
         }
+        Recorder::releaseSessionLease(this);
         return;
     }
+    KernelTrace::clear();
     if (wasEnabled) {
-        Recorder::setEnabled(true);
+        Recorder::setEnabledForLease(true, this);
     }
+    Recorder::releaseSessionLease(this);
     sendAck(Status::kOk);
 }
 
@@ -301,19 +335,44 @@ bool CommandHandler::sendSessionInfo(uint32_t eventCount, uint32_t droppedCount,
     msg.dropped_count = droppedCount;
     msg.start_timestamp_us = startTs;
     msg.end_timestamp_us = endTs;
-    msg.buffer_size_bytes = TraceBuffer::kDefaultBufferSize;
+    msg.buffer_size_bytes = KernelTrace::kCaptureCapacityBytes;
+    msg.trace_event_format_version = kTraceEventFormatVersion;
+    msg.discontinuity_count = Recorder::discontinuityCount();
     // Fill task entries
+    std::array<bool, 32> referencedTasks{};
+    for (uint32_t index = 0; index < eventCount; ++index) {
+        const TraceEvent* event = Recorder::buffer().dumpSnapshotEvent(this, index);
+        if (event != nullptr && event->taskId < referencedTasks.size()) {
+            referencedTasks[event->taskId] = true;
+        }
+    }
     const auto& taskNames = Recorder::getTaskNames();
     size_t taskIdx = 0;
     for (const auto& entry : taskNames) {
-        if (entry.valid && taskIdx < sizeof(msg.tasks) / sizeof(msg.tasks[0])) {
+        if (entry.valid && entry.taskId < referencedTasks.size() && referencedTasks[entry.taskId] &&
+            taskIdx < sizeof(msg.tasks) / sizeof(msg.tasks[0])) {
             msg.tasks[taskIdx].task_id = entry.taskId;
+            msg.tasks[taskIdx].priority = entry.priority;
+            msg.tasks[taskIdx].core_affinity_mask = entry.coreAffinityMask;
             std::strncpy(msg.tasks[taskIdx].name, entry.name, sizeof(msg.tasks[taskIdx].name) - 1);
             msg.tasks[taskIdx].name[sizeof(msg.tasks[taskIdx].name) - 1] = '\0';
             taskIdx++;
         }
     }
     msg.tasks_count = taskIdx;
+
+    size_t objectIdx = 0;
+    for (const auto& entry : KernelTrace::objects()) {
+        if (entry.valid && objectIdx < sizeof(msg.objects) / sizeof(msg.objects[0])) {
+            msg.objects[objectIdx].object_id = entry.objectId;
+            msg.objects[objectIdx].kind = static_cast<domes_trace_ObjectKind>(entry.kind);
+            std::strncpy(msg.objects[objectIdx].name, entry.name,
+                         sizeof(msg.objects[objectIdx].name) - 1);
+            msg.objects[objectIdx].name[sizeof(msg.objects[objectIdx].name) - 1] = '\0';
+            ++objectIdx;
+        }
+    }
+    msg.objects_count = objectIdx;
 
     std::array<uint8_t, kMaxProtobufPayload> buf;
     pb_ostream_t stream = pb_ostream_from_buffer(buf.data(), buf.size());
@@ -365,12 +424,13 @@ void CommandHandler::sendStatusResponse() {
     msg.initialized = Recorder::isInitialized();
     msg.enabled = Recorder::isEnabled();
     msg.streaming = Recorder::isStreaming();
-    msg.event_count = static_cast<uint32_t>(Recorder::buffer().count());
-    msg.dropped_count = Recorder::buffer().droppedCount();
-    msg.buffer_size = TraceBuffer::kDefaultBufferSize;
+    msg.event_count = Recorder::eventCount();
+    msg.dropped_count = Recorder::droppedCount();
+    msg.buffer_size = KernelTrace::kCaptureCapacityBytes;
     msg.stream_category_mask = 0;
+    msg.discontinuity_count = Recorder::discontinuityCount();
 
-    std::array<uint8_t, 32> buf;
+    std::array<uint8_t, domes_trace_TraceStatusResponse_size> buf;
     pb_ostream_t stream = pb_ostream_from_buffer(buf.data(), buf.size());
     if (!pb_encode(&stream, domes_trace_TraceStatusResponse_fields, &msg)) {
         ESP_LOGE(kTag, "Failed to encode TraceStatusResponse");

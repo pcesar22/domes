@@ -11,13 +11,13 @@ use crate::transport::frame::Frame;
 use crate::transport::Transport;
 use anyhow::{Context, Result};
 use prost::Message;
-use std::collections::HashMap;
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
 /// Compact trace event (16 bytes, binary)
-#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 struct TraceEvent {
     timestamp: u32,
@@ -28,7 +28,33 @@ struct TraceEvent {
     arg2: u32,
 }
 
-const TRACE_EVENT_SIZE: usize = std::mem::size_of::<TraceEvent>();
+const TRACE_EVENT_SIZE: usize = 16;
+const MAX_TRACE_DUMP_BYTES: usize = 32 * 1024;
+const TRACE_EVENT_FORMAT_VERSION: u32 = 1;
+
+fn trace_dump_byte_count(event_count: u32, buffer_size_bytes: u32) -> Result<usize> {
+    let buffer_size =
+        usize::try_from(buffer_size_bytes).context("Trace buffer size does not fit this host")?;
+    if buffer_size == 0 || buffer_size > MAX_TRACE_DUMP_BYTES {
+        anyhow::bail!(
+            "Trace buffer size {} is outside the supported range 1..={}",
+            buffer_size,
+            MAX_TRACE_DUMP_BYTES
+        );
+    }
+    let count = usize::try_from(event_count).context("Trace event count does not fit this host")?;
+    let bytes = count
+        .checked_mul(TRACE_EVENT_SIZE)
+        .context("Trace event byte count overflow")?;
+    if bytes == 0 || bytes > buffer_size {
+        anyhow::bail!(
+            "Trace session declares {} event bytes for a {}-byte buffer",
+            bytes,
+            buffer_size
+        );
+    }
+    Ok(bytes)
+}
 
 fn decode_trace_events(event_bytes: &[u8]) -> Result<Vec<TraceEvent>> {
     if !event_bytes.len().is_multiple_of(TRACE_EVENT_SIZE) {
@@ -41,8 +67,215 @@ fn decode_trace_events(event_bytes: &[u8]) -> Result<Vec<TraceEvent>> {
 
     Ok(event_bytes
         .chunks_exact(TRACE_EVENT_SIZE)
-        .map(|bytes| unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const TraceEvent) })
+        .map(|bytes| TraceEvent {
+            timestamp: u32::from_le_bytes(bytes[0..4].try_into().expect("fixed trace timestamp")),
+            task_id: u16::from_le_bytes(bytes[4..6].try_into().expect("fixed trace task ID")),
+            event_type: bytes[6],
+            flags: bytes[7],
+            arg1: u32::from_le_bytes(bytes[8..12].try_into().expect("fixed trace argument")),
+            arg2: u32::from_le_bytes(bytes[12..16].try_into().expect("fixed trace argument")),
+        })
         .collect())
+}
+
+fn validate_timestamp_order(events: &[TraceEvent]) -> Result<()> {
+    let mut wraps = 0u8;
+    for pair in events.windows(2) {
+        let previous = pair[0].timestamp;
+        let current = pair[1].timestamp;
+        let delta = current.wrapping_sub(previous);
+        if delta > i32::MAX as u32 {
+            anyhow::bail!(
+                "Trace timestamp regression: {} followed by {}",
+                previous,
+                current
+            );
+        }
+        if current < previous {
+            wraps += 1;
+            if wraps > 1 {
+                anyhow::bail!("Trace timestamps wrap more than once");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_session_binding(session: &TraceSessionInfo, events: &[TraceEvent]) -> Result<()> {
+    let first = events.first().context("Trace session contains no events")?;
+    let last = events.last().context("Trace session contains no events")?;
+    if first.timestamp != session.start_timestamp_us || last.timestamp != session.end_timestamp_us {
+        anyhow::bail!(
+            "Trace session timestamp bounds do not match raw events: session {}..{}, raw {}..{}",
+            session.start_timestamp_us,
+            session.end_timestamp_us,
+            first.timestamp,
+            last.timestamp
+        );
+    }
+    validate_timestamp_order(events)?;
+
+    let mut task_catalog = HashMap::new();
+    let mut task_names = HashSet::new();
+    if session.tasks.len() > 16 {
+        anyhow::bail!("Trace task catalog exceeds the firmware limit of 16 entries");
+    }
+    for task in &session.tasks {
+        if task.task_id == 0
+            || task.task_id > 31
+            || task.name.is_empty()
+            || task.name.len() >= 16
+            || task.priority > u32::from(u8::MAX)
+            || !task_names.insert(task.name.as_str())
+        {
+            anyhow::bail!("Invalid trace task catalog entry for ID {}", task.task_id);
+        }
+        if !matches!(task.core_affinity_mask, 1..=3) {
+            anyhow::bail!(
+                "Invalid core affinity mask {} for trace task {}",
+                task.core_affinity_mask,
+                task.task_id
+            );
+        }
+        if task_catalog.insert(task.task_id, task).is_some() {
+            anyhow::bail!("Duplicate trace task ID {}", task.task_id);
+        }
+    }
+
+    let referenced_tasks: HashSet<u32> = events
+        .iter()
+        .filter_map(|event| (event.task_id != 0).then_some(u32::from(event.task_id)))
+        .collect();
+    let catalog_tasks: HashSet<u32> = task_catalog.keys().copied().collect();
+    if referenced_tasks != catalog_tasks {
+        anyhow::bail!(
+            "Trace task catalog does not exactly match raw task references: catalog={:?}, raw={:?}",
+            catalog_tasks,
+            referenced_tasks
+        );
+    }
+
+    let first_non_create = events
+        .iter()
+        .position(|event| event.event_type != 0x10)
+        .unwrap_or(events.len());
+    if events[first_non_create..]
+        .iter()
+        .any(|event| event.event_type == 0x10)
+    {
+        anyhow::bail!("Trace task-create preamble is not ordered first");
+    }
+    let mut task_creates = HashSet::new();
+    for event in events.iter().filter(|event| event.event_type == 0x10) {
+        let task_id = u32::from(event.task_id);
+        let task = task_catalog
+            .get(&task_id)
+            .with_context(|| format!("Task-create event references unknown task {}", task_id))?;
+        if !task_creates.insert(task_id) {
+            anyhow::bail!("Duplicate task-create preamble for task {}", task_id);
+        }
+        if event.arg1 != task.priority || event.arg2 != task.core_affinity_mask {
+            anyhow::bail!(
+                "Task-create metadata mismatch for task {}: raw priority/affinity={}/{}, session={}/{}",
+                task_id,
+                event.arg1,
+                event.arg2,
+                task.priority,
+                task.core_affinity_mask
+            );
+        }
+    }
+    if task_creates != catalog_tasks {
+        anyhow::bail!(
+            "Trace task-create preamble does not exactly match the session catalog: creates={:?}, catalog={:?}",
+            task_creates,
+            catalog_tasks
+        );
+    }
+
+    let mut object_catalog = HashMap::new();
+    let mut object_names = HashSet::new();
+    if session.objects.len() > 8 {
+        anyhow::bail!("Trace object catalog exceeds the firmware limit of 8 entries");
+    }
+    for object in &session.objects {
+        if object.object_id == 0
+            || !(1..=7).contains(&object.kind)
+            || object.name.is_empty()
+            || object.name.len() >= 16
+            || !object_names.insert(object.name.as_str())
+        {
+            anyhow::bail!(
+                "Invalid trace object catalog entry for ID {} (kind {})",
+                object.object_id,
+                object.kind
+            );
+        }
+        if object_catalog
+            .insert(object.object_id, object.kind)
+            .is_some()
+        {
+            anyhow::bail!("Duplicate trace object ID {}", object.object_id);
+        }
+    }
+
+    for event in events {
+        let core = event.flags & 0x03;
+        let context = (event.flags >> 2) & 0x03;
+        let category = (event.flags >> 4) & 0x0F;
+        if matches!(
+            EventType::try_from(i32::from(event.event_type)),
+            Ok(EventType::Unknown) | Err(_)
+        ) || !matches!(core, 1 | 2)
+            || context > 2
+            || category > Category::Sync as u8
+        {
+            anyhow::bail!(
+                "Trace event has invalid type/category/core/context at timestamp {}",
+                event.timestamp
+            );
+        }
+        if matches!(event.event_type, 0x10..=0x1E) && category != Category::Kernel as u8 {
+            anyhow::bail!(
+                "Scheduler event type 0x{:02X} does not use the kernel category",
+                event.event_type
+            );
+        }
+        let allowed_kinds: &[i32] = match event.event_type {
+            0x0C | 0x0D if category == Category::Kernel as u8 => &[2],
+            0x0C | 0x0D if category == Category::Sync as u8 => continue,
+            0x0C | 0x0D => {
+                anyhow::bail!(
+                    "Semaphore event type 0x{:02X} uses incompatible category {}",
+                    event.event_type,
+                    category
+                );
+            }
+            0x13 => &[1, 2, 6],
+            0x16 | 0x17 => &[3],
+            0x19 | 0x1A => &[1],
+            0x1B => &[7],
+            0x1C | 0x1D => &[4],
+            0x1E => &[5],
+            _ => continue,
+        };
+        let kind = object_catalog.get(&event.arg1).with_context(|| {
+            format!(
+                "Trace event type 0x{:02X} references unknown object {}",
+                event.event_type, event.arg1
+            )
+        })?;
+        if !allowed_kinds.contains(kind) {
+            anyhow::bail!(
+                "Trace event type 0x{:02X} references object {} with incompatible kind {}",
+                event.event_type,
+                event.arg1,
+                kind
+            );
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Default)]
@@ -52,7 +285,7 @@ struct TraceDumpIntegrity {
 }
 
 impl TraceDumpIntegrity {
-    fn accept_chunk(&mut self, chunk: &TraceDataChunk) -> Result<Vec<TraceEvent>> {
+    fn accept_chunk(&mut self, chunk: &TraceDataChunk) -> Result<()> {
         if chunk.offset != self.next_offset {
             anyhow::bail!(
                 "Trace chunk offset mismatch: expected {}, got {}",
@@ -61,9 +294,18 @@ impl TraceDumpIntegrity {
             );
         }
 
-        let events = decode_trace_events(&chunk.events)?;
-        let event_count =
-            u32::try_from(events.len()).context("Trace chunk event count overflow")?;
+        if chunk.events.is_empty() {
+            anyhow::bail!("Trace chunk at offset {} is empty", chunk.offset);
+        }
+        if !chunk.events.len().is_multiple_of(TRACE_EVENT_SIZE) {
+            anyhow::bail!(
+                "Trace event payload has {} bytes; expected a multiple of {}",
+                chunk.events.len(),
+                TRACE_EVENT_SIZE
+            );
+        }
+        let event_count = u32::try_from(chunk.events.len() / TRACE_EVENT_SIZE)
+            .context("Trace chunk event count overflow")?;
         if chunk.count != event_count {
             anyhow::bail!(
                 "Trace chunk count mismatch at offset {}: declared {}, decoded {}",
@@ -81,7 +323,7 @@ impl TraceDumpIntegrity {
             self.checksum = self.checksum.wrapping_add(u32::from(*byte));
         }
 
-        Ok(events)
+        Ok(())
     }
 
     fn finish(&self, complete: &TraceDumpComplete, session_event_count: u32) -> Result<()> {
@@ -139,6 +381,7 @@ pub struct TraceStatusInfo {
     pub streaming: bool,
     pub event_count: u32,
     pub dropped_count: u32,
+    pub discontinuity_count: u32,
     pub buffer_size: u32,
 }
 
@@ -246,6 +489,7 @@ pub fn trace_status(transport: &mut dyn Transport) -> Result<TraceStatusInfo> {
         streaming: resp.streaming,
         event_count: resp.event_count,
         dropped_count: resp.dropped_count,
+        discontinuity_count: resp.discontinuity_count,
         buffer_size: resp.buffer_size,
     })
 }
@@ -257,6 +501,87 @@ pub struct DumpResult {
     pub duration_us: u32,
     pub pod_id: u32,
     pub output_path: std::path::PathBuf,
+    pub raw_path: std::path::PathBuf,
+    pub session_path: std::path::PathBuf,
+    pub raw_sha256: String,
+}
+
+struct RawEvidence {
+    raw_path: std::path::PathBuf,
+    session_path: std::path::PathBuf,
+    raw_sha256: String,
+}
+
+fn write_raw_trace_evidence(
+    output_path: &Path,
+    raw_events: &[u8],
+    session_info: &TraceSessionInfo,
+    integrity_error: Option<&str>,
+) -> Result<RawEvidence> {
+    let raw_path = std::path::PathBuf::from(format!("{}.raw", output_path.display()));
+    let raw_sha256 = format!("{:x}", Sha256::digest(raw_events));
+    File::create(&raw_path)
+        .context("Failed to create raw trace file")?
+        .write_all(raw_events)
+        .context("Failed to write raw trace file")?;
+    let sha_path = std::path::PathBuf::from(format!("{}.sha256", raw_path.display()));
+    File::create(&sha_path)
+        .context("Failed to create raw trace hash file")?
+        .write_all(format!("{}  {}\n", raw_sha256, raw_path.display()).as_bytes())
+        .context("Failed to write raw trace hash file")?;
+    let session_path = std::path::PathBuf::from(format!("{}.session.json", raw_path.display()));
+    let session_evidence = serde_json::json!({
+        "format_version": session_info.trace_event_format_version,
+        "pod_id": session_info.pod_id,
+        "event_count": session_info.event_count,
+        "dropped_count": session_info.dropped_count,
+        "discontinuity_count": session_info.discontinuity_count,
+        "start_timestamp_us": session_info.start_timestamp_us,
+        "end_timestamp_us": session_info.end_timestamp_us,
+        "buffer_size_bytes": session_info.buffer_size_bytes,
+        "received_raw_bytes": raw_events.len(),
+        "raw_sha256": raw_sha256,
+        "integrity_error": integrity_error,
+        "tasks": session_info.tasks.iter().map(|task| serde_json::json!({
+            "task_id": task.task_id,
+            "name": task.name.as_str(),
+            "priority": task.priority,
+            "core_affinity_mask": task.core_affinity_mask,
+        })).collect::<Vec<_>>(),
+        "objects": session_info.objects.iter().map(|object| serde_json::json!({
+            "object_id": object.object_id,
+            "kind": object.kind,
+            "name": object.name.as_str(),
+        })).collect::<Vec<_>>(),
+    });
+    File::create(&session_path)
+        .context("Failed to create raw trace session file")?
+        .write_all(serde_json::to_string_pretty(&session_evidence)?.as_bytes())
+        .context("Failed to write raw trace session file")?;
+
+    Ok(RawEvidence {
+        raw_path,
+        session_path,
+        raw_sha256,
+    })
+}
+
+fn fail_with_raw_evidence<T>(
+    output_path: &Path,
+    raw_events: &[u8],
+    session_info: &TraceSessionInfo,
+    error: anyhow::Error,
+) -> Result<T> {
+    let error_text = format!("{error:#}");
+    match write_raw_trace_evidence(output_path, raw_events, session_info, Some(&error_text)) {
+        Ok(evidence) => Err(error.context(format!(
+            "Bounded raw trace evidence retained at {}",
+            evidence.raw_path.display()
+        ))),
+        Err(write_error) => Err(anyhow::anyhow!(
+            "{error_text}; additionally failed to retain raw trace evidence: {write_error:#}"
+        )),
+    }
 }
 
 fn trace_duration_us(start_timestamp_us: u32, end_timestamp_us: u32) -> u32 {
@@ -269,14 +594,11 @@ pub fn trace_dump(
     output_path: &Path,
     names_path: Option<&Path>,
 ) -> Result<DumpResult> {
-    // Load span names if provided (or auto-discover)
     let span_names = load_span_names(names_path)?;
 
     let frame = transport
         .send_command(TraceMsgType::Dump.as_u8(), &[])
         .context("Failed to send trace dump command")?;
-
-    // Check for ACK with error (e.g., buffer empty)
     if frame.msg_type == TraceMsgType::Ack.as_u8() {
         let status = decode_ack(&frame.payload)?;
         match status {
@@ -285,8 +607,6 @@ pub fn trace_dump(
             _ => anyhow::bail!("Trace dump failed: {}", status),
         }
     }
-
-    // First response should be SESSION_INFO with metadata
     if frame.msg_type != TraceMsgType::SessionInfo.as_u8() {
         anyhow::bail!(
             "Expected SESSION_INFO (0x{:02X}), got: 0x{:02X}",
@@ -295,56 +615,155 @@ pub fn trace_dump(
         );
     }
 
-    // Parse session info (protobuf)
     let session_info = TraceSessionInfo::decode(frame.payload.as_slice())
         .context("Failed to decode TraceSessionInfo")?;
-
-    // Build task name lookup
+    let expected_raw_bytes =
+        match trace_dump_byte_count(session_info.event_count, session_info.buffer_size_bytes) {
+            Ok(bytes) => bytes,
+            Err(error) => return fail_with_raw_evidence(output_path, &[], &session_info, error),
+        };
     let task_names: HashMap<u32, String> = session_info
         .tasks
         .iter()
-        .map(|t| (t.task_id, t.name.clone()))
+        .map(|task| (task.task_id, task.name.clone()))
         .collect();
 
-    // Collect all events
-    let mut events: Vec<TraceEvent> = Vec::with_capacity(session_info.event_count as usize);
+    let mut raw_events = Vec::with_capacity(expected_raw_bytes);
     let mut integrity = TraceDumpIntegrity::default();
-
+    let dump_complete;
     loop {
-        let frame = transport
-            .receive_frame(5000) // 5 second timeout for trace data
-            .context("Failed to receive trace data")?;
-
+        let frame = match transport.receive_frame(5000) {
+            Ok(frame) => frame,
+            Err(error) => {
+                return fail_with_raw_evidence(
+                    output_path,
+                    &raw_events,
+                    &session_info,
+                    error.context("Failed to receive trace data"),
+                );
+            }
+        };
         if frame.msg_type == TraceMsgType::Data.as_u8() {
-            // Parse data chunk (protobuf)
-            let chunk = TraceDataChunk::decode(frame.payload.as_slice())
-                .context("Failed to decode TraceDataChunk")?;
-
-            events.extend(
-                integrity
-                    .accept_chunk(&chunk)
-                    .context("Invalid trace data chunk")?,
-            );
+            let chunk = match TraceDataChunk::decode(frame.payload.as_slice()) {
+                Ok(chunk) => chunk,
+                Err(error) => {
+                    return fail_with_raw_evidence(
+                        output_path,
+                        &raw_events,
+                        &session_info,
+                        anyhow::Error::new(error).context("Failed to decode TraceDataChunk"),
+                    );
+                }
+            };
+            let retained_bytes = raw_events.len().saturating_add(chunk.events.len());
+            if retained_bytes > MAX_TRACE_DUMP_BYTES {
+                let remaining = MAX_TRACE_DUMP_BYTES.saturating_sub(raw_events.len());
+                raw_events.extend_from_slice(&chunk.events[..remaining.min(chunk.events.len())]);
+                return fail_with_raw_evidence(
+                    output_path,
+                    &raw_events,
+                    &session_info,
+                    anyhow::anyhow!(
+                        "Trace data exceeds the absolute {}-byte retention bound",
+                        MAX_TRACE_DUMP_BYTES
+                    ),
+                );
+            }
+            // Retain bounded bytes before trusting offset/count/alignment.
+            raw_events.extend_from_slice(&chunk.events);
+            if let Err(error) = integrity
+                .accept_chunk(&chunk)
+                .context("Invalid trace data chunk")
+            {
+                return fail_with_raw_evidence(output_path, &raw_events, &session_info, error);
+            }
+            if integrity.next_offset > session_info.event_count {
+                return fail_with_raw_evidence(
+                    output_path,
+                    &raw_events,
+                    &session_info,
+                    anyhow::anyhow!(
+                        "Trace data exceeds declared session count {}",
+                        session_info.event_count
+                    ),
+                );
+            }
+            if raw_events.len() > expected_raw_bytes {
+                return fail_with_raw_evidence(
+                    output_path,
+                    &raw_events,
+                    &session_info,
+                    anyhow::anyhow!(
+                        "Trace data exceeds declared session size {} bytes",
+                        expected_raw_bytes
+                    ),
+                );
+            }
         } else if frame.msg_type == TraceMsgType::End.as_u8() {
-            // Parse dump complete (protobuf)
-            let complete = TraceDumpComplete::decode(frame.payload.as_slice())
-                .context("Failed to decode TraceDumpComplete")?;
-            integrity
-                .finish(&complete, session_info.event_count)
-                .context("Trace dump integrity check failed")?;
+            dump_complete = match TraceDumpComplete::decode(frame.payload.as_slice()) {
+                Ok(complete) => complete,
+                Err(error) => {
+                    return fail_with_raw_evidence(
+                        output_path,
+                        &raw_events,
+                        &session_info,
+                        anyhow::Error::new(error).context("Failed to decode TraceDumpComplete"),
+                    );
+                }
+            };
             break;
         } else {
-            anyhow::bail!(
-                "Unexpected message type during dump: 0x{:02X}",
-                frame.msg_type
+            return fail_with_raw_evidence(
+                output_path,
+                &raw_events,
+                &session_info,
+                anyhow::anyhow!(
+                    "Unexpected message type during dump: 0x{:02X}",
+                    frame.msg_type
+                ),
             );
         }
     }
 
-    // Convert to Chrome JSON trace format for Perfetto
+    if let Err(error) = integrity
+        .finish(&dump_complete, session_info.event_count)
+        .context("Trace dump integrity check failed")
+    {
+        return fail_with_raw_evidence(output_path, &raw_events, &session_info, error);
+    }
+    let evidence = write_raw_trace_evidence(output_path, &raw_events, &session_info, None)?;
+
+    if session_info.trace_event_format_version != TRACE_EVENT_FORMAT_VERSION {
+        return fail_with_raw_evidence(
+            output_path,
+            &raw_events,
+            &session_info,
+            anyhow::anyhow!(
+                "Unsupported trace event format version: {}",
+                session_info.trace_event_format_version
+            ),
+        );
+    }
+    if session_info.dropped_count != 0 || session_info.discontinuity_count != 0 {
+        return fail_with_raw_evidence(
+            output_path,
+            &raw_events,
+            &session_info,
+            anyhow::anyhow!(
+                "Trace evidence is incomplete: dropped={}, discontinuities={}",
+                session_info.dropped_count,
+                session_info.discontinuity_count
+            ),
+        );
+    }
+    let events = decode_trace_events(&raw_events).context("Invalid raw trace events")?;
+    if let Err(error) = validate_session_binding(&session_info, &events)
+        .context("Trace session metadata is not bound to the raw event stream")
+    {
+        return fail_with_raw_evidence(output_path, &raw_events, &session_info, error);
+    }
     let json = convert_to_perfetto_json(&events, &task_names, &span_names, session_info.pod_id)?;
 
-    // Write to file
     let mut file = File::create(output_path).context("Failed to create output file")?;
     file.write_all(json.as_bytes())
         .context("Failed to write trace file")?;
@@ -358,6 +777,9 @@ pub fn trace_dump(
         ),
         pod_id: session_info.pod_id,
         output_path: output_path.to_path_buf(),
+        raw_path: evidence.raw_path,
+        session_path: evidence.session_path,
+        raw_sha256: evidence.raw_sha256,
     })
 }
 
@@ -660,9 +1082,216 @@ fn category_name(cat: u8) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proto::trace::{ObjectEntry, TaskEntry};
+    use std::collections::VecDeque;
+
+    struct DumpTransport {
+        session: Option<Frame>,
+        frames: VecDeque<Frame>,
+    }
+
+    impl Transport for DumpTransport {
+        fn send_frame(&mut self, _msg_type: u8, _payload: &[u8]) -> Result<()> {
+            Ok(())
+        }
+
+        fn receive_frame(&mut self, _timeout_ms: u64) -> Result<Frame> {
+            self.frames
+                .pop_front()
+                .context("mock trace transport exhausted")
+        }
+
+        fn send_command(&mut self, _msg_type: u8, _payload: &[u8]) -> Result<Frame> {
+            self.session.take().context("mock trace session reused")
+        }
+    }
 
     fn event_bytes(value: u8, count: usize) -> Vec<u8> {
         vec![value; TRACE_EVENT_SIZE * count]
+    }
+
+    fn bound_session(start: u32, end: u32) -> TraceSessionInfo {
+        TraceSessionInfo {
+            pod_id: 1,
+            event_count: 2,
+            start_timestamp_us: start,
+            end_timestamp_us: end,
+            tasks: vec![TaskEntry {
+                task_id: 7,
+                name: "worker".into(),
+                priority: 2,
+                core_affinity_mask: 1,
+            }],
+            buffer_size_bytes: 16 * 1024,
+            trace_event_format_version: TRACE_EVENT_FORMAT_VERSION,
+            objects: vec![ObjectEntry {
+                object_id: 100,
+                kind: 1,
+                name: "queue".into(),
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn bound_events(start: u32, end: u32) -> Vec<TraceEvent> {
+        vec![
+            TraceEvent {
+                timestamp: start,
+                task_id: 7,
+                event_type: 0x10,
+                flags: 1,
+                arg1: 2,
+                arg2: 1,
+            },
+            TraceEvent {
+                timestamp: end,
+                task_id: 7,
+                event_type: 0x1A,
+                flags: 1,
+                arg1: 100,
+                arg2: 0,
+            },
+        ]
+    }
+
+    #[test]
+    fn malformed_chunk_retains_bounded_raw_bytes_and_error_metadata() {
+        let unique = format!(
+            "domes-trace-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let directory = std::env::temp_dir().join(unique);
+        std::fs::create_dir(&directory).unwrap();
+        let output_path = directory.join("trace.json");
+        let session = TraceSessionInfo {
+            event_count: 1,
+            start_timestamp_us: 1,
+            end_timestamp_us: 1,
+            buffer_size_bytes: TRACE_EVENT_SIZE as u32,
+            trace_event_format_version: TRACE_EVENT_FORMAT_VERSION,
+            ..Default::default()
+        };
+        let offending_bytes = event_bytes(1, 1);
+        let chunk = TraceDataChunk {
+            offset: 1,
+            count: 1,
+            events: offending_bytes.clone(),
+        };
+        let mut transport = DumpTransport {
+            session: Some(Frame {
+                msg_type: TraceMsgType::SessionInfo.as_u8(),
+                payload: session.encode_to_vec(),
+            }),
+            frames: VecDeque::from([Frame {
+                msg_type: TraceMsgType::Data.as_u8(),
+                payload: chunk.encode_to_vec(),
+            }]),
+        };
+
+        assert!(trace_dump(&mut transport, &output_path, None).is_err());
+        let raw_path = std::path::PathBuf::from(format!("{}.raw", output_path.display()));
+        assert_eq!(std::fs::read(&raw_path).unwrap(), offending_bytes);
+        let session_path = std::path::PathBuf::from(format!("{}.session.json", raw_path.display()));
+        let evidence: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&session_path).unwrap()).unwrap();
+        assert!(evidence["integrity_error"]
+            .as_str()
+            .unwrap()
+            .contains("offset mismatch"));
+
+        std::fs::remove_file(format!("{}.sha256", raw_path.display())).unwrap();
+        std::fs::remove_file(session_path).unwrap();
+        std::fs::remove_file(raw_path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn session_binding_accepts_exact_catalogs_and_one_timestamp_wrap() {
+        let start = u32::MAX - 5;
+        let end = 4;
+        validate_session_binding(&bound_session(start, end), &bound_events(start, end)).unwrap();
+    }
+
+    #[test]
+    fn session_binding_rejects_timestamp_regressions_and_bounds_mismatch() {
+        let events = bound_events(100, 90);
+        let error = validate_session_binding(&bound_session(100, 90), &events)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("timestamp regression"));
+
+        let error = validate_session_binding(&bound_session(99, 101), &bound_events(100, 101))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("bounds do not match"));
+    }
+
+    #[test]
+    fn session_binding_rejects_catalog_and_object_mismatches() {
+        let events = bound_events(100, 101);
+        let mut missing_task = bound_session(100, 101);
+        missing_task.tasks.clear();
+        assert!(validate_session_binding(&missing_task, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("task catalog"));
+
+        let mut wrong_object_kind = bound_session(100, 101);
+        wrong_object_kind.objects[0].kind = 2;
+        assert!(validate_session_binding(&wrong_object_kind, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("incompatible kind"));
+
+        let mut invalid_priority = bound_session(100, 101);
+        invalid_priority.tasks[0].priority = 256;
+        assert!(validate_session_binding(&invalid_priority, &events).is_err());
+
+        let mut unknown_event = events;
+        unknown_event[1].event_type = EventType::Unknown as u8;
+        assert!(validate_session_binding(&bound_session(100, 101), &unknown_event).is_err());
+    }
+
+    #[test]
+    fn session_binding_keeps_legacy_application_semaphore_ids_separate() {
+        let mut events = bound_events(100, 102);
+        events.push(TraceEvent {
+            timestamp: 102,
+            task_id: 7,
+            event_type: 0x0C,
+            flags: (Category::Sync as u8) << 4 | 1,
+            arg1: 0xDEAD_BEEF,
+            arg2: 0,
+        });
+        let mut session = bound_session(100, 102);
+        session.event_count = 3;
+        validate_session_binding(&session, &events).unwrap();
+
+        events[2].flags = (Category::Transport as u8) << 4 | 1;
+        assert!(validate_session_binding(&session, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("incompatible category"));
+    }
+
+    #[test]
+    fn trace_event_decode_is_explicitly_little_endian() {
+        let bytes = [
+            0x78, 0x56, 0x34, 0x12, 0xCD, 0xAB, 0x1E, 0x09, 0x04, 0x03, 0x02, 0x01, 0xD4, 0xC3,
+            0xB2, 0xA1,
+        ];
+        let events = decode_trace_events(&bytes).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].timestamp, 0x1234_5678);
+        assert_eq!(events[0].task_id, 0xABCD);
+        assert_eq!(events[0].event_type, 0x1E);
+        assert_eq!(events[0].flags, 0x09);
+        assert_eq!(events[0].arg1, 0x0102_0304);
+        assert_eq!(events[0].arg2, 0xA1B2_C3D4);
     }
 
     #[test]
@@ -679,8 +1308,8 @@ mod tests {
             events: event_bytes(2, 2),
         };
 
-        assert_eq!(integrity.accept_chunk(&first).unwrap().len(), 1);
-        assert_eq!(integrity.accept_chunk(&second).unwrap().len(), 2);
+        integrity.accept_chunk(&first).unwrap();
+        integrity.accept_chunk(&second).unwrap();
 
         let complete = TraceDumpComplete {
             total_events: 3,
@@ -727,6 +1356,30 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("multiple"));
+    }
+
+    #[test]
+    fn dump_integrity_rejects_empty_chunks() {
+        let chunk = TraceDataChunk {
+            offset: 0,
+            count: 0,
+            events: Vec::new(),
+        };
+        assert!(TraceDumpIntegrity::default()
+            .accept_chunk(&chunk)
+            .unwrap_err()
+            .to_string()
+            .contains("empty"));
+    }
+
+    #[test]
+    fn dump_session_bounds_prevent_unbounded_allocation() {
+        assert_eq!(trace_dump_byte_count(1, 16).unwrap(), 16);
+        assert!(trace_dump_byte_count(0, 16).is_err());
+        assert!(trace_dump_byte_count(2, 16).is_err());
+        assert!(trace_dump_byte_count(1, 0).is_err());
+        assert!(trace_dump_byte_count(1, (MAX_TRACE_DUMP_BYTES + 1) as u32).is_err());
+        assert!(trace_dump_byte_count(u32::MAX, MAX_TRACE_DUMP_BYTES as u32).is_err());
     }
 
     #[test]
