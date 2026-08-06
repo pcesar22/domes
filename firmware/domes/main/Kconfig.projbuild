@@ -35,4 +35,13 @@ menu "DOMES Configuration"
             You must create main/secrets.hpp with your WiFi credentials.
             See main/secrets.hpp.example for the template.
 
+    config DOMES_TRACE_ACCEPTANCE_PROBE
+        bool "Run bounded scheduler trace acceptance probe on boot"
+        depends on DOMES_RUNTIME_PROFILE_PHYSICAL
+        default n
+        help
+            Run the same GPTimer, ISR callback, queue, semaphore, and main-task causal
+            trace used by the QEMU runtime acceptance campaign. This is a verification
+            build option; production behavior remains unchanged when it is disabled.
+
 endmenu

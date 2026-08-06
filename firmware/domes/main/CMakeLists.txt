@@ -30,6 +30,9 @@ set(DOMES_SHARED_SRCS
     "infra/taskStartEvidence.cpp"
     "runtime/runtimeAssembly.cpp"
     "trace/traceBuffer.cpp"
+    "trace/traceDumpSnapshot.cpp"
+    "trace/kernelTrace.cpp"
+    "trace/traceAcceptanceProbe.cpp"
     "trace/traceRecorder.cpp"
     "config/featureManager.cpp"
     "config/modeManager.cpp"
@@ -47,6 +50,7 @@ elseif(CONFIG_DOMES_RUNTIME_PROFILE_QEMU)
         "platform/qemu/qemuPeripheralAdapters.cpp"
     )
     set(DOMES_PROFILE_REQUIRES
+        esp_driver_gptimer
         esp_timer
         nvs_flash
         esp_system
@@ -75,7 +79,6 @@ elseif(CONFIG_DOMES_RUNTIME_PROFILE_PHYSICAL)
         "services/espNowService.cpp"
         "platform/physical/espPlatformInputs.cpp"
         "runtime/runtimeEspNowAssembly.cpp"
-        "trace/traceDumpSnapshot.cpp"
         "trace/traceCommandHandler.cpp"
         "trace/traceStreamServer.cpp"
         "config/configCommandHandler.cpp"
@@ -154,6 +157,12 @@ idf_component_register(
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE ${DOMES_PROFILE_DEFINE})
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_20)
+
+# ESP-IDF owns FreeRTOSConfig.h, so inject the bounded DOMES hook macros into
+# the kernel target without modifying the pinned toolchain checkout.
+idf_component_get_property(DOMES_FREERTOS_LIB freertos COMPONENT_LIB)
+target_compile_options(${DOMES_FREERTOS_LIB} PRIVATE
+    "-include${CMAKE_CURRENT_LIST_DIR}/trace/freertosTraceHooks.h")
 
 if(DOMES_FORCE_OTA_VERIFY_FAILURE)
     if(CONFIG_DOMES_RUNTIME_PROFILE_QEMU)

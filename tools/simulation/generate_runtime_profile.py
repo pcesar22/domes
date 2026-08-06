@@ -25,7 +25,16 @@ ROOT_KEYS = frozenset(
     }
 )
 TASK_KEYS = frozenset(
-    {"id", "cpp_symbol", "name", "stack_size", "priority", "core_affinity", "watchdog"}
+    {
+        "id",
+        "cpp_symbol",
+        "name",
+        "trace_id",
+        "stack_size",
+        "priority",
+        "core_affinity",
+        "watchdog",
+    }
 )
 PROFILE_KEYS = frozenset(
     {
@@ -209,6 +218,7 @@ def resolve_profile(
     task_ids: list[str] = []
     task_names: list[str] = []
     task_symbols: list[str] = []
+    task_trace_ids: list[int] = []
     for index, raw_task in enumerate(task_catalog):
         task = dict(_require_mapping(raw_task, f"task_catalog[{index}]"))
         _require_exact_keys(task, TASK_KEYS, f"task_catalog[{index}]")
@@ -222,7 +232,7 @@ def resolve_profile(
             task["cpp_symbol"]
         ):
             raise ProfileError(f"task_catalog[{index}].cpp_symbol is invalid")
-        for field in ("stack_size", "priority", "core_affinity"):
+        for field in ("trace_id", "stack_size", "priority", "core_affinity"):
             if not isinstance(task[field], int) or isinstance(task[field], bool):
                 raise ProfileError(f"task_catalog[{index}].{field} must be an integer")
         if task["stack_size"] <= 0 or not 0 <= task["priority"] <= 24:
@@ -233,6 +243,10 @@ def resolve_profile(
             raise ProfileError(
                 f"task_catalog[{index}].core_affinity must be -1, 0, or 1"
             )
+        if not 1 <= task["trace_id"] <= 31:
+            raise ProfileError(
+                f"task_catalog[{index}].trace_id must be in [1, 31]"
+            )
         if not isinstance(task["watchdog"], bool):
             raise ProfileError(f"task_catalog[{index}].watchdog must be boolean")
         task["evidence_mask"] = 1 << index
@@ -240,10 +254,12 @@ def resolve_profile(
         task_ids.append(task["id"])
         task_names.append(task["name"])
         task_symbols.append(task["cpp_symbol"])
+        task_trace_ids.append(task["trace_id"])
     for values, label in (
         (task_ids, "task IDs"),
         (task_names, "task names"),
         (task_symbols, "task symbols"),
+        (task_trace_ids, "task trace IDs"),
     ):
         if len(values) != len(set(values)):
             raise ProfileError(f"task_catalog contains duplicate {label}")
@@ -514,6 +530,7 @@ def resolve_profile(
         {
             "id": task["id"],
             "name": task["name"],
+            "trace_id": task["trace_id"],
             "stack_size": task["stack_size"],
             "priority": task["priority"],
             "core_affinity": task["core_affinity"],
@@ -595,6 +612,7 @@ def _render_header(resolved: Mapping[str, Any]) -> str:
             [
                 f"inline constexpr TaskConfig {task['cpp_symbol']} = {{",
                 f'    .name = "{task["name"]}",',
+                f"    .traceId = {task['trace_id']},",
                 f"    .stackSize = {task['stack_size']},",
                 f"    .priority = {task['priority']},",
                 f"    .coreAffinity = {core},",
@@ -654,6 +672,15 @@ def _render_header(resolved: Mapping[str, Any]) -> str:
     )
     lines.extend(
         [
+            "",
+            f"inline constexpr std::array<ExpectedTask, {len(resolved['tasks'])}> kTraceTasks = {{{{",
+        ]
+    )
+    for task in resolved["tasks"]:
+        lines.append(f'    {{"{task["id"]}", &infra::task::{task["cpp_symbol"]}}},')
+    lines.extend(
+        [
+            "}};",
             "",
             f"inline constexpr std::array<ExpectedTask, {len(resolved['required_tasks'])}> kRequiredTasks = {{{{",
         ]

@@ -44,6 +44,7 @@ set(GAME_SOURCES
 # Trace module sources (HOST version, NOT firmware traceBuffer.cpp)
 set(TRACE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/sim/hostTraceBuffer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/trace/kernelTrace.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/trace/traceDumpSnapshot.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/trace/traceCommandHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/trace/traceRecorder.cpp

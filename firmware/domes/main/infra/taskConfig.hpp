@@ -59,6 +59,7 @@ constexpr uint32_t kLarge = 8192;     // Complex tasks (game logic, JSON parsing
  */
 struct TaskConfig {
     const char* name;          ///< Task name (max 16 chars)
+    uint16_t traceId;          ///< Immutable nonzero trace-session task identity
     uint32_t stackSize;        ///< Stack size in bytes
     UBaseType_t priority;      ///< Task priority
     BaseType_t coreAffinity;   ///< Core to pin task to (or tskNO_AFFINITY)

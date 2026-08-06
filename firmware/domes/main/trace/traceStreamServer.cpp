@@ -22,6 +22,10 @@
 namespace {
 constexpr const char* kTag = "trace_stream";
 constexpr size_t kMaxFrameSize = 512;
+static_assert(domes_trace_StreamBatch_size <= domes::kMaxPayloadSize,
+              "StreamBatch must fit the shared frame payload");
+static_assert(domes_trace_StreamBatch_size + domes::kFrameOverhead <= kMaxFrameSize,
+              "StreamBatch must fit the stream server frame buffer");
 }  // namespace
 
 namespace domes::trace {
@@ -102,19 +106,27 @@ bool TraceStreamServer::shouldRun() const {
 }
 
 void TraceStreamServer::handleClient(int clientSock) {
+    if (!Recorder::isTaskCatalogReady()) {
+        ESP_LOGW(kTag, "Rejecting trace stream before task catalog is finalized");
+        return;
+    }
+    if (!Recorder::acquireSessionLease(this)) {
+        ESP_LOGW(kTag, "Rejecting trace stream while another trace session owns the recorder");
+        return;
+    }
     // Reset ring buffer state
     writeIdx_.store(0, std::memory_order_relaxed);
     readIdx_.store(0, std::memory_order_relaxed);
     dropped_.store(0, std::memory_order_relaxed);
     sequence_ = 0;
 
-    // A stream connection is itself a request to record. Preserve the state
-    // that was active before the client connected and restore it on exit.
-    const bool wasEnabled = Recorder::isEnabled();
     streaming_.store(true);
     Recorder::setStreamCallback(streamCallback);
-    if (!wasEnabled) {
-        Recorder::setEnabled(true);
+    if (!Recorder::setEnabledForLease(true, this)) {
+        Recorder::setStreamCallback(nullptr);
+        streaming_.store(false);
+        Recorder::releaseSessionLease(this);
+        return;
     }
 
     ESP_LOGI(kTag, "Streaming started");
@@ -193,9 +205,8 @@ void TraceStreamServer::handleClient(int clientSock) {
     // Unregister callback
     Recorder::setStreamCallback(nullptr);
     streaming_.store(false);
-    if (!wasEnabled) {
-        Recorder::setEnabled(false);
-    }
+    Recorder::setEnabledForLease(false, this);
+    Recorder::releaseSessionLease(this);
 
     ESP_LOGI(kTag, "Streaming stopped");
 }
@@ -203,21 +214,21 @@ void TraceStreamServer::handleClient(int clientSock) {
 void TraceStreamServer::streamCallback(const TraceEvent& event) {
     // MPSC: callback may be invoked from any task context.
     // Spinlock ensures write + index advance are atomic to the consumer.
-    taskENTER_CRITICAL(&streamLock_);
+    portENTER_CRITICAL_SAFE(&streamLock_);
 
     size_t wr = writeIdx_.load(std::memory_order_relaxed);
     size_t rd = readIdx_.load(std::memory_order_relaxed);
 
     if (wr - rd >= kStreamBufferSize) {
         dropped_.fetch_add(1, std::memory_order_relaxed);
-        taskEXIT_CRITICAL(&streamLock_);
+        portEXIT_CRITICAL_SAFE(&streamLock_);
         return;
     }
 
     ringBuffer_[wr % kStreamBufferSize] = event;
     writeIdx_.store(wr + 1, std::memory_order_release);
 
-    taskEXIT_CRITICAL(&streamLock_);
+    portEXIT_CRITICAL_SAFE(&streamLock_);
 }
 
 }  // namespace domes::trace

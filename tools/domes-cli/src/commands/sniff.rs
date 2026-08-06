@@ -914,6 +914,7 @@ mod tests {
             streaming: false,
             event_count: 42,
             dropped_count: 0,
+            discontinuity_count: 0,
             buffer_size: 32768,
             stream_category_mask: 0,
         };

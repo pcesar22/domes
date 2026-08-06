@@ -11,13 +11,13 @@ use crate::transport::frame::Frame;
 use crate::transport::Transport;
 use anyhow::{Context, Result};
 use prost::Message;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
 /// Compact trace event (16 bytes, binary)
-#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 struct TraceEvent {
     timestamp: u32,
@@ -28,7 +28,7 @@ struct TraceEvent {
     arg2: u32,
 }
 
-const TRACE_EVENT_SIZE: usize = std::mem::size_of::<TraceEvent>();
+const TRACE_EVENT_SIZE: usize = 16;
 
 fn decode_trace_events(event_bytes: &[u8]) -> Result<Vec<TraceEvent>> {
     if !event_bytes.len().is_multiple_of(TRACE_EVENT_SIZE) {
@@ -41,7 +41,14 @@ fn decode_trace_events(event_bytes: &[u8]) -> Result<Vec<TraceEvent>> {
 
     Ok(event_bytes
         .chunks_exact(TRACE_EVENT_SIZE)
-        .map(|bytes| unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const TraceEvent) })
+        .map(|bytes| TraceEvent {
+            timestamp: u32::from_le_bytes(bytes[0..4].try_into().expect("fixed trace timestamp")),
+            task_id: u16::from_le_bytes(bytes[4..6].try_into().expect("fixed trace task ID")),
+            event_type: bytes[6],
+            flags: bytes[7],
+            arg1: u32::from_le_bytes(bytes[8..12].try_into().expect("fixed trace argument")),
+            arg2: u32::from_le_bytes(bytes[12..16].try_into().expect("fixed trace argument")),
+        })
         .collect())
 }
 
@@ -139,6 +146,7 @@ pub struct TraceStatusInfo {
     pub streaming: bool,
     pub event_count: u32,
     pub dropped_count: u32,
+    pub discontinuity_count: u32,
     pub buffer_size: u32,
 }
 
@@ -246,6 +254,7 @@ pub fn trace_status(transport: &mut dyn Transport) -> Result<TraceStatusInfo> {
         streaming: resp.streaming,
         event_count: resp.event_count,
         dropped_count: resp.dropped_count,
+        discontinuity_count: resp.discontinuity_count,
         buffer_size: resp.buffer_size,
     })
 }
@@ -257,6 +266,9 @@ pub struct DumpResult {
     pub duration_us: u32,
     pub pod_id: u32,
     pub output_path: std::path::PathBuf,
+    pub raw_path: std::path::PathBuf,
+    pub session_path: std::path::PathBuf,
+    pub raw_sha256: String,
 }
 
 fn trace_duration_us(start_timestamp_us: u32, end_timestamp_us: u32) -> u32 {
@@ -298,7 +310,6 @@ pub fn trace_dump(
     // Parse session info (protobuf)
     let session_info = TraceSessionInfo::decode(frame.payload.as_slice())
         .context("Failed to decode TraceSessionInfo")?;
-
     // Build task name lookup
     let task_names: HashMap<u32, String> = session_info
         .tasks
@@ -307,8 +318,9 @@ pub fn trace_dump(
         .collect();
 
     // Collect all events
-    let mut events: Vec<TraceEvent> = Vec::with_capacity(session_info.event_count as usize);
-    let mut integrity = TraceDumpIntegrity::default();
+    let mut raw_events = Vec::with_capacity(session_info.event_count as usize * TRACE_EVENT_SIZE);
+    let mut chunks = Vec::new();
+    let dump_complete;
 
     loop {
         let frame = transport
@@ -319,19 +331,13 @@ pub fn trace_dump(
             // Parse data chunk (protobuf)
             let chunk = TraceDataChunk::decode(frame.payload.as_slice())
                 .context("Failed to decode TraceDataChunk")?;
-
-            events.extend(
-                integrity
-                    .accept_chunk(&chunk)
-                    .context("Invalid trace data chunk")?,
-            );
+            raw_events.extend_from_slice(&chunk.events);
+            chunks.push(chunk);
         } else if frame.msg_type == TraceMsgType::End.as_u8() {
             // Parse dump complete (protobuf)
             let complete = TraceDumpComplete::decode(frame.payload.as_slice())
                 .context("Failed to decode TraceDumpComplete")?;
-            integrity
-                .finish(&complete, session_info.event_count)
-                .context("Trace dump integrity check failed")?;
+            dump_complete = complete;
             break;
         } else {
             anyhow::bail!(
@@ -341,7 +347,72 @@ pub fn trace_dump(
         }
     }
 
-    // Convert to Chrome JSON trace format for Perfetto
+    let raw_path = std::path::PathBuf::from(format!("{}.raw", output_path.display()));
+    let raw_sha256 = format!("{:x}", Sha256::digest(&raw_events));
+    File::create(&raw_path)
+        .context("Failed to create raw trace file")?
+        .write_all(&raw_events)
+        .context("Failed to write raw trace file")?;
+    let sha_path = std::path::PathBuf::from(format!("{}.sha256", raw_path.display()));
+    File::create(&sha_path)
+        .context("Failed to create raw trace hash file")?
+        .write_all(format!("{}  {}\n", raw_sha256, raw_path.display()).as_bytes())
+        .context("Failed to write raw trace hash file")?;
+    let session_path = std::path::PathBuf::from(format!("{}.session.json", raw_path.display()));
+    let session_evidence = serde_json::json!({
+        "format_version": session_info.trace_event_format_version,
+        "pod_id": session_info.pod_id,
+        "event_count": session_info.event_count,
+        "dropped_count": session_info.dropped_count,
+        "discontinuity_count": session_info.discontinuity_count,
+        "start_timestamp_us": session_info.start_timestamp_us,
+        "end_timestamp_us": session_info.end_timestamp_us,
+        "raw_sha256": raw_sha256,
+        "tasks": session_info.tasks.iter().map(|task| serde_json::json!({
+            "task_id": task.task_id,
+            "name": task.name.as_str(),
+            "priority": task.priority,
+            "core_affinity_mask": task.core_affinity_mask,
+        })).collect::<Vec<_>>(),
+        "objects": session_info.objects.iter().map(|object| serde_json::json!({
+            "object_id": object.object_id,
+            "kind": object.kind,
+            "name": object.name.as_str(),
+        })).collect::<Vec<_>>(),
+    });
+    File::create(&session_path)
+        .context("Failed to create raw trace session file")?
+        .write_all(serde_json::to_string_pretty(&session_evidence)?.as_bytes())
+        .context("Failed to write raw trace session file")?;
+
+    // Interpret only after the exact received event bytes, hash, and session
+    // mappings are durable. Invalid evidence remains available for diagnosis.
+    if session_info.trace_event_format_version > 1 {
+        anyhow::bail!(
+            "Unsupported trace event format version: {}",
+            session_info.trace_event_format_version
+        );
+    }
+    if session_info.dropped_count != 0 || session_info.discontinuity_count != 0 {
+        anyhow::bail!(
+            "Trace evidence is incomplete: dropped={}, discontinuities={}",
+            session_info.dropped_count,
+            session_info.discontinuity_count
+        );
+    }
+    let mut events: Vec<TraceEvent> = Vec::with_capacity(session_info.event_count as usize);
+    let mut integrity = TraceDumpIntegrity::default();
+    for chunk in &chunks {
+        events.extend(
+            integrity
+                .accept_chunk(chunk)
+                .context("Invalid trace data chunk")?,
+        );
+    }
+    integrity
+        .finish(&dump_complete, session_info.event_count)
+        .context("Trace dump integrity check failed")?;
+
     let json = convert_to_perfetto_json(&events, &task_names, &span_names, session_info.pod_id)?;
 
     // Write to file
@@ -358,6 +429,9 @@ pub fn trace_dump(
         ),
         pod_id: session_info.pod_id,
         output_path: output_path.to_path_buf(),
+        raw_path,
+        session_path,
+        raw_sha256,
     })
 }
 
@@ -663,6 +737,22 @@ mod tests {
 
     fn event_bytes(value: u8, count: usize) -> Vec<u8> {
         vec![value; TRACE_EVENT_SIZE * count]
+    }
+
+    #[test]
+    fn trace_event_decode_is_explicitly_little_endian() {
+        let bytes = [
+            0x78, 0x56, 0x34, 0x12, 0xCD, 0xAB, 0x1E, 0x09, 0x04, 0x03, 0x02, 0x01, 0xD4, 0xC3,
+            0xB2, 0xA1,
+        ];
+        let events = decode_trace_events(&bytes).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].timestamp, 0x1234_5678);
+        assert_eq!(events[0].task_id, 0xABCD);
+        assert_eq!(events[0].event_type, 0x1E);
+        assert_eq!(events[0].flags, 0x09);
+        assert_eq!(events[0].arg1, 0x0102_0304);
+        assert_eq!(events[0].arg2, 0xA1B2_C3D4);
     }
 
     #[test]

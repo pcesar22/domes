@@ -12,6 +12,9 @@ PB_BIND(domes_trace_Event, domes_trace_Event, AUTO)
 PB_BIND(domes_trace_TaskEntry, domes_trace_TaskEntry, AUTO)
 
 
+PB_BIND(domes_trace_ObjectEntry, domes_trace_ObjectEntry, AUTO)
+
+
 PB_BIND(domes_trace_TraceSessionInfo, domes_trace_TraceSessionInfo, 2)
 
 

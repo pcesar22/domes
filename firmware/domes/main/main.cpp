@@ -29,6 +29,7 @@
 #include "platform/physical/espPlatformInputs.hpp"
 #include "runtime/initOrderTracker.hpp"
 #include "runtime/runtimeAssembly.hpp"
+#include "runtime/runtimeTraceRegistration.hpp"
 #include "services/audioService.hpp"
 #include "services/espNowService.hpp"
 #include "services/githubClient.hpp"
@@ -36,6 +37,7 @@
 #include "services/ledService.hpp"
 #include "services/otaManager.hpp"
 #include "services/touchService.hpp"
+#include "trace/traceAcceptanceProbe.hpp"
 #include "trace/traceApi.hpp"
 #include "trace/traceRecorder.hpp"
 #include "trace/traceStreamServer.hpp"
@@ -59,6 +61,7 @@
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "mdns.h"
 
@@ -1128,7 +1131,10 @@ extern "C" void app_main() {
     esp_err_t traceErr = domes::trace::Recorder::init();
     if (traceErr == ESP_OK) {
         domes::trace::Recorder::setEnabled(false);
-        domes::trace::Recorder::registerTask(xTaskGetCurrentTaskHandle(), "main");
+        const auto& mainTask = domes::infra::task::kMain;
+        domes::trace::Recorder::registerTask(xTaskGetCurrentTaskHandle(), mainTask.name,
+                                             mainTask.traceId, mainTask.priority,
+                                             mainTask.coreAffinity);
         ESP_LOGI(kTag, "Trace system initialized (recording disabled until requested)");
     } else {
         ESP_LOGW(kTag, "Trace init failed: %s", esp_err_to_name(traceErr));
@@ -1419,16 +1425,36 @@ extern "C" void app_main() {
     if (wifiConfigReady) {
         static domes::trace::TraceStreamServer traceStreamServer;
         const auto& traceTask = domes::infra::task::kTraceStream;
-        const BaseType_t traceTaskCreated = xTaskCreate(
-            [](void* param) {
-                static_cast<domes::trace::TraceStreamServer*>(param)->run();
-                vTaskDelete(nullptr);
-            },
-            traceTask.name, traceTask.stackSize, &traceStreamServer, traceTask.priority, nullptr);
-        if (traceTaskCreated == pdPASS) {
-            ESP_LOGI(kTag, "Trace stream server started on port 5001");
+        struct TraceStreamTaskContext {
+            domes::trace::TraceStreamServer* server;
+            SemaphoreHandle_t registrationDone;
+            bool registered;
+        };
+        static StaticSemaphore_t traceRegistrationStorage;
+        static TraceStreamTaskContext traceContext{
+            &traceStreamServer, xSemaphoreCreateBinaryStatic(&traceRegistrationStorage), false};
+        const BaseType_t traceTaskCreated =
+            traceContext.registrationDone != nullptr
+                ? xTaskCreate(
+                      [](void* param) {
+                          auto* context = static_cast<TraceStreamTaskContext*>(param);
+                          const auto& task = domes::infra::task::kTraceStream;
+                          context->registered = domes::trace::Recorder::registerTask(
+                              xTaskGetCurrentTaskHandle(), task.name, task.traceId, task.priority,
+                              task.coreAffinity);
+                          xSemaphoreGive(context->registrationDone);
+                          context->server->run();
+                          vTaskDelete(nullptr);
+                      },
+                      traceTask.name, traceTask.stackSize, &traceContext, traceTask.priority,
+                      nullptr)
+                : pdFAIL;
+        if (traceTaskCreated == pdPASS &&
+            xSemaphoreTake(traceContext.registrationDone, portMAX_DELAY) == pdTRUE) {
+            ESP_LOGI(kTag, "Trace stream server started on port 5001 (trace_id=%s)",
+                     traceContext.registered ? "registered" : "unavailable");
         } else {
-            ESP_LOGW(kTag, "Failed to create trace stream task");
+            ESP_LOGW(kTag, "Failed to create or register trace stream task");
         }
     }
 #endif
@@ -1478,52 +1504,80 @@ extern "C" void app_main() {
         ESP_LOGI(kTag, "Creating OTA check task...");
 
         const auto& otaTask = domes::infra::task::kOtaCheck;
-        const BaseType_t otaTaskCreated = xTaskCreate(
-            [](void* param) {
-                auto* manager = static_cast<domes::OtaManager*>(param);
-                ESP_LOGI(kTag, "OTA check task started");
-                ESP_LOGI(kTag, "Checking for firmware updates...");
+        struct OtaTaskContext {
+            domes::OtaManager* manager;
+            SemaphoreHandle_t registrationDone;
+            bool registered;
+        };
+        static StaticSemaphore_t otaRegistrationStorage;
+        static OtaTaskContext otaContext{
+            otaManager, xSemaphoreCreateBinaryStatic(&otaRegistrationStorage), false};
+        const BaseType_t otaTaskCreated =
+            otaContext.registrationDone != nullptr
+                ? xTaskCreate(
+                      [](void* param) {
+                          const auto& task = domes::infra::task::kOtaCheck;
+                          auto* context = static_cast<OtaTaskContext*>(param);
+                          context->registered = domes::trace::Recorder::registerTask(
+                              xTaskGetCurrentTaskHandle(), task.name, task.traceId, task.priority,
+                              task.coreAffinity);
+                          xSemaphoreGive(context->registrationDone);
+                          auto* manager = context->manager;
+                          ESP_LOGI(kTag, "OTA check task started");
+                          ESP_LOGI(kTag, "Checking for firmware updates...");
 
-                domes::OtaCheckResult updateResult;
-                esp_err_t err = manager->checkForUpdate(updateResult);
+                          domes::OtaCheckResult updateResult;
+                          esp_err_t err = manager->checkForUpdate(updateResult);
 
-                if (err == ESP_OK) {
-                    if (updateResult.updateAvailable) {
-                        ESP_LOGI(kTag, "Update available: v%lu.%lu.%lu -> v%lu.%lu.%lu",
-                                 static_cast<unsigned long>(updateResult.currentVersion.major),
-                                 static_cast<unsigned long>(updateResult.currentVersion.minor),
-                                 static_cast<unsigned long>(updateResult.currentVersion.patch),
-                                 static_cast<unsigned long>(updateResult.availableVersion.major),
-                                 static_cast<unsigned long>(updateResult.availableVersion.minor),
-                                 static_cast<unsigned long>(updateResult.availableVersion.patch));
-                        ESP_LOGI(kTag, "Download URL: %s", updateResult.downloadUrl);
-                        ESP_LOGI(kTag, "Firmware size: %zu bytes", updateResult.firmwareSize);
+                          if (err == ESP_OK) {
+                              if (updateResult.updateAvailable) {
+                                  ESP_LOGI(
+                                      kTag, "Update available: v%lu.%lu.%lu -> v%lu.%lu.%lu",
+                                      static_cast<unsigned long>(updateResult.currentVersion.major),
+                                      static_cast<unsigned long>(updateResult.currentVersion.minor),
+                                      static_cast<unsigned long>(updateResult.currentVersion.patch),
+                                      static_cast<unsigned long>(
+                                          updateResult.availableVersion.major),
+                                      static_cast<unsigned long>(
+                                          updateResult.availableVersion.minor),
+                                      static_cast<unsigned long>(
+                                          updateResult.availableVersion.patch));
+                                  ESP_LOGI(kTag, "Download URL: %s", updateResult.downloadUrl);
+                                  ESP_LOGI(kTag, "Firmware size: %zu bytes",
+                                           updateResult.firmwareSize);
 
-                        // Start OTA update
-                        ESP_LOGI(kTag, "Starting OTA update...");
-                        err = manager->startUpdate(
-                            updateResult.downloadUrl,
-                            updateResult.sha256[0] ? updateResult.sha256 : nullptr);
-                        if (err != ESP_OK) {
-                            ESP_LOGE(kTag, "OTA update failed to start: %s", esp_err_to_name(err));
-                        }
-                        // If successful, device will reboot
-                    } else {
-                        ESP_LOGI(kTag, "Firmware is up to date (v%lu.%lu.%lu)",
-                                 static_cast<unsigned long>(updateResult.currentVersion.major),
-                                 static_cast<unsigned long>(updateResult.currentVersion.minor),
-                                 static_cast<unsigned long>(updateResult.currentVersion.patch));
-                    }
-                } else {
-                    ESP_LOGW(kTag, "Update check failed: %s", esp_err_to_name(err));
-                }
+                                  // Start OTA update
+                                  ESP_LOGI(kTag, "Starting OTA update...");
+                                  err = manager->startUpdate(
+                                      updateResult.downloadUrl,
+                                      updateResult.sha256[0] ? updateResult.sha256 : nullptr);
+                                  if (err != ESP_OK) {
+                                      ESP_LOGE(kTag, "OTA update failed to start: %s",
+                                               esp_err_to_name(err));
+                                  }
+                                  // If successful, device will reboot
+                              } else {
+                                  ESP_LOGI(
+                                      kTag, "Firmware is up to date (v%lu.%lu.%lu)",
+                                      static_cast<unsigned long>(updateResult.currentVersion.major),
+                                      static_cast<unsigned long>(updateResult.currentVersion.minor),
+                                      static_cast<unsigned long>(
+                                          updateResult.currentVersion.patch));
+                              }
+                          } else {
+                              ESP_LOGW(kTag, "Update check failed: %s", esp_err_to_name(err));
+                          }
 
-                ESP_LOGI(kTag, "OTA check task done, deleting self");
-                vTaskDelete(nullptr);
-            },
-            otaTask.name, otaTask.stackSize, otaManager, otaTask.priority, nullptr);
-        if (otaTaskCreated != pdPASS) {
-            ESP_LOGE(kTag, "Failed to create OTA check task");
+                          ESP_LOGI(kTag, "OTA check task done, deleting self");
+                          vTaskDelete(nullptr);
+                      },
+                      otaTask.name, otaTask.stackSize, &otaContext, otaTask.priority, nullptr)
+                : pdFAIL;
+        if (otaTaskCreated != pdPASS ||
+            xSemaphoreTake(otaContext.registrationDone, portMAX_DELAY) != pdTRUE) {
+            ESP_LOGE(kTag, "Failed to create or register OTA check task");
+        } else if (!otaContext.registered) {
+            ESP_LOGW(kTag, "OTA check running without a trace identity");
         }
     } else if (autoUpdateEnabled) {
         ESP_LOGW(kTag, "Auto-update enabled but WiFi or OTA manager is unavailable");
@@ -1531,6 +1585,18 @@ extern "C" void app_main() {
         ESP_LOGI(kTag, "Automatic OTA check disabled by persisted setting");
     }
 #endif  // CONFIG_DOMES_WIFI_AUTO_CONNECT
+    const size_t registeredTraceTasks = domes::runtime::registerRuntimeTraceTasks();
+    domes::trace::Recorder::finalizeTaskCatalog();
+    ESP_LOGI(kTag, "Registered %zu runtime trace task identities", registeredTraceTasks);
+#ifdef CONFIG_DOMES_TRACE_ACCEPTANCE_PROBE
+    const auto traceAcceptance = domes::trace::runTraceAcceptanceProbe();
+    ESP_LOGI(kTag,
+             "Trace acceptance: passed=%u events=%" PRIu32 " drops=%" PRIu32
+             " discontinuities=%" PRIu32 " disabled_us=%" PRIu32 " enabled_us=%" PRIu32,
+             traceAcceptance.passed ? 1U : 0U, traceAcceptance.eventCount,
+             traceAcceptance.droppedCount, traceAcceptance.discontinuityCount,
+             traceAcceptance.disabledRecordUs, traceAcceptance.enabledRecordUs);
+#endif
     if (!initOrder.complete()) {
         ESP_LOGE(kTag, "Init-order incomplete: expected=%s", initOrder.expected());
     }

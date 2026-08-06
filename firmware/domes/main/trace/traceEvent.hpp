@@ -46,6 +46,20 @@ enum class EventType : uint8_t {
     kMutexContention = domes_trace_EventType_EVENT_TYPE_MUTEX_CONTENTION,
     kSemTake = domes_trace_EventType_EVENT_TYPE_SEM_TAKE,
     kSemGive = domes_trace_EventType_EVENT_TYPE_SEM_GIVE,
+    kSchedTaskCreate = domes_trace_EventType_EVENT_TYPE_SCHED_TASK_CREATE,
+    kSchedTaskDelete = domes_trace_EventType_EVENT_TYPE_SCHED_TASK_DELETE,
+    kSchedTaskReady = domes_trace_EventType_EVENT_TYPE_SCHED_TASK_READY,
+    kSchedTaskBlock = domes_trace_EventType_EVENT_TYPE_SCHED_TASK_BLOCK,
+    kSchedSwitchIn = domes_trace_EventType_EVENT_TYPE_SCHED_SWITCH_IN,
+    kSchedSwitchOut = domes_trace_EventType_EVENT_TYPE_SCHED_SWITCH_OUT,
+    kSchedIsrEnter = domes_trace_EventType_EVENT_TYPE_SCHED_ISR_ENTER,
+    kSchedIsrExit = domes_trace_EventType_EVENT_TYPE_SCHED_ISR_EXIT,
+    kSchedQueueSend = domes_trace_EventType_EVENT_TYPE_SCHED_QUEUE_SEND,
+    kSchedQueueReceive = domes_trace_EventType_EVENT_TYPE_SCHED_QUEUE_RECEIVE,
+    kSchedTimeout = domes_trace_EventType_EVENT_TYPE_SCHED_TIMEOUT,
+    kCallbackBegin = domes_trace_EventType_EVENT_TYPE_CALLBACK_BEGIN,
+    kCallbackEnd = domes_trace_EventType_EVENT_TYPE_CALLBACK_END,
+    kCausalComplete = domes_trace_EventType_EVENT_TYPE_CAUSAL_COMPLETE,
 
     // Application events (0x20-0x2F)
     kSpanBegin = domes_trace_EventType_EVENT_TYPE_SPAN_BEGIN,
@@ -53,12 +67,13 @@ enum class EventType : uint8_t {
     kInstant = domes_trace_EventType_EVENT_TYPE_INSTANT,
     kCounter = domes_trace_EventType_EVENT_TYPE_COUNTER,
     kComplete = domes_trace_EventType_EVENT_TYPE_COMPLETE,
+    kTraceOverhead = domes_trace_EventType_EVENT_TYPE_TRACE_OVERHEAD,
 };
 
 /**
  * @brief Compact trace event structure (16 bytes)
  *
- * Designed for efficient storage in a ring buffer:
+ * Multi-byte fields are serialized little-endian. Designed for efficient storage:
  * - Fixed size enables simple buffer arithmetic
  * - No pointers or strings (uses IDs that map to names on host)
  * - Packed to minimize memory footprint
@@ -68,7 +83,7 @@ struct TraceEvent {
     uint32_t timestamp;  ///< Microseconds since boot (esp_timer_get_time())
     uint16_t taskId;     ///< FreeRTOS task number (uxTaskGetTaskNumber())
     uint8_t eventType;   ///< EventType value
-    uint8_t flags;       ///< Category in bits 7-4, reserved in bits 3-0
+    uint8_t flags;       ///< Category bits 7-4; context bits 3-2; core bits 1-0
     uint32_t arg1;       ///< Primary argument (span ID, counter ID, ISR number)
     uint32_t arg2;       ///< Secondary argument (counter value, duration)
 
@@ -80,6 +95,12 @@ struct TraceEvent {
 
     /// Get event type as enum
     EventType type() const { return static_cast<EventType>(eventType); }
+
+    /// Format-v1 core code: 0 unknown, 1 Core 0, 2 Core 1
+    uint8_t coreCode() const { return flags & 0x03; }
+
+    /// Format-v1 context code: 0 task, 1 ISR, 2 callback
+    uint8_t contextCode() const { return (flags >> 2) & 0x03; }
 };
 #pragma pack(pop)
 

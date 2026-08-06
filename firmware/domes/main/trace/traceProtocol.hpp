@@ -12,6 +12,7 @@
  * TraceEvent data is carried as raw binary inside protobuf 'bytes' fields.
  */
 
+#include "protocol/frameCodec.hpp"
 #include "traceEvent.hpp"
 #include "traceRecorder.hpp"
 
@@ -91,9 +92,12 @@ constexpr size_t kEventsPerChunk = 16;
 constexpr size_t kMaxTraceDataPayload = 280;
 
 /// Maximum frame size for trace messages
-constexpr size_t kMaxFrameSize = 512;
+constexpr size_t kMaxFrameSize = domes::kMaxFrameSize;
 
 /// Maximum protobuf encoding buffer
-constexpr size_t kMaxProtobufPayload = 512;
+constexpr size_t kMaxProtobufPayload = domes::kMaxPayloadSize;
+
+static_assert(domes_trace_TraceSessionInfo_size <= kMaxProtobufPayload,
+              "Trace session metadata must fit one shared frame payload");
 
 }  // namespace domes::trace

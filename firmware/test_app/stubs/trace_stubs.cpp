@@ -39,6 +39,20 @@ bool Recorder::isInitialized() {
 }
 void Recorder::record(const TraceEvent&) {}
 void Recorder::recordFromIsr(const TraceEvent&) {}
-void Recorder::setEnabled(bool) {}
+bool Recorder::setEnabled(bool) {
+    return true;
+}
+bool Recorder::acquireSessionLease(const void*, bool) {
+    return true;
+}
+bool Recorder::setEnabledForLease(bool, const void*) {
+    return true;
+}
+bool Recorder::releaseSessionLease(const void*) {
+    return true;
+}
+bool Recorder::isSessionLeased() {
+    return false;
+}
 
 }  // namespace domes::trace

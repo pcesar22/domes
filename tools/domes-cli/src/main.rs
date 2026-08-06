@@ -946,6 +946,10 @@ fn main() -> anyhow::Result<()> {
                         println!("{}  Streaming:   {}", prefix, status.streaming);
                         println!("{}  Events:      {}", prefix, status.event_count);
                         println!("{}  Dropped:     {}", prefix, status.dropped_count);
+                        println!(
+                            "{}  Discontinuities: {}",
+                            prefix, status.discontinuity_count
+                        );
                         println!("{}  Buffer size: {} bytes", prefix, status.buffer_size);
                     }
                     TraceAction::Stream { .. } => {
@@ -973,6 +977,9 @@ fn main() -> anyhow::Result<()> {
                             println!("{}  Duration: {} us", prefix, result.duration_us);
                         }
                         println!("{}Output: {}", prefix, result.output_path.display());
+                        println!("{}Raw: {}", prefix, result.raw_path.display());
+                        println!("{}Session: {}", prefix, result.session_path.display());
+                        println!("{}Raw SHA-256: {}", prefix, result.raw_sha256);
                     }
                 },
 

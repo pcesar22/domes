@@ -1,4 +1,5 @@
 #include "trace/traceBuffer.hpp"
+#include "trace/traceRecorder.hpp"
 
 #include <gtest/gtest.h>
 
@@ -101,6 +102,17 @@ TEST(TraceBufferTest, OwningTransportCanClearRetainedSnapshotAndLaterEvents) {
     EXPECT_EQ(buffer.count(), 2u);
     EXPECT_TRUE(buffer.clearDumpSnapshot(&owner));
     EXPECT_EQ(buffer.count(), 0u);
+}
+
+TEST(TraceRecorderTest, StableTaskIdMustFitActiveTaskBitmap) {
+    Recorder::shutdown();
+    ASSERT_EQ(Recorder::init(1024), ESP_OK);
+    TaskHandle_t handle = xTaskGetCurrentTaskHandle();
+
+    EXPECT_TRUE(Recorder::registerTask(handle, "max_id", 31, 1, 0));
+    EXPECT_FALSE(Recorder::registerTask(handle, "too_large", 32, 1, 0));
+
+    Recorder::shutdown();
 }
 
 }  // namespace

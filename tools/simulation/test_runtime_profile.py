@@ -141,6 +141,22 @@ class RuntimeProfileTest(unittest.TestCase):
         with self.assertRaisesRegex(profile.ProfileError, "duplicate task names"):
             profile.resolve_profile(path, "qemu", self.sdkconfig)
 
+    def test_duplicate_task_trace_id_fails(self) -> None:
+        def mutate(value) -> None:
+            value["task_catalog"][1]["trace_id"] = value["task_catalog"][0]["trace_id"]
+
+        path = self._mutated_spec(mutate)
+        with self.assertRaisesRegex(profile.ProfileError, "duplicate task trace IDs"):
+            profile.resolve_profile(path, "qemu", self.sdkconfig)
+
+    def test_task_trace_id_above_active_bitmap_fails(self) -> None:
+        def mutate(value) -> None:
+            value["task_catalog"][0]["trace_id"] = 32
+
+        path = self._mutated_spec(mutate)
+        with self.assertRaisesRegex(profile.ProfileError, r"trace_id must be in \[1, 31\]"):
+            profile.resolve_profile(path, "qemu", self.sdkconfig)
+
     def test_prohibited_qemu_vendor_config_fails(self) -> None:
         self.sdkconfig.write_text(self.sdkconfig.read_text() + "CONFIG_BT_ENABLED=y\n")
         with self.assertRaisesRegex(

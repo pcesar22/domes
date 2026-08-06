@@ -25,7 +25,7 @@
 namespace domes::trace {
 
 /// Maximum number of tasks that can have registered names
-constexpr size_t kMaxRegisteredTasks = 32;
+constexpr size_t kMaxRegisteredTasks = 16;
 
 /// Maximum task name length (including null terminator)
 constexpr size_t kMaxTaskNameLength = 16;
@@ -34,7 +34,9 @@ constexpr size_t kMaxTaskNameLength = 16;
  * @brief Task name entry for trace metadata
  */
 struct TaskNameEntry {
-    uint16_t taskId;                ///< FreeRTOS task number
+    uint16_t taskId;                ///< Stable trace task ID
+    uint8_t priority;               ///< Configured FreeRTOS priority
+    uint8_t coreAffinityMask;       ///< bit 0=Core 0, bit 1=Core 1
     char name[kMaxTaskNameLength];  ///< Task name (null-terminated)
     bool valid;                     ///< Entry is valid
 };
@@ -54,7 +56,7 @@ struct TaskNameEntry {
  * domes::trace::Recorder::setEnabled(true);
  *
  * // Register task names for better trace output
- * domes::trace::Recorder::registerTask(xTaskGetCurrentTaskHandle(), "main");
+ * domes::trace::Recorder::registerTask(xTaskGetCurrentTaskHandle(), "main", 1, 1, 0);
  *
  * // Recording events
  * domes::trace::Recorder::record(event);
@@ -90,7 +92,13 @@ public:
      *
      * @param enabled true to enable, false to disable
      */
-    static void setEnabled(bool enabled);
+    static bool setEnabled(bool enabled);
+
+    /** Reserve trace lifecycle ownership for an internal bounded session. */
+    static bool acquireSessionLease(const void* owner, bool allowEnabled = false);
+    static bool setEnabledForLease(bool enabled, const void* owner);
+    static bool releaseSessionLease(const void* owner);
+    static bool isSessionLeased();
 
     /**
      * @brief Check if tracing is enabled
@@ -101,6 +109,10 @@ public:
      * @brief Check if recorder is initialized
      */
     static bool isInitialized();
+
+    /** Freeze task metadata and allow trace sessions to start. */
+    static void finalizeTaskCatalog();
+    static bool isTaskCatalogReady();
 
     /**
      * @brief Record a trace event (task context)
@@ -138,7 +150,8 @@ public:
      * @param handle FreeRTOS task handle
      * @param name Task name (will be truncated if too long)
      */
-    static void registerTask(TaskHandle_t handle, const char* name);
+    static bool registerTask(TaskHandle_t handle, const char* name, uint16_t stableId,
+                             UBaseType_t priority, BaseType_t coreAffinity);
 
     /**
      * @brief Unregister a task
@@ -166,6 +179,15 @@ public:
      * @brief Get count of registered tasks
      */
     static size_t getRegisteredTaskCount();
+
+    /** Return active or retained event count. */
+    static uint32_t eventCount();
+
+    /** Return active or retained overflow count. */
+    static uint32_t droppedCount();
+
+    /** Return unresolved-ID or lifecycle discontinuities for this session. */
+    static uint32_t discontinuityCount();
 
     /**
      * @brief Callback type for live trace streaming
@@ -195,6 +217,8 @@ private:
     static std::unique_ptr<TraceBuffer> buffer_;
     static std::atomic<bool> enabled_;
     static std::atomic<bool> initialized_;
+    static std::atomic<bool> taskCatalogReady_;
+    static std::atomic<const void*> sessionOwner_;
     static std::array<TaskNameEntry, kMaxRegisteredTasks> taskNames_;
     static size_t taskNameCount_;
     static std::atomic<StreamCallback> streamCallback_;

@@ -44,21 +44,21 @@
     "infra.shutdown_dump"
   ],
   "task_catalog": [
-    {"id": "main", "cpp_symbol": "kMain", "name": "main", "stack_size": 4096, "priority": 1, "core_affinity": 0, "watchdog": false},
-    {"id": "mode_tick", "cpp_symbol": "kModeTick", "name": "mode_tick", "stack_size": 4096, "priority": 5, "core_affinity": -1, "watchdog": false},
-    {"id": "led_service", "cpp_symbol": "kLedService", "name": "led_svc", "stack_size": 4096, "priority": 5, "core_affinity": 1, "watchdog": false},
-    {"id": "imu_service", "cpp_symbol": "kImuService", "name": "imu_svc", "stack_size": 3072, "priority": 5, "core_affinity": 1, "watchdog": false},
-    {"id": "audio_service", "cpp_symbol": "kAudioService", "name": "audio_svc", "stack_size": 4096, "priority": 5, "core_affinity": 1, "watchdog": false},
-    {"id": "touch_service", "cpp_symbol": "kTouchService", "name": "touch_svc", "stack_size": 3072, "priority": 5, "core_affinity": 1, "watchdog": false},
-    {"id": "game_tick", "cpp_symbol": "kGameTick", "name": "game_tick", "stack_size": 4096, "priority": 10, "core_affinity": 1, "watchdog": false},
-    {"id": "esp_now_service", "cpp_symbol": "kEspNowService", "name": "espnow_svc", "stack_size": 6144, "priority": 10, "core_affinity": 0, "watchdog": false},
-    {"id": "serial_ota", "cpp_symbol": "kSerialOta", "name": "serial_ota", "stack_size": 8192, "priority": 10, "core_affinity": -1, "watchdog": false},
-    {"id": "ble_ota", "cpp_symbol": "kBleOta", "name": "ble_ota", "stack_size": 8192, "priority": 10, "core_affinity": 0, "watchdog": false},
-    {"id": "tcp_config", "cpp_symbol": "kTcpConfig", "name": "tcp_config", "stack_size": 4096, "priority": 10, "core_affinity": 0, "watchdog": false},
-    {"id": "trace_stream", "cpp_symbol": "kTraceStream", "name": "trace_stream", "stack_size": 4096, "priority": 5, "core_affinity": -1, "watchdog": false},
-    {"id": "diagnostics", "cpp_symbol": "kDiagnostics", "name": "diagnostics", "stack_size": 3072, "priority": 0, "core_affinity": -1, "watchdog": false},
-    {"id": "memory_profiler", "cpp_symbol": "kMemoryProfiler", "name": "mem_prof", "stack_size": 4096, "priority": 1, "core_affinity": -1, "watchdog": false},
-    {"id": "ota_check", "cpp_symbol": "kOtaCheck", "name": "ota_check", "stack_size": 16384, "priority": 5, "core_affinity": -1, "watchdog": false}
+    {"id": "main", "cpp_symbol": "kMain", "name": "main", "trace_id": 1, "stack_size": 4096, "priority": 1, "core_affinity": 0, "watchdog": false},
+    {"id": "mode_tick", "cpp_symbol": "kModeTick", "name": "mode_tick", "trace_id": 2, "stack_size": 4096, "priority": 5, "core_affinity": -1, "watchdog": false},
+    {"id": "led_service", "cpp_symbol": "kLedService", "name": "led_svc", "trace_id": 3, "stack_size": 4096, "priority": 5, "core_affinity": 1, "watchdog": false},
+    {"id": "imu_service", "cpp_symbol": "kImuService", "name": "imu_svc", "trace_id": 4, "stack_size": 3072, "priority": 5, "core_affinity": 1, "watchdog": false},
+    {"id": "audio_service", "cpp_symbol": "kAudioService", "name": "audio_svc", "trace_id": 5, "stack_size": 4096, "priority": 5, "core_affinity": 1, "watchdog": false},
+    {"id": "touch_service", "cpp_symbol": "kTouchService", "name": "touch_svc", "trace_id": 6, "stack_size": 3072, "priority": 5, "core_affinity": 1, "watchdog": false},
+    {"id": "game_tick", "cpp_symbol": "kGameTick", "name": "game_tick", "trace_id": 7, "stack_size": 4096, "priority": 10, "core_affinity": 1, "watchdog": false},
+    {"id": "esp_now_service", "cpp_symbol": "kEspNowService", "name": "espnow_svc", "trace_id": 8, "stack_size": 6144, "priority": 10, "core_affinity": 0, "watchdog": false},
+    {"id": "serial_ota", "cpp_symbol": "kSerialOta", "name": "serial_ota", "trace_id": 9, "stack_size": 8192, "priority": 10, "core_affinity": -1, "watchdog": false},
+    {"id": "ble_ota", "cpp_symbol": "kBleOta", "name": "ble_ota", "trace_id": 10, "stack_size": 8192, "priority": 10, "core_affinity": 0, "watchdog": false},
+    {"id": "tcp_config", "cpp_symbol": "kTcpConfig", "name": "tcp_config", "trace_id": 11, "stack_size": 4096, "priority": 10, "core_affinity": 0, "watchdog": false},
+    {"id": "trace_stream", "cpp_symbol": "kTraceStream", "name": "trace_stream", "trace_id": 12, "stack_size": 4096, "priority": 5, "core_affinity": -1, "watchdog": false},
+    {"id": "diagnostics", "cpp_symbol": "kDiagnostics", "name": "diagnostics", "trace_id": 13, "stack_size": 3072, "priority": 0, "core_affinity": -1, "watchdog": false},
+    {"id": "memory_profiler", "cpp_symbol": "kMemoryProfiler", "name": "mem_prof", "trace_id": 14, "stack_size": 4096, "priority": 1, "core_affinity": -1, "watchdog": false},
+    {"id": "ota_check", "cpp_symbol": "kOtaCheck", "name": "ota_check", "trace_id": 15, "stack_size": 16384, "priority": 5, "core_affinity": -1, "watchdog": false}
   ],
   "fidelity_contracts": {
     "physical.production": {

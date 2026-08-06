@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
     // Initialize trace recorder for firmware TRACE_* events
     Recorder::init();
     Recorder::setEnabled(true);
-    Recorder::registerTask(xTaskGetCurrentTaskHandle(), "sim");
+    Recorder::registerTask(xTaskGetCurrentTaskHandle(), "sim", 1, 1, 0);
 
     // --- Set up 5-pod environment ---
     constexpr size_t kNumPods = 5;
