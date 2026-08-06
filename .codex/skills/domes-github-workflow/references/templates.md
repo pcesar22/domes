@@ -37,28 +37,66 @@ docs(<scope>): <description>
 ## Pull Request Template
 
 ```markdown
-## Summary
-<!-- 1-3 sentence description of what this PR does -->
+## Executive summary
+<!-- Plain-language change, reason, bottom-line result, and whether behavior changes. -->
 
-## Changes
-<!-- Bullet list of specific changes -->
+## Why this matters
+<!-- Customer, product, business, schedule, safety, reliability, or engineering-risk context. -->
+
+## Status at a glance
+
+| Area | Result | What it means |
+| --- | --- | --- |
+| Product or user behavior | Changed / Unchanged | Plain-language consequence |
+| Automated software checks | Passed / Failed / Pending / Not applicable | Scope covered |
+| Physical-device evidence | Passed / Failed / Provisional / Not tested / Not applicable | Claim boundary |
+| Program or release status | Changed / Unchanged | Gate, schedule, or dependency consequence |
+
+## What this PR changes
 -
 
-## Testing
-- [ ] Clean ESP-IDF v5.4.4 build passes with an isolated `SDKCONFIG`
-- [ ] Unit tests pass, if applicable
-- [ ] Tested on hardware, if applicable
-- [ ] No new compiler warnings
+## What approval means
 
-## Checklist
-- [ ] Code follows project style guidelines
-- [ ] Self-review completed
-- [ ] Documentation updated, if needed
-- [ ] No heap allocation after init
-- [ ] Thread-safe, if shared state
+Approving this PR means:
 
-## Notes
-<!-- Additional context, trade-offs, or follow-up work -->
+> <!-- One plain-language decision sentence. -->
+
+It does **not** mean:
+
+-
+
+## What happens next
+
+1.
+
+## Verification summary
+
+- Automated software checks:
+- Physical-device checks:
+- Not tested or intentionally excluded:
+- Independent review:
+
+<details>
+<summary>Technical evidence and reproducibility details</summary>
+
+### Implementation details
+
+-
+
+### Verification details
+
+-
+
+### Tracking
+
+- Issue:
+- Related PRs:
+
+</details>
+
+## Plain-language glossary
+
+- **Term:** Definition.
 ```
 
 ## Issue Templates
