@@ -60,23 +60,41 @@ def manifest() -> dict:
 
 
 def raw_trace() -> bytes:
-    chain = [(0x1B, 6), (0x16, 3), (0x1C, 4), (0x19, 1), (0x0D, 2),
-             (0x1D, 4), (0x17, 3), (0x1A, 1), (0x0C, 2), (0x1E, 5)]
-    preamble = (
-        struct.pack("<IHBBII", 90, 1, 0x10, 1, 1, 1)
-        + struct.pack("<IHBBII", 91, 2, 0x10, 1, 5, 2)
+    chain = [
+        (0x1B, 6),
+        (0x16, 3),
+        (0x1C, 4),
+        (0x19, 1),
+        (0x0D, 2),
+        (0x1D, 4),
+        (0x17, 3),
+        (0x1A, 1),
+        (0x0C, 2),
+        (0x1E, 5),
+    ]
+    preamble = struct.pack("<IHBBII", 90, 1, 0x10, 1, 1, 1) + struct.pack(
+        "<IHBBII", 91, 2, 0x10, 1, 5, 2
     )
-    return preamble + b"".join(
-        struct.pack(
-            "<IHBBII", 100 + index,
-            0 if kind in (0x16, 0x17, 0x1C, 0x1D, 0x19, 0x0D) else 1,
-            kind,
-            5 if kind in (0x16, 0x17, 0x19, 0x0D) else (9 if kind in (0x1C, 0x1D) else 1),
-            object_id,
-            1,
+    return (
+        preamble
+        + b"".join(
+            struct.pack(
+                "<IHBBII",
+                100 + index,
+                0 if kind in (0x16, 0x17, 0x1C, 0x1D, 0x19, 0x0D) else 1,
+                kind,
+                (
+                    5
+                    if kind in (0x16, 0x17, 0x19, 0x0D)
+                    else (9 if kind in (0x1C, 0x1D) else 1)
+                ),
+                object_id,
+                1,
+            )
+            for index, (kind, object_id) in enumerate(chain)
         )
-        for index, (kind, object_id) in enumerate(chain)
-    ) + struct.pack("<IHBBII", 112, 1, 0x25, 1, 4, 20)
+        + struct.pack("<IHBBII", 112, 1, 0x25, 1, 4, 20)
+    )
 
 
 def valid_log(**overrides: str) -> str:
@@ -130,9 +148,11 @@ def valid_log(**overrides: str) -> str:
         f"I trace: DOMES_QEMU_TRACE schema=1 index={index} raw={raw_trace()[offset:offset + 16].hex()}\n"
         for index, offset in enumerate(range(0, len(raw_trace()), 16))
     )
-    session = ("I trace: DOMES_QEMU_TRACE_SESSION schema=1 "
-               "objects=1:1:probe_queue,2:2:probe_sem,3:3:probe_irq,4:4:probe_callback,"
-               "5:5:probe_action,6:7:probe_timeout\n")
+    session = (
+        "I trace: DOMES_QEMU_TRACE_SESSION schema=1 "
+        "objects=1:1:probe_queue,2:2:probe_sem,3:3:probe_irq,4:4:probe_callback,"
+        "5:5:probe_action,6:7:probe_timeout\n"
+    )
     return f"ESP-ROM:esp32s3-20210327\n{session}{trace_rows}I (697) qemu_root: {runtime.READY_MARKER} {marker}\n"
 
 
@@ -147,7 +167,9 @@ def write_ci_report(root: Path, head: str = "a" * 40) -> Path:
     result = runtime.analyze_runtime_log(log_text, fidelity_manifest, fidelity_sha256)
     signature = runtime.canonical_ready_signature(result)
     objects = runtime.object_map_from_qemu_log(log_text)
-    normalized = runtime.normalize_trace(raw_trace(), fidelity_manifest, objects=objects)
+    normalized = runtime.normalize_trace(
+        raw_trace(), fidelity_manifest, objects=objects
+    )
     trace_signature = normalized["normalized_sha256"]
     run_evidence = []
     for index in range(1, runtime.ACCEPTANCE_RUNS + 1):
@@ -162,7 +184,9 @@ def write_ci_report(root: Path, head: str = "a" * 40) -> Path:
             f"{normalized['raw_sha256']}  {raw_path.name}\n", encoding="utf-8"
         )
         normalized_path.write_bytes(runtime.canonical_json(normalized))
-        semantic_path.write_bytes(runtime.canonical_json(runtime.semantic_projection(normalized)))
+        semantic_path.write_bytes(
+            runtime.canonical_json(runtime.semantic_projection(normalized))
+        )
         run_evidence.append(
             {
                 "index": index,

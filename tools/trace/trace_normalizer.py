@@ -3,11 +3,11 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import re
 import struct
-import argparse
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -28,8 +28,11 @@ def _proto_enum(name: str) -> dict[str, int]:
         raise RuntimeError(f"trace schema omits enum {name}")
     values = {
         key: int(value, 0)
-        for key, value in re.findall(r"^\s*([A-Z][A-Z0-9_]*)\s*=\s*(0x[0-9A-Fa-f]+|\d+)\s*;",
-                                     match.group(1), re.MULTILINE)
+        for key, value in re.findall(
+            r"^\s*([A-Z][A-Z0-9_]*)\s*=\s*(0x[0-9A-Fa-f]+|\d+)\s*;",
+            match.group(1),
+            re.MULTILINE,
+        )
     }
     if not values:
         raise RuntimeError(f"trace schema enum {name} has no values")
@@ -37,7 +40,9 @@ def _proto_enum(name: str) -> dict[str, int]:
 
 
 EVENT_TYPES = _proto_enum("EventType")
-KNOWN_EVENT_TYPES = frozenset(EVENT_TYPES.values()) - {EVENT_TYPES["EVENT_TYPE_UNKNOWN"]}
+KNOWN_EVENT_TYPES = frozenset(EVENT_TYPES.values()) - {
+    EVENT_TYPES["EVENT_TYPE_UNKNOWN"]
+}
 KNOWN_CATEGORIES = frozenset(_proto_enum("Category").values())
 OBJECT_KINDS = _proto_enum("ObjectKind")
 
@@ -109,10 +114,14 @@ def raw_from_qemu_log(text: str) -> bytes:
 
 
 def object_map_from_qemu_log(text: str) -> dict[int, dict[str, Any]]:
-    marker_lines = [line for line in text.splitlines() if "DOMES_QEMU_TRACE_SESSION " in line]
+    marker_lines = [
+        line for line in text.splitlines() if "DOMES_QEMU_TRACE_SESSION " in line
+    ]
     matches = [SESSION_LINE.search(line) for line in marker_lines]
     if len(matches) != 1 or matches[0] is None:
-        raise TraceNormalizationError("QEMU log must contain one valid trace session marker")
+        raise TraceNormalizationError(
+            "QEMU log must contain one valid trace session marker"
+        )
     match = matches[0]
     assert match is not None
     schema, encoded = match.groups()
@@ -121,11 +130,20 @@ def object_map_from_qemu_log(text: str) -> dict[int, dict[str, Any]]:
     objects: dict[int, dict[str, Any]] = {}
     for item in encoded.split(","):
         parts = item.split(":")
-        if len(parts) != 3 or not parts[0].isdigit() or not parts[1].isdigit() or not parts[2]:
-            raise TraceNormalizationError("QEMU trace session has a malformed object mapping")
+        if (
+            len(parts) != 3
+            or not parts[0].isdigit()
+            or not parts[1].isdigit()
+            or not parts[2]
+        ):
+            raise TraceNormalizationError(
+                "QEMU trace session has a malformed object mapping"
+            )
         object_id = int(parts[0])
         if object_id == 0 or object_id in objects:
-            raise TraceNormalizationError("QEMU trace session has duplicate or zero object IDs")
+            raise TraceNormalizationError(
+                "QEMU trace session has duplicate or zero object IDs"
+            )
         objects[object_id] = {"kind": int(parts[1]), "name": parts[2]}
     if objects != PROBE_OBJECTS:
         raise TraceNormalizationError("QEMU trace session object mapping is unresolved")
@@ -133,22 +151,36 @@ def object_map_from_qemu_log(text: str) -> dict[int, dict[str, Any]]:
 
 
 def _canonical(value: Any) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    return (
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    )
 
 
-def normalize_trace(raw: bytes, manifest: Mapping[str, Any], *, objects: Mapping[int, Any],
-                    dropped: int = 0, discontinuities: int = 0) -> dict[str, Any]:
+def normalize_trace(
+    raw: bytes,
+    manifest: Mapping[str, Any],
+    *,
+    objects: Mapping[int, Any],
+    dropped: int = 0,
+    discontinuities: int = 0,
+) -> dict[str, Any]:
     if not raw or len(raw) % EVENT_SIZE:
-        raise TraceNormalizationError("raw trace length is not a nonzero multiple of 16")
+        raise TraceNormalizationError(
+            "raw trace length is not a nonzero multiple of 16"
+        )
     if dropped or discontinuities:
-        raise TraceNormalizationError("trace overflow or discontinuity invalidates evidence")
+        raise TraceNormalizationError(
+            "trace overflow or discontinuity invalidates evidence"
+        )
     try:
         object_ids = {
             int(key): {"kind": int(value["kind"]), "name": str(value["name"])}
             for key, value in objects.items()
         }
     except (KeyError, TypeError, ValueError) as error:
-        raise TraceNormalizationError("trace has malformed stable object mappings") from error
+        raise TraceNormalizationError(
+            "trace has malformed stable object mappings"
+        ) from error
     if object_ids != PROBE_OBJECTS:
         raise TraceNormalizationError("trace has invalid stable object mappings")
     required_tasks = [
@@ -162,50 +194,88 @@ def normalize_trace(raw: bytes, manifest: Mapping[str, Any], *, objects: Mapping
         }
         for task in required_tasks
     }
-    if not task_info or 0 in task_info or len(task_info) != len(required_tasks) or any(
-        task["priority"] < 0 or task["core_affinity"] not in (-1, 0, 1)
-        for task in task_info.values()
+    if (
+        not task_info
+        or 0 in task_info
+        or len(task_info) != len(required_tasks)
+        or any(
+            task["priority"] < 0 or task["core_affinity"] not in (-1, 0, 1)
+            for task in task_info.values()
+        )
     ):
         raise TraceNormalizationError("manifest has invalid stable task mappings")
 
     events = []
     for sequence, offset in enumerate(range(0, len(raw), EVENT_SIZE)):
-        timestamp, task_id, event_type, flags, arg1, arg2 = struct.unpack_from("<IHBBII", raw, offset)
+        timestamp, task_id, event_type, flags, arg1, arg2 = struct.unpack_from(
+            "<IHBBII", raw, offset
+        )
         core = flags & 0x03
         context = (flags >> 2) & 0x03
         category = (flags >> 4) & 0x0F
-        if (event_type not in KNOWN_EVENT_TYPES or category not in KNOWN_CATEGORIES or
-                core not in (1, 2) or context > 2):
+        if (
+            event_type not in KNOWN_EVENT_TYPES
+            or category not in KNOWN_CATEGORIES
+            or core not in (1, 2)
+            or context > 2
+        ):
             raise TraceNormalizationError(
                 f"event {sequence} has an unknown type/category/core/context"
             )
         if task_id and task_id not in task_info:
-            raise TraceNormalizationError(f"event {sequence} uses unresolved task ID {task_id}")
+            raise TraceNormalizationError(
+                f"event {sequence} uses unresolved task ID {task_id}"
+            )
         if task_id and event_type not in (TASK_CREATE, TASK_DELETE, TASK_READY):
             affinity = task_info[task_id]["core_affinity"]
             if affinity != -1 and affinity != core - 1:
-                raise TraceNormalizationError(f"event {sequence} violates task affinity")
-        events.append({
-            "sequence": sequence,
-            "timestamp_us": timestamp,
-            "task_id": task_id,
-            "task": task_info.get(task_id, {}).get("name"),
-            "type": event_type,
-            "category": category,
-            "core": core - 1,
-            "context": context,
-            "arg1": arg1,
-            "arg2": arg2,
-        })
+                raise TraceNormalizationError(
+                    f"event {sequence} violates task affinity"
+                )
+        events.append(
+            {
+                "sequence": sequence,
+                "timestamp_us": timestamp,
+                "task_id": task_id,
+                "task": task_info.get(task_id, {}).get("name"),
+                "type": event_type,
+                "category": category,
+                "core": core - 1,
+                "context": context,
+                "arg1": arg1,
+                "arg2": arg2,
+            }
+        )
 
-    causal = [event for event in events if event["arg2"] == 1 and event["type"] in {
-        SEM_TAKE, SEM_GIVE, ISR_ENTER, ISR_EXIT, QUEUE_SEND, QUEUE_RECEIVE,
-        TIMEOUT, CALLBACK_BEGIN, CALLBACK_END, CAUSAL_COMPLETE,
-    }]
+    causal = [
+        event
+        for event in events
+        if event["arg2"] == 1
+        and event["type"]
+        in {
+            SEM_TAKE,
+            SEM_GIVE,
+            ISR_ENTER,
+            ISR_EXIT,
+            QUEUE_SEND,
+            QUEUE_RECEIVE,
+            TIMEOUT,
+            CALLBACK_BEGIN,
+            CALLBACK_END,
+            CAUSAL_COMPLETE,
+        }
+    ]
     required = [
-        (TIMEOUT, 6), (ISR_ENTER, 3), (CALLBACK_BEGIN, 4), (QUEUE_SEND, 1),
-        (SEM_GIVE, 2), (CALLBACK_END, 4), (ISR_EXIT, 3), (QUEUE_RECEIVE, 1),
-        (SEM_TAKE, 2), (CAUSAL_COMPLETE, 5),
+        (TIMEOUT, 6),
+        (ISR_ENTER, 3),
+        (CALLBACK_BEGIN, 4),
+        (QUEUE_SEND, 1),
+        (SEM_GIVE, 2),
+        (CALLBACK_END, 4),
+        (ISR_EXIT, 3),
+        (QUEUE_RECEIVE, 1),
+        (SEM_TAKE, 2),
+        (CAUSAL_COMPLETE, 5),
     ]
     positions = []
     cursor = 0
@@ -224,28 +294,46 @@ def normalize_trace(raw: bytes, manifest: Mapping[str, Any], *, objects: Mapping
         if event["context"] == 1 and event["type"] == TASK_BLOCK:
             raise TraceNormalizationError("ISR context contains a blocking event")
         object_entry = object_ids.get(event["arg1"])
-        if (event["type"] == TASK_BLOCK and
-                (object_entry is None or object_entry["kind"] not in {
-                    OBJECT_KINDS["OBJECT_KIND_QUEUE"],
-                    OBJECT_KINDS["OBJECT_KIND_SEMAPHORE"],
-                    OBJECT_KINDS["OBJECT_KIND_MUTEX"],
-                })):
-            raise TraceNormalizationError("block event uses an unresolved object ID or kind")
-        if (event["type"] in (MUTEX_LOCK, MUTEX_UNLOCK, MUTEX_CONTENTION) and
-                (object_entry is None or
-                 object_entry["kind"] != OBJECT_KINDS["OBJECT_KIND_MUTEX"])):
-            raise TraceNormalizationError("mutex event uses an unresolved object ID or kind")
-        if (event["type"] in (QUEUE_SEND, QUEUE_RECEIVE) and
-                (event["arg1"] != 1 or object_entry is None or
-                 object_entry["kind"] != OBJECT_KINDS["OBJECT_KIND_QUEUE"])):
+        if event["type"] == TASK_BLOCK and (
+            object_entry is None
+            or object_entry["kind"]
+            not in {
+                OBJECT_KINDS["OBJECT_KIND_QUEUE"],
+                OBJECT_KINDS["OBJECT_KIND_SEMAPHORE"],
+                OBJECT_KINDS["OBJECT_KIND_MUTEX"],
+            }
+        ):
+            raise TraceNormalizationError(
+                "block event uses an unresolved object ID or kind"
+            )
+        if event["type"] in (MUTEX_LOCK, MUTEX_UNLOCK, MUTEX_CONTENTION) and (
+            object_entry is None
+            or object_entry["kind"] != OBJECT_KINDS["OBJECT_KIND_MUTEX"]
+        ):
+            raise TraceNormalizationError(
+                "mutex event uses an unresolved object ID or kind"
+            )
+        if event["type"] in (QUEUE_SEND, QUEUE_RECEIVE) and (
+            event["arg1"] != 1
+            or object_entry is None
+            or object_entry["kind"] != OBJECT_KINDS["OBJECT_KIND_QUEUE"]
+        ):
             raise TraceNormalizationError("queue event uses an unresolved object ID")
-        if (event["type"] in (SEM_TAKE, SEM_GIVE) and
-                (event["arg1"] != 2 or object_entry is None or
-                 object_entry["kind"] != OBJECT_KINDS["OBJECT_KIND_SEMAPHORE"])):
-            raise TraceNormalizationError("semaphore event uses an unresolved object ID")
+        if event["type"] in (SEM_TAKE, SEM_GIVE) and (
+            event["arg1"] != 2
+            or object_entry is None
+            or object_entry["kind"] != OBJECT_KINDS["OBJECT_KIND_SEMAPHORE"]
+        ):
+            raise TraceNormalizationError(
+                "semaphore event uses an unresolved object ID"
+            )
         expected_object = {
-            ISR_ENTER: 3, ISR_EXIT: 3, TIMEOUT: 6, CALLBACK_BEGIN: 4,
-            CALLBACK_END: 4, CAUSAL_COMPLETE: 5,
+            ISR_ENTER: 3,
+            ISR_EXIT: 3,
+            TIMEOUT: 6,
+            CALLBACK_BEGIN: 4,
+            CALLBACK_END: 4,
+            CAUSAL_COMPLETE: 5,
         }.get(event["type"])
         if expected_object is not None and event["arg1"] != expected_object:
             raise TraceNormalizationError("causal event uses an unresolved object ID")
@@ -254,9 +342,12 @@ def normalize_trace(raw: bytes, manifest: Mapping[str, Any], *, objects: Mapping
     if len(create_events) != len(task_info) or {
         event["task_id"] for event in create_events
     } != set(task_info):
-        raise TraceNormalizationError("task catalog preamble is incomplete or duplicated")
+        raise TraceNormalizationError(
+            "task catalog preamble is incomplete or duplicated"
+        )
     first_non_create = next(
-        (event["sequence"] for event in events if event["type"] != TASK_CREATE), len(events)
+        (event["sequence"] for event in events if event["type"] != TASK_CREATE),
+        len(events),
     )
     if any(event["sequence"] >= first_non_create for event in create_events):
         raise TraceNormalizationError("task catalog preamble is not ordered first")
@@ -264,28 +355,49 @@ def normalize_trace(raw: bytes, manifest: Mapping[str, Any], *, objects: Mapping
         task = task_info[event["task_id"]]
         expected_mask = 3 if task["core_affinity"] == -1 else 1 << task["core_affinity"]
         if event["arg1"] != task["priority"] or event["arg2"] != expected_mask:
-            raise TraceNormalizationError("task catalog priority or affinity mapping is invalid")
+            raise TraceNormalizationError(
+                "task catalog priority or affinity mapping is invalid"
+            )
 
     scheduler_contexts = {
-        TASK_CREATE: {0}, TASK_DELETE: {0}, TASK_READY: {0, 1}, TASK_BLOCK: {0},
-        SWITCH_IN: {0}, SWITCH_OUT: {0}, ISR_ENTER: {1}, ISR_EXIT: {1},
-        QUEUE_SEND: {0, 1}, QUEUE_RECEIVE: {0, 1}, TIMEOUT: {0},
-        CALLBACK_BEGIN: {2}, CALLBACK_END: {2}, CAUSAL_COMPLETE: {0},
-        SEM_TAKE: {0, 1}, SEM_GIVE: {0, 1}, TRACE_OVERHEAD: {0},
+        TASK_CREATE: {0},
+        TASK_DELETE: {0},
+        TASK_READY: {0, 1},
+        TASK_BLOCK: {0},
+        SWITCH_IN: {0},
+        SWITCH_OUT: {0},
+        ISR_ENTER: {1},
+        ISR_EXIT: {1},
+        QUEUE_SEND: {0, 1},
+        QUEUE_RECEIVE: {0, 1},
+        TIMEOUT: {0},
+        CALLBACK_BEGIN: {2},
+        CALLBACK_END: {2},
+        CAUSAL_COMPLETE: {0},
+        SEM_TAKE: {0, 1},
+        SEM_GIVE: {0, 1},
+        TRACE_OVERHEAD: {0},
     }
     taskless_contexts = {ISR_ENTER, ISR_EXIT, CALLBACK_BEGIN, CALLBACK_END}
     for event in events:
         allowed = scheduler_contexts.get(event["type"])
         if allowed is not None and event["context"] not in allowed:
-            raise TraceNormalizationError("scheduler event has an invalid execution context")
+            raise TraceNormalizationError(
+                "scheduler event has an invalid execution context"
+            )
         if event["type"] in taskless_contexts and event["task_id"] != 0:
             raise TraceNormalizationError("ISR/callback event unexpectedly owns a task")
         if event["type"] in (QUEUE_SEND, QUEUE_RECEIVE, SEM_TAKE, SEM_GIVE):
-            if ((event["context"] == 0 and event["task_id"] == 0) or
-                    (event["context"] == 1 and event["task_id"] != 0)):
-                raise TraceNormalizationError("synchronization event ownership/context is invalid")
+            if (event["context"] == 0 and event["task_id"] == 0) or (
+                event["context"] == 1 and event["task_id"] != 0
+            ):
+                raise TraceNormalizationError(
+                    "synchronization event ownership/context is invalid"
+                )
 
-    lifecycle_stacks = {(core, kind): [] for core in (0, 1) for kind in ("isr", "callback")}
+    lifecycle_stacks = {
+        (core, kind): [] for core in (0, 1) for kind in ("isr", "callback")
+    }
     scheduled_tasks = {0: None, 1: None}
     scheduler_known = {0: False, 1: False}
     active_tasks = set(task_info)
@@ -293,9 +405,15 @@ def normalize_trace(raw: bytes, manifest: Mapping[str, Any], *, objects: Mapping
     for event in events:
         task_id = event["task_id"]
         if task_id and event["type"] != TASK_CREATE and task_id not in active_tasks:
-            raise TraceNormalizationError("task activity occurs before create or after delete")
+            raise TraceNormalizationError(
+                "task activity occurs before create or after delete"
+            )
         if event["type"] == TASK_DELETE:
-            if task_id == 0 or task_id not in active_tasks or task_id in scheduled_tasks.values():
+            if (
+                task_id == 0
+                or task_id not in active_tasks
+                or task_id in scheduled_tasks.values()
+            ):
                 raise TraceNormalizationError("task delete lifecycle is inconsistent")
             active_tasks.remove(task_id)
             ready_tasks.discard(task_id)
@@ -306,68 +424,110 @@ def normalize_trace(raw: bytes, manifest: Mapping[str, Any], *, objects: Mapping
         elif event["type"] == TASK_BLOCK:
             if task_id == 0:
                 raise TraceNormalizationError("block event omits its task")
-            if scheduler_known[event["core"]] and scheduled_tasks[event["core"]] != task_id:
+            if (
+                scheduler_known[event["core"]]
+                and scheduled_tasks[event["core"]] != task_id
+            ):
                 raise TraceNormalizationError("non-running task emitted a block event")
             ready_tasks.discard(task_id)
 
         if event["type"] == SWITCH_IN:
             if event["task_id"] == 0 or scheduled_tasks[event["core"]] is not None:
-                raise TraceNormalizationError("scheduler switch-in lifecycle is inconsistent")
-            eligible = [candidate for candidate in ready_tasks
-                        if task_info[candidate]["core_affinity"] in (-1, event["core"])]
+                raise TraceNormalizationError(
+                    "scheduler switch-in lifecycle is inconsistent"
+                )
+            eligible = [
+                candidate
+                for candidate in ready_tasks
+                if task_info[candidate]["core_affinity"] in (-1, event["core"])
+            ]
             if eligible and task_info[event["task_id"]]["priority"] < max(
-                    task_info[candidate]["priority"] for candidate in eligible):
-                raise TraceNormalizationError("scheduler selected below the highest ready priority")
+                task_info[candidate]["priority"] for candidate in eligible
+            ):
+                raise TraceNormalizationError(
+                    "scheduler selected below the highest ready priority"
+                )
             scheduled_tasks[event["core"]] = event["task_id"]
             scheduler_known[event["core"]] = True
             ready_tasks.discard(event["task_id"])
         elif event["type"] == SWITCH_OUT:
             current = scheduled_tasks[event["core"]]
             if event["task_id"] == 0 or current != event["task_id"]:
-                raise TraceNormalizationError("scheduler switch-out lifecycle is inconsistent")
+                raise TraceNormalizationError(
+                    "scheduler switch-out lifecycle is inconsistent"
+                )
             scheduled_tasks[event["core"]] = None
         if event["type"] in (ISR_ENTER, ISR_EXIT):
             stack = lifecycle_stacks[(event["core"], "isr")]
             if event["type"] == ISR_ENTER:
                 stack.append((event["arg1"], event["arg2"]))
             elif not stack or stack.pop() != (event["arg1"], event["arg2"]):
-                raise TraceNormalizationError("ISR lifecycle is out of order or mismatched")
+                raise TraceNormalizationError(
+                    "ISR lifecycle is out of order or mismatched"
+                )
         if event["type"] in (CALLBACK_BEGIN, CALLBACK_END):
             stack = lifecycle_stacks[(event["core"], "callback")]
             if event["type"] == CALLBACK_BEGIN:
                 stack.append((event["arg1"], event["arg2"]))
             elif not stack or stack.pop() != (event["arg1"], event["arg2"]):
-                raise TraceNormalizationError("callback lifecycle is out of order or mismatched")
+                raise TraceNormalizationError(
+                    "callback lifecycle is out of order or mismatched"
+                )
     if any(stack for stack in lifecycle_stacks.values()) or any(
         task is not None for task in scheduled_tasks.values()
     ):
-        raise TraceNormalizationError("trace has an unbalanced ISR, callback, or switch lifecycle")
+        raise TraceNormalizationError(
+            "trace has an unbalanced ISR, callback, or switch lifecycle"
+        )
 
     explicit = [event for event in events if event["arg2"] == 1]
-    irq_cores = {event["core"] for event in explicit
-                 if event["type"] in (ISR_ENTER, ISR_EXIT, CALLBACK_BEGIN, CALLBACK_END)}
+    irq_cores = {
+        event["core"]
+        for event in explicit
+        if event["type"] in (ISR_ENTER, ISR_EXIT, CALLBACK_BEGIN, CALLBACK_END)
+    }
     completions = [event for event in explicit if event["type"] == CAUSAL_COMPLETE]
     if len(irq_cores) != 1 or len(completions) != 1 or completions[0]["task_id"] != 1:
-        raise TraceNormalizationError("causal ownership does not resolve to one ISR core and main task")
+        raise TraceNormalizationError(
+            "causal ownership does not resolve to one ISR core and main task"
+        )
     for event in explicit:
         expected_context = {
-            SEM_GIVE: 1, ISR_ENTER: 1, ISR_EXIT: 1, QUEUE_SEND: 1,
-            CALLBACK_BEGIN: 2, CALLBACK_END: 2, SEM_TAKE: 0,
-            QUEUE_RECEIVE: 0, TIMEOUT: 0, CAUSAL_COMPLETE: 0,
+            SEM_GIVE: 1,
+            ISR_ENTER: 1,
+            ISR_EXIT: 1,
+            QUEUE_SEND: 1,
+            CALLBACK_BEGIN: 2,
+            CALLBACK_END: 2,
+            SEM_TAKE: 0,
+            QUEUE_RECEIVE: 0,
+            TIMEOUT: 0,
+            CAUSAL_COMPLETE: 0,
         }.get(event["type"])
         if expected_context is not None and event["context"] != expected_context:
-            raise TraceNormalizationError("causal event has an invalid execution context")
-        if event["type"] in (SEM_TAKE, QUEUE_RECEIVE, TIMEOUT, CAUSAL_COMPLETE) and \
-                event["task_id"] != 1:
+            raise TraceNormalizationError(
+                "causal event has an invalid execution context"
+            )
+        if (
+            event["type"] in (SEM_TAKE, QUEUE_RECEIVE, TIMEOUT, CAUSAL_COMPLETE)
+            and event["task_id"] != 1
+        ):
             raise TraceNormalizationError("task-side causal event is not owned by main")
     overhead_events = [event for event in events if event["type"] == TRACE_OVERHEAD]
-    if len(overhead_events) != 1 or overhead_events[0]["task_id"] != 1 or \
-       overhead_events[0]["context"] != 0:
-        raise TraceNormalizationError("trace must contain one main-task overhead measurement")
+    if (
+        len(overhead_events) != 1
+        or overhead_events[0]["task_id"] != 1
+        or overhead_events[0]["context"] != 0
+    ):
+        raise TraceNormalizationError(
+            "trace must contain one main-task overhead measurement"
+        )
 
     first_timestamp = events[0]["timestamp_us"]
     for event in events:
-        event["relative_us"] = (event.pop("timestamp_us") - first_timestamp) & 0xFFFFFFFF
+        event["relative_us"] = (
+            event.pop("timestamp_us") - first_timestamp
+        ) & 0xFFFFFFFF
     normalized = {
         "artifact_kind": "replay-normalized-trace",
         "format_version": FORMAT_VERSION,
@@ -377,7 +537,11 @@ def normalize_trace(raw: bytes, manifest: Mapping[str, Any], *, objects: Mapping
             "version": NORMALIZER_VERSION,
             "input_schema": "domes.trace.TraceEvent/le16/v1",
             "output_schema": "domes.trace.replay-normalized/v1",
-            "ordered_transforms": ["decode-le16", "resolve-stable-ids", "subtract-session-start"],
+            "ordered_transforms": [
+                "decode-le16",
+                "resolve-stable-ids",
+                "subtract-session-start",
+            ],
             "field_mapping": "all event fields retained; timestamp_us becomes relative_us",
             "exclusions": [],
         },
@@ -420,28 +584,38 @@ def _manifest_from_session(session: Mapping[str, Any]) -> dict[str, Any]:
         task_id = int(task["task_id"])
         name = str(task["name"])
         if task_id == 0 or task_id in task_ids or not name or name in task_names:
-            raise TraceNormalizationError("session has duplicate or invalid task mappings")
+            raise TraceNormalizationError(
+                "session has duplicate or invalid task mappings"
+            )
         task_ids.add(task_id)
         task_names.add(name)
         mask = int(task["core_affinity_mask"])
         affinity = {1: 0, 2: 1, 3: -1}.get(mask)
         if affinity is None:
             raise TraceNormalizationError("session has invalid task affinity mask")
-        tasks.append({
-            "presence": "required",
-            "trace_id": task_id,
-            "name": name,
-            "priority": int(task["priority"]),
-            "core_affinity": affinity,
-        })
+        tasks.append(
+            {
+                "presence": "required",
+                "trace_id": task_id,
+                "name": name,
+                "priority": int(task["priority"]),
+                "core_affinity": affinity,
+            }
+        )
     return {"tasks": tasks}
 
 
-def validate_session(raw: bytes, session: Mapping[str, Any]) -> dict[int, dict[str, Any]]:
+def validate_session(
+    raw: bytes, session: Mapping[str, Any]
+) -> dict[int, dict[str, Any]]:
     if len(raw) < EVENT_SIZE or len(raw) % EVENT_SIZE:
-        raise TraceNormalizationError("raw trace length is not a nonzero multiple of 16")
+        raise TraceNormalizationError(
+            "raw trace length is not a nonzero multiple of 16"
+        )
     if int(session.get("format_version", -1)) != FORMAT_VERSION:
-        raise TraceNormalizationError("session format version does not match the trace ABI")
+        raise TraceNormalizationError(
+            "session format version does not match the trace ABI"
+        )
     if int(session.get("event_count", -1)) != len(raw) // EVENT_SIZE:
         raise TraceNormalizationError("session event count does not match raw evidence")
     raw_sha256 = hashlib.sha256(raw).hexdigest()
@@ -449,9 +623,13 @@ def validate_session(raw: bytes, session: Mapping[str, Any]) -> dict[int, dict[s
         raise TraceNormalizationError("session hash does not match raw evidence")
     first_timestamp = struct.unpack_from("<I", raw, 0)[0]
     last_timestamp = struct.unpack_from("<I", raw, len(raw) - EVENT_SIZE)[0]
-    if (int(session.get("start_timestamp_us", -1)) != first_timestamp or
-            int(session.get("end_timestamp_us", -1)) != last_timestamp):
-        raise TraceNormalizationError("session timestamps do not bound the raw evidence")
+    if (
+        int(session.get("start_timestamp_us", -1)) != first_timestamp
+        or int(session.get("end_timestamp_us", -1)) != last_timestamp
+    ):
+        raise TraceNormalizationError(
+            "session timestamps do not bound the raw evidence"
+        )
 
     object_names: dict[int, str] = {}
     object_kinds: dict[int, int] = {}
@@ -462,13 +640,21 @@ def validate_session(raw: bytes, session: Mapping[str, Any]) -> dict[int, dict[s
         object_id = int(item["object_id"])
         name = str(item["name"])
         kind = int(item["kind"])
-        if (object_id == 0 or object_id in object_names or not name or
-                name in object_names.values()):
-            raise TraceNormalizationError("session has duplicate or invalid object mappings")
+        if (
+            object_id == 0
+            or object_id in object_names
+            or not name
+            or name in object_names.values()
+        ):
+            raise TraceNormalizationError(
+                "session has duplicate or invalid object mappings"
+            )
         object_names[object_id] = name
         object_kinds[object_id] = kind
     if object_names != PROBE_OBJECT_NAMES or object_kinds != PROBE_OBJECT_KINDS:
-        raise TraceNormalizationError("session object IDs, kinds, or names are unresolved")
+        raise TraceNormalizationError(
+            "session object IDs, kinds, or names are unresolved"
+        )
     _manifest_from_session(session)
     return {
         object_id: {"kind": object_kinds[object_id], "name": object_names[object_id]}

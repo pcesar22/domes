@@ -18,6 +18,8 @@ struct portMUX_TYPE {
     std::recursive_mutex mutex;
 };
 
-#define portMUX_INITIALIZER_UNLOCKED {}
+#define portMUX_INITIALIZER_UNLOCKED \
+    {                                \
+    }
 #define portENTER_CRITICAL_SAFE(mux) (mux)->mutex.lock()
 #define portEXIT_CRITICAL_SAFE(mux) (mux)->mutex.unlock()

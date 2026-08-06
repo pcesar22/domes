@@ -244,9 +244,7 @@ def resolve_profile(
                 f"task_catalog[{index}].core_affinity must be -1, 0, or 1"
             )
         if not 1 <= task["trace_id"] <= 31:
-            raise ProfileError(
-                f"task_catalog[{index}].trace_id must be in [1, 31]"
-            )
+            raise ProfileError(f"task_catalog[{index}].trace_id must be in [1, 31]")
         if not isinstance(task["watchdog"], bool):
             raise ProfileError(f"task_catalog[{index}].watchdog must be boolean")
         task["evidence_mask"] = 1 << index

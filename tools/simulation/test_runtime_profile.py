@@ -154,7 +154,9 @@ class RuntimeProfileTest(unittest.TestCase):
             value["task_catalog"][0]["trace_id"] = 32
 
         path = self._mutated_spec(mutate)
-        with self.assertRaisesRegex(profile.ProfileError, r"trace_id must be in \[1, 31\]"):
+        with self.assertRaisesRegex(
+            profile.ProfileError, r"trace_id must be in \[1, 31\]"
+        ):
             profile.resolve_profile(path, "qemu", self.sdkconfig)
 
     def test_prohibited_qemu_vendor_config_fails(self) -> None:

@@ -25,13 +25,6 @@ if str(TRACE_DIR) not in sys.path:
     sys.path.insert(0, str(TRACE_DIR))
 
 import generate_runtime_profile as profile_generator
-from trace_normalizer import (
-    canonical_json,
-    normalize_trace,
-    object_map_from_qemu_log,
-    raw_from_qemu_log,
-    semantic_projection,
-)
 from qemu_feasibility import (
     ANSI_ESCAPE,
     PANIC_PATTERNS,
@@ -42,6 +35,13 @@ from qemu_feasibility import (
     generate_run_images,
     sha256_file,
     verify_run_images_unchanged,
+)
+from trace_normalizer import (
+    canonical_json,
+    normalize_trace,
+    object_map_from_qemu_log,
+    raw_from_qemu_log,
+    semantic_projection,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -931,7 +931,9 @@ def analyze_runtime_log(
     if int(result["trace_count"]) <= 0:
         raise RuntimeProfileError("readiness drill emitted no target trace evidence")
     if int(result["trace_enabled_us"]) < int(result["trace_disabled_us"]):
-        raise RuntimeProfileError("trace enabled overhead is smaller than disabled baseline")
+        raise RuntimeProfileError(
+            "trace enabled overhead is smaller than disabled baseline"
+        )
     for key in (
         "manifest_sha256",
         "spec_sha256",
@@ -1324,9 +1326,13 @@ def verify_ci_report(report_path: Path, expected_head: str) -> Mapping[str, Any]
             or renormalized["normalized_sha256"] != trace_signature
             or trace.get("event_count") != len(renormalized["events"])
         ):
-            raise RuntimeProfileError("QEMU normalized trace signatures are not identical")
+            raise RuntimeProfileError(
+                "QEMU normalized trace signatures are not identical"
+            )
         retained_semantic = _read_json(semantic_path, "semantic trace")
-        if _canonical_bytes(semantic_projection(renormalized)) != _canonical_bytes(retained_semantic):
+        if _canonical_bytes(semantic_projection(renormalized)) != _canonical_bytes(
+            retained_semantic
+        ):
             raise RuntimeProfileError(
                 f"QEMU run {expected_index} semantic projection differs from raw evidence"
             )
@@ -1434,7 +1440,9 @@ def run_runtime(args: argparse.Namespace) -> int:
             "disabled_32_records": int(result["trace_disabled_us"]),
             "enabled_32_records": int(result["trace_enabled_us"]),
         }:
-            raise RuntimeProfileError("raw trace overhead differs from readiness evidence")
+            raise RuntimeProfileError(
+                "raw trace overhead differs from readiness evidence"
+            )
         normalized_path = run_dir / "trace.normalized.json"
         semantic_path = run_dir / "trace.semantic.json"
         normalized_path.write_bytes(canonical_json(normalized_trace))
