@@ -32,6 +32,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "kernelTrace.hpp"
 #include "traceEvent.hpp"
 #include "traceRecorder.hpp"
 #include "traceStrings.hpp"
@@ -41,15 +42,15 @@ namespace domes::trace {
 /**
  * @brief Get current task ID for trace events
  *
- * Returns the FreeRTOS task number of the current task.
- * Safe to call from any context.
+ * Returns the immutable trace ID assigned to the current task during startup.
+ * Call from task context only.
  */
 inline uint16_t getCurrentTaskId() {
     TaskHandle_t handle = xTaskGetCurrentTaskHandle();
     if (handle == nullptr) {
         return 0;
     }
-    return static_cast<uint16_t>(uxTaskGetTaskNumber(handle));
+    return KernelTrace::taskId(handle);
 }
 
 /**
@@ -74,7 +75,8 @@ inline TraceEvent makeEvent(EventType type, Category category, uint32_t arg1 = 0
     event.timestamp = getTimestampUs();
     event.taskId = getCurrentTaskId();
     event.eventType = static_cast<uint8_t>(type);
-    event.flags = static_cast<uint8_t>(category) << 4;
+    const uint8_t coreCode = xPortGetCoreID() == 1 ? 2U : 1U;
+    event.flags = static_cast<uint8_t>((static_cast<uint8_t>(category) << 4) | coreCode);
     event.arg1 = arg1;
     event.arg2 = arg2;
     return event;

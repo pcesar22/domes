@@ -34,6 +34,7 @@ constexpr size_t kMaxTaskNameLength = 16;
  * @brief Task name entry for trace metadata
  */
 struct TaskNameEntry {
+    TaskHandle_t handle;            ///< Runtime task handle; never serialized
     uint16_t taskId;                ///< Stable trace task ID
     uint8_t priority;               ///< Configured FreeRTOS priority
     uint8_t coreAffinityMask;       ///< bit 0=Core 0, bit 1=Core 1
@@ -53,10 +54,9 @@ struct TaskNameEntry {
  * @code
  * // During initialization
  * domes::trace::Recorder::init();
- * domes::trace::Recorder::setEnabled(true);
- *
- * // Register task names for better trace output
  * domes::trace::Recorder::registerTask(xTaskGetCurrentTaskHandle(), "main", 1, 1, 0);
+ * domes::trace::Recorder::finalizeTaskCatalog();
+ * domes::trace::Recorder::setEnabled(true);
  *
  * // Recording events
  * domes::trace::Recorder::record(event);
@@ -148,7 +148,10 @@ public:
      * Task names are included in trace metadata for human-readable output.
      *
      * @param handle FreeRTOS task handle
-     * @param name Task name (will be truncated if too long)
+     * @param name Nonempty task name shorter than kMaxTaskNameLength
+     * @param stableId Immutable nonzero trace ID, unique to this handle
+     * @param priority Configured FreeRTOS priority
+     * @param coreAffinity Pinned core, or tskNO_AFFINITY
      */
     static bool registerTask(TaskHandle_t handle, const char* name, uint16_t stableId,
                              UBaseType_t priority, BaseType_t coreAffinity);
@@ -163,7 +166,7 @@ public:
     /**
      * @brief Get task name by task ID
      *
-     * @param taskId FreeRTOS task number
+     * @param taskId Immutable trace task ID
      * @return Task name or nullptr if not registered
      */
     static const char* getTaskName(uint16_t taskId);

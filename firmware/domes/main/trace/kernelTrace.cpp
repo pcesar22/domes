@@ -11,9 +11,10 @@
 
 namespace {
 
-constexpr size_t kCoreCount = 2;
-constexpr size_t kEventsPerCore = 512;
+constexpr size_t kCoreCount = domes::trace::KernelTrace::kCoreCount;
+constexpr size_t kEventsPerCore = domes::trace::KernelTrace::kEventsPerCore;
 constexpr size_t kMaxIsrNesting = 8;
+constexpr size_t kMaxTaskId = 31;
 
 struct CoreBuffer {
     std::array<domes::trace::TraceEvent, kEventsPerCore> events{};
@@ -25,9 +26,15 @@ DRAM_ATTR CoreBuffer gCoreBuffers[kCoreCount];
 DRAM_ATTR portMUX_TYPE gCoreLocks[kCoreCount] = {portMUX_INITIALIZER_UNLOCKED,
                                                  portMUX_INITIALIZER_UNLOCKED};
 DRAM_ATTR portMUX_TYPE gTaskLifecycleLock = portMUX_INITIALIZER_UNLOCKED;
+DRAM_ATTR portMUX_TYPE gTaskHandleLock = portMUX_INITIALIZER_UNLOCKED;
 DRAM_ATTR std::atomic<bool> gEnabled{false};
 DRAM_ATTR std::atomic<uint32_t> gDiscontinuities{0};
 DRAM_ATTR std::atomic<uint32_t> gActiveTaskMask{0};
+// The dedicated DRAM critical-section lock avoids libatomic pointer helpers
+// and C++ data races in cache-disabled hooks. Task registration is frozen
+// before capture, and task deletion only clears entries.
+DRAM_ATTR const void* gTaskHandles[kMaxTaskId + 1] = {};
+DRAM_ATTR const void* gRunningTaskHandles[kCoreCount] = {};
 DRAM_ATTR std::atomic<uint32_t> gIsrDepth[kCoreCount];
 DRAM_ATTR uint32_t gInterruptStack[kCoreCount][kMaxIsrNesting];
 DRAM_ATTR std::array<domes::trace::ObjectNameEntry, domes::trace::kMaxTraceObjects> gObjects{};
@@ -108,12 +115,16 @@ uint32_t IRAM_ATTR currentCore() {
     return core == 1 ? 1U : 0U;
 }
 
-uint16_t IRAM_ATTR stableTaskId(const volatile void* task) {
-    if (task == nullptr) {
+uint16_t IRAM_ATTR traceTaskIdLocked(const void* candidate) {
+    if (candidate == nullptr) {
         return 0;
     }
-    return static_cast<uint16_t>(
-        uxTaskGetTaskNumber(reinterpret_cast<TaskHandle_t>(const_cast<void*>(task))));
+    for (size_t id = 1; id <= kMaxTaskId; ++id) {
+        if (gTaskHandles[id] == candidate) {
+            return static_cast<uint16_t>(id);
+        }
+    }
+    return 0;
 }
 
 int32_t IRAM_ATTR beginTraceHook() {
@@ -131,6 +142,30 @@ int32_t IRAM_ATTR beginTraceHook() {
 
 void IRAM_ATTR endTraceHook(uint32_t core) {
     portEXIT_CRITICAL_SAFE(&gCoreLocks[core]);
+}
+
+uint16_t IRAM_ATTR currentTraceTaskId(uint32_t core) {
+    portENTER_CRITICAL_SAFE(&gTaskHandleLock);
+    const uint16_t taskId = traceTaskIdLocked(gRunningTaskHandles[core]);
+    portEXIT_CRITICAL_SAFE(&gTaskHandleLock);
+    return taskId;
+}
+
+void IRAM_ATTR clearRunningTaskHandle(const volatile void* task) {
+    const void* candidate = const_cast<const void*>(task);
+    portENTER_CRITICAL_SAFE(&gTaskHandleLock);
+    for (auto& running : gRunningTaskHandles) {
+        if (running == candidate) {
+            running = nullptr;
+        }
+    }
+    portEXIT_CRITICAL_SAFE(&gTaskHandleLock);
+}
+
+void IRAM_ATTR setRunningTaskHandle(uint32_t core, const volatile void* task) {
+    portENTER_CRITICAL_SAFE(&gTaskHandleLock);
+    gRunningTaskHandles[core] = const_cast<const void*>(task);
+    portEXIT_CRITICAL_SAFE(&gTaskHandleLock);
 }
 
 }  // namespace
@@ -265,6 +300,58 @@ bool KernelTrace::recordPreamble(const TraceEvent& event) {
     return true;
 }
 
+bool KernelTrace::registerTaskHandle(const void* handle, uint16_t taskId) {
+    if (handle == nullptr || taskId == 0 || taskId > kMaxTaskId || isEnabled()) {
+        return false;
+    }
+    bool available = true;
+    portENTER_CRITICAL_SAFE(&gTaskHandleLock);
+    for (size_t id = 1; id <= kMaxTaskId; ++id) {
+        const void* registered = gTaskHandles[id];
+        if ((id == taskId && registered != nullptr && registered != handle) ||
+            (id != taskId && registered == handle)) {
+            available = false;
+            break;
+        }
+    }
+    if (available) {
+        gTaskHandles[taskId] = handle;
+    }
+    portEXIT_CRITICAL_SAFE(&gTaskHandleLock);
+    return available;
+}
+
+uint16_t IRAM_ATTR KernelTrace::taskId(const volatile void* handle) {
+    portENTER_CRITICAL_SAFE(&gTaskHandleLock);
+    const uint16_t taskId = traceTaskIdLocked(const_cast<const void*>(handle));
+    portEXIT_CRITICAL_SAFE(&gTaskHandleLock);
+    return taskId;
+}
+
+uint16_t IRAM_ATTR KernelTrace::unregisterTaskHandle(const volatile void* handle) {
+    const void* candidate = const_cast<const void*>(handle);
+    portENTER_CRITICAL_SAFE(&gTaskHandleLock);
+    const uint16_t id = traceTaskIdLocked(candidate);
+    if (id != 0) {
+        gTaskHandles[id] = nullptr;
+    }
+    portEXIT_CRITICAL_SAFE(&gTaskHandleLock);
+    return id;
+}
+
+void KernelTrace::clearTaskHandles() {
+    if (isEnabled()) {
+        noteDiscontinuity();
+        return;
+    }
+    portENTER_CRITICAL_SAFE(&gTaskHandleLock);
+    for (auto& handle : gTaskHandles) {
+        handle = nullptr;
+    }
+    portEXIT_CRITICAL_SAFE(&gTaskHandleLock);
+    gActiveTaskMask.store(0, std::memory_order_release);
+}
+
 void IRAM_ATTR KernelTrace::setTaskActive(uint16_t taskId, bool active) {
     if (taskId == 0 || taskId > 31) {
         return;
@@ -294,16 +381,20 @@ void KernelTrace::endTaskSnapshot() {
 
 bool KernelTrace::registerObject(const void* handle, uint32_t objectId, ObjectKind kind,
                                  const char* name) {
-    if (handle == nullptr || objectId == 0 || kind == ObjectKind::kUnknown || name == nullptr) {
+    if (isEnabled() || handle == nullptr || objectId == 0 || kind == ObjectKind::kUnknown ||
+        name == nullptr || name[0] == '\0' || std::strlen(name) >= kMaxTraceObjectNameLength) {
         return false;
     }
     for (auto& entry : gObjects) {
         if (entry.valid && (entry.handle == handle || entry.objectId == objectId)) {
-            if (entry.handle == nullptr && entry.objectId == objectId && entry.kind == kind) {
+            const bool samePublishedName = std::strcmp(entry.name, name) == 0;
+            if (entry.handle == nullptr && entry.objectId == objectId && entry.kind == kind &&
+                samePublishedName) {
                 entry.handle = handle;
                 return true;
             }
-            return entry.handle == handle && entry.objectId == objectId && entry.kind == kind;
+            return entry.handle == handle && entry.objectId == objectId && entry.kind == kind &&
+                   samePublishedName;
         }
     }
     for (auto& entry : gObjects) {
@@ -410,12 +501,14 @@ TraceEvent IRAM_ATTR KernelTrace::makeKernelEvent(EventType type, uint16_t taskI
 
 }  // namespace domes::trace
 
-extern "C" void IRAM_ATTR domes_trace_hook_task_switch_in(void) {
+extern "C" void IRAM_ATTR domes_trace_hook_task_switch_in(const volatile void* task) {
+    const uint32_t taskCore = currentCore();
+    setRunningTaskHandle(taskCore, task);
     const int32_t core = beginTraceHook();
     if (core < 0) {
         return;
     }
-    const uint16_t taskId = stableTaskId(xTaskGetCurrentTaskHandle());
+    const uint16_t taskId = domes::trace::KernelTrace::taskId(task);
     if (taskId != 0) {
         domes::trace::KernelTrace::recordFromIsr(domes::trace::KernelTrace::makeKernelEvent(
             domes::trace::EventType::kSchedSwitchIn, taskId));
@@ -423,17 +516,19 @@ extern "C" void IRAM_ATTR domes_trace_hook_task_switch_in(void) {
     endTraceHook(static_cast<uint32_t>(core));
 }
 
-extern "C" void IRAM_ATTR domes_trace_hook_task_switch_out(void) {
+extern "C" void IRAM_ATTR domes_trace_hook_task_switch_out(const volatile void* task) {
     const int32_t core = beginTraceHook();
     if (core < 0) {
+        clearRunningTaskHandle(task);
         return;
     }
-    const uint16_t taskId = stableTaskId(xTaskGetCurrentTaskHandle());
+    const uint16_t taskId = domes::trace::KernelTrace::taskId(task);
     if (taskId != 0) {
         domes::trace::KernelTrace::recordFromIsr(domes::trace::KernelTrace::makeKernelEvent(
             domes::trace::EventType::kSchedSwitchOut, taskId));
     }
     endTraceHook(static_cast<uint32_t>(core));
+    clearRunningTaskHandle(task);
 }
 
 extern "C" void IRAM_ATTR domes_trace_hook_task_ready(const volatile void* task) {
@@ -441,7 +536,7 @@ extern "C" void IRAM_ATTR domes_trace_hook_task_ready(const volatile void* task)
     if (core < 0) {
         return;
     }
-    const uint16_t taskId = stableTaskId(task);
+    const uint16_t taskId = domes::trace::KernelTrace::taskId(task);
     if (taskId != 0) {
         domes::trace::KernelTrace::recordFromIsr(domes::trace::KernelTrace::makeKernelEvent(
             domes::trace::EventType::kSchedTaskReady, taskId));
@@ -450,17 +545,20 @@ extern "C" void IRAM_ATTR domes_trace_hook_task_ready(const volatile void* task)
 }
 
 extern "C" void IRAM_ATTR domes_trace_hook_task_delete(const volatile void* task) {
-    const uint16_t taskId = stableTaskId(task);
-    domes::trace::KernelTrace::setTaskActive(taskId, false);
-    const int32_t core = beginTraceHook();
-    if (core < 0) {
+    const uint16_t taskId = domes::trace::KernelTrace::taskId(task);
+    if (taskId == 0) {
+        clearRunningTaskHandle(task);
         return;
     }
-    if (taskId != 0) {
+    domes::trace::KernelTrace::setTaskActive(taskId, false);
+    const int32_t core = beginTraceHook();
+    if (core >= 0) {
         domes::trace::KernelTrace::recordFromIsr(domes::trace::KernelTrace::makeKernelEvent(
             domes::trace::EventType::kSchedTaskDelete, taskId));
+        endTraceHook(static_cast<uint32_t>(core));
     }
-    endTraceHook(static_cast<uint32_t>(core));
+    domes::trace::KernelTrace::unregisterTaskHandle(task);
+    clearRunningTaskHandle(task);
 }
 
 extern "C" void IRAM_ATTR domes_trace_hook_task_block(const volatile void* object,
@@ -469,7 +567,7 @@ extern "C" void IRAM_ATTR domes_trace_hook_task_block(const volatile void* objec
     if (core < 0) {
         return;
     }
-    const uint16_t taskId = stableTaskId(xTaskGetCurrentTaskHandle());
+    const uint16_t taskId = currentTraceTaskId(static_cast<uint32_t>(core));
     const uint32_t objectId = domes::trace::KernelTrace::objectId(const_cast<const void*>(object));
     if (taskId != 0 && objectId != 0) {
         domes::trace::KernelTrace::recordFromIsr(domes::trace::KernelTrace::makeKernelEvent(
@@ -495,7 +593,8 @@ extern "C" void IRAM_ATTR domes_trace_hook_queue_send(const volatile void* objec
                           ? domes::trace::EventType::kSemGive
                           : domes::trace::EventType::kSchedQueueSend;
     domes::trace::KernelTrace::recordFromIsr(domes::trace::KernelTrace::makeKernelEvent(
-        type, fromIsr ? 0 : stableTaskId(xTaskGetCurrentTaskHandle()), objectId, 0, fromIsr != 0));
+        type, fromIsr ? 0 : currentTraceTaskId(static_cast<uint32_t>(core)), objectId, 0,
+        fromIsr != 0));
     endTraceHook(static_cast<uint32_t>(core));
 }
 
@@ -516,7 +615,8 @@ extern "C" void IRAM_ATTR domes_trace_hook_queue_receive(const volatile void* ob
                           ? domes::trace::EventType::kSemTake
                           : domes::trace::EventType::kSchedQueueReceive;
     domes::trace::KernelTrace::recordFromIsr(domes::trace::KernelTrace::makeKernelEvent(
-        type, fromIsr ? 0 : stableTaskId(xTaskGetCurrentTaskHandle()), objectId, 0, fromIsr != 0));
+        type, fromIsr ? 0 : currentTraceTaskId(static_cast<uint32_t>(core)), objectId, 0,
+        fromIsr != 0));
     endTraceHook(static_cast<uint32_t>(core));
 }
 

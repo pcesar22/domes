@@ -335,7 +335,7 @@ bool CommandHandler::sendSessionInfo(uint32_t eventCount, uint32_t droppedCount,
     msg.dropped_count = droppedCount;
     msg.start_timestamp_us = startTs;
     msg.end_timestamp_us = endTs;
-    msg.buffer_size_bytes = TraceBuffer::kDefaultBufferSize;
+    msg.buffer_size_bytes = KernelTrace::kCaptureCapacityBytes;
     msg.trace_event_format_version = kTraceEventFormatVersion;
     msg.discontinuity_count = Recorder::discontinuityCount();
     // Fill task entries
@@ -426,7 +426,7 @@ void CommandHandler::sendStatusResponse() {
     msg.streaming = Recorder::isStreaming();
     msg.event_count = Recorder::eventCount();
     msg.dropped_count = Recorder::droppedCount();
-    msg.buffer_size = TraceBuffer::kDefaultBufferSize;
+    msg.buffer_size = KernelTrace::kCaptureCapacityBytes;
     msg.stream_category_mask = 0;
     msg.discontinuity_count = Recorder::discontinuityCount();
 

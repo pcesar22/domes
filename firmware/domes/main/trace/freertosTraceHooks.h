@@ -14,8 +14,8 @@
 extern "C" {
 #endif
 
-void domes_trace_hook_task_switch_in(void);
-void domes_trace_hook_task_switch_out(void);
+void domes_trace_hook_task_switch_in(const volatile void* task);
+void domes_trace_hook_task_switch_out(const volatile void* task);
 void domes_trace_hook_task_ready(const volatile void* task);
 void domes_trace_hook_task_delete(const volatile void* task);
 void domes_trace_hook_task_block(const volatile void* object, uint32_t timeout_ticks);
@@ -28,10 +28,13 @@ void domes_trace_hook_isr_exit(void);
 }
 #endif
 
-#define traceTASK_SWITCHED_IN() domes_trace_hook_task_switch_in()
-#define traceTASK_SWITCHED_OUT() domes_trace_hook_task_switch_out()
-#define traceMOVED_TASK_TO_READY_STATE(pxTCB) domes_trace_hook_task_ready((pxTCB))
-#define traceTASK_DELETE(pxTCB) domes_trace_hook_task_delete((pxTCB))
+#define traceTASK_SWITCHED_IN() \
+    domes_trace_hook_task_switch_in((const volatile void*)pxCurrentTCBs[portGET_CORE_ID()])
+#define traceTASK_SWITCHED_OUT() \
+    domes_trace_hook_task_switch_out((const volatile void*)pxCurrentTCBs[portGET_CORE_ID()])
+#define traceMOVED_TASK_TO_READY_STATE(pxTCB) \
+    domes_trace_hook_task_ready((const volatile void*)(pxTCB))
+#define traceTASK_DELETE(pxTCB) domes_trace_hook_task_delete((const volatile void*)(pxTCB))
 
 #define traceBLOCKING_ON_QUEUE_RECEIVE(pxQueue) domes_trace_hook_task_block((pxQueue), xTicksToWait)
 #define traceBLOCKING_ON_QUEUE_SEND(pxQueue) domes_trace_hook_task_block((pxQueue), xTicksToWait)

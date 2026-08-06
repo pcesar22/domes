@@ -39,7 +39,7 @@ typedef enum _domes_trace_Status {
 
 /* Categories for trace events (used to filter and color-code in visualization) */
 typedef enum _domes_trace_Category {
-    domes_trace_Category_CATEGORY_KERNEL = 0, /* Legacy category value; no active kernel-hook producer */
+    domes_trace_Category_CATEGORY_KERNEL = 0, /* Scheduler, ISR, callback, and causal lifecycle events */
     domes_trace_Category_CATEGORY_TRANSPORT = 1, /* UART/TCP/BLE transport operations */
     domes_trace_Category_CATEGORY_OTA = 2, /* OTA update operations */
     domes_trace_Category_CATEGORY_WIFI = 3, /* WiFi/ESP-NOW operations */
@@ -106,7 +106,7 @@ typedef enum _domes_trace_ObjectKind {
  This message is for reference/documentation and host-side processing. */
 typedef struct _domes_trace_Event {
     uint32_t timestamp; /* Microseconds since boot */
-    uint32_t task_id; /* FreeRTOS task number */
+    uint32_t task_id; /* Immutable task ID assigned during runtime assembly */
     domes_trace_EventType event_type;
     domes_trace_Category category;
     uint32_t arg1; /* Primary argument (span, counter, or synchronization ID) */
@@ -116,7 +116,7 @@ typedef struct _domes_trace_Event {
 /* Task name mapping (task ID -> human-readable name) */
 typedef struct _domes_trace_TaskEntry {
     uint32_t task_id;
-    char name[16]; /* Max 16 chars */
+    char name[16]; /* Max 15 UTF-8 bytes */
     uint32_t priority;
     uint32_t core_affinity_mask; /* bit 0=Core 0, bit 1=Core 1 */
 } domes_trace_TaskEntry;
@@ -124,7 +124,7 @@ typedef struct _domes_trace_TaskEntry {
 typedef struct _domes_trace_ObjectEntry {
     uint32_t object_id;
     domes_trace_ObjectKind kind;
-    char name[16]; /* Max 16 chars */
+    char name[16]; /* Max 15 UTF-8 bytes */
 } domes_trace_ObjectEntry;
 
 /* Session metadata sent at start of dump (MsgType: SESSION_INFO 0x1A)
@@ -137,7 +137,7 @@ typedef struct _domes_trace_TraceSessionInfo {
     uint32_t end_timestamp_us; /* Last event timestamp */
     pb_size_t tasks_count;
     domes_trace_TaskEntry tasks[16]; /* Registered task names */
-    uint32_t buffer_size_bytes; /* Ring buffer size */
+    uint32_t buffer_size_bytes; /* Active capture capacity in bytes */
     uint32_t trace_event_format_version; /* 1 for scheduler/causality flags and IDs */
     pb_size_t objects_count;
     domes_trace_ObjectEntry objects[8];

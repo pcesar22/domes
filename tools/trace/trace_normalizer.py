@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Any, Mapping
 
 FORMAT_VERSION = 1
-NORMALIZER_VERSION = "1.0.0"
+NORMALIZER_VERSION = "1.0.1"
 EVENT_SIZE = 16
+MAX_TRACE_DUMP_BYTES = 32 * 1024
 TRACE_LINE = re.compile(r"DOMES_QEMU_TRACE schema=(\d+) index=(\d+) raw=([0-9a-f]{32})")
 SESSION_LINE = re.compile(
     r"DOMES_QEMU_TRACE_SESSION schema=(\d+) objects=([0-9a-z_:,]+)"
@@ -156,6 +157,20 @@ def _canonical(value: Any) -> bytes:
     )
 
 
+def _validate_timestamp_order(timestamps: list[int]) -> None:
+    wraps = 0
+    for previous, current in zip(timestamps, timestamps[1:]):
+        delta = (current - previous) & 0xFFFFFFFF
+        if delta > 0x7FFFFFFF:
+            raise TraceNormalizationError(
+                f"trace timestamp regression: {previous} followed by {current}"
+            )
+        if current < previous:
+            wraps += 1
+            if wraps > 1:
+                raise TraceNormalizationError("trace timestamps wrap more than once")
+
+
 def normalize_trace(
     raw: bytes,
     manifest: Mapping[str, Any],
@@ -247,6 +262,8 @@ def normalize_trace(
             }
         )
 
+    _validate_timestamp_order([event["timestamp_us"] for event in events])
+
     causal = [
         event
         for event in events
@@ -277,19 +294,12 @@ def normalize_trace(
         (SEM_TAKE, 2),
         (CAUSAL_COMPLETE, 5),
     ]
-    positions = []
-    cursor = 0
-    for event_type, object_id in required:
-        while cursor < len(causal) and not (
-            causal[cursor]["type"] == event_type and causal[cursor]["arg1"] == object_id
-        ):
-            cursor += 1
-        if cursor == len(causal):
-            raise TraceNormalizationError(
-                f"causal chain omits event type 0x{event_type:02x} object {object_id}"
-            )
-        positions.append(causal[cursor]["sequence"])
-        cursor += 1
+    actual_causal = [(event["type"], event["arg1"]) for event in causal]
+    if actual_causal != required:
+        raise TraceNormalizationError(
+            "causal chain is missing, duplicated, reordered, or contains extra edges"
+        )
+    positions = [event["sequence"] for event in causal]
     for event in events:
         if event["context"] == 1 and event["type"] == TASK_BLOCK:
             raise TraceNormalizationError("ISR context contains a blocking event")
@@ -384,6 +394,10 @@ def normalize_trace(
         if allowed is not None and event["context"] not in allowed:
             raise TraceNormalizationError(
                 "scheduler event has an invalid execution context"
+            )
+        if allowed is not None and event["category"] != 0:
+            raise TraceNormalizationError(
+                "scheduler evidence event does not use the kernel category"
             )
         if event["type"] in taskless_contexts and event["task_id"] != 0:
             raise TraceNormalizationError("ISR/callback event unexpectedly owns a task")
@@ -480,7 +494,7 @@ def normalize_trace(
             "trace has an unbalanced ISR, callback, or switch lifecycle"
         )
 
-    explicit = [event for event in events if event["arg2"] == 1]
+    explicit = causal
     irq_cores = {
         event["core"]
         for event in explicit
@@ -518,9 +532,12 @@ def normalize_trace(
         len(overhead_events) != 1
         or overhead_events[0]["task_id"] != 1
         or overhead_events[0]["context"] != 0
+        or overhead_events[0]["arg1"] == 0
+        or overhead_events[0]["arg2"] == 0
+        or overhead_events[0]["arg2"] <= overhead_events[0]["arg1"]
     ):
         raise TraceNormalizationError(
-            "trace must contain one main-task overhead measurement"
+            "trace must contain one positive main-task overhead measurement"
         )
 
     first_timestamp = events[0]["timestamp_us"]
@@ -583,7 +600,17 @@ def _manifest_from_session(session: Mapping[str, Any]) -> dict[str, Any]:
     for task in session.get("tasks", []):
         task_id = int(task["task_id"])
         name = str(task["name"])
-        if task_id == 0 or task_id in task_ids or not name or name in task_names:
+        priority = int(task["priority"])
+        if (
+            task_id <= 0
+            or task_id > 31
+            or task_id in task_ids
+            or not name
+            or len(name.encode("utf-8")) >= 16
+            or name in task_names
+            or priority < 0
+            or priority > 0xFF
+        ):
             raise TraceNormalizationError(
                 "session has duplicate or invalid task mappings"
             )
@@ -598,7 +625,7 @@ def _manifest_from_session(session: Mapping[str, Any]) -> dict[str, Any]:
                 "presence": "required",
                 "trace_id": task_id,
                 "name": name,
-                "priority": int(task["priority"]),
+                "priority": priority,
                 "core_affinity": affinity,
             }
         )
@@ -618,6 +645,15 @@ def validate_session(
         )
     if int(session.get("event_count", -1)) != len(raw) // EVENT_SIZE:
         raise TraceNormalizationError("session event count does not match raw evidence")
+    if int(session.get("received_raw_bytes", -1)) != len(raw):
+        raise TraceNormalizationError(
+            "session received byte count does not match raw evidence"
+        )
+    buffer_size = int(session.get("buffer_size_bytes", -1))
+    if buffer_size <= 0 or buffer_size > MAX_TRACE_DUMP_BYTES or len(raw) > buffer_size:
+        raise TraceNormalizationError("session buffer capacity is invalid")
+    if session.get("integrity_error") is not None:
+        raise TraceNormalizationError("session records a trace integrity error")
     raw_sha256 = hashlib.sha256(raw).hexdigest()
     if session.get("raw_sha256") != raw_sha256:
         raise TraceNormalizationError("session hash does not match raw evidence")
@@ -630,6 +666,12 @@ def validate_session(
         raise TraceNormalizationError(
             "session timestamps do not bound the raw evidence"
         )
+    _validate_timestamp_order(
+        [
+            struct.unpack_from("<I", raw, offset)[0]
+            for offset in range(0, len(raw), EVENT_SIZE)
+        ]
+    )
 
     object_names: dict[int, str] = {}
     object_kinds: dict[int, int] = {}
@@ -643,7 +685,9 @@ def validate_session(
         if (
             object_id == 0
             or object_id in object_names
+            or kind not in range(1, 8)
             or not name
+            or len(name.encode("utf-8")) >= 16
             or name in object_names.values()
         ):
             raise TraceNormalizationError(

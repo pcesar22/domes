@@ -42,7 +42,7 @@ enum Status {
 
 // Categories for trace events (used to filter and color-code in visualization)
 enum Category {
-    CATEGORY_KERNEL = 0;     // Legacy category value; no active kernel-hook producer
+    CATEGORY_KERNEL = 0;     // Scheduler, ISR, callback, and causal lifecycle events
     CATEGORY_TRANSPORT = 1;  // UART/TCP/BLE transport operations
     CATEGORY_OTA = 2;        // OTA update operations
     CATEGORY_WIFI = 3;       // WiFi/ESP-NOW operations
@@ -112,7 +112,7 @@ enum EventType {
 // This message is for reference/documentation and host-side processing.
 message Event {
     uint32 timestamp = 1;   // Microseconds since boot
-    uint32 task_id = 2;     // FreeRTOS task number
+    uint32 task_id = 2;     // Immutable task ID assigned during runtime assembly
     EventType event_type = 3;
     Category category = 4;
     uint32 arg1 = 5;        // Primary argument (span, counter, or synchronization ID)
@@ -126,7 +126,7 @@ message Event {
 // Task name mapping (task ID -> human-readable name)
 message TaskEntry {
     uint32 task_id = 1;
-    string name = 2;        // Max 16 chars
+    string name = 2;        // Max 15 UTF-8 bytes
     uint32 priority = 3;
     uint32 core_affinity_mask = 4; // bit 0=Core 0, bit 1=Core 1
 }
@@ -145,7 +145,7 @@ enum ObjectKind {
 message ObjectEntry {
     uint32 object_id = 1;
     ObjectKind kind = 2;
-    string name = 3; // Max 16 chars
+    string name = 3; // Max 15 UTF-8 bytes
 }
 
 // Session metadata sent at start of dump (MsgType: SESSION_INFO 0x1A)
@@ -159,7 +159,7 @@ message TraceSessionInfo {
     uint32 start_timestamp_us = 4;  // First event timestamp
     uint32 end_timestamp_us = 5;    // Last event timestamp
     repeated TaskEntry tasks = 6;   // Registered task names
-    uint32 buffer_size_bytes = 7;   // Ring buffer size
+    uint32 buffer_size_bytes = 7;   // Active capture capacity in bytes
     uint32 trace_event_format_version = 9; // 1 for scheduler/causality flags and IDs
     repeated ObjectEntry objects = 10;
     uint32 discontinuity_count = 11;

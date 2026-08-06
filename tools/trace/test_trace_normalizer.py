@@ -70,7 +70,10 @@ class TraceNormalizerTests(unittest.TestCase):
             "event_count": len(raw) // 16,
             "start_timestamp_us": struct.unpack_from("<I", raw, 0)[0],
             "end_timestamp_us": struct.unpack_from("<I", raw, len(raw) - 16)[0],
+            "buffer_size_bytes": 16 * 1024,
+            "received_raw_bytes": len(raw),
             "raw_sha256": hashlib.sha256(raw).hexdigest(),
+            "integrity_error": None,
             "tasks": [
                 {"task_id": 1, "name": "main", "priority": 1, "core_affinity_mask": 1}
             ],
@@ -88,6 +91,7 @@ class TraceNormalizerTests(unittest.TestCase):
         normalized = normalize_trace(self.raw, self.manifest, objects=PROBE_OBJECTS)
         self.assertEqual(normalized["events"][0]["relative_us"], 0)
         self.assertEqual(normalized["causal_positions"], list(range(1, 11)))
+        self.assertEqual(normalized["normalizer"]["version"], "1.0.1")
 
     def test_rejects_overflow_unresolved_ids_and_truncation(self):
         with self.assertRaises(TraceNormalizationError):
@@ -151,6 +155,38 @@ class TraceNormalizerTests(unittest.TestCase):
         rows[5], rows[9] = rows[9], rows[5]
         with self.assertRaises(TraceNormalizationError):
             normalize_trace(b"".join(rows), self.manifest, objects=PROBE_OBJECTS)
+
+    def test_rejects_duplicate_or_extra_causal_edges(self):
+        duplicate = (
+            self.raw[:-16] + event(12, 0x0D, 2, 1, task=0, flags=5) + self.raw[-16:]
+        )
+        with self.assertRaises(TraceNormalizationError):
+            normalize_trace(duplicate, self.manifest, objects=PROBE_OBJECTS)
+
+    def test_rejects_zero_or_inverted_overhead_measurement(self):
+        for disabled, enabled in ((0, 20), (4, 0), (20, 4), (4, 4)):
+            raw = self.raw[:-16] + event(11, 0x25, disabled, enabled)
+            with self.subTest(disabled=disabled, enabled=enabled):
+                with self.assertRaises(TraceNormalizationError):
+                    normalize_trace(raw, self.manifest, objects=PROBE_OBJECTS)
+
+    def test_rejects_timestamp_regression_and_accepts_one_wrap(self):
+        regressed = bytearray(self.raw)
+        struct.pack_into("<I", regressed, 5 * 16, 50)
+        with self.assertRaisesRegex(TraceNormalizationError, "timestamp regression"):
+            normalize_trace(bytes(regressed), self.manifest, objects=PROBE_OBJECTS)
+
+        wrapped = bytearray(self.raw)
+        start = 0xFFFFFFF9
+        for index in range(len(wrapped) // 16):
+            struct.pack_into("<I", wrapped, index * 16, (start + index) & 0xFFFFFFFF)
+        normalized = normalize_trace(
+            bytes(wrapped), self.manifest, objects=PROBE_OBJECTS
+        )
+        self.assertEqual(
+            [event["relative_us"] for event in normalized["events"]],
+            list(range(len(wrapped) // 16)),
+        )
 
     def test_rejects_unknown_category_use_after_delete_and_wrong_isr_context(self):
         unknown_category = bytearray(self.raw)
@@ -240,6 +276,18 @@ class TraceNormalizerTests(unittest.TestCase):
         duplicate_task = self.session()
         duplicate_task["tasks"].append(dict(duplicate_task["tasks"][0]))
         mutations.append(duplicate_task)
+        bad_received_size = self.session()
+        bad_received_size["received_raw_bytes"] -= 1
+        mutations.append(bad_received_size)
+        integrity_error = self.session()
+        integrity_error["integrity_error"] = "offset mismatch"
+        mutations.append(integrity_error)
+        oversized_buffer = self.session()
+        oversized_buffer["buffer_size_bytes"] = 32 * 1024 + 1
+        mutations.append(oversized_buffer)
+        long_task_name = self.session()
+        long_task_name["tasks"][0]["name"] = "1234567890abcdef"
+        mutations.append(long_task_name)
         for mutated in mutations:
             with self.subTest(mutated=mutated):
                 with self.assertRaises(TraceNormalizationError):

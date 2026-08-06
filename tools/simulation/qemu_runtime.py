@@ -930,9 +930,13 @@ def analyze_runtime_log(
         )
     if int(result["trace_count"]) <= 0:
         raise RuntimeProfileError("readiness drill emitted no target trace evidence")
-    if int(result["trace_enabled_us"]) < int(result["trace_disabled_us"]):
+    if (
+        int(result["trace_disabled_us"]) <= 0
+        or int(result["trace_enabled_us"]) <= 0
+        or int(result["trace_enabled_us"]) <= int(result["trace_disabled_us"])
+    ):
         raise RuntimeProfileError(
-            "trace enabled overhead is smaller than disabled baseline"
+            "trace overhead must be positive and enabled must exceed disabled"
         )
     for key in (
         "manifest_sha256",

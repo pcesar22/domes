@@ -7,9 +7,7 @@
 
 #include "esp_log.h"
 #include "freertos/semphr.h"
-#ifdef ESP_PLATFORM
 #include "kernelTrace.hpp"
-#endif
 
 #include <cstring>
 
@@ -72,6 +70,7 @@ esp_err_t Recorder::init(size_t bufferSize) {
 
     // Clear task name table
     for (auto& entry : taskNames_) {
+        entry.handle = nullptr;
         entry.valid = false;
         entry.taskId = 0;
         entry.priority = 0;
@@ -79,6 +78,7 @@ esp_err_t Recorder::init(size_t bufferSize) {
         entry.name[0] = '\0';
     }
     taskNameCount_ = 0;
+    KernelTrace::clearTaskHandles();
 
     initialized_.store(true);
     taskCatalogReady_.store(false, std::memory_order_release);
@@ -97,6 +97,7 @@ void Recorder::shutdown() {
         KernelTrace::stopAndFlush(*buffer_);
     }
 #endif
+    KernelTrace::clearTaskHandles();
     streamCallback_.store(nullptr, std::memory_order_release);
     enabled_.store(false);
     initialized_.store(false);
@@ -256,53 +257,64 @@ bool Recorder::registerTask(TaskHandle_t handle, const char* name, uint16_t stab
     if (!lifecycleLock.acquired()) {
         return false;
     }
-    if (!initialized_.load() || handle == nullptr || name == nullptr || stableId == 0 ||
-        stableId > 31 || priority > UINT8_MAX ||
+    if (!initialized_.load() || handle == nullptr || name == nullptr || name[0] == '\0' ||
+        std::strlen(name) >= kMaxTaskNameLength || stableId == 0 || stableId > 31 ||
+        priority > UINT8_MAX ||
+        (coreAffinity != 0 && coreAffinity != 1 && coreAffinity != tskNO_AFFINITY) ||
         taskCatalogReady_.load(std::memory_order_acquire)) {
         return false;
     }
 
     const uint8_t coreMask = coreAffinity == 0 ? 0x01 : (coreAffinity == 1 ? 0x02 : 0x03);
-    vTaskSetTaskNumber(handle, stableId);
-#ifdef ESP_PLATFORM
-    KernelTrace::setTaskActive(stableId, true);
-#endif
-
-    // Check if task is already registered
+    TaskNameEntry* selected = nullptr;
     for (auto& entry : taskNames_) {
-        if (entry.valid && entry.taskId == stableId) {
-            // Update existing entry
-            strncpy(entry.name, name, kMaxTaskNameLength - 1);
-            entry.name[kMaxTaskNameLength - 1] = '\0';
-            entry.priority = static_cast<uint8_t>(priority);
-            entry.coreAffinityMask = coreMask;
-            return true;
+        if (!entry.valid || (entry.handle != handle && entry.taskId != stableId)) {
+            continue;
         }
+        if (entry.taskId != stableId) {
+            return false;
+        }
+        const bool metadataMatches = entry.priority == priority &&
+                                     entry.coreAffinityMask == coreMask &&
+                                     std::strcmp(entry.name, name) == 0;
+        if (!metadataMatches || (entry.handle != nullptr && entry.handle != handle &&
+                                 KernelTrace::taskId(entry.handle) != 0)) {
+            return false;
+        }
+        selected = &entry;
+        break;
     }
 
-    // Find empty slot
-    for (auto& entry : taskNames_) {
-        if (!entry.valid) {
-            entry.taskId = stableId;
-            entry.priority = static_cast<uint8_t>(priority);
-            entry.coreAffinityMask = coreMask;
-            strncpy(entry.name, name, kMaxTaskNameLength - 1);
-            entry.name[kMaxTaskNameLength - 1] = '\0';
-            entry.valid = true;
-            taskNameCount_++;
-#ifdef ESP_PLATFORM
-            if (isEnabled()) {
-                KernelTrace::record(
-                    KernelTrace::makeKernelEvent(EventType::kSchedTaskCreate, stableId));
+    if (selected == nullptr) {
+        for (auto& entry : taskNames_) {
+            if (!entry.valid) {
+                selected = &entry;
+                break;
             }
-#endif
-            ESP_LOGD(kTag, "Registered task '%s' with ID %u", name, stableId);
-            return true;
         }
     }
+    if (selected == nullptr) {
+        ESP_LOGW(kTag, "Task name table full, cannot register '%s'", name);
+        return false;
+    }
 
-    ESP_LOGW(kTag, "Task name table full, cannot register '%s'", name);
-    return false;
+    if (!KernelTrace::registerTaskHandle(handle, stableId)) {
+        return false;
+    }
+    const bool newEntry = !selected->valid;
+    selected->handle = handle;
+    selected->taskId = stableId;
+    selected->priority = static_cast<uint8_t>(priority);
+    selected->coreAffinityMask = coreMask;
+    strncpy(selected->name, name, kMaxTaskNameLength - 1);
+    selected->name[kMaxTaskNameLength - 1] = '\0';
+    selected->valid = true;
+    KernelTrace::setTaskActive(stableId, true);
+    if (newEntry) {
+        ++taskNameCount_;
+    }
+    ESP_LOGD(kTag, "Registered task '%s' with ID %u", name, stableId);
+    return true;
 }
 
 void Recorder::unregisterTask(TaskHandle_t handle) {
@@ -314,16 +326,11 @@ void Recorder::unregisterTask(TaskHandle_t handle) {
         return;
     }
 
-    uint16_t taskId = static_cast<uint16_t>(uxTaskGetTaskNumber(handle));
-
     for (auto& entry : taskNames_) {
-        if (entry.valid && entry.taskId == taskId) {
-            entry.valid = false;
-            entry.taskId = 0;
-            entry.priority = 0;
-            entry.coreAffinityMask = 0;
-            entry.name[0] = '\0';
-            taskNameCount_--;
+        if (entry.valid && entry.handle == handle) {
+            entry.handle = nullptr;
+            KernelTrace::setTaskActive(entry.taskId, false);
+            KernelTrace::unregisterTaskHandle(handle);
             return;
         }
     }

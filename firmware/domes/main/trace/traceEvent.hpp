@@ -81,7 +81,7 @@ enum class EventType : uint8_t {
 #pragma pack(push, 1)
 struct TraceEvent {
     uint32_t timestamp;  ///< Microseconds since boot (esp_timer_get_time())
-    uint16_t taskId;     ///< FreeRTOS task number (uxTaskGetTaskNumber())
+    uint16_t taskId;     ///< Immutable task ID assigned by Recorder::registerTask()
     uint8_t eventType;   ///< EventType value
     uint8_t flags;       ///< Category bits 7-4; context bits 3-2; core bits 1-0
     uint32_t arg1;       ///< Primary argument (span ID, counter ID, ISR number)

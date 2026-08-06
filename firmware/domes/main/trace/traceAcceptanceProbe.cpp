@@ -62,8 +62,7 @@ uint32_t measureRecordLoop() {
     for (uint32_t index = 0; index < kOverheadSamples; ++index) {
         domes::trace::Recorder::record(domes::trace::KernelTrace::makeKernelEvent(
             domes::trace::EventType::kCounter,
-            static_cast<uint16_t>(uxTaskGetTaskNumber(xTaskGetCurrentTaskHandle())), kActionId,
-            index));
+            domes::trace::KernelTrace::taskId(xTaskGetCurrentTaskHandle()), kActionId, index));
     }
     const uint32_t elapsed = static_cast<uint32_t>(esp_timer_get_time() - start);
     return elapsed;
@@ -144,9 +143,8 @@ TraceAcceptanceResult runTraceAcceptanceProbe() {
     if (xQueueReceive(gProbeContext.queue, &receivedCausalId, 1) != pdFALSE) {
         passed = false;
     } else {
-        record(EventType::kSchedTimeout,
-               static_cast<uint16_t>(uxTaskGetTaskNumber(xTaskGetCurrentTaskHandle())), kTimeoutId,
-               kCausalId);
+        record(EventType::kSchedTimeout, KernelTrace::taskId(xTaskGetCurrentTaskHandle()),
+               kTimeoutId, kCausalId);
     }
     if (passed) {
         passed = gptimer_start(timer) == ESP_OK;
@@ -157,7 +155,7 @@ TraceAcceptanceResult runTraceAcceptanceProbe() {
             xQueueReceive(gProbeContext.queue, &receivedCausalId, pdMS_TO_TICKS(100)) == pdTRUE &&
             receivedCausalId == kCausalId;
     }
-    const uint16_t taskId = static_cast<uint16_t>(uxTaskGetTaskNumber(xTaskGetCurrentTaskHandle()));
+    const uint16_t taskId = KernelTrace::taskId(xTaskGetCurrentTaskHandle());
     if (passed) {
         record(EventType::kSchedQueueReceive, taskId, kQueueId, kCausalId);
         passed = xSemaphoreTake(gProbeContext.semaphore, 0) == pdTRUE;
@@ -191,7 +189,8 @@ TraceAcceptanceResult runTraceAcceptanceProbe() {
     gProbeContext = {};
     passed = Recorder::releaseSessionLease(leaseOwner) && passed;
     result.passed = passed && result.eventCount > 0 && result.droppedCount == 0 &&
-                    result.discontinuityCount == 0;
+                    result.discontinuityCount == 0 && result.disabledRecordUs > 0 &&
+                    result.enabledRecordUs > result.disabledRecordUs;
     return result;
 }
 

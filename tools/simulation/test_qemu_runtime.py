@@ -305,6 +305,21 @@ class RuntimeLogTests(unittest.TestCase):
                 "Guru Meditation Error\n" + valid_log(), manifest(), "0" * 64
             )
 
+    def test_rejects_zero_or_inverted_trace_overhead(self) -> None:
+        for disabled, enabled in (("0", "20"), ("4", "0"), ("20", "4"), ("4", "4")):
+            with self.subTest(disabled=disabled, enabled=enabled):
+                with self.assertRaisesRegex(
+                    runtime.RuntimeProfileError, "must be positive"
+                ):
+                    runtime.analyze_runtime_log(
+                        valid_log(
+                            trace_disabled_us=disabled,
+                            trace_enabled_us=enabled,
+                        ),
+                        manifest(),
+                        "0" * 64,
+                    )
+
     def test_signature_ignores_absolute_tick_origin_only(self) -> None:
         first = runtime.analyze_runtime_log(valid_log(), manifest(), "0" * 64)
         second = runtime.analyze_runtime_log(

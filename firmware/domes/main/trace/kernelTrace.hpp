@@ -38,6 +38,11 @@ struct ObjectNameEntry {
 
 class KernelTrace {
 public:
+    static constexpr size_t kCoreCount = 2;
+    static constexpr size_t kEventsPerCore = 512;
+    static constexpr size_t kCaptureCapacityBytes =
+        kCoreCount * kEventsPerCore * sizeof(TraceEvent);
+
     static void start();
     static void enable();
     static void stopAndFlush(TraceBuffer& destination);
@@ -48,6 +53,10 @@ public:
     static bool IRAM_ATTR recordFromIsr(const TraceEvent& event);
     static bool recordPreamble(const TraceEvent& event);
 
+    static bool registerTaskHandle(const void* handle, uint16_t taskId);
+    static uint16_t IRAM_ATTR taskId(const volatile void* handle);
+    static uint16_t IRAM_ATTR unregisterTaskHandle(const volatile void* handle);
+    static void clearTaskHandles();
     static void IRAM_ATTR setTaskActive(uint16_t taskId, bool active);
     static bool isTaskActive(uint16_t taskId);
     static void beginTaskSnapshot();
