@@ -87,7 +87,7 @@ edges, fail-closed evidence validation, and measured enabled/disabled overhead o
 | --- | --- |
 | Owner | AI simulation/firmware lead |
 | State / health | `Active` / `Amber` |
-| Execution issue / plan | Issue [101](https://github.com/pcesar22/domes/issues/101); [execution plan](docs/plans/scheduler-trace-observability.md) |
+| Execution issue / plan | Reopened issue [101](https://github.com/pcesar22/domes/issues/101); [execution plan](docs/plans/scheduler-trace-observability.md) |
 | Inputs | Merged FS-WP-002D target runtime, existing 16-byte trace ABI, ESP-IDF v5.4.4 trace facility, registered NFF boards |
 | Dependencies/blockers | Final head `b3cb19c` passed Software CI run 31068033646 and PR 102 merged; the physical session lacks exact image/hardware binding, retained restoration output is incomplete, and required health/self-test checks fail on heap |
 | Gate/risk unlocked | None yet; passing the remaining physical exit criteria will unlock FS-WP-002E production radio seam work |
@@ -119,7 +119,7 @@ validation, and preserved physical behavior.
 | State / health | `Complete` / `Green` |
 | Execution issue / review package | Issue [99](https://github.com/pcesar22/domes/issues/99); one consolidated [PR 100](https://github.com/pcesar22/domes/pull/100) |
 | Inputs | FS-WP-002B feasibility foundation in the same PR; ESP-IDF v5.4.4; two registered NFF boards and Intel AX210 |
-| Dependencies/blockers | None for D's technical exit; runtime implementation head `f36447f931f9216b7733ff4685ffc5ccaab895ce` passed 100 fresh QEMU runtime processes and aggregate `CI Gate` in [run 31039047667](https://github.com/pcesar22/domes/actions/runs/31039047667); the final PR head still requires green CI before merge |
+| Dependencies/blockers | None; runtime implementation head `f36447f931f9216b7733ff4685ffc5ccaab895ce` passed 100 fresh QEMU runtime processes and aggregate `CI Gate` in [run 31039047667](https://github.com/pcesar22/domes/actions/runs/31039047667), and PR 100 merged |
 | Gate/risk unlocked | Scheduler/ISR/causality observability package `FS-WP-002C`; its implementation merged in PR 102, while physical exit remains open |
 | Stop condition | Met; C and later radio/predictive work remain outside this delivery |
 
