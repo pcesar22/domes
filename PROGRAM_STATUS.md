@@ -11,11 +11,13 @@ belong in [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md), ta
 [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md), and verification procedures
 in [`docs/TESTING.md`](docs/TESTING.md).
 
-**As of:** 2026-08-05, FS-WP-002C scheduler and causality observability reached technical exit at
-`Complete` / `Green` in [PR 102](https://github.com/pcesar22/domes/pull/102) and issue
-[101](https://github.com/pcesar22/domes/issues/101). Its local code gates, 100-process QEMU trace
-campaign, bounded pod-2 target-runtime capture, independent reviews, and required
-[Software CI run 31060325636](https://github.com/pcesar22/domes/actions/runs/31060325636) passed.
+**As of:** 2026-08-05, FS-WP-002C scheduler and causality observability is `Active` / `Amber` in
+[PR 102](https://github.com/pcesar22/domes/pull/102) and issue
+[101](https://github.com/pcesar22/domes/issues/101). Corrective review repaired the implementation,
+and implementation commit `5ea561c` passed local gates and required
+[Software CI run 31067343275](https://github.com/pcesar22/domes/actions/runs/31067343275), including
+100/100 accepted QEMU runs. The earlier pod-2 artifact predates that commit, so a fresh
+registered-NFF capture and default-image restoration check remain before technical exit.
 FS-WP-002B and FS-WP-002D
 remain consolidated in [PR 100](https://github.com/pcesar22/domes/pull/100) against `main`.
 FS-WP-002D is `Complete` /
@@ -37,12 +39,12 @@ head, including status-only changes, remains subject to the same required checks
 | Next program gate | G1 System Architecture Baseline and Schematic Authorization |
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
-| Latest completed execution package | `FS-WP-002C`, `Complete` / `Green`; [PR 102](https://github.com/pcesar22/domes/pull/102), issue [101](https://github.com/pcesar22/domes/issues/101), [plan](docs/plans/scheduler-trace-observability.md), and required [Software CI](https://github.com/pcesar22/domes/actions/runs/31060325636) passed |
-| Current execution package | None selected; FS-WP-002C review/merge is pending after technical exit |
+| Latest completed execution package | `FS-WP-002D`, `Complete` / `Green`; [PR 100](https://github.com/pcesar22/domes/pull/100), issue [99](https://github.com/pcesar22/domes/issues/99), and required [Software CI](https://github.com/pcesar22/domes/actions/runs/31039047667) passed |
+| Current execution package | `FS-WP-002C`, `Active` / `Amber`; reviewed software/QEMU passed, fresh registered-NFF evidence and PR review/merge remain |
 | Next program action | Select and start VC1 now; in parallel, record the HW owner/budget decision and then start HW-WP-001 while active PS1 and FS1 work continues |
-| Next autonomous execution delivery | Review and merge PR 102, then select FS-WP-002E before beginning its production-radio-seam scope |
-| Current AI execution blocker | None; FS-WP-002C technical exit passed and review/merge is the remaining repository action |
-| PR merge condition | The final PR head must pass required Software CI, including 100 fresh QEMU runtime processes and aggregate `CI Gate`; live GitHub checks are authoritative |
+| Next autonomous execution delivery | With explicit device authorization, close FS-WP-002C's registered-NFF evidence gap and complete PR 102 review; do not begin FS-WP-002E |
+| Current AI execution blocker | Fresh registered-NFF capture/restoration requires explicit device authorization; software review is not blocked |
+| PR merge condition | Fresh registered-NFF acceptance must close on the reviewed implementation, and the final PR head must pass required Software CI including 100 QEMU processes and aggregate `CI Gate`; live evidence is authoritative |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
 | First product-hardware purchase authorization | G2 EVT Release to Fab, forecast 2026-11-02 |
