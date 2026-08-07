@@ -50,8 +50,16 @@ if $check; then
 fi
 
 validate_peer_drill_descriptor() {
+    local -a descriptor_protoc=(protoc)
+    if ! command -v protoc >/dev/null 2>&1; then
+        if ! python3 -c 'import grpc_tools.protoc' >/dev/null 2>&1; then
+            echo "protoc is missing and Python grpc_tools.protoc is unavailable" >&2
+            return 1
+        fi
+        descriptor_protoc=(python3 -m grpc_tools.protoc)
+    fi
     descriptor_file="$(mktemp)"
-    protoc \
+    "${descriptor_protoc[@]}" \
         --proto_path="$proto_dir" \
         --descriptor_set_out="$descriptor_file" \
         "$proto_dir/peer_drill.proto"
