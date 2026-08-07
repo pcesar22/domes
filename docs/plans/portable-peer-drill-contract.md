@@ -1,9 +1,10 @@
 # Portable peer/drill semantic and legacy-byte contract
 
 Status: active
-Current phase: first-slice implementation, review repairs, and final independent review complete;
-publication and exact-head CI pending
-Repository state: `codex/feat/portable-peer-drill-contract` from accepted `origin/main`
+Current phase: first-slice implementation, review repairs, final independent review, and publication
+complete; exact-head CI pending
+Repository state: open PR [107](https://github.com/pcesar22/domes/pull/107) from
+`codex/feat/portable-peer-drill-contract`, based on accepted `origin/main`
 `ead26725804feea5e37e453b26f5c4115fab304a`
 Last updated: 2026-08-07; first portable contract slice implemented, repaired, and locally validated
 
@@ -64,8 +65,10 @@ convergence, and rolling two-board compatibility remain separate work after inde
   with reproducible local evidence.
 - [x] Complete final independent protocol and firmware publication review with no remaining
   confirmed defects or publication blockers.
-- [ ] **Current:** Publish the review-ready branch and pass exact-head CI; this plan remains active
-  because FS-WP-003A is not complete.
+- [x] Publish the branch and open review-ready PR 107 with the program and physical-evidence
+  boundaries explicit.
+- [ ] **Current:** Pass exact-head CI on PR 107; this plan remains active because FS-WP-003A is not
+  complete.
 - [ ] Later: adopt the codec in live firmware and converge operational CLI/app behavior; depends on
   independent review of this slice.
 - [ ] Later: prove rolling compatibility on two boards; depends on separately authorized hardware
@@ -105,8 +108,8 @@ convergence, and rolling two-board compatibility remain separate work after inde
 
 ## Resume checkpoint
 
-This independently reviewed first slice is ready for publication. Resume FS-WP-003A with live
-`EspNowService` codec adoption and operational CLI/app convergence only after this branch passes
+This independently reviewed first slice is published in PR 107. Resume FS-WP-003A with live
+`EspNowService` codec adoption and operational CLI/app convergence only after the PR passes
 exact-head CI and review. Keep Legacy-V1 radio bytes stable, preserve rolling compatibility, and
 treat the separately authorized two-board campaign as the eventual physical exit; neither attached
 pod was accessed by this slice.
