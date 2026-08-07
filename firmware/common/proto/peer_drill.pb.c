@@ -36,4 +36,4 @@ PB_BIND(domes_peer_drill_TouchEvent, domes_peer_drill_TouchEvent, AUTO)
 PB_BIND(domes_peer_drill_TimeoutEvent, domes_peer_drill_TimeoutEvent, AUTO)
 
 
-PB_BIND(domes_peer_drill_PeerMessage, domes_peer_drill_PeerMessage, AUTO)
+PB_BIND(domes_peer_drill_PeerMessage, domes_peer_drill_PeerMessage, 2)

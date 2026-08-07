@@ -278,8 +278,11 @@ TEST_F(MultiPodSimTest, Bus_UnicastDelivery) {
     std::vector<pb_size_t> pod1Received;
     std::vector<pb_size_t> pod2Received;
 
-    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(messageTag(msg)); });
-    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(messageTag(msg)); });
+    bus.registerPod(0, kMasterPeerRole, [](const SimMessage&) {});
+    bus.registerPod(1, kSlavePeerRole,
+                    [&](const SimMessage& msg) { pod1Received.push_back(messageTag(msg)); });
+    bus.registerPod(2, kSlavePeerRole,
+                    [&](const SimMessage& msg) { pod2Received.push_back(messageTag(msg)); });
 
     // Send unicast from pod 0 to pod 1
     auto cmd = makeMessage(0, 1, domes_peer_drill_PeerMessage_set_color_tag);
@@ -307,9 +310,12 @@ TEST_F(MultiPodSimTest, Bus_BroadcastDelivery) {
     std::vector<pb_size_t> pod1Received;
     std::vector<pb_size_t> pod2Received;
 
-    bus.registerPod(0, [&](const SimMessage& msg) { pod0Received.push_back(messageTag(msg)); });
-    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(messageTag(msg)); });
-    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(messageTag(msg)); });
+    bus.registerPod(0, kMasterPeerRole,
+                    [&](const SimMessage& msg) { pod0Received.push_back(messageTag(msg)); });
+    bus.registerPod(1, kSlavePeerRole,
+                    [&](const SimMessage& msg) { pod1Received.push_back(messageTag(msg)); });
+    bus.registerPod(2, kSlavePeerRole,
+                    [&](const SimMessage& msg) { pod2Received.push_back(messageTag(msg)); });
 
     // Broadcast from pod 0
     auto cmd = makeMessage(0, kBroadcastPodId, domes_peer_drill_PeerMessage_join_game_tag);
@@ -332,7 +338,8 @@ TEST_F(MultiPodSimTest, Bus_RejectsSenderMacThatDoesNotMatchSourceMetadata) {
     SimLog log(clock);
     SimEspNowBus bus(log, clock);
     size_t received = 0;
-    bus.registerPod(1, [&](const SimMessage&) { received++; });
+    bus.registerPod(1, kSlavePeerRole, [&](const SimMessage&) { received++; });
+    bus.registerPod(2, kMasterPeerRole, [](const SimMessage&) {});
 
     auto command = makeMessage(0, 1, domes_peer_drill_PeerMessage_stop_all_tag);
     command.srcPodId = 2;
@@ -348,6 +355,52 @@ TEST_F(MultiPodSimTest, Bus_RejectsSenderMacThatDoesNotMatchSourceMetadata) {
     EXPECT_EQ(*bus.codecFailure(), domes::peer_drill::CodecError::kMalformed);
 }
 
+TEST_F(MultiPodSimTest, Bus_RejectsMessageFromWrongSenderRole) {
+    SimClock clock;
+    SimLog log(clock);
+    SimEspNowBus bus(log, clock);
+    size_t received = 0;
+    bus.registerPod(1, kSlavePeerRole, [&](const SimMessage&) { received++; });
+    bus.registerPod(2, kSlavePeerRole, [](const SimMessage&) {});
+
+    auto command = makeMessage(2, 1, domes_peer_drill_PeerMessage_arm_touch_tag);
+    command.semantic.payload.arm_touch.round_token = 1;
+
+    EXPECT_EQ(bus.send(command), domes::peer_drill::CodecError::kBadRole);
+    EXPECT_EQ(bus.pendingCount(), 0u);
+    bus.deliverPending();
+
+    EXPECT_EQ(received, 0u);
+    ASSERT_TRUE(bus.codecFailure().has_value());
+    EXPECT_EQ(*bus.codecFailure(), domes::peer_drill::CodecError::kBadRole);
+}
+
+TEST_F(MultiPodSimTest, Bus_RejectsConflictingRegisteredRole) {
+    SimClock clock;
+    SimLog log(clock);
+    SimEspNowBus bus(log, clock);
+
+    bus.registerPod(2, kSlavePeerRole, [](const SimMessage&) {});
+    bus.registerPod(2, kMasterPeerRole, [](const SimMessage&) {});
+
+    ASSERT_TRUE(bus.codecFailure().has_value());
+    EXPECT_EQ(*bus.codecFailure(), domes::peer_drill::CodecError::kBadRole);
+}
+
+TEST_F(MultiPodSimTest, Bus_RejectsUnknownRegisteredRoleBeforeDiscoverySend) {
+    SimClock clock;
+    SimLog log(clock);
+    SimEspNowBus bus(log, clock);
+
+    bus.registerPod(0, static_cast<domes_peer_drill_PeerRole>(3), [](const SimMessage&) {});
+    const auto beacon = makeMessage(0, kBroadcastPodId, domes_peer_drill_PeerMessage_beacon_tag);
+
+    ASSERT_TRUE(bus.codecFailure().has_value());
+    EXPECT_EQ(*bus.codecFailure(), domes::peer_drill::CodecError::kBadRole);
+    EXPECT_EQ(bus.send(beacon), domes::peer_drill::CodecError::kBadRole);
+    EXPECT_EQ(bus.pendingCount(), 0u);
+}
+
 TEST_F(MultiPodSimTest, Bus_DelaysDeliveryUntilVirtualDeadline) {
     SimClock clock;
     clock.reset();
@@ -355,7 +408,8 @@ TEST_F(MultiPodSimTest, Bus_DelaysDeliveryUntilVirtualDeadline) {
     SimEspNowBus bus(log, clock);
     size_t received = 0;
 
-    bus.registerPod(1, [&](const SimMessage&) { received++; });
+    bus.registerPod(0, kMasterPeerRole, [](const SimMessage&) {});
+    bus.registerPod(1, kSlavePeerRole, [&](const SimMessage&) { received++; });
     bus.setDeliveryPolicy([](const DeliveryContext&) {
         return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 5'000};
     });
@@ -390,8 +444,9 @@ TEST_F(MultiPodSimTest, Bus_AppliesDropAndDuplicateDeterministically) {
     size_t pod1Received = 0;
     size_t pod2Received = 0;
 
-    bus.registerPod(1, [&](const SimMessage&) { pod1Received++; });
-    bus.registerPod(2, [&](const SimMessage&) { pod2Received++; });
+    bus.registerPod(0, kMasterPeerRole, [](const SimMessage&) {});
+    bus.registerPod(1, kSlavePeerRole, [&](const SimMessage&) { pod1Received++; });
+    bus.registerPod(2, kSlavePeerRole, [&](const SimMessage&) { pod2Received++; });
     bus.setDeliveryPolicy([](const DeliveryContext& context) {
         if (context.dstPod == 1)
             return DeliveryDirective{.action = DeliveryAction::kDrop};
@@ -417,8 +472,9 @@ TEST_F(MultiPodSimTest, Bus_ReplaysCapturedDeliveryRecordExactly) {
     SimLog firstLog(firstClock);
     SimEspNowBus firstBus(firstLog, firstClock);
     std::vector<uint16_t> firstReceived;
-    firstBus.registerPod(1, [&](const SimMessage&) { firstReceived.push_back(1); });
-    firstBus.registerPod(2, [&](const SimMessage&) { firstReceived.push_back(2); });
+    firstBus.registerPod(0, kMasterPeerRole, [](const SimMessage&) {});
+    firstBus.registerPod(1, kSlavePeerRole, [&](const SimMessage&) { firstReceived.push_back(1); });
+    firstBus.registerPod(2, kSlavePeerRole, [&](const SimMessage&) { firstReceived.push_back(2); });
     firstBus.setDeliveryPolicy([](const DeliveryContext& context) {
         if (context.dstPod == 1) {
             return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 250};
@@ -440,8 +496,11 @@ TEST_F(MultiPodSimTest, Bus_ReplaysCapturedDeliveryRecordExactly) {
     SimLog replayLog(replayClock);
     SimEspNowBus replayBus(replayLog, replayClock);
     std::vector<uint16_t> replayReceived;
-    replayBus.registerPod(1, [&](const SimMessage&) { replayReceived.push_back(1); });
-    replayBus.registerPod(2, [&](const SimMessage&) { replayReceived.push_back(2); });
+    replayBus.registerPod(0, kMasterPeerRole, [](const SimMessage&) {});
+    replayBus.registerPod(1, kSlavePeerRole,
+                          [&](const SimMessage&) { replayReceived.push_back(1); });
+    replayBus.registerPod(2, kSlavePeerRole,
+                          [&](const SimMessage&) { replayReceived.push_back(2); });
     replayBus.setReplayRecord(capturedRecord);
 
     auto replayCommand =
@@ -463,7 +522,8 @@ TEST_F(MultiPodSimTest, Bus_PayloadMismatchFailsClosed) {
     SimClock sourceClock;
     SimLog sourceLog(sourceClock);
     SimEspNowBus sourceBus(sourceLog, sourceClock);
-    sourceBus.registerPod(1, [](const SimMessage&) {});
+    sourceBus.registerPod(0, kMasterPeerRole, [](const SimMessage&) {});
+    sourceBus.registerPod(1, kSlavePeerRole, [](const SimMessage&) {});
 
     auto sourceCommand = makeMessage(0, 1, domes_peer_drill_PeerMessage_set_color_tag);
     sourceCommand.semantic.payload.set_color.red = 10;
@@ -475,7 +535,8 @@ TEST_F(MultiPodSimTest, Bus_PayloadMismatchFailsClosed) {
     SimLog replayLog(replayClock);
     SimEspNowBus replayBus(replayLog, replayClock);
     size_t received = 0;
-    replayBus.registerPod(1, [&](const SimMessage&) { received++; });
+    replayBus.registerPod(0, kMasterPeerRole, [](const SimMessage&) {});
+    replayBus.registerPod(1, kSlavePeerRole, [&](const SimMessage&) { received++; });
     replayBus.setReplayRecord(sourceBus.deliveryRecord());
 
     SimMessage changedCommand = sourceCommand;
@@ -494,7 +555,8 @@ TEST_F(MultiPodSimTest, Bus_EmptyReplayRejectsUnexpectedDelivery) {
     SimLog log(clock);
     SimEspNowBus bus(log, clock);
     size_t received = 0;
-    bus.registerPod(1, [&](const SimMessage&) { received++; });
+    bus.registerPod(0, kMasterPeerRole, [](const SimMessage&) {});
+    bus.registerPod(1, kSlavePeerRole, [&](const SimMessage&) { received++; });
     bus.setReplayRecord({});
 
     EXPECT_TRUE(bus.replayComplete());
@@ -514,7 +576,9 @@ TEST_F(MultiPodSimTest, DeliveryRecordUsesProductionBytesForAllTenGeneratedVaria
     SimClock clock;
     SimLog log(clock);
     SimEspNowBus bus(log, clock);
-    bus.registerPod(1, [](const SimMessage&) {});
+    bus.registerPod(0, kMasterPeerRole, [](const SimMessage&) {});
+    bus.registerPod(1, kSlavePeerRole, [](const SimMessage&) {});
+    bus.registerPod(2, kSlavePeerRole, [](const SimMessage&) {});
 
     const std::array<pb_size_t, 10> tags = {
         domes_peer_drill_PeerMessage_beacon_tag,
@@ -533,7 +597,11 @@ TEST_F(MultiPodSimTest, DeliveryRecordUsesProductionBytesForAllTenGeneratedVaria
     };
 
     for (const auto tag : tags) {
-        auto message = makeMessage(0, 1, tag);
+        const auto sourcePod = (tag == domes_peer_drill_PeerMessage_touch_event_tag ||
+                                tag == domes_peer_drill_PeerMessage_timeout_event_tag)
+                                   ? 2
+                                   : 0;
+        auto message = makeMessage(sourcePod, 1, tag);
         if (tag == domes_peer_drill_PeerMessage_arm_touch_tag) {
             message.semantic.payload.arm_touch.round_token = 1;
         } else if (tag == domes_peer_drill_PeerMessage_simulate_touch_tag) {
@@ -564,7 +632,8 @@ TEST_F(MultiPodSimTest, DeliveryRecordIncludesRoundTokenInProductionBytes) {
     SimClock clock;
     SimLog log(clock);
     SimEspNowBus bus(log, clock);
-    bus.registerPod(1, [](const SimMessage&) {});
+    bus.registerPod(0, kMasterPeerRole, [](const SimMessage&) {});
+    bus.registerPod(1, kSlavePeerRole, [](const SimMessage&) {});
 
     auto first = makeMessage(0, 1, domes_peer_drill_PeerMessage_arm_touch_tag);
     first.semantic.payload.arm_touch.round_token = 41;
@@ -644,7 +713,9 @@ TEST_F(MultiPodSimTest, PodCommandHandler_ArmAndTouch) {
 
     // Register pod 0 (master) to receive events
     std::vector<SimMessage> masterReceived;
-    bus.registerPod(0, [&](const SimMessage& msg) { masterReceived.push_back(msg); });
+    bus.registerPod(0, kMasterPeerRole,
+                    [&](const SimMessage& msg) { masterReceived.push_back(msg); });
+    bus.registerPod(1, kSlavePeerRole, [](const SimMessage&) {});
 
     // Master (pod 0) sends ArmTouch to pod 1
     auto cmd = makeMessage(0, 1, domes_peer_drill_PeerMessage_arm_touch_tag);
@@ -688,7 +759,9 @@ TEST_F(MultiPodSimTest, PodCommandHandler_RejectedRearmKeepsActiveRoundCallback)
     SimEspNowBus bus(orch.log(), orch.clock());
     PodCommandHandler handler(pod, bus, orch.log());
     std::vector<SimMessage> masterReceived;
-    bus.registerPod(0, [&](const SimMessage& msg) { masterReceived.push_back(msg); });
+    bus.registerPod(0, kMasterPeerRole,
+                    [&](const SimMessage& msg) { masterReceived.push_back(msg); });
+    bus.registerPod(1, kSlavePeerRole, [](const SimMessage&) {});
 
     auto first = makeMessage(0, 1, domes_peer_drill_PeerMessage_arm_touch_tag);
     first.semantic.payload.arm_touch.round_token = 7;

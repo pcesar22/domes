@@ -14,6 +14,30 @@ import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
+/// Role at the peer protocol boundary. Discovery messages are role-neutral;
+/// drill controls originate from a master and drill results from a slave.
+class PeerRole extends $pb.ProtobufEnum {
+  static const PeerRole PEER_ROLE_UNSPECIFIED =
+      PeerRole._(0, _omitEnumNames ? '' : 'PEER_ROLE_UNSPECIFIED');
+  static const PeerRole PEER_ROLE_MASTER =
+      PeerRole._(1, _omitEnumNames ? '' : 'PEER_ROLE_MASTER');
+  static const PeerRole PEER_ROLE_SLAVE =
+      PeerRole._(2, _omitEnumNames ? '' : 'PEER_ROLE_SLAVE');
+
+  static const $core.List<PeerRole> values = <PeerRole>[
+    PEER_ROLE_UNSPECIFIED,
+    PEER_ROLE_MASTER,
+    PEER_ROLE_SLAVE,
+  ];
+
+  static final $core.List<PeerRole?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 2);
+  static PeerRole? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const PeerRole._(super.value, super.name);
+}
+
 /// Existing feedback bitmask values. Values outside this enum are invalid.
 class FeedbackMode extends $pb.ProtobufEnum {
   static const FeedbackMode FEEDBACK_MODE_NONE =

@@ -10,6 +10,14 @@
 #endif
 
 /* Enum definitions */
+/* Role at the peer protocol boundary. Discovery messages are role-neutral;
+ drill controls originate from a master and drill results from a slave. */
+typedef enum _domes_peer_drill_PeerRole {
+    domes_peer_drill_PeerRole_PEER_ROLE_UNSPECIFIED = 0,
+    domes_peer_drill_PeerRole_PEER_ROLE_MASTER = 1,
+    domes_peer_drill_PeerRole_PEER_ROLE_SLAVE = 2
+} domes_peer_drill_PeerRole;
+
 /* Existing feedback bitmask values. Values outside this enum are invalid. */
 typedef enum _domes_peer_drill_FeedbackMode {
     domes_peer_drill_FeedbackMode_FEEDBACK_MODE_NONE = 0,
@@ -40,52 +48,61 @@ typedef struct _domes_peer_drill_StopAll {
 } domes_peer_drill_StopAll;
 
 typedef struct _domes_peer_drill_ArmTouch {
+    /* Round-scoped messages require a non-zero token. */
     uint32_t round_token;
     uint32_t timeout_ms;
     domes_peer_drill_FeedbackMode feedback_mode;
 } domes_peer_drill_ArmTouch;
 
 typedef struct _domes_peer_drill_SetColor {
+    /* Each channel must fit the Legacy-V1 uint8 representation (0..255). */
     uint32_t red;
     uint32_t green;
     uint32_t blue;
 } domes_peer_drill_SetColor;
 
 typedef struct _domes_peer_drill_SimulateTouch {
+    /* Token must be non-zero; current hardware pad indices are 0..3. */
     uint32_t round_token;
     uint32_t pad_index;
 } domes_peer_drill_SimulateTouch;
 
 typedef struct _domes_peer_drill_TouchEvent {
+    /* Token must be non-zero; current hardware pad indices are 0..3. */
     uint32_t round_token;
     uint32_t reaction_time_us;
     uint32_t pad_index;
 } domes_peer_drill_TouchEvent;
 
 typedef struct _domes_peer_drill_TimeoutEvent {
+    /* Round-scoped messages require a non-zero token. */
     uint32_t round_token;
 } domes_peer_drill_TimeoutEvent;
 
 typedef PB_BYTES_ARRAY_T(6) domes_peer_drill_PeerMessage_sender_mac_t;
 typedef struct _domes_peer_drill_PeerMessage {
-    /* The compatibility codec accepts exactly 1 without adding a byte to the
- unchanged Legacy-V1 ESP-NOW packet. */
-    uint32_t protocol_version;
-    domes_peer_drill_PeerMessage_sender_mac_t sender_mac;
-    uint32_t sender_timestamp_us;
     pb_size_t which_payload;
     union _domes_peer_drill_PeerMessage_payload {
+        /* Role-neutral discovery. */
         domes_peer_drill_Beacon beacon;
         domes_peer_drill_Ping ping;
         domes_peer_drill_Pong pong;
+        /* Master -> slave drill controls. */
         domes_peer_drill_JoinGame join_game;
         domes_peer_drill_ArmTouch arm_touch;
         domes_peer_drill_SetColor set_color;
         domes_peer_drill_StopAll stop_all;
         domes_peer_drill_SimulateTouch simulate_touch;
+        /* Slave -> master drill results. */
         domes_peer_drill_TouchEvent touch_event;
         domes_peer_drill_TimeoutEvent timeout_event;
     } payload;
+    /* Semantic compatibility metadata. These fields do not add bytes to the
+ unchanged Legacy-V1 ESP-NOW packet. For PONG, timestamp_us echoes the
+ corresponding PING timestamp; otherwise it is the sender's local time. */
+    uint32_t protocol_version; /* Validators accept exactly 1. */
+    domes_peer_drill_PeerMessage_sender_mac_t sender_mac; /* Validators require exactly six bytes. */
+    uint32_t timestamp_us;
 } domes_peer_drill_PeerMessage;
 
 
@@ -94,6 +111,10 @@ extern "C" {
 #endif
 
 /* Helper constants for enums */
+#define _domes_peer_drill_PeerRole_MIN domes_peer_drill_PeerRole_PEER_ROLE_UNSPECIFIED
+#define _domes_peer_drill_PeerRole_MAX domes_peer_drill_PeerRole_PEER_ROLE_SLAVE
+#define _domes_peer_drill_PeerRole_ARRAYSIZE ((domes_peer_drill_PeerRole)(domes_peer_drill_PeerRole_PEER_ROLE_SLAVE+1))
+
 #define _domes_peer_drill_FeedbackMode_MIN domes_peer_drill_FeedbackMode_FEEDBACK_MODE_NONE
 #define _domes_peer_drill_FeedbackMode_MAX domes_peer_drill_FeedbackMode_FEEDBACK_MODE_LED_AND_AUDIO
 #define _domes_peer_drill_FeedbackMode_ARRAYSIZE ((domes_peer_drill_FeedbackMode)(domes_peer_drill_FeedbackMode_FEEDBACK_MODE_LED_AND_AUDIO+1))
@@ -122,7 +143,7 @@ extern "C" {
 #define domes_peer_drill_SimulateTouch_init_default {0, 0}
 #define domes_peer_drill_TouchEvent_init_default {0, 0, 0}
 #define domes_peer_drill_TimeoutEvent_init_default {0}
-#define domes_peer_drill_PeerMessage_init_default {0, {0, {0}}, 0, 0, {domes_peer_drill_Beacon_init_default}}
+#define domes_peer_drill_PeerMessage_init_default {0, {domes_peer_drill_Beacon_init_default}, 0, {0, {0}}, 0}
 #define domes_peer_drill_Beacon_init_zero        {0}
 #define domes_peer_drill_Ping_init_zero          {0}
 #define domes_peer_drill_Pong_init_zero          {0}
@@ -133,7 +154,7 @@ extern "C" {
 #define domes_peer_drill_SimulateTouch_init_zero {0, 0}
 #define domes_peer_drill_TouchEvent_init_zero    {0, 0, 0}
 #define domes_peer_drill_TimeoutEvent_init_zero  {0}
-#define domes_peer_drill_PeerMessage_init_zero   {0, {0, {0}}, 0, 0, {domes_peer_drill_Beacon_init_zero}}
+#define domes_peer_drill_PeerMessage_init_zero   {0, {domes_peer_drill_Beacon_init_zero}, 0, {0, {0}}, 0}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define domes_peer_drill_ArmTouch_round_token_tag 1
@@ -148,19 +169,19 @@ extern "C" {
 #define domes_peer_drill_TouchEvent_reaction_time_us_tag 2
 #define domes_peer_drill_TouchEvent_pad_index_tag 3
 #define domes_peer_drill_TimeoutEvent_round_token_tag 1
-#define domes_peer_drill_PeerMessage_protocol_version_tag 1
-#define domes_peer_drill_PeerMessage_sender_mac_tag 2
-#define domes_peer_drill_PeerMessage_sender_timestamp_us_tag 3
-#define domes_peer_drill_PeerMessage_beacon_tag  10
-#define domes_peer_drill_PeerMessage_ping_tag    11
-#define domes_peer_drill_PeerMessage_pong_tag    12
-#define domes_peer_drill_PeerMessage_join_game_tag 13
-#define domes_peer_drill_PeerMessage_arm_touch_tag 14
-#define domes_peer_drill_PeerMessage_set_color_tag 15
-#define domes_peer_drill_PeerMessage_stop_all_tag 16
-#define domes_peer_drill_PeerMessage_simulate_touch_tag 17
-#define domes_peer_drill_PeerMessage_touch_event_tag 18
-#define domes_peer_drill_PeerMessage_timeout_event_tag 19
+#define domes_peer_drill_PeerMessage_beacon_tag  1
+#define domes_peer_drill_PeerMessage_ping_tag    2
+#define domes_peer_drill_PeerMessage_pong_tag    3
+#define domes_peer_drill_PeerMessage_join_game_tag 16
+#define domes_peer_drill_PeerMessage_arm_touch_tag 17
+#define domes_peer_drill_PeerMessage_set_color_tag 18
+#define domes_peer_drill_PeerMessage_stop_all_tag 19
+#define domes_peer_drill_PeerMessage_simulate_touch_tag 20
+#define domes_peer_drill_PeerMessage_touch_event_tag 32
+#define domes_peer_drill_PeerMessage_timeout_event_tag 33
+#define domes_peer_drill_PeerMessage_protocol_version_tag 256
+#define domes_peer_drill_PeerMessage_sender_mac_tag 257
+#define domes_peer_drill_PeerMessage_timestamp_us_tag 258
 
 /* Struct field encoding specification for nanopb */
 #define domes_peer_drill_Beacon_FIELDLIST(X, a) \
@@ -221,19 +242,19 @@ X(a, STATIC,   SINGULAR, FIXED32,  round_token,       1)
 #define domes_peer_drill_TimeoutEvent_DEFAULT NULL
 
 #define domes_peer_drill_PeerMessage_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, UINT32,   protocol_version,   1) \
-X(a, STATIC,   SINGULAR, BYTES,    sender_mac,        2) \
-X(a, STATIC,   SINGULAR, FIXED32,  sender_timestamp_us,   3) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,beacon,payload.beacon),  10) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ping,payload.ping),  11) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,pong,payload.pong),  12) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,join_game,payload.join_game),  13) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,arm_touch,payload.arm_touch),  14) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,set_color,payload.set_color),  15) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,stop_all,payload.stop_all),  16) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,simulate_touch,payload.simulate_touch),  17) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,touch_event,payload.touch_event),  18) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,timeout_event,payload.timeout_event),  19)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,beacon,payload.beacon),   1) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ping,payload.ping),   2) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,pong,payload.pong),   3) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,join_game,payload.join_game),  16) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,arm_touch,payload.arm_touch),  17) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,set_color,payload.set_color),  18) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,stop_all,payload.stop_all),  19) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,simulate_touch,payload.simulate_touch),  20) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,touch_event,payload.touch_event),  32) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,timeout_event,payload.timeout_event),  33) \
+X(a, STATIC,   SINGULAR, UINT32,   protocol_version, 256) \
+X(a, STATIC,   SINGULAR, BYTES,    sender_mac,      257) \
+X(a, STATIC,   SINGULAR, FIXED32,  timestamp_us,    258)
 #define domes_peer_drill_PeerMessage_CALLBACK NULL
 #define domes_peer_drill_PeerMessage_DEFAULT NULL
 #define domes_peer_drill_PeerMessage_payload_beacon_MSGTYPE domes_peer_drill_Beacon
@@ -277,7 +298,7 @@ extern const pb_msgdesc_t domes_peer_drill_PeerMessage_msg;
 #define domes_peer_drill_ArmTouch_size           13
 #define domes_peer_drill_Beacon_size             0
 #define domes_peer_drill_JoinGame_size           0
-#define domes_peer_drill_PeerMessage_size        39
+#define domes_peer_drill_PeerMessage_size        43
 #define domes_peer_drill_Ping_size               0
 #define domes_peer_drill_Pong_size               0
 #define domes_peer_drill_SetColor_size           18

@@ -9,6 +9,8 @@
 namespace sim {
 
 constexpr uint16_t kBroadcastPodId = 0xFFFF;
+constexpr auto kMasterPeerRole = domes_peer_drill_PeerRole_PEER_ROLE_MASTER;
+constexpr auto kSlavePeerRole = domes_peer_drill_PeerRole_PEER_ROLE_SLAVE;
 
 /**
  * Simulator-only transport metadata around the generated production semantic message.

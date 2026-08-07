@@ -1,4 +1,4 @@
 # nanopb bounds for the portable peer/drill semantic contract.
 
-# The production codec additionally requires the runtime length to equal six.
+# Keep the runtime length so validators can reject missing or non-six-byte MACs.
 domes.peer_drill.PeerMessage.sender_mac  max_size:6

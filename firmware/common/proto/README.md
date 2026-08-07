@@ -14,9 +14,10 @@ dart pub global activate protoc_plugin 25.0.0
 tools/generate_protocols.sh
 ```
 
-The script uses the checked-in nanopb generator, generates `config`, `peer_drill`, and `trace` C
-bindings, and generates the Flutter app's `config` and `peer_drill` bindings. Use its check mode in
-local verification and CI:
+Before generation, the script validates the complete `PeerMessage` oneof tag map, metadata field
+numbers, and `PeerRole` values from a protobuf descriptor. It then uses the checked-in nanopb
+generator for `config`, `peer_drill`, and `trace` C bindings and generates the Flutter app's
+`config` and `peer_drill` bindings. Use its check mode in local verification and CI:
 
 ```bash
 tools/generate_protocols.sh --check
@@ -66,6 +67,9 @@ for that message. The status byte is an established config-protocol wrapper, not
 and not a precedent for new manually defined message families.
 
 OTA transfer frames and the internal ESP-NOW peer protocol are bounded fixed-binary exceptions.
-Peer semantics are defined here for portable generated consumers, but protobuf wire bytes are not
-sent over ESP-NOW. The production codec preserves the legacy packet exception until live migration
-and rolling compatibility complete. Neither exception is a precedent for new host protocols.
+Peer semantics, exact Legacy type discriminators, and sender roles are defined here for portable
+generated consumers, but protobuf wire bytes are not sent over ESP-NOW. Nanopb provides bounded C
+storage; explicit C++, Rust, and Dart validators enforce semantic bounds and sender direction at
+their compatibility boundaries. The production codec preserves the legacy packet exception until
+live migration and rolling compatibility complete. Neither exception is a precedent for new host
+protocols.

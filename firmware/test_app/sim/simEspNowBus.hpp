@@ -62,10 +62,58 @@ using DeliveryPolicy = std::function<DeliveryDirective(const DeliveryContext&)>;
 
 class SimEspNowBus {
 public:
+    class ScopedHandlerOverride {
+    public:
+        ScopedHandlerOverride(const ScopedHandlerOverride&) = delete;
+        ScopedHandlerOverride& operator=(const ScopedHandlerOverride&) = delete;
+        ScopedHandlerOverride(ScopedHandlerOverride&&) = delete;
+        ScopedHandlerOverride& operator=(ScopedHandlerOverride&&) = delete;
+
+        ~ScopedHandlerOverride() {
+            if (bus_ != nullptr) {
+                bus_->handlers_[podId_] = std::move(previous_);
+            }
+        }
+
+    private:
+        friend class SimEspNowBus;
+
+        ScopedHandlerOverride(SimEspNowBus& bus, uint16_t podId, MessageHandler handler)
+            : podId_(podId) {
+            const auto existing = bus.handlers_.find(podId);
+            if (existing == bus.handlers_.end()) {
+                bus.codecFailure_ = domes::peer_drill::CodecError::kBadRole;
+                return;
+            }
+            previous_ = std::move(existing->second);
+            existing->second = std::move(handler);
+            bus_ = &bus;
+        }
+
+        SimEspNowBus* bus_ = nullptr;
+        uint16_t podId_ = 0;
+        MessageHandler previous_;
+    };
+
     SimEspNowBus(SimLog& log, SimClock& clock) : log_(log), clock_(clock) {}
 
-    void registerPod(uint16_t podId, MessageHandler handler) {
+    void registerPod(uint16_t podId, domes_peer_drill_PeerRole role, MessageHandler handler) {
+        if (role != kMasterPeerRole && role != kSlavePeerRole) {
+            codecFailure_ = domes::peer_drill::CodecError::kBadRole;
+            return;
+        }
+        const auto existing = roles_.find(podId);
+        if (existing != roles_.end() && existing->second != role) {
+            codecFailure_ = domes::peer_drill::CodecError::kBadRole;
+            return;
+        }
+        roles_[podId] = role;
         handlers_[podId] = std::move(handler);
+    }
+
+    /** Temporarily replace a registered pod's receive handler and restore it at scope exit. */
+    [[nodiscard]] ScopedHandlerOverride overridePodHandler(uint16_t podId, MessageHandler handler) {
+        return ScopedHandlerOverride(*this, podId, std::move(handler));
     }
 
     void setDeliveryPolicy(DeliveryPolicy policy) {
@@ -93,9 +141,21 @@ public:
             return *codecFailure_;
         }
 
+        const auto registeredRole = roles_.find(message.srcPodId);
+        if (registeredRole == roles_.end()) {
+            codecFailure_ = domes::peer_drill::CodecError::kBadRole;
+            return *codecFailure_;
+        }
+        const auto validation =
+            domes::peer_drill::validateForSenderRole(message.semantic, registeredRole->second);
+        if (validation != domes::peer_drill::CodecError::kOk) {
+            codecFailure_ = validation;
+            return validation;
+        }
+
         message.sentAtUs = clock_.nowUs();
         message.sequence = nextSequence_++;
-        message.semantic.sender_timestamp_us = static_cast<uint32_t>(message.sentAtUs);
+        message.semantic.timestamp_us = static_cast<uint32_t>(message.sentAtUs);
         const auto result = domes::peer_drill::encodeLegacyV1(message.semantic, message.legacy);
         if (result != domes::peer_drill::CodecError::kOk) {
             codecFailure_ = result;
@@ -264,6 +324,7 @@ private:
     SimLog& log_;
     SimClock& clock_;
     std::map<uint16_t, MessageHandler> handlers_;
+    std::map<uint16_t, domes_peer_drill_PeerRole> roles_;
     std::vector<SimMessage> pending_;
     std::vector<ScheduledDelivery> scheduled_;
     std::vector<FlowEvent> flowEvents_;

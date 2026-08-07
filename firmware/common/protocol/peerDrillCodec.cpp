@@ -6,17 +6,6 @@
 namespace domes::peer_drill {
 namespace {
 
-constexpr uint8_t kBeaconType = 0x01;
-constexpr uint8_t kPingType = 0x02;
-constexpr uint8_t kPongType = 0x03;
-constexpr uint8_t kJoinGameType = 0x10;
-constexpr uint8_t kArmTouchType = 0x11;
-constexpr uint8_t kSetColorType = 0x12;
-constexpr uint8_t kStopAllType = 0x13;
-constexpr uint8_t kSimulateTouchType = 0x14;
-constexpr uint8_t kTouchEventType = 0x20;
-constexpr uint8_t kTimeoutEventType = 0x21;
-
 constexpr size_t kArmTouchSize = 20;
 constexpr size_t kSetColorSize = 14;
 constexpr size_t kSimulateTouchSize = 16;
@@ -82,113 +71,52 @@ CodecError validatePayload(const domes_peer_drill_PeerMessage& message) {
     }
 }
 
-uint8_t legacyType(pb_size_t payloadTag) {
-    switch (payloadTag) {
+size_t expectedSizeForType(uint8_t type) {
+    switch (type) {
         case domes_peer_drill_PeerMessage_beacon_tag:
-            return kBeaconType;
         case domes_peer_drill_PeerMessage_ping_tag:
-            return kPingType;
         case domes_peer_drill_PeerMessage_pong_tag:
-            return kPongType;
         case domes_peer_drill_PeerMessage_join_game_tag:
-            return kJoinGameType;
-        case domes_peer_drill_PeerMessage_arm_touch_tag:
-            return kArmTouchType;
-        case domes_peer_drill_PeerMessage_set_color_tag:
-            return kSetColorType;
         case domes_peer_drill_PeerMessage_stop_all_tag:
-            return kStopAllType;
+            return kLegacyV1HeaderSize;
+        case domes_peer_drill_PeerMessage_arm_touch_tag:
+            return kArmTouchSize;
+        case domes_peer_drill_PeerMessage_set_color_tag:
+            return kSetColorSize;
         case domes_peer_drill_PeerMessage_simulate_touch_tag:
-            return kSimulateTouchType;
+            return kSimulateTouchSize;
         case domes_peer_drill_PeerMessage_touch_event_tag:
-            return kTouchEventType;
+            return kTouchEventSize;
         case domes_peer_drill_PeerMessage_timeout_event_tag:
-            return kTimeoutEventType;
+            return kTimeoutEventSize;
         default:
             return 0;
     }
 }
 
 size_t legacySize(pb_size_t payloadTag) {
+    return payloadTag <= UINT8_MAX ? expectedSizeForType(static_cast<uint8_t>(payloadTag)) : 0;
+}
+
+bool isDiscoveryPayload(pb_size_t payloadTag) {
+    return payloadTag == domes_peer_drill_PeerMessage_beacon_tag ||
+           payloadTag == domes_peer_drill_PeerMessage_ping_tag ||
+           payloadTag == domes_peer_drill_PeerMessage_pong_tag;
+}
+
+domes_peer_drill_PeerRole requiredSenderRole(pb_size_t payloadTag) {
     switch (payloadTag) {
-        case domes_peer_drill_PeerMessage_beacon_tag:
-        case domes_peer_drill_PeerMessage_ping_tag:
-        case domes_peer_drill_PeerMessage_pong_tag:
         case domes_peer_drill_PeerMessage_join_game_tag:
-        case domes_peer_drill_PeerMessage_stop_all_tag:
-            return kLegacyV1HeaderSize;
         case domes_peer_drill_PeerMessage_arm_touch_tag:
-            return kArmTouchSize;
         case domes_peer_drill_PeerMessage_set_color_tag:
-            return kSetColorSize;
+        case domes_peer_drill_PeerMessage_stop_all_tag:
         case domes_peer_drill_PeerMessage_simulate_touch_tag:
-            return kSimulateTouchSize;
+            return domes_peer_drill_PeerRole_PEER_ROLE_MASTER;
         case domes_peer_drill_PeerMessage_touch_event_tag:
-            return kTouchEventSize;
         case domes_peer_drill_PeerMessage_timeout_event_tag:
-            return kTimeoutEventSize;
+            return domes_peer_drill_PeerRole_PEER_ROLE_SLAVE;
         default:
-            return 0;
-    }
-}
-
-size_t expectedSizeForType(uint8_t type) {
-    switch (type) {
-        case kBeaconType:
-        case kPingType:
-        case kPongType:
-        case kJoinGameType:
-        case kStopAllType:
-            return kLegacyV1HeaderSize;
-        case kArmTouchType:
-            return kArmTouchSize;
-        case kSetColorType:
-            return kSetColorSize;
-        case kSimulateTouchType:
-            return kSimulateTouchSize;
-        case kTouchEventType:
-            return kTouchEventSize;
-        case kTimeoutEventType:
-            return kTimeoutEventSize;
-        default:
-            return 0;
-    }
-}
-
-void selectDecodedPayload(uint8_t type, domes_peer_drill_PeerMessage& message) {
-    switch (type) {
-        case kBeaconType:
-            message.which_payload = domes_peer_drill_PeerMessage_beacon_tag;
-            break;
-        case kPingType:
-            message.which_payload = domes_peer_drill_PeerMessage_ping_tag;
-            break;
-        case kPongType:
-            message.which_payload = domes_peer_drill_PeerMessage_pong_tag;
-            break;
-        case kJoinGameType:
-            message.which_payload = domes_peer_drill_PeerMessage_join_game_tag;
-            break;
-        case kArmTouchType:
-            message.which_payload = domes_peer_drill_PeerMessage_arm_touch_tag;
-            break;
-        case kSetColorType:
-            message.which_payload = domes_peer_drill_PeerMessage_set_color_tag;
-            break;
-        case kStopAllType:
-            message.which_payload = domes_peer_drill_PeerMessage_stop_all_tag;
-            break;
-        case kSimulateTouchType:
-            message.which_payload = domes_peer_drill_PeerMessage_simulate_touch_tag;
-            break;
-        case kTouchEventType:
-            message.which_payload = domes_peer_drill_PeerMessage_touch_event_tag;
-            break;
-        case kTimeoutEventType:
-            message.which_payload = domes_peer_drill_PeerMessage_timeout_event_tag;
-            break;
-        default:
-            break;
+            return domes_peer_drill_PeerRole_PEER_ROLE_UNSPECIFIED;
     }
 }
 
@@ -204,6 +132,22 @@ CodecError validate(const domes_peer_drill_PeerMessage& message) {
     return validatePayload(message);
 }
 
+CodecError validateForSenderRole(const domes_peer_drill_PeerMessage& message,
+                                 domes_peer_drill_PeerRole senderRole) {
+    const CodecError structural = validate(message);
+    if (structural != CodecError::kOk) {
+        return structural;
+    }
+    if (isDiscoveryPayload(message.which_payload)) {
+        return CodecError::kOk;
+    }
+    if (senderRole == domes_peer_drill_PeerRole_PEER_ROLE_UNSPECIFIED ||
+        senderRole != requiredSenderRole(message.which_payload)) {
+        return CodecError::kBadRole;
+    }
+    return CodecError::kOk;
+}
+
 CodecError encodeLegacyV1(const domes_peer_drill_PeerMessage& message, std::span<uint8_t> output,
                           size_t& encodedSize) {
     encodedSize = 0;
@@ -217,9 +161,9 @@ CodecError encodeLegacyV1(const domes_peer_drill_PeerMessage& message, std::span
         return CodecError::kOutputTooSmall;
     }
 
-    output[0] = legacyType(message.which_payload);
+    output[0] = static_cast<uint8_t>(message.which_payload);
     std::copy_n(message.sender_mac.bytes, kSenderMacSize, output.begin() + 1);
-    writeU32Le(output.data() + 7, message.sender_timestamp_us);
+    writeU32Le(output.data() + 7, message.timestamp_us);
 
     switch (message.which_payload) {
         case domes_peer_drill_PeerMessage_arm_touch_tag:
@@ -274,8 +218,8 @@ CodecError decodeLegacyV1(std::span<const uint8_t> input, domes_peer_drill_PeerM
     message.protocol_version = kLegacyV1ProtocolVersion;
     message.sender_mac.size = kSenderMacSize;
     std::copy_n(input.begin() + 1, kSenderMacSize, message.sender_mac.bytes);
-    message.sender_timestamp_us = readU32Le(input.data() + 7);
-    selectDecodedPayload(input[0], message);
+    message.timestamp_us = readU32Le(input.data() + 7);
+    message.which_payload = input[0];
 
     switch (message.which_payload) {
         case domes_peer_drill_PeerMessage_arm_touch_tag:

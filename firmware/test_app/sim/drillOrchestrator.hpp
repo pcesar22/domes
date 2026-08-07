@@ -34,7 +34,10 @@ struct RoundResult {
 
 struct DrillResult {
     std::vector<RoundResult> rounds;
-    uint64_t totalTimeUs;
+    uint64_t totalTimeUs = 0;
+    domes::peer_drill::CodecError codecError = domes::peer_drill::CodecError::kOk;
+
+    bool succeeded() const { return codecError == domes::peer_drill::CodecError::kOk; }
 
     size_t hitCount() const {
         size_t count = 0;
@@ -77,14 +80,21 @@ public:
         // Send JoinGame broadcast to all slave pods
         auto joinCmd = makeMessage(sim_.pod(0).podId(), kBroadcastPodId,
                                    domes_peer_drill_PeerMessage_join_game_tag);
-        bus_.send(joinCmd);
+        if (bus_.send(joinCmd) != domes::peer_drill::CodecError::kOk) {
+            fail(result, startTimeUs);
+            return result;
+        }
         bus_.deliverPending();
+        if (failIfCodecError(result, startTimeUs))
+            return result;
 
         // Register master to receive TouchEvent/TimeoutEvent from slaves
         std::vector<SimMessage> masterReceived;
-        bus_.registerPod(sim_.pod(0).podId(), [&masterReceived](const SimMessage& msg) {
-            masterReceived.push_back(msg);
-        });
+        auto masterHandler = bus_.overridePodHandler(
+            sim_.pod(0).podId(),
+            [&masterReceived](const SimMessage& msg) { masterReceived.push_back(msg); });
+        if (failIfCodecError(result, startTimeUs))
+            return result;
 
         // --- EXECUTION PHASE ---
         for (size_t i = 0; i < steps.size(); i++) {
@@ -94,6 +104,8 @@ public:
             // Advance time by delay
             advanceNetworkTimeMs(step.delayBeforeMs);
             sim_.tickAll();
+            if (failIfCodecError(result, startTimeUs))
+                return result;
             masterReceived.clear();
             const uint32_t roundToken = allocateRoundToken();
 
@@ -101,16 +113,18 @@ public:
 
             // Find target pod
             PodInstance* targetPod = findPod(step.targetPodId);
+            ScopedEventCallbackOverride masterEventCallback;
 
             if (step.targetPodId == sim_.pod(0).podId()) {
                 // MASTER AS TARGET: call arm() directly
                 domes::game::ArmConfig config{step.timeoutMs, step.feedbackMode};
 
-                targetPod->setEventCallback([&roundResult](const domes::game::GameEvent& event) {
-                    roundResult.hit = (event.type == domes::game::GameEvent::Type::kHit);
-                    roundResult.reactionTimeUs = event.reactionTimeUs;
-                    roundResult.padIndex = event.padIndex;
-                });
+                masterEventCallback.install(
+                    *targetPod, [&roundResult](const domes::game::GameEvent& event) {
+                        roundResult.hit = (event.type == domes::game::GameEvent::Type::kHit);
+                        roundResult.reactionTimeUs = event.reactionTimeUs;
+                        roundResult.padIndex = event.padIndex;
+                    });
 
                 targetPod->engine().arm(config);
                 log_.log(targetPod->podId(), "drill", "ARM master directly");
@@ -121,7 +135,10 @@ public:
                 colorCmd.semantic.payload.set_color.red = step.color.r;
                 colorCmd.semantic.payload.set_color.green = step.color.g;
                 colorCmd.semantic.payload.set_color.blue = step.color.b;
-                bus_.send(colorCmd);
+                if (bus_.send(colorCmd) != domes::peer_drill::CodecError::kOk) {
+                    fail(result, startTimeUs);
+                    return result;
+                }
 
                 auto armCmd = makeMessage(sim_.pod(0).podId(), step.targetPodId,
                                           domes_peer_drill_PeerMessage_arm_touch_tag);
@@ -129,8 +146,13 @@ public:
                 armCmd.semantic.payload.arm_touch.feedback_mode =
                     static_cast<domes_peer_drill_FeedbackMode>(step.feedbackMode);
                 armCmd.semantic.payload.arm_touch.round_token = roundToken;
-                bus_.send(armCmd);
+                if (bus_.send(armCmd) != domes::peer_drill::CodecError::kOk) {
+                    fail(result, startTimeUs);
+                    return result;
+                }
                 bus_.deliverPending();
+                if (failIfCodecError(result, startTimeUs))
+                    return result;
 
                 log_.log(sim_.pod(0).podId(), "drill",
                          "ARM slave pod" + std::to_string(step.targetPodId));
@@ -143,11 +165,15 @@ public:
                 targetPod->touch().setTouched(touchScenario->padIndex, true);
                 sim_.tickAll();
                 targetPod->touch().clearAll();
+                if (failIfCodecError(result, startTimeUs))
+                    return result;
 
                 if (step.targetPodId != sim_.pod(0).podId()) {
                     // Slave: deliver TouchEvent back to master
                     bus_.deliverPending();
                     advanceUntilTouchEvent(masterReceived, step.targetPodId, roundToken);
+                    if (failIfCodecError(result, startTimeUs))
+                        return result;
 
                     // Extract result from the last TouchEvent received by master
                     for (auto it = masterReceived.rbegin(); it != masterReceived.rend(); ++it) {
@@ -170,11 +196,17 @@ public:
             } else {
                 // MISS: advance past timeout
                 advanceUntilArmed(*targetPod);
+                if (failIfCodecError(result, startTimeUs))
+                    return result;
                 advanceNetworkTimeMs(step.timeoutMs + 1);
                 sim_.tickAll();
+                if (failIfCodecError(result, startTimeUs))
+                    return result;
 
                 if (step.targetPodId != sim_.pod(0).podId()) {
                     bus_.deliverPending();
+                    if (failIfCodecError(result, startTimeUs))
+                        return result;
                 }
                 roundResult.hit = false;
             }
@@ -184,19 +216,67 @@ public:
             // Wait for feedback duration
             advanceNetworkTimeMs(domes::game::kFeedbackDurationMs + 1);
             sim_.tickAll();
+            if (failIfCodecError(result, startTimeUs))
+                return result;
         }
 
         // --- TEARDOWN PHASE ---
         auto stopCmd = makeMessage(sim_.pod(0).podId(), kBroadcastPodId,
                                    domes_peer_drill_PeerMessage_stop_all_tag);
-        bus_.send(stopCmd);
+        if (bus_.send(stopCmd) != domes::peer_drill::CodecError::kOk) {
+            fail(result, startTimeUs, false);
+            return result;
+        }
         bus_.deliverPending();
+        if (failIfCodecError(result, startTimeUs, false))
+            return result;
 
         result.totalTimeUs = sim_.clock().nowUs() - startTimeUs;
         return result;
     }
 
 private:
+    class ScopedEventCallbackOverride {
+    public:
+        ScopedEventCallbackOverride() = default;
+        ScopedEventCallbackOverride(const ScopedEventCallbackOverride&) = delete;
+        ScopedEventCallbackOverride& operator=(const ScopedEventCallbackOverride&) = delete;
+
+        ~ScopedEventCallbackOverride() {
+            if (pod_ != nullptr) {
+                (void)pod_->replaceEventCallback(std::move(previous_));
+            }
+        }
+
+        void install(PodInstance& pod, domes::game::GameEventCallback callback) {
+            pod_ = &pod;
+            previous_ = pod.replaceEventCallback(std::move(callback));
+        }
+
+    private:
+        PodInstance* pod_ = nullptr;
+        domes::game::GameEventCallback previous_;
+    };
+
+    void fail(DrillResult& result, uint64_t startTimeUs, bool sendStop = true) {
+        result.codecError = bus_.codecFailure().value_or(domes::peer_drill::CodecError::kMalformed);
+        result.totalTimeUs = sim_.clock().nowUs() - startTimeUs;
+        if (!sendStop)
+            return;
+
+        auto stopCmd = makeMessage(sim_.pod(0).podId(), kBroadcastPodId,
+                                   domes_peer_drill_PeerMessage_stop_all_tag);
+        (void)bus_.send(stopCmd);
+        bus_.deliverPending();
+    }
+
+    bool failIfCodecError(DrillResult& result, uint64_t startTimeUs, bool sendStop = true) {
+        if (!bus_.codecFailure())
+            return false;
+        fail(result, startTimeUs, sendStop);
+        return true;
+    }
+
     void advanceNetworkTimeMs(uint64_t durationMs) { advanceNetworkTimeUs(durationMs * 1000); }
 
     void advanceNetworkTimeUs(uint64_t durationUs) {

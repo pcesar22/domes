@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <pb_encode.h>
 
 namespace {
 
@@ -18,6 +19,10 @@ using domes::peer_drill::LegacyV1Packet;
 constexpr std::array<uint8_t, 6> kMac = {0x94, 0xA9, 0x90, 0x0A, 0xEB, 0xC0};
 constexpr uint32_t kTimestamp = 0x11223344;
 constexpr uint32_t kToken = 0xA1B2C3D4;
+constexpr std::array<uint8_t, 31> kPortableArmFixture = {
+    0x8A, 0x01, 0x0A, 0x0D, 0xD4, 0xC3, 0xB2, 0xA1, 0x10, 0xB8, 0x17, 0x18, 0x03, 0x80, 0x10, 0x01,
+    0x8A, 0x10, 0x06, 0x94, 0xA9, 0x90, 0x0A, 0xEB, 0xC0, 0x95, 0x10, 0x44, 0x33, 0x22, 0x11,
+};
 
 struct Fixture {
     domes_peer_drill_PeerMessage message;
@@ -29,7 +34,7 @@ domes_peer_drill_PeerMessage baseMessage(pb_size_t payloadTag) {
     message.protocol_version = domes::peer_drill::kLegacyV1ProtocolVersion;
     message.sender_mac.size = kMac.size();
     std::copy(kMac.begin(), kMac.end(), message.sender_mac.bytes);
-    message.sender_timestamp_us = kTimestamp;
+    message.timestamp_us = kTimestamp;
     message.which_payload = payloadTag;
     return message;
 }
@@ -174,7 +179,7 @@ void expectDecodedFields(const domes_peer_drill_PeerMessage& expected,
     EXPECT_EQ(actual.protocol_version, 1u);
     ASSERT_EQ(actual.sender_mac.size, kMac.size());
     EXPECT_TRUE(std::equal(kMac.begin(), kMac.end(), actual.sender_mac.bytes));
-    EXPECT_EQ(actual.sender_timestamp_us, kTimestamp);
+    EXPECT_EQ(actual.timestamp_us, kTimestamp);
     ASSERT_EQ(actual.which_payload, expected.which_payload);
 
     switch (expected.which_payload) {
@@ -239,7 +244,7 @@ TEST(PeerDrillCodecTest, EveryVariantRejectsShortAndLongWireLengths) {
     }
 }
 
-TEST(PeerDrillCodecTest, RejectsMalformedUnknownVersionAndMacInputs) {
+TEST(PeerDrillCodecTest, RejectsMalformedUnknownAndUnsupportedVersionInputs) {
     domes_peer_drill_PeerMessage decoded = domes_peer_drill_PeerMessage_init_zero;
     EXPECT_EQ(domes::peer_drill::decodeLegacyV1({}, decoded), CodecError::kMalformed);
 
@@ -267,6 +272,64 @@ TEST(PeerDrillCodecTest, RejectsMalformedUnknownVersionAndMacInputs) {
         message.which_payload = tag;
         LegacyV1Packet encoded;
         EXPECT_EQ(domes::peer_drill::encodeLegacyV1(message, encoded), CodecError::kMalformed);
+    }
+}
+
+TEST(PeerDrillCodecTest, GeneratedDiscriminatorsOwnEveryLegacyV1Type) {
+    EXPECT_EQ(domes_peer_drill_PeerMessage_beacon_tag, 0x01u);
+    EXPECT_EQ(domes_peer_drill_PeerMessage_ping_tag, 0x02u);
+    EXPECT_EQ(domes_peer_drill_PeerMessage_pong_tag, 0x03u);
+    EXPECT_EQ(domes_peer_drill_PeerMessage_join_game_tag, 0x10u);
+    EXPECT_EQ(domes_peer_drill_PeerMessage_arm_touch_tag, 0x11u);
+    EXPECT_EQ(domes_peer_drill_PeerMessage_set_color_tag, 0x12u);
+    EXPECT_EQ(domes_peer_drill_PeerMessage_stop_all_tag, 0x13u);
+    EXPECT_EQ(domes_peer_drill_PeerMessage_simulate_touch_tag, 0x14u);
+    EXPECT_EQ(domes_peer_drill_PeerMessage_touch_event_tag, 0x20u);
+    EXPECT_EQ(domes_peer_drill_PeerMessage_timeout_event_tag, 0x21u);
+}
+
+TEST(PeerDrillCodecTest, NanopbMatchesPortableArmFixture) {
+    auto message = baseMessage(domes_peer_drill_PeerMessage_arm_touch_tag);
+    message.payload.arm_touch.round_token = kToken;
+    message.payload.arm_touch.timeout_ms = 3000;
+    message.payload.arm_touch.feedback_mode =
+        domes_peer_drill_FeedbackMode_FEEDBACK_MODE_LED_AND_AUDIO;
+
+    std::array<uint8_t, domes_peer_drill_PeerMessage_size> encoded{};
+    pb_ostream_t stream = pb_ostream_from_buffer(encoded.data(), encoded.size());
+    ASSERT_TRUE(pb_encode(&stream, domes_peer_drill_PeerMessage_fields, &message));
+    EXPECT_EQ(std::vector<uint8_t>(encoded.begin(), encoded.begin() + stream.bytes_written),
+              std::vector<uint8_t>(kPortableArmFixture.begin(), kPortableArmFixture.end()));
+}
+
+TEST(PeerDrillCodecTest, EnforcesSenderRoleDirectionAndKeepsDiscoveryRoleNeutral) {
+    const auto master = domes_peer_drill_PeerRole_PEER_ROLE_MASTER;
+    const auto slave = domes_peer_drill_PeerRole_PEER_ROLE_SLAVE;
+    const auto unspecified = domes_peer_drill_PeerRole_PEER_ROLE_UNSPECIFIED;
+
+    for (pb_size_t tag :
+         {domes_peer_drill_PeerMessage_beacon_tag, domes_peer_drill_PeerMessage_ping_tag,
+          domes_peer_drill_PeerMessage_pong_tag}) {
+        const auto message = baseMessage(tag);
+        EXPECT_EQ(domes::peer_drill::validateForSenderRole(message, unspecified), CodecError::kOk);
+        EXPECT_EQ(domes::peer_drill::validateForSenderRole(message, master), CodecError::kOk);
+        EXPECT_EQ(domes::peer_drill::validateForSenderRole(message, slave), CodecError::kOk);
+    }
+
+    for (size_t index : {3u, 4u, 5u, 6u, 7u}) {
+        const auto& message = allFixtures()[index].message;
+        EXPECT_EQ(domes::peer_drill::validateForSenderRole(message, master), CodecError::kOk);
+        EXPECT_EQ(domes::peer_drill::validateForSenderRole(message, slave), CodecError::kBadRole);
+        EXPECT_EQ(domes::peer_drill::validateForSenderRole(message, unspecified),
+                  CodecError::kBadRole);
+    }
+
+    for (size_t index : {8u, 9u}) {
+        const auto& message = allFixtures()[index].message;
+        EXPECT_EQ(domes::peer_drill::validateForSenderRole(message, slave), CodecError::kOk);
+        EXPECT_EQ(domes::peer_drill::validateForSenderRole(message, master), CodecError::kBadRole);
+        EXPECT_EQ(domes::peer_drill::validateForSenderRole(message, unspecified),
+                  CodecError::kBadRole);
     }
 }
 

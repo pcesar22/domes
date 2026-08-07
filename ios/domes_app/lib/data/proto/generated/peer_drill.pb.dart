@@ -261,6 +261,7 @@ class ArmTouch extends $pb.GeneratedMessage {
       _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<ArmTouch>(create);
   static ArmTouch? _defaultInstance;
 
+  /// Round-scoped messages require a non-zero token.
   @$pb.TagNumber(1)
   $core.int get roundToken => $_getIZ(0);
   @$pb.TagNumber(1)
@@ -339,6 +340,7 @@ class SetColor extends $pb.GeneratedMessage {
       _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<SetColor>(create);
   static SetColor? _defaultInstance;
 
+  /// Each channel must fit the Legacy-V1 uint8 representation (0..255).
   @$pb.TagNumber(1)
   $core.int get red => $_getIZ(0);
   @$pb.TagNumber(1)
@@ -415,6 +417,7 @@ class SimulateTouch extends $pb.GeneratedMessage {
       $pb.GeneratedMessage.$_defaultFor<SimulateTouch>(create);
   static SimulateTouch? _defaultInstance;
 
+  /// Token must be non-zero; current hardware pad indices are 0..3.
   @$pb.TagNumber(1)
   $core.int get roundToken => $_getIZ(0);
   @$pb.TagNumber(1)
@@ -485,6 +488,7 @@ class TouchEvent extends $pb.GeneratedMessage {
       $pb.GeneratedMessage.$_defaultFor<TouchEvent>(create);
   static TouchEvent? _defaultInstance;
 
+  /// Token must be non-zero; current hardware pad indices are 0..3.
   @$pb.TagNumber(1)
   $core.int get roundToken => $_getIZ(0);
   @$pb.TagNumber(1)
@@ -558,6 +562,7 @@ class TimeoutEvent extends $pb.GeneratedMessage {
       $pb.GeneratedMessage.$_defaultFor<TimeoutEvent>(create);
   static TimeoutEvent? _defaultInstance;
 
+  /// Round-scoped messages require a non-zero token.
   @$pb.TagNumber(1)
   $core.int get roundToken => $_getIZ(0);
   @$pb.TagNumber(1)
@@ -584,9 +589,6 @@ enum PeerMessage_Payload {
 
 class PeerMessage extends $pb.GeneratedMessage {
   factory PeerMessage({
-    $core.int? protocolVersion,
-    $core.List<$core.int>? senderMac,
-    $core.int? senderTimestampUs,
     Beacon? beacon,
     Ping? ping,
     Pong? pong,
@@ -597,11 +599,11 @@ class PeerMessage extends $pb.GeneratedMessage {
     SimulateTouch? simulateTouch,
     TouchEvent? touchEvent,
     TimeoutEvent? timeoutEvent,
+    $core.int? protocolVersion,
+    $core.List<$core.int>? senderMac,
+    $core.int? timestampUs,
   }) {
     final result = create();
-    if (protocolVersion != null) result.protocolVersion = protocolVersion;
-    if (senderMac != null) result.senderMac = senderMac;
-    if (senderTimestampUs != null) result.senderTimestampUs = senderTimestampUs;
     if (beacon != null) result.beacon = beacon;
     if (ping != null) result.ping = ping;
     if (pong != null) result.pong = pong;
@@ -612,6 +614,9 @@ class PeerMessage extends $pb.GeneratedMessage {
     if (simulateTouch != null) result.simulateTouch = simulateTouch;
     if (touchEvent != null) result.touchEvent = touchEvent;
     if (timeoutEvent != null) result.timeoutEvent = timeoutEvent;
+    if (protocolVersion != null) result.protocolVersion = protocolVersion;
+    if (senderMac != null) result.senderMac = senderMac;
+    if (timestampUs != null) result.timestampUs = timestampUs;
     return result;
   }
 
@@ -626,16 +631,16 @@ class PeerMessage extends $pb.GeneratedMessage {
 
   static const $core.Map<$core.int, PeerMessage_Payload>
       _PeerMessage_PayloadByTag = {
-    10: PeerMessage_Payload.beacon,
-    11: PeerMessage_Payload.ping,
-    12: PeerMessage_Payload.pong,
-    13: PeerMessage_Payload.joinGame,
-    14: PeerMessage_Payload.armTouch,
-    15: PeerMessage_Payload.setColor,
-    16: PeerMessage_Payload.stopAll,
-    17: PeerMessage_Payload.simulateTouch,
-    18: PeerMessage_Payload.touchEvent,
-    19: PeerMessage_Payload.timeoutEvent,
+    1: PeerMessage_Payload.beacon,
+    2: PeerMessage_Payload.ping,
+    3: PeerMessage_Payload.pong,
+    16: PeerMessage_Payload.joinGame,
+    17: PeerMessage_Payload.armTouch,
+    18: PeerMessage_Payload.setColor,
+    19: PeerMessage_Payload.stopAll,
+    20: PeerMessage_Payload.simulateTouch,
+    32: PeerMessage_Payload.touchEvent,
+    33: PeerMessage_Payload.timeoutEvent,
     0: PeerMessage_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -643,31 +648,30 @@ class PeerMessage extends $pb.GeneratedMessage {
       package:
           const $pb.PackageName(_omitMessageNames ? '' : 'domes.peer_drill'),
       createEmptyInstance: create)
-    ..oo(0, [10, 11, 12, 13, 14, 15, 16, 17, 18, 19])
-    ..aI(1, _omitFieldNames ? '' : 'protocolVersion',
+    ..oo(0, [1, 2, 3, 16, 17, 18, 19, 20, 32, 33])
+    ..aOM<Beacon>(1, _omitFieldNames ? '' : 'beacon', subBuilder: Beacon.create)
+    ..aOM<Ping>(2, _omitFieldNames ? '' : 'ping', subBuilder: Ping.create)
+    ..aOM<Pong>(3, _omitFieldNames ? '' : 'pong', subBuilder: Pong.create)
+    ..aOM<JoinGame>(16, _omitFieldNames ? '' : 'joinGame',
+        subBuilder: JoinGame.create)
+    ..aOM<ArmTouch>(17, _omitFieldNames ? '' : 'armTouch',
+        subBuilder: ArmTouch.create)
+    ..aOM<SetColor>(18, _omitFieldNames ? '' : 'setColor',
+        subBuilder: SetColor.create)
+    ..aOM<StopAll>(19, _omitFieldNames ? '' : 'stopAll',
+        subBuilder: StopAll.create)
+    ..aOM<SimulateTouch>(20, _omitFieldNames ? '' : 'simulateTouch',
+        subBuilder: SimulateTouch.create)
+    ..aOM<TouchEvent>(32, _omitFieldNames ? '' : 'touchEvent',
+        subBuilder: TouchEvent.create)
+    ..aOM<TimeoutEvent>(33, _omitFieldNames ? '' : 'timeoutEvent',
+        subBuilder: TimeoutEvent.create)
+    ..aI(256, _omitFieldNames ? '' : 'protocolVersion',
         fieldType: $pb.PbFieldType.OU3)
     ..a<$core.List<$core.int>>(
-        2, _omitFieldNames ? '' : 'senderMac', $pb.PbFieldType.OY)
-    ..aI(3, _omitFieldNames ? '' : 'senderTimestampUs',
+        257, _omitFieldNames ? '' : 'senderMac', $pb.PbFieldType.OY)
+    ..aI(258, _omitFieldNames ? '' : 'timestampUs',
         fieldType: $pb.PbFieldType.OF3)
-    ..aOM<Beacon>(10, _omitFieldNames ? '' : 'beacon',
-        subBuilder: Beacon.create)
-    ..aOM<Ping>(11, _omitFieldNames ? '' : 'ping', subBuilder: Ping.create)
-    ..aOM<Pong>(12, _omitFieldNames ? '' : 'pong', subBuilder: Pong.create)
-    ..aOM<JoinGame>(13, _omitFieldNames ? '' : 'joinGame',
-        subBuilder: JoinGame.create)
-    ..aOM<ArmTouch>(14, _omitFieldNames ? '' : 'armTouch',
-        subBuilder: ArmTouch.create)
-    ..aOM<SetColor>(15, _omitFieldNames ? '' : 'setColor',
-        subBuilder: SetColor.create)
-    ..aOM<StopAll>(16, _omitFieldNames ? '' : 'stopAll',
-        subBuilder: StopAll.create)
-    ..aOM<SimulateTouch>(17, _omitFieldNames ? '' : 'simulateTouch',
-        subBuilder: SimulateTouch.create)
-    ..aOM<TouchEvent>(18, _omitFieldNames ? '' : 'touchEvent',
-        subBuilder: TouchEvent.create)
-    ..aOM<TimeoutEvent>(19, _omitFieldNames ? '' : 'timeoutEvent',
-        subBuilder: TimeoutEvent.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -689,168 +693,172 @@ class PeerMessage extends $pb.GeneratedMessage {
       $pb.GeneratedMessage.$_defaultFor<PeerMessage>(create);
   static PeerMessage? _defaultInstance;
 
-  @$pb.TagNumber(10)
-  @$pb.TagNumber(11)
-  @$pb.TagNumber(12)
-  @$pb.TagNumber(13)
-  @$pb.TagNumber(14)
-  @$pb.TagNumber(15)
+  @$pb.TagNumber(1)
+  @$pb.TagNumber(2)
+  @$pb.TagNumber(3)
   @$pb.TagNumber(16)
   @$pb.TagNumber(17)
   @$pb.TagNumber(18)
   @$pb.TagNumber(19)
+  @$pb.TagNumber(20)
+  @$pb.TagNumber(32)
+  @$pb.TagNumber(33)
   PeerMessage_Payload whichPayload() =>
       _PeerMessage_PayloadByTag[$_whichOneof(0)]!;
-  @$pb.TagNumber(10)
-  @$pb.TagNumber(11)
-  @$pb.TagNumber(12)
-  @$pb.TagNumber(13)
-  @$pb.TagNumber(14)
-  @$pb.TagNumber(15)
+  @$pb.TagNumber(1)
+  @$pb.TagNumber(2)
+  @$pb.TagNumber(3)
   @$pb.TagNumber(16)
   @$pb.TagNumber(17)
   @$pb.TagNumber(18)
   @$pb.TagNumber(19)
+  @$pb.TagNumber(20)
+  @$pb.TagNumber(32)
+  @$pb.TagNumber(33)
   void clearPayload() => $_clearField($_whichOneof(0));
 
-  /// The compatibility codec accepts exactly 1 without adding a byte to the
-  /// unchanged Legacy-V1 ESP-NOW packet.
+  /// Role-neutral discovery.
   @$pb.TagNumber(1)
-  $core.int get protocolVersion => $_getIZ(0);
+  Beacon get beacon => $_getN(0);
   @$pb.TagNumber(1)
-  set protocolVersion($core.int value) => $_setUnsignedInt32(0, value);
+  set beacon(Beacon value) => $_setField(1, value);
   @$pb.TagNumber(1)
-  $core.bool hasProtocolVersion() => $_has(0);
+  $core.bool hasBeacon() => $_has(0);
   @$pb.TagNumber(1)
-  void clearProtocolVersion() => $_clearField(1);
+  void clearBeacon() => $_clearField(1);
+  @$pb.TagNumber(1)
+  Beacon ensureBeacon() => $_ensure(0);
 
   @$pb.TagNumber(2)
-  $core.List<$core.int> get senderMac => $_getN(1);
+  Ping get ping => $_getN(1);
   @$pb.TagNumber(2)
-  set senderMac($core.List<$core.int> value) => $_setBytes(1, value);
+  set ping(Ping value) => $_setField(2, value);
   @$pb.TagNumber(2)
-  $core.bool hasSenderMac() => $_has(1);
+  $core.bool hasPing() => $_has(1);
   @$pb.TagNumber(2)
-  void clearSenderMac() => $_clearField(2);
+  void clearPing() => $_clearField(2);
+  @$pb.TagNumber(2)
+  Ping ensurePing() => $_ensure(1);
 
   @$pb.TagNumber(3)
-  $core.int get senderTimestampUs => $_getIZ(2);
+  Pong get pong => $_getN(2);
   @$pb.TagNumber(3)
-  set senderTimestampUs($core.int value) => $_setUnsignedInt32(2, value);
+  set pong(Pong value) => $_setField(3, value);
   @$pb.TagNumber(3)
-  $core.bool hasSenderTimestampUs() => $_has(2);
+  $core.bool hasPong() => $_has(2);
   @$pb.TagNumber(3)
-  void clearSenderTimestampUs() => $_clearField(3);
+  void clearPong() => $_clearField(3);
+  @$pb.TagNumber(3)
+  Pong ensurePong() => $_ensure(2);
 
-  @$pb.TagNumber(10)
-  Beacon get beacon => $_getN(3);
-  @$pb.TagNumber(10)
-  set beacon(Beacon value) => $_setField(10, value);
-  @$pb.TagNumber(10)
-  $core.bool hasBeacon() => $_has(3);
-  @$pb.TagNumber(10)
-  void clearBeacon() => $_clearField(10);
-  @$pb.TagNumber(10)
-  Beacon ensureBeacon() => $_ensure(3);
-
-  @$pb.TagNumber(11)
-  Ping get ping => $_getN(4);
-  @$pb.TagNumber(11)
-  set ping(Ping value) => $_setField(11, value);
-  @$pb.TagNumber(11)
-  $core.bool hasPing() => $_has(4);
-  @$pb.TagNumber(11)
-  void clearPing() => $_clearField(11);
-  @$pb.TagNumber(11)
-  Ping ensurePing() => $_ensure(4);
-
-  @$pb.TagNumber(12)
-  Pong get pong => $_getN(5);
-  @$pb.TagNumber(12)
-  set pong(Pong value) => $_setField(12, value);
-  @$pb.TagNumber(12)
-  $core.bool hasPong() => $_has(5);
-  @$pb.TagNumber(12)
-  void clearPong() => $_clearField(12);
-  @$pb.TagNumber(12)
-  Pong ensurePong() => $_ensure(5);
-
-  @$pb.TagNumber(13)
-  JoinGame get joinGame => $_getN(6);
-  @$pb.TagNumber(13)
-  set joinGame(JoinGame value) => $_setField(13, value);
-  @$pb.TagNumber(13)
-  $core.bool hasJoinGame() => $_has(6);
-  @$pb.TagNumber(13)
-  void clearJoinGame() => $_clearField(13);
-  @$pb.TagNumber(13)
-  JoinGame ensureJoinGame() => $_ensure(6);
-
-  @$pb.TagNumber(14)
-  ArmTouch get armTouch => $_getN(7);
-  @$pb.TagNumber(14)
-  set armTouch(ArmTouch value) => $_setField(14, value);
-  @$pb.TagNumber(14)
-  $core.bool hasArmTouch() => $_has(7);
-  @$pb.TagNumber(14)
-  void clearArmTouch() => $_clearField(14);
-  @$pb.TagNumber(14)
-  ArmTouch ensureArmTouch() => $_ensure(7);
-
-  @$pb.TagNumber(15)
-  SetColor get setColor => $_getN(8);
-  @$pb.TagNumber(15)
-  set setColor(SetColor value) => $_setField(15, value);
-  @$pb.TagNumber(15)
-  $core.bool hasSetColor() => $_has(8);
-  @$pb.TagNumber(15)
-  void clearSetColor() => $_clearField(15);
-  @$pb.TagNumber(15)
-  SetColor ensureSetColor() => $_ensure(8);
-
+  /// Master -> slave drill controls.
   @$pb.TagNumber(16)
-  StopAll get stopAll => $_getN(9);
+  JoinGame get joinGame => $_getN(3);
   @$pb.TagNumber(16)
-  set stopAll(StopAll value) => $_setField(16, value);
+  set joinGame(JoinGame value) => $_setField(16, value);
   @$pb.TagNumber(16)
-  $core.bool hasStopAll() => $_has(9);
+  $core.bool hasJoinGame() => $_has(3);
   @$pb.TagNumber(16)
-  void clearStopAll() => $_clearField(16);
+  void clearJoinGame() => $_clearField(16);
   @$pb.TagNumber(16)
-  StopAll ensureStopAll() => $_ensure(9);
+  JoinGame ensureJoinGame() => $_ensure(3);
 
   @$pb.TagNumber(17)
-  SimulateTouch get simulateTouch => $_getN(10);
+  ArmTouch get armTouch => $_getN(4);
   @$pb.TagNumber(17)
-  set simulateTouch(SimulateTouch value) => $_setField(17, value);
+  set armTouch(ArmTouch value) => $_setField(17, value);
   @$pb.TagNumber(17)
-  $core.bool hasSimulateTouch() => $_has(10);
+  $core.bool hasArmTouch() => $_has(4);
   @$pb.TagNumber(17)
-  void clearSimulateTouch() => $_clearField(17);
+  void clearArmTouch() => $_clearField(17);
   @$pb.TagNumber(17)
-  SimulateTouch ensureSimulateTouch() => $_ensure(10);
+  ArmTouch ensureArmTouch() => $_ensure(4);
 
   @$pb.TagNumber(18)
-  TouchEvent get touchEvent => $_getN(11);
+  SetColor get setColor => $_getN(5);
   @$pb.TagNumber(18)
-  set touchEvent(TouchEvent value) => $_setField(18, value);
+  set setColor(SetColor value) => $_setField(18, value);
   @$pb.TagNumber(18)
-  $core.bool hasTouchEvent() => $_has(11);
+  $core.bool hasSetColor() => $_has(5);
   @$pb.TagNumber(18)
-  void clearTouchEvent() => $_clearField(18);
+  void clearSetColor() => $_clearField(18);
   @$pb.TagNumber(18)
-  TouchEvent ensureTouchEvent() => $_ensure(11);
+  SetColor ensureSetColor() => $_ensure(5);
 
   @$pb.TagNumber(19)
-  TimeoutEvent get timeoutEvent => $_getN(12);
+  StopAll get stopAll => $_getN(6);
   @$pb.TagNumber(19)
-  set timeoutEvent(TimeoutEvent value) => $_setField(19, value);
+  set stopAll(StopAll value) => $_setField(19, value);
   @$pb.TagNumber(19)
-  $core.bool hasTimeoutEvent() => $_has(12);
+  $core.bool hasStopAll() => $_has(6);
   @$pb.TagNumber(19)
-  void clearTimeoutEvent() => $_clearField(19);
+  void clearStopAll() => $_clearField(19);
   @$pb.TagNumber(19)
-  TimeoutEvent ensureTimeoutEvent() => $_ensure(12);
+  StopAll ensureStopAll() => $_ensure(6);
+
+  @$pb.TagNumber(20)
+  SimulateTouch get simulateTouch => $_getN(7);
+  @$pb.TagNumber(20)
+  set simulateTouch(SimulateTouch value) => $_setField(20, value);
+  @$pb.TagNumber(20)
+  $core.bool hasSimulateTouch() => $_has(7);
+  @$pb.TagNumber(20)
+  void clearSimulateTouch() => $_clearField(20);
+  @$pb.TagNumber(20)
+  SimulateTouch ensureSimulateTouch() => $_ensure(7);
+
+  /// Slave -> master drill results.
+  @$pb.TagNumber(32)
+  TouchEvent get touchEvent => $_getN(8);
+  @$pb.TagNumber(32)
+  set touchEvent(TouchEvent value) => $_setField(32, value);
+  @$pb.TagNumber(32)
+  $core.bool hasTouchEvent() => $_has(8);
+  @$pb.TagNumber(32)
+  void clearTouchEvent() => $_clearField(32);
+  @$pb.TagNumber(32)
+  TouchEvent ensureTouchEvent() => $_ensure(8);
+
+  @$pb.TagNumber(33)
+  TimeoutEvent get timeoutEvent => $_getN(9);
+  @$pb.TagNumber(33)
+  set timeoutEvent(TimeoutEvent value) => $_setField(33, value);
+  @$pb.TagNumber(33)
+  $core.bool hasTimeoutEvent() => $_has(9);
+  @$pb.TagNumber(33)
+  void clearTimeoutEvent() => $_clearField(33);
+  @$pb.TagNumber(33)
+  TimeoutEvent ensureTimeoutEvent() => $_ensure(9);
+
+  /// Semantic compatibility metadata. These fields do not add bytes to the
+  /// unchanged Legacy-V1 ESP-NOW packet. For PONG, timestamp_us echoes the
+  /// corresponding PING timestamp; otherwise it is the sender's local time.
+  @$pb.TagNumber(256)
+  $core.int get protocolVersion => $_getIZ(10);
+  @$pb.TagNumber(256)
+  set protocolVersion($core.int value) => $_setUnsignedInt32(10, value);
+  @$pb.TagNumber(256)
+  $core.bool hasProtocolVersion() => $_has(10);
+  @$pb.TagNumber(256)
+  void clearProtocolVersion() => $_clearField(256);
+
+  @$pb.TagNumber(257)
+  $core.List<$core.int> get senderMac => $_getN(11);
+  @$pb.TagNumber(257)
+  set senderMac($core.List<$core.int> value) => $_setBytes(11, value);
+  @$pb.TagNumber(257)
+  $core.bool hasSenderMac() => $_has(11);
+  @$pb.TagNumber(257)
+  void clearSenderMac() => $_clearField(257);
+
+  @$pb.TagNumber(258)
+  $core.int get timestampUs => $_getIZ(12);
+  @$pb.TagNumber(258)
+  set timestampUs($core.int value) => $_setUnsignedInt32(12, value);
+  @$pb.TagNumber(258)
+  $core.bool hasTimestampUs() => $_has(12);
+  @$pb.TagNumber(258)
+  void clearTimestampUs() => $_clearField(258);
 }
 
 const $core.bool _omitFieldNames =

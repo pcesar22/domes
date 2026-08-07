@@ -15,6 +15,21 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
+@$core.Deprecated('Use peerRoleDescriptor instead')
+const PeerRole$json = {
+  '1': 'PeerRole',
+  '2': [
+    {'1': 'PEER_ROLE_UNSPECIFIED', '2': 0},
+    {'1': 'PEER_ROLE_MASTER', '2': 1},
+    {'1': 'PEER_ROLE_SLAVE', '2': 2},
+  ],
+};
+
+/// Descriptor for `PeerRole`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List peerRoleDescriptor = $convert.base64Decode(
+    'CghQZWVyUm9sZRIZChVQRUVSX1JPTEVfVU5TUEVDSUZJRUQQABIUChBQRUVSX1JPTEVfTUFTVE'
+    'VSEAESEwoPUEVFUl9ST0xFX1NMQVZFEAI=');
+
 @$core.Deprecated('Use feedbackModeDescriptor instead')
 const FeedbackMode$json = {
   '1': 'FeedbackMode',
@@ -159,18 +174,9 @@ final $typed_data.Uint8List timeoutEventDescriptor = $convert.base64Decode(
 const PeerMessage$json = {
   '1': 'PeerMessage',
   '2': [
-    {'1': 'protocol_version', '3': 1, '4': 1, '5': 13, '10': 'protocolVersion'},
-    {'1': 'sender_mac', '3': 2, '4': 1, '5': 12, '10': 'senderMac'},
-    {
-      '1': 'sender_timestamp_us',
-      '3': 3,
-      '4': 1,
-      '5': 7,
-      '10': 'senderTimestampUs'
-    },
     {
       '1': 'beacon',
-      '3': 10,
+      '3': 1,
       '4': 1,
       '5': 11,
       '6': '.domes.peer_drill.Beacon',
@@ -179,7 +185,7 @@ const PeerMessage$json = {
     },
     {
       '1': 'ping',
-      '3': 11,
+      '3': 2,
       '4': 1,
       '5': 11,
       '6': '.domes.peer_drill.Ping',
@@ -188,7 +194,7 @@ const PeerMessage$json = {
     },
     {
       '1': 'pong',
-      '3': 12,
+      '3': 3,
       '4': 1,
       '5': 11,
       '6': '.domes.peer_drill.Pong',
@@ -197,7 +203,7 @@ const PeerMessage$json = {
     },
     {
       '1': 'join_game',
-      '3': 13,
+      '3': 16,
       '4': 1,
       '5': 11,
       '6': '.domes.peer_drill.JoinGame',
@@ -206,7 +212,7 @@ const PeerMessage$json = {
     },
     {
       '1': 'arm_touch',
-      '3': 14,
+      '3': 17,
       '4': 1,
       '5': 11,
       '6': '.domes.peer_drill.ArmTouch',
@@ -215,7 +221,7 @@ const PeerMessage$json = {
     },
     {
       '1': 'set_color',
-      '3': 15,
+      '3': 18,
       '4': 1,
       '5': 11,
       '6': '.domes.peer_drill.SetColor',
@@ -224,7 +230,7 @@ const PeerMessage$json = {
     },
     {
       '1': 'stop_all',
-      '3': 16,
+      '3': 19,
       '4': 1,
       '5': 11,
       '6': '.domes.peer_drill.StopAll',
@@ -233,7 +239,7 @@ const PeerMessage$json = {
     },
     {
       '1': 'simulate_touch',
-      '3': 17,
+      '3': 20,
       '4': 1,
       '5': 11,
       '6': '.domes.peer_drill.SimulateTouch',
@@ -242,7 +248,7 @@ const PeerMessage$json = {
     },
     {
       '1': 'touch_event',
-      '3': 18,
+      '3': 32,
       '4': 1,
       '5': 11,
       '6': '.domes.peer_drill.TouchEvent',
@@ -251,32 +257,45 @@ const PeerMessage$json = {
     },
     {
       '1': 'timeout_event',
-      '3': 19,
+      '3': 33,
       '4': 1,
       '5': 11,
       '6': '.domes.peer_drill.TimeoutEvent',
       '9': 0,
       '10': 'timeoutEvent'
     },
+    {
+      '1': 'protocol_version',
+      '3': 256,
+      '4': 1,
+      '5': 13,
+      '10': 'protocolVersion'
+    },
+    {'1': 'sender_mac', '3': 257, '4': 1, '5': 12, '10': 'senderMac'},
+    {'1': 'timestamp_us', '3': 258, '4': 1, '5': 7, '10': 'timestampUs'},
   ],
   '8': [
     {'1': 'payload'},
+  ],
+  '9': [
+    {'1': 4, '2': 16},
+    {'1': 21, '2': 32},
   ],
 };
 
 /// Descriptor for `PeerMessage`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List peerMessageDescriptor = $convert.base64Decode(
-    'CgtQZWVyTWVzc2FnZRIpChBwcm90b2NvbF92ZXJzaW9uGAEgASgNUg9wcm90b2NvbFZlcnNpb2'
-    '4SHQoKc2VuZGVyX21hYxgCIAEoDFIJc2VuZGVyTWFjEi4KE3NlbmRlcl90aW1lc3RhbXBfdXMY'
-    'AyABKAdSEXNlbmRlclRpbWVzdGFtcFVzEjIKBmJlYWNvbhgKIAEoCzIYLmRvbWVzLnBlZXJfZH'
-    'JpbGwuQmVhY29uSABSBmJlYWNvbhIsCgRwaW5nGAsgASgLMhYuZG9tZXMucGVlcl9kcmlsbC5Q'
-    'aW5nSABSBHBpbmcSLAoEcG9uZxgMIAEoCzIWLmRvbWVzLnBlZXJfZHJpbGwuUG9uZ0gAUgRwb2'
-    '5nEjkKCWpvaW5fZ2FtZRgNIAEoCzIaLmRvbWVzLnBlZXJfZHJpbGwuSm9pbkdhbWVIAFIIam9p'
-    'bkdhbWUSOQoJYXJtX3RvdWNoGA4gASgLMhouZG9tZXMucGVlcl9kcmlsbC5Bcm1Ub3VjaEgAUg'
-    'hhcm1Ub3VjaBI5CglzZXRfY29sb3IYDyABKAsyGi5kb21lcy5wZWVyX2RyaWxsLlNldENvbG9y'
-    'SABSCHNldENvbG9yEjYKCHN0b3BfYWxsGBAgASgLMhkuZG9tZXMucGVlcl9kcmlsbC5TdG9wQW'
-    'xsSABSB3N0b3BBbGwSSAoOc2ltdWxhdGVfdG91Y2gYESABKAsyHy5kb21lcy5wZWVyX2RyaWxs'
-    'LlNpbXVsYXRlVG91Y2hIAFINc2ltdWxhdGVUb3VjaBI/Cgt0b3VjaF9ldmVudBgSIAEoCzIcLm'
-    'RvbWVzLnBlZXJfZHJpbGwuVG91Y2hFdmVudEgAUgp0b3VjaEV2ZW50EkUKDXRpbWVvdXRfZXZl'
-    'bnQYEyABKAsyHi5kb21lcy5wZWVyX2RyaWxsLlRpbWVvdXRFdmVudEgAUgx0aW1lb3V0RXZlbn'
-    'RCCQoHcGF5bG9hZA==');
+    'CgtQZWVyTWVzc2FnZRIyCgZiZWFjb24YASABKAsyGC5kb21lcy5wZWVyX2RyaWxsLkJlYWNvbk'
+    'gAUgZiZWFjb24SLAoEcGluZxgCIAEoCzIWLmRvbWVzLnBlZXJfZHJpbGwuUGluZ0gAUgRwaW5n'
+    'EiwKBHBvbmcYAyABKAsyFi5kb21lcy5wZWVyX2RyaWxsLlBvbmdIAFIEcG9uZxI5Cglqb2luX2'
+    'dhbWUYECABKAsyGi5kb21lcy5wZWVyX2RyaWxsLkpvaW5HYW1lSABSCGpvaW5HYW1lEjkKCWFy'
+    'bV90b3VjaBgRIAEoCzIaLmRvbWVzLnBlZXJfZHJpbGwuQXJtVG91Y2hIAFIIYXJtVG91Y2gSOQ'
+    'oJc2V0X2NvbG9yGBIgASgLMhouZG9tZXMucGVlcl9kcmlsbC5TZXRDb2xvckgAUghzZXRDb2xv'
+    'chI2CghzdG9wX2FsbBgTIAEoCzIZLmRvbWVzLnBlZXJfZHJpbGwuU3RvcEFsbEgAUgdzdG9wQW'
+    'xsEkgKDnNpbXVsYXRlX3RvdWNoGBQgASgLMh8uZG9tZXMucGVlcl9kcmlsbC5TaW11bGF0ZVRv'
+    'dWNoSABSDXNpbXVsYXRlVG91Y2gSPwoLdG91Y2hfZXZlbnQYICABKAsyHC5kb21lcy5wZWVyX2'
+    'RyaWxsLlRvdWNoRXZlbnRIAFIKdG91Y2hFdmVudBJFCg10aW1lb3V0X2V2ZW50GCEgASgLMh4u'
+    'ZG9tZXMucGVlcl9kcmlsbC5UaW1lb3V0RXZlbnRIAFIMdGltZW91dEV2ZW50EioKEHByb3RvY2'
+    '9sX3ZlcnNpb24YgAIgASgNUg9wcm90b2NvbFZlcnNpb24SHgoKc2VuZGVyX21hYxiBAiABKAxS'
+    'CXNlbmRlck1hYxIiCgx0aW1lc3RhbXBfdXMYggIgASgHUgt0aW1lc3RhbXBVc0IJCgdwYXlsb2'
+    'FkSgQIBBAQSgQIFRAg');

@@ -16,6 +16,19 @@ constexpr size_t kLegacyV1MaxPacketSize = 20;
 constexpr uint32_t kMaxColorChannel = 255;
 constexpr uint32_t kMaxPadIndex = 3;
 
+static_assert(domes_peer_drill_PeerMessage_beacon_tag == 0x01);
+static_assert(domes_peer_drill_PeerMessage_ping_tag == 0x02);
+static_assert(domes_peer_drill_PeerMessage_pong_tag == 0x03);
+static_assert(domes_peer_drill_PeerMessage_join_game_tag == 0x10);
+static_assert(domes_peer_drill_PeerMessage_arm_touch_tag == 0x11);
+static_assert(domes_peer_drill_PeerMessage_set_color_tag == 0x12);
+static_assert(domes_peer_drill_PeerMessage_stop_all_tag == 0x13);
+static_assert(domes_peer_drill_PeerMessage_simulate_touch_tag == 0x14);
+static_assert(domes_peer_drill_PeerMessage_touch_event_tag == 0x20);
+static_assert(domes_peer_drill_PeerMessage_timeout_event_tag == 0x21);
+static_assert(domes_peer_drill_PeerMessage_size <= 250,
+              "The bounded semantic message must fit one ESP-NOW payload");
+
 enum class CodecError : uint8_t {
     kOk,
     kMalformed,
@@ -27,6 +40,7 @@ enum class CodecError : uint8_t {
     kBadChannel,
     kBadPad,
     kZeroToken,
+    kBadRole,
     kOutputTooSmall,
 };
 
@@ -39,6 +53,10 @@ struct LegacyV1Packet {
 
 /** Validate a generated semantic message before it crosses a compatibility boundary. */
 CodecError validate(const domes_peer_drill_PeerMessage& message);
+
+/** Validate semantic fields plus the authenticated sender's protocol role. */
+CodecError validateForSenderRole(const domes_peer_drill_PeerMessage& message,
+                                 domes_peer_drill_PeerRole senderRole);
 
 /** Encode the generated semantic message into the exact current ESP-NOW Legacy-V1 bytes. */
 CodecError encodeLegacyV1(const domes_peer_drill_PeerMessage& message, std::span<uint8_t> output,

@@ -15,12 +15,13 @@ in [`docs/TESTING.md`](docs/TESTING.md).
 merge boundary in open [PR 105](https://github.com/pcesar22/domes/pull/105). Its exact rebased head
 `d9a22c6` is reported as mergeable with required Software CI and device-bound physical closure
 passed, but the package remains `Active` / `Amber` until independent review and merge. FS-WP-003A
-has advanced independently on a local-only branch: its first slice now owns the ten current peer
-semantics in one generated nanopb/prost/Dart contract, maps them through an exact Legacy-V1 codec,
-and makes the native simulator exercise actual production bytes. Generated drift, exact-byte and
-negative codec tests, simulator tests, Rust and Dart generated-type tests, and a fresh isolated
-ESP-IDF v5.4.4 build pass locally. This is not FS-WP-003A completion: live firmware adoption,
-operational app/CLI convergence, publication, and rolling two-board compatibility remain.
+has advanced independently on a publication-candidate branch: its first slice now owns the ten
+current peer semantics and sender roles in one generated nanopb/prost/Dart contract, maps them
+through an exact Legacy-V1 codec, and makes the native simulator exercise actual production bytes.
+Bounded nanopb storage, matching C++/Rust/Dart validators, exhaustive schema-drift checks,
+exact-byte and fail-closed simulator tests, and a fresh isolated ESP-IDF v5.4.4 build pass locally.
+This is not FS-WP-003A completion: exact-head publication/CI, live firmware adoption, operational
+app/CLI convergence, and rolling two-board compatibility remain.
 
 ## CEO Control Panel
 
@@ -34,10 +35,10 @@ operational app/CLI convergence, publication, and rolling two-board compatibilit
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
 | Latest completed execution package | `FS-WP-002D`, `Complete` / `Green`; [PR 100](https://github.com/pcesar22/domes/pull/100), issue [99](https://github.com/pcesar22/domes/issues/99), and required [Software CI](https://github.com/pcesar22/domes/actions/runs/31039047667) passed |
-| Current execution package | `FS-WP-003A`, `Active` / `Amber`; reviewed first portable-contract/Legacy-V1-codec/simulator slice is locally committed, while publication and live adoption remain |
+| Current execution package | `FS-WP-003A`, `Active` / `Amber`; first portable-contract/Legacy-V1-codec/simulator slice has passed local implementation review, while publication, exact-head CI, and live adoption remain |
 | Next program action | Select and start VC1 now; in parallel, record the HW owner/budget decision and then start HW-WP-001 while active PS1 and FS1 work continues |
-| Next autonomous execution delivery | After independent publication review of the local FS-WP-003A slice, adopt its codec in live firmware without changing ESP-NOW bytes, then converge operational CLI/app behavior |
-| Current AI execution blocker | No software implementation blocker; FS-WP-002C and the first FS-WP-003A slice each require independent review/publication before dependent work proceeds |
+| Next autonomous execution delivery | After this FS-WP-003A slice is published and passes exact-head CI/review, adopt its codec in live firmware without changing ESP-NOW bytes, then converge operational CLI/app behavior |
+| Current AI execution blocker | No software implementation blocker; FS-WP-002C awaits human review/merge, while the first FS-WP-003A slice awaits publication and exact-head CI |
 | PR merge condition | PR 105 remains a human review/merge action; the local FS-WP-003A slice must be published and pass exact-head CI before integration |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
@@ -75,13 +76,19 @@ start PCB layout, or order EVT boards until the corresponding gates pass.
 variants while preserving exact Legacy-V1 ESP-NOW bytes through a production-owned compatibility
 codec.
 
-The first local-only slice generates bounded nanopb, prost, and Dart types, rejects malformed or
-unsupported semantic/legacy inputs, proves exact bytes for every current variant, and converges the
-native simulator on codec-produced production bytes. Local generated drift, host, Rust, Dart, and
-isolated ESP-IDF v5.4.4 checks pass; protocol and firmware specialist reviews have no remaining
-findings. No live firmware packet path, radio behavior, attached pod, or host frame/status envelope
-was changed or exercised. The package stays `Active` / `Amber` pending publication, live firmware
-and operational CLI/app adoption, and a separately authorized rolling two-board compatibility run.
+The first slice generates bounded nanopb storage plus prost and Dart types, enforces matching
+semantic bounds and sender-role direction in explicit C++/Rust/Dart validators, proves exact bytes
+for every current variant, and converges the native simulator on codec-produced production bytes.
+The simulator derives role from registered source identity, reports codec failures instead of
+ordinary drill results, and scopes callbacks across delayed delivery and master-target paths. Local
+descriptor/generated drift, 310 host tests, 102 Rust unit plus 10 integration tests, four focused
+Dart tests, clean Dart analysis, three sanitizer regressions, a normal 116-event trace, and an
+isolated ESP-IDF v5.4.4 build pass, and final protocol/firmware reviews report no remaining
+publication blockers. The installed Flutter 3.38.9 full-suite attempt stalled after 53 tests and
+was stopped; repository-pinned Flutter 3.44.8 CI remains authoritative. No live firmware
+packet path, radio behavior, attached pod, or host frame/status envelope was changed or exercised.
+The package stays `Active` / `Amber` pending publication/exact-head CI, live firmware and operational
+CLI/app adoption, and a separately authorized rolling two-board compatibility run.
 
 ### Delivery At Human Review/Merge Boundary
 
@@ -151,14 +158,14 @@ These forecasts are planning targets, not evidence. Entry criteria, not date, au
 | FS-WP-002D | Physical/QEMU composition roots and deterministic platform inputs | `Complete` / `Green` | `B` is `Viable`; issue [99](https://github.com/pcesar22/domes/issues/99) | 100/100 QEMU runs, source-equivalent two-board regression, and required exact-checkout 100-process QEMU runtime CI and aggregate gate passed | 2026-08-25 | 2026-08-05 actual |
 | FS-WP-002C | Stable scheduler, ISR, synchronization, causality, and trace normalization | `Active` / `Amber` | `D` passed; implementation merged; PR 105 physical-closure candidate passed reported CI/device checks and awaits review/merge | QEMU and hardware use one bounded raw/normalized trace contract with stable IDs, full causal graph, exact identity, overflow failure, measured overhead, and passing default-image verification | 2026-09-04 | 2026-08-07 review/merge boundary |
 | FS-WP-002E | Production `IEspNowRadio` seam and trace correlation below `EspNowTransport` | `Not due` / `Not rated` | `C` passes and this package is selected | Physical path passes two-board regression; causal tokens cross callback/ring/dequeue without wire or pending-frame-capacity change | 2026-09-11 | 2026-09-11 |
-| FS-WP-003A | Portable protobuf-owned peer/drill codec and role semantics, required FS3 input | `Active` / `Amber` | First generated semantic/Legacy-V1 codec/native-simulator slice passes local software/build review; publication, live adoption, and hardware compatibility remain | Generated nanopb/prost/Dart contract replaces duplicated semantics and passes host/app/CLI/build/two-board migration regression | 2026-09-15 | 2026-09-15 |
+| FS-WP-003A | Portable protobuf-owned peer/drill codec and role semantics, required FS3 input | `Active` / `Amber` | First generated semantic/Legacy-V1 codec/native-simulator slice passes local software/build review; publication/exact-head CI, live adoption, and hardware compatibility remain | Generated nanopb/prost/Dart contract replaces duplicated semantics and passes host/app/CLI/build/two-board migration regression | 2026-09-15 | 2026-09-15 |
 | FS-WP-002F | One real QEMU DUT plus deterministic in-process peer backplane | `Not due` / `Not rated` | `E` and `FS-WP-003A` pass | Production transport/task/codec path passes complete deterministic fault and exact-replay matrix with role rotation inside patch budget | 2026-09-28 | 2026-09-28 |
 | FS-WP-002G | Scheduling, concurrency, mutation, fault-campaign, and CI tiers | `Not due` / `Not rated` | `F` passes | Critical mutants all detected; evidence modes remain distinct; 1,000 repeats and 20 shadow jobs meet zero-flake and p95 runtime limits | 2026-10-12 | 2026-10-12 |
 | FS-WP-002H | Hardware-calibrated model and frozen prediction candidate | `Not due` / `Not rated` | `G`, FS1, and stable FS3 evidence | Calibration-only tuning, clock uncertainty, frozen bounds/envelope, drift and invalidation rules | 2026-10-26 | 2026-10-26 |
 | VC-WP-002A | Independent held-out predictive qualification | `Not due` / `Not rated` | `H` frozen and independent corpus fixed | 100% critical and >=95% complete in-envelope mutant detection, fixed metric bounds, no unexplained held-out divergence, published verdict | 2026-10-30 | 2026-10-30 |
 
 `FS-WP-003A` is shown because it is a hard software dependency for the target peer backplane. It
-advances FS3, not FS2, and does not count as simulation progress by proximity. Its first local-only
+advances FS3, not FS2, and does not count as simulation progress by proximity. Its first candidate
 slice is software evidence, not merged integration or physical compatibility proof.
 
 Dependency order is `A -> B -> D -> C -> E`, with `FS-WP-003A` able to proceed independently;
@@ -364,7 +371,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | Deterministic replay foundation | [PR 97](https://github.com/pcesar22/domes/pull/97), merged 2026-08-04 | Accepted | FS-WP-002A only: explicit host time, deterministic faults, delivery identity, and exact delivery replay; no trace-normalization, target-scheduler, or predictive claim |
 | ESP32-S3 QEMU simulation delivery | [PR 100](https://github.com/pcesar22/domes/pull/100), [Software CI run 31039047667](https://github.com/pcesar22/domes/actions/runs/31039047667) | `B` is `Viable`; `D` is `Complete` / `Green`; exact-checkout CI rebuilt runtime implementation head `f36447f931f9216b7733ff4685ffc5ccaab895ce`, executed 100 identical fresh production-runtime QEMU processes, and passed aggregate `CI Gate`; manual 100/100 campaigns, linked closure, source-equivalent two-board regression, current host tooling, and independent review also passed; every later PR head remains gated before merge | Target execution and declared production/adapted/modeled/disabled runtime profile only; successful results stay in CI logs and failure diagnostics are uploaded outside Git; no scheduler-trace, radio/RF, peripheral-actuation, cycle-accuracy, hardware-equivalence, or predictive claim |
 | Scheduler and causality trace closure candidate | Merged [PR 102](https://github.com/pcesar22/domes/pull/102) plus open [PR 105](https://github.com/pcesar22/domes/pull/105), head `d9a22c6`, and [Software CI run 31078935256](https://github.com/pcesar22/domes/actions/runs/31078935256) | PR 105 reports exact device/image-bound 74-event trace with zero drops/discontinuities, restored default-image health, 10/10 self-test on two boots, and passing required CI | Candidate evidence pending review/merge; no physical peripheral/radio, hardware-equivalence, predictive, or successful guarded serial-update claim |
-| FS-WP-003A portable peer/drill first slice | Local `codex/feat/portable-peer-drill-contract` from accepted `ead2672`; [execution plan](docs/plans/portable-peer-drill-contract.md) | Generated drift passes; exact-byte/negative codec and simulator suites pass; Rust and Dart generated-type fixtures pass; fresh isolated ESP-IDF v5.4.4 build passes; specialist reviews have no remaining findings | Local-only candidate, not published or integrated; no live firmware adoption, operational app/CLI flow, attached-pod access, radio behavior, or rolling two-board compatibility evidence |
+| FS-WP-003A portable peer/drill first slice | Publication-candidate `codex/feat/portable-peer-drill-contract` from accepted `ead2672`; [execution plan](docs/plans/portable-peer-drill-contract.md) | Descriptor/generated drift, exact-byte/negative codec, 310 host, 102 Rust unit plus 10 integration, four focused Dart, Dart analysis, three ASan/UBSan regressions, normal 116-event trace, and fresh isolated ESP-IDF v5.4.4 build pass; specialist review findings were repaired and final reviews report no blocker | Not integrated; full local Flutter suite stalled under non-pinned 3.38.9 and exact-head CI is pending; no live firmware adoption, operational app/CLI flow, attached-pod access, radio behavior, or rolling two-board compatibility evidence |
 | Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains and CI behavior |
 | Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
 
