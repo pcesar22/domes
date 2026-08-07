@@ -75,10 +75,8 @@ public:
         setupPod(sim_.pod(0));
 
         // Send JoinGame broadcast to all slave pods
-        JoinGameCommand joinCmd;
-        joinCmd.header.srcPodId = sim_.pod(0).podId();
-        joinCmd.header.dstPodId = kBroadcastPodId;
-        joinCmd.header.type = SimMessageType::kJoinGame;
+        auto joinCmd = makeMessage(sim_.pod(0).podId(), kBroadcastPodId,
+                                   domes_peer_drill_PeerMessage_join_game_tag);
         bus_.send(joinCmd);
         bus_.deliverPending();
 
@@ -97,7 +95,7 @@ public:
             advanceNetworkTimeMs(step.delayBeforeMs);
             sim_.tickAll();
             masterReceived.clear();
-            uint64_t roundToken = nextRoundToken_++;
+            const uint32_t roundToken = allocateRoundToken();
 
             RoundResult roundResult{step.targetPodId, false, 0, 0};
 
@@ -118,22 +116,19 @@ public:
                 log_.log(targetPod->podId(), "drill", "ARM master directly");
             } else {
                 // SLAVE TARGET: send via ESP-NOW
-                SetColorCommand colorCmd;
-                colorCmd.header.srcPodId = sim_.pod(0).podId();
-                colorCmd.header.dstPodId = step.targetPodId;
-                colorCmd.header.type = SimMessageType::kSetColor;
-                colorCmd.r = step.color.r;
-                colorCmd.g = step.color.g;
-                colorCmd.b = step.color.b;
+                auto colorCmd = makeMessage(sim_.pod(0).podId(), step.targetPodId,
+                                            domes_peer_drill_PeerMessage_set_color_tag);
+                colorCmd.semantic.payload.set_color.red = step.color.r;
+                colorCmd.semantic.payload.set_color.green = step.color.g;
+                colorCmd.semantic.payload.set_color.blue = step.color.b;
                 bus_.send(colorCmd);
 
-                ArmTouchCommand armCmd;
-                armCmd.header.srcPodId = sim_.pod(0).podId();
-                armCmd.header.dstPodId = step.targetPodId;
-                armCmd.header.type = SimMessageType::kArmTouch;
-                armCmd.timeoutMs = step.timeoutMs;
-                armCmd.feedbackMode = step.feedbackMode;
-                armCmd.roundToken = roundToken;
+                auto armCmd = makeMessage(sim_.pod(0).podId(), step.targetPodId,
+                                          domes_peer_drill_PeerMessage_arm_touch_tag);
+                armCmd.semantic.payload.arm_touch.timeout_ms = step.timeoutMs;
+                armCmd.semantic.payload.arm_touch.feedback_mode =
+                    static_cast<domes_peer_drill_FeedbackMode>(step.feedbackMode);
+                armCmd.semantic.payload.arm_touch.round_token = roundToken;
                 bus_.send(armCmd);
                 bus_.deliverPending();
 
@@ -156,14 +151,17 @@ public:
 
                     // Extract result from the last TouchEvent received by master
                     for (auto it = masterReceived.rbegin(); it != masterReceived.rend(); ++it) {
-                        if (auto* te = std::get_if<TouchEventMsg>(&*it)) {
-                            if (te->header.srcPodId != step.targetPodId ||
-                                te->roundToken != roundToken) {
+                        const auto& message = *it;
+                        if (message.semantic.which_payload ==
+                            domes_peer_drill_PeerMessage_touch_event_tag) {
+                            const auto& touch = message.semantic.payload.touch_event;
+                            if (message.srcPodId != step.targetPodId ||
+                                touch.round_token != roundToken) {
                                 continue;
                             }
                             roundResult.hit = true;
-                            roundResult.reactionTimeUs = te->reactionTimeUs;
-                            roundResult.padIndex = te->padIndex;
+                            roundResult.reactionTimeUs = touch.reaction_time_us;
+                            roundResult.padIndex = static_cast<uint8_t>(touch.pad_index);
                             break;
                         }
                     }
@@ -189,10 +187,8 @@ public:
         }
 
         // --- TEARDOWN PHASE ---
-        StopAllCommand stopCmd;
-        stopCmd.header.srcPodId = sim_.pod(0).podId();
-        stopCmd.header.dstPodId = kBroadcastPodId;
-        stopCmd.header.type = SimMessageType::kStopAll;
+        auto stopCmd = makeMessage(sim_.pod(0).podId(), kBroadcastPodId,
+                                   domes_peer_drill_PeerMessage_stop_all_tag);
         bus_.send(stopCmd);
         bus_.deliverPending();
 
@@ -234,17 +230,18 @@ private:
     }
 
     static bool hasTouchEvent(const std::vector<SimMessage>& received, uint16_t targetPodId,
-                              uint64_t roundToken) {
-        return std::any_of(received.begin(), received.end(),
-                           [targetPodId, roundToken](const SimMessage& message) {
-                               auto* touch = std::get_if<TouchEventMsg>(&message);
-                               return touch && touch->header.srcPodId == targetPodId &&
-                                      touch->roundToken == roundToken;
-                           });
+                              uint32_t roundToken) {
+        return std::any_of(
+            received.begin(), received.end(), [targetPodId, roundToken](const SimMessage& message) {
+                return message.semantic.which_payload ==
+                           domes_peer_drill_PeerMessage_touch_event_tag &&
+                       message.srcPodId == targetPodId &&
+                       message.semantic.payload.touch_event.round_token == roundToken;
+            });
     }
 
     void advanceUntilTouchEvent(const std::vector<SimMessage>& received, uint16_t targetPodId,
-                                uint64_t roundToken) {
+                                uint32_t roundToken) {
         while (!hasTouchEvent(received, targetPodId, roundToken)) {
             auto nextDeliveryUs = bus_.nextDeliveryTimeUs();
             if (!nextDeliveryUs)
@@ -274,10 +271,18 @@ private:
         return nullptr;
     }
 
+    uint32_t allocateRoundToken() {
+        const uint32_t token = nextRoundToken_++;
+        if (nextRoundToken_ == 0) {
+            nextRoundToken_ = 1;
+        }
+        return token;
+    }
+
     SimOrchestrator& sim_;
     SimEspNowBus& bus_;
     SimLog& log_;
-    uint64_t nextRoundToken_ = 1;
+    uint32_t nextRoundToken_ = 1;
 };
 
 }  // namespace sim

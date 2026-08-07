@@ -10,7 +10,9 @@
 # Collect source files
 set(COMMON_SRCS
     protocol/otaProtocol.cpp
+    protocol/peerDrillCodec.cpp
     proto/config.pb.c
+    proto/peer_drill.pb.c
     proto/trace.pb.c
 )
 

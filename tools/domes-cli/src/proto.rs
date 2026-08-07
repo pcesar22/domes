@@ -130,6 +130,67 @@ pub mod config {
     }
 }
 
+/// Portable peer/drill semantic types (generated from peer_drill.proto).
+#[allow(dead_code)]
+pub mod peer_drill {
+    include!(concat!(env!("OUT_DIR"), "/domes.peer_drill.rs"));
+
+    #[cfg(test)]
+    mod tests {
+        use super::peer_message::Payload;
+        use super::*;
+        use prost::Message;
+
+        const ARM_FIXTURE: &[u8] = &[
+            0x08, 0x01, 0x12, 0x06, 0x94, 0xA9, 0x90, 0x0A, 0xEB, 0xC0, 0x1D, 0x44, 0x33, 0x22,
+            0x11, 0x72, 0x0A, 0x0D, 0xD4, 0xC3, 0xB2, 0xA1, 0x10, 0xB8, 0x17, 0x18, 0x03,
+        ];
+
+        #[test]
+        fn generated_oneof_exposes_exactly_ten_peer_variants() {
+            let variants = [
+                Payload::Beacon(Beacon {}),
+                Payload::Ping(Ping {}),
+                Payload::Pong(Pong {}),
+                Payload::JoinGame(JoinGame {}),
+                Payload::ArmTouch(ArmTouch::default()),
+                Payload::SetColor(SetColor::default()),
+                Payload::StopAll(StopAll {}),
+                Payload::SimulateTouch(SimulateTouch::default()),
+                Payload::TouchEvent(TouchEvent::default()),
+                Payload::TimeoutEvent(TimeoutEvent::default()),
+            ];
+
+            assert_eq!(variants.len(), 10);
+        }
+
+        #[test]
+        fn generated_fixed32_arm_fixture_round_trips_exactly() {
+            let message = PeerMessage {
+                protocol_version: 1,
+                sender_mac: vec![0x94, 0xA9, 0x90, 0x0A, 0xEB, 0xC0],
+                sender_timestamp_us: 0x1122_3344,
+                payload: Some(Payload::ArmTouch(ArmTouch {
+                    round_token: 0xA1B2_C3D4,
+                    timeout_ms: 3000,
+                    feedback_mode: FeedbackMode::LedAndAudio.into(),
+                })),
+            };
+
+            assert_eq!(message.encode_to_vec(), ARM_FIXTURE);
+            let decoded = PeerMessage::decode(ARM_FIXTURE).expect("fixture must decode");
+            assert_eq!(decoded.protocol_version, 1);
+            assert_eq!(decoded.sender_mac.len(), 6);
+            let Some(Payload::ArmTouch(arm)) = decoded.payload else {
+                panic!("fixture must select arm_touch");
+            };
+            assert_eq!(arm.round_token, 0xA1B2_C3D4);
+            assert_eq!(arm.timeout_ms, 3000);
+            assert_eq!(arm.feedback_mode, FeedbackMode::LedAndAudio as i32);
+        }
+    }
+}
+
 /// Trace protocol types (generated from trace.proto)
 #[allow(dead_code)]
 pub mod trace {

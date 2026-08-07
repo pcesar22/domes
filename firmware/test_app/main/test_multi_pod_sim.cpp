@@ -7,6 +7,7 @@
  */
 
 #include "esp_timer.h"
+#include "services/espNowProtocol.hpp"
 #include "sim/simOrchestrator.hpp"
 
 #include <gtest/gtest.h>
@@ -274,24 +275,21 @@ TEST_F(MultiPodSimTest, Bus_UnicastDelivery) {
     SimLog log(clock);
     SimEspNowBus bus(log, clock);
 
-    std::vector<SimMessageType> pod1Received;
-    std::vector<SimMessageType> pod2Received;
+    std::vector<pb_size_t> pod1Received;
+    std::vector<pb_size_t> pod2Received;
 
-    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(getHeader(msg).type); });
-    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(getHeader(msg).type); });
+    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(messageTag(msg)); });
+    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(messageTag(msg)); });
 
     // Send unicast from pod 0 to pod 1
-    SetColorCommand cmd;
-    cmd.header.srcPodId = 0;
-    cmd.header.dstPodId = 1;
-    cmd.header.type = SimMessageType::kSetColor;
-    cmd.r = 255;
+    auto cmd = makeMessage(0, 1, domes_peer_drill_PeerMessage_set_color_tag);
+    cmd.semantic.payload.set_color.red = 255;
     bus.send(cmd);
     bus.deliverPending();
 
     // Only pod 1 should receive
     ASSERT_EQ(pod1Received.size(), 1u);
-    EXPECT_EQ(pod1Received[0], SimMessageType::kSetColor);
+    EXPECT_EQ(pod1Received[0], domes_peer_drill_PeerMessage_set_color_tag);
     EXPECT_EQ(pod2Received.size(), 0u);
 
     // Verify flow event recorded
@@ -305,31 +303,49 @@ TEST_F(MultiPodSimTest, Bus_BroadcastDelivery) {
     SimLog log(clock);
     SimEspNowBus bus(log, clock);
 
-    std::vector<SimMessageType> pod0Received;
-    std::vector<SimMessageType> pod1Received;
-    std::vector<SimMessageType> pod2Received;
+    std::vector<pb_size_t> pod0Received;
+    std::vector<pb_size_t> pod1Received;
+    std::vector<pb_size_t> pod2Received;
 
-    bus.registerPod(0, [&](const SimMessage& msg) { pod0Received.push_back(getHeader(msg).type); });
-    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(getHeader(msg).type); });
-    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(getHeader(msg).type); });
+    bus.registerPod(0, [&](const SimMessage& msg) { pod0Received.push_back(messageTag(msg)); });
+    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(messageTag(msg)); });
+    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(messageTag(msg)); });
 
     // Broadcast from pod 0
-    JoinGameCommand cmd;
-    cmd.header.srcPodId = 0;
-    cmd.header.dstPodId = kBroadcastPodId;
-    cmd.header.type = SimMessageType::kJoinGame;
+    auto cmd = makeMessage(0, kBroadcastPodId, domes_peer_drill_PeerMessage_join_game_tag);
     bus.send(cmd);
     bus.deliverPending();
 
     // Pod 0 (sender) should NOT receive; pods 1 and 2 should
     EXPECT_EQ(pod0Received.size(), 0u);
     ASSERT_EQ(pod1Received.size(), 1u);
-    EXPECT_EQ(pod1Received[0], SimMessageType::kJoinGame);
+    EXPECT_EQ(pod1Received[0], domes_peer_drill_PeerMessage_join_game_tag);
     ASSERT_EQ(pod2Received.size(), 1u);
-    EXPECT_EQ(pod2Received[0], SimMessageType::kJoinGame);
+    EXPECT_EQ(pod2Received[0], domes_peer_drill_PeerMessage_join_game_tag);
 
     // Two flow events (one per receiver)
     EXPECT_EQ(bus.flowEvents().size(), 2u);
+}
+
+TEST_F(MultiPodSimTest, Bus_RejectsSenderMacThatDoesNotMatchSourceMetadata) {
+    SimClock clock;
+    SimLog log(clock);
+    SimEspNowBus bus(log, clock);
+    size_t received = 0;
+    bus.registerPod(1, [&](const SimMessage&) { received++; });
+
+    auto command = makeMessage(0, 1, domes_peer_drill_PeerMessage_stop_all_tag);
+    command.srcPodId = 2;
+
+    EXPECT_EQ(bus.send(command), domes::peer_drill::CodecError::kMalformed);
+    EXPECT_EQ(bus.pendingCount(), 0u);
+    bus.deliverPending();
+
+    EXPECT_EQ(received, 0u);
+    EXPECT_TRUE(bus.flowEvents().empty());
+    EXPECT_TRUE(bus.deliveryRecord().empty());
+    ASSERT_TRUE(bus.codecFailure().has_value());
+    EXPECT_EQ(*bus.codecFailure(), domes::peer_drill::CodecError::kMalformed);
 }
 
 TEST_F(MultiPodSimTest, Bus_DelaysDeliveryUntilVirtualDeadline) {
@@ -344,10 +360,7 @@ TEST_F(MultiPodSimTest, Bus_DelaysDeliveryUntilVirtualDeadline) {
         return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 5'000};
     });
 
-    SetColorCommand command;
-    command.header.srcPodId = 0;
-    command.header.dstPodId = 1;
-    command.header.type = SimMessageType::kSetColor;
+    auto command = makeMessage(0, 1, domes_peer_drill_PeerMessage_set_color_tag);
     bus.send(command);
 
     clock.advanceUs(4'000);
@@ -385,10 +398,7 @@ TEST_F(MultiPodSimTest, Bus_AppliesDropAndDuplicateDeterministically) {
         return DeliveryDirective{.action = DeliveryAction::kDuplicate};
     });
 
-    JoinGameCommand command;
-    command.header.srcPodId = 0;
-    command.header.dstPodId = kBroadcastPodId;
-    command.header.type = SimMessageType::kJoinGame;
+    auto command = makeMessage(0, kBroadcastPodId, domes_peer_drill_PeerMessage_join_game_tag);
     bus.send(command);
     bus.deliverPending();
 
@@ -416,10 +426,7 @@ TEST_F(MultiPodSimTest, Bus_ReplaysCapturedDeliveryRecordExactly) {
         return DeliveryDirective{.action = DeliveryAction::kDuplicate};
     });
 
-    JoinGameCommand firstCommand;
-    firstCommand.header.srcPodId = 0;
-    firstCommand.header.dstPodId = kBroadcastPodId;
-    firstCommand.header.type = SimMessageType::kJoinGame;
+    auto firstCommand = makeMessage(0, kBroadcastPodId, domes_peer_drill_PeerMessage_join_game_tag);
     firstBus.send(firstCommand);
     firstBus.deliverPending();
     firstClock.advanceUs(250);
@@ -437,10 +444,8 @@ TEST_F(MultiPodSimTest, Bus_ReplaysCapturedDeliveryRecordExactly) {
     replayBus.registerPod(2, [&](const SimMessage&) { replayReceived.push_back(2); });
     replayBus.setReplayRecord(capturedRecord);
 
-    JoinGameCommand replayCommand;
-    replayCommand.header.srcPodId = 0;
-    replayCommand.header.dstPodId = kBroadcastPodId;
-    replayCommand.header.type = SimMessageType::kJoinGame;
+    auto replayCommand =
+        makeMessage(0, kBroadcastPodId, domes_peer_drill_PeerMessage_join_game_tag);
     replayBus.send(replayCommand);
     replayBus.deliverPending();
     EXPECT_FALSE(replayBus.replayComplete());
@@ -460,11 +465,8 @@ TEST_F(MultiPodSimTest, Bus_PayloadMismatchFailsClosed) {
     SimEspNowBus sourceBus(sourceLog, sourceClock);
     sourceBus.registerPod(1, [](const SimMessage&) {});
 
-    SetColorCommand sourceCommand;
-    sourceCommand.header.srcPodId = 0;
-    sourceCommand.header.dstPodId = 1;
-    sourceCommand.header.type = SimMessageType::kSetColor;
-    sourceCommand.r = 10;
+    auto sourceCommand = makeMessage(0, 1, domes_peer_drill_PeerMessage_set_color_tag);
+    sourceCommand.semantic.payload.set_color.red = 10;
     sourceBus.send(sourceCommand);
     sourceBus.deliverPending();
     ASSERT_EQ(sourceBus.deliveryRecord().size(), 1u);
@@ -476,8 +478,8 @@ TEST_F(MultiPodSimTest, Bus_PayloadMismatchFailsClosed) {
     replayBus.registerPod(1, [&](const SimMessage&) { received++; });
     replayBus.setReplayRecord(sourceBus.deliveryRecord());
 
-    SetColorCommand changedCommand = sourceCommand;
-    changedCommand.r = 11;
+    SimMessage changedCommand = sourceCommand;
+    changedCommand.semantic.payload.set_color.red = 11;
     replayBus.send(changedCommand);
     replayBus.deliverPending();
 
@@ -497,10 +499,7 @@ TEST_F(MultiPodSimTest, Bus_EmptyReplayRejectsUnexpectedDelivery) {
 
     EXPECT_TRUE(bus.replayComplete());
 
-    StopAllCommand command;
-    command.header.srcPodId = 0;
-    command.header.dstPodId = 1;
-    command.header.type = SimMessageType::kStopAll;
+    auto command = makeMessage(0, 1, domes_peer_drill_PeerMessage_stop_all_tag);
     bus.send(command);
     EXPECT_FALSE(bus.replayComplete());
     bus.deliverPending();
@@ -511,29 +510,73 @@ TEST_F(MultiPodSimTest, Bus_EmptyReplayRejectsUnexpectedDelivery) {
     EXPECT_TRUE(bus.flowEvents().empty());
 }
 
-TEST_F(MultiPodSimTest, CanonicalPayloadPreservesEveryMessageVariant) {
-    std::vector<SimMessage> messages = {
-        SetColorCommand{}, ArmTouchCommand{}, PlaySoundCommand{}, StopAllCommand{},
-        TouchEventMsg{},   TimeoutEventMsg{}, JoinGameCommand{},
+TEST_F(MultiPodSimTest, DeliveryRecordUsesProductionBytesForAllTenGeneratedVariants) {
+    SimClock clock;
+    SimLog log(clock);
+    SimEspNowBus bus(log, clock);
+    bus.registerPod(1, [](const SimMessage&) {});
+
+    const std::array<pb_size_t, 10> tags = {
+        domes_peer_drill_PeerMessage_beacon_tag,
+        domes_peer_drill_PeerMessage_ping_tag,
+        domes_peer_drill_PeerMessage_pong_tag,
+        domes_peer_drill_PeerMessage_join_game_tag,
+        domes_peer_drill_PeerMessage_arm_touch_tag,
+        domes_peer_drill_PeerMessage_set_color_tag,
+        domes_peer_drill_PeerMessage_stop_all_tag,
+        domes_peer_drill_PeerMessage_simulate_touch_tag,
+        domes_peer_drill_PeerMessage_touch_event_tag,
+        domes_peer_drill_PeerMessage_timeout_event_tag,
+    };
+    const std::array<uint8_t, 10> legacyTypes = {
+        0x01, 0x02, 0x03, 0x10, 0x11, 0x12, 0x13, 0x14, 0x20, 0x21,
     };
 
-    for (size_t i = 0; i < messages.size(); i++) {
-        auto payload = canonicalPayload(messages[i]);
-        ASSERT_FALSE(payload.empty());
-        EXPECT_EQ(payload[0], i);
-        for (size_t j = i + 1; j < messages.size(); j++) {
-            EXPECT_NE(payload, canonicalPayload(messages[j]));
+    for (const auto tag : tags) {
+        auto message = makeMessage(0, 1, tag);
+        if (tag == domes_peer_drill_PeerMessage_arm_touch_tag) {
+            message.semantic.payload.arm_touch.round_token = 1;
+        } else if (tag == domes_peer_drill_PeerMessage_simulate_touch_tag) {
+            message.semantic.payload.simulate_touch.round_token = 2;
+        } else if (tag == domes_peer_drill_PeerMessage_touch_event_tag) {
+            message.semantic.payload.touch_event.round_token = 3;
+        } else if (tag == domes_peer_drill_PeerMessage_timeout_event_tag) {
+            message.semantic.payload.timeout_event.round_token = UINT32_MAX;
         }
+        ASSERT_EQ(bus.send(message), domes::peer_drill::CodecError::kOk);
     }
+    bus.deliverPending();
+
+    ASSERT_EQ(bus.deliveryRecord().size(), tags.size());
+    for (size_t index = 0; index < tags.size(); ++index) {
+        const auto& context = bus.deliveryRecord()[index].context;
+        EXPECT_EQ(context.payloadTag, tags[index]);
+        ASSERT_FALSE(context.legacyBytes.empty());
+        EXPECT_EQ(context.legacyBytes[0], legacyTypes[index]);
+        EXPECT_EQ(context.legacyBytes.size(),
+                  domes::espnow::expectedMessageSize(
+                      static_cast<domes::espnow::MsgType>(legacyTypes[index])));
+    }
+    EXPECT_FALSE(bus.codecFailure().has_value());
 }
 
-TEST_F(MultiPodSimTest, CanonicalPayloadIncludesRoundToken) {
-    ArmTouchCommand first;
-    first.roundToken = 41;
-    ArmTouchCommand second = first;
-    second.roundToken = 42;
+TEST_F(MultiPodSimTest, DeliveryRecordIncludesRoundTokenInProductionBytes) {
+    SimClock clock;
+    SimLog log(clock);
+    SimEspNowBus bus(log, clock);
+    bus.registerPod(1, [](const SimMessage&) {});
 
-    EXPECT_NE(canonicalPayload(first), canonicalPayload(second));
+    auto first = makeMessage(0, 1, domes_peer_drill_PeerMessage_arm_touch_tag);
+    first.semantic.payload.arm_touch.round_token = 41;
+    auto second = first;
+    second.semantic.payload.arm_touch.round_token = 42;
+    ASSERT_EQ(bus.send(first), domes::peer_drill::CodecError::kOk);
+    ASSERT_EQ(bus.send(second), domes::peer_drill::CodecError::kOk);
+    bus.deliverPending();
+
+    ASSERT_EQ(bus.deliveryRecord().size(), 2u);
+    EXPECT_NE(bus.deliveryRecord()[0].context.legacyBytes,
+              bus.deliveryRecord()[1].context.legacyBytes);
 }
 
 // =============================================================================
@@ -551,10 +594,7 @@ TEST_F(MultiPodSimTest, PodCommandHandler_JoinGame) {
     EXPECT_EQ(pod.mode().currentMode(), SystemMode::kBooting);
 
     // Send JoinGame command
-    JoinGameCommand cmd;
-    cmd.header.srcPodId = 0;
-    cmd.header.dstPodId = 1;
-    cmd.header.type = SimMessageType::kJoinGame;
+    auto cmd = makeMessage(0, 1, domes_peer_drill_PeerMessage_join_game_tag);
     handler.onMessage(cmd);
 
     // Should have transitioned through IDLE->CONNECTED->GAME
@@ -578,13 +618,10 @@ TEST_F(MultiPodSimTest, PodCommandHandler_SetColor) {
     PodCommandHandler handler(pod, bus, orch.log());
 
     // Send SetColor green
-    SetColorCommand cmd;
-    cmd.header.srcPodId = 0;
-    cmd.header.dstPodId = 1;
-    cmd.header.type = SimMessageType::kSetColor;
-    cmd.r = 0;
-    cmd.g = 255;
-    cmd.b = 0;
+    auto cmd = makeMessage(0, 1, domes_peer_drill_PeerMessage_set_color_tag);
+    cmd.semantic.payload.set_color.red = 0;
+    cmd.semantic.payload.set_color.green = 255;
+    cmd.semantic.payload.set_color.blue = 0;
     handler.onMessage(cmd);
 
     // Verify LED was set to green
@@ -610,13 +647,11 @@ TEST_F(MultiPodSimTest, PodCommandHandler_ArmAndTouch) {
     bus.registerPod(0, [&](const SimMessage& msg) { masterReceived.push_back(msg); });
 
     // Master (pod 0) sends ArmTouch to pod 1
-    ArmTouchCommand cmd;
-    cmd.header.srcPodId = 0;
-    cmd.header.dstPodId = 1;
-    cmd.header.type = SimMessageType::kArmTouch;
-    cmd.timeoutMs = 3000;
-    cmd.feedbackMode = 0x03;
-    cmd.roundToken = 17;
+    auto cmd = makeMessage(0, 1, domes_peer_drill_PeerMessage_arm_touch_tag);
+    cmd.semantic.payload.arm_touch.timeout_ms = 3000;
+    cmd.semantic.payload.arm_touch.feedback_mode =
+        domes_peer_drill_FeedbackMode_FEEDBACK_MODE_LED_AND_AUDIO;
+    cmd.semantic.payload.arm_touch.round_token = 17;
     handler.onMessage(cmd);
 
     // Pod 1 should now be armed
@@ -636,13 +671,13 @@ TEST_F(MultiPodSimTest, PodCommandHandler_ArmAndTouch) {
 
     // Master (pod 0) should have received a TouchEvent
     ASSERT_EQ(masterReceived.size(), 1u);
-    auto* touchEvent = std::get_if<TouchEventMsg>(&masterReceived[0]);
-    ASSERT_NE(touchEvent, nullptr);
-    EXPECT_EQ(touchEvent->header.srcPodId, 1);  // From pod 1
-    EXPECT_EQ(touchEvent->header.dstPodId, 0);  // To master pod 0
-    EXPECT_EQ(touchEvent->reactionTimeUs, 150'000u);
-    EXPECT_EQ(touchEvent->padIndex, 0);
-    EXPECT_EQ(touchEvent->roundToken, 17u);
+    const auto& touchEvent = masterReceived[0];
+    ASSERT_EQ(touchEvent.semantic.which_payload, domes_peer_drill_PeerMessage_touch_event_tag);
+    EXPECT_EQ(touchEvent.srcPodId, 1);  // From pod 1
+    EXPECT_EQ(touchEvent.dstPodId, 0);  // To master pod 0
+    EXPECT_EQ(touchEvent.semantic.payload.touch_event.reaction_time_us, 150'000u);
+    EXPECT_EQ(touchEvent.semantic.payload.touch_event.pad_index, 0u);
+    EXPECT_EQ(touchEvent.semantic.payload.touch_event.round_token, 17u);
 }
 
 TEST_F(MultiPodSimTest, PodCommandHandler_RejectedRearmKeepsActiveRoundCallback) {
@@ -655,16 +690,13 @@ TEST_F(MultiPodSimTest, PodCommandHandler_RejectedRearmKeepsActiveRoundCallback)
     std::vector<SimMessage> masterReceived;
     bus.registerPod(0, [&](const SimMessage& msg) { masterReceived.push_back(msg); });
 
-    ArmTouchCommand first;
-    first.header.srcPodId = 0;
-    first.header.dstPodId = 1;
-    first.header.type = SimMessageType::kArmTouch;
-    first.roundToken = 7;
+    auto first = makeMessage(0, 1, domes_peer_drill_PeerMessage_arm_touch_tag);
+    first.semantic.payload.arm_touch.round_token = 7;
     handler.onMessage(first);
     ASSERT_EQ(pod.engine().currentState(), GameState::kArmed);
 
-    ArmTouchCommand rejected = first;
-    rejected.roundToken = 8;
+    SimMessage rejected = first;
+    rejected.semantic.payload.arm_touch.round_token = 8;
     handler.onMessage(rejected);
 
     orch.advanceTimeMs(100);
@@ -674,7 +706,7 @@ TEST_F(MultiPodSimTest, PodCommandHandler_RejectedRearmKeepsActiveRoundCallback)
     bus.deliverPending();
 
     ASSERT_EQ(masterReceived.size(), 1u);
-    auto* touchEvent = std::get_if<TouchEventMsg>(&masterReceived[0]);
-    ASSERT_NE(touchEvent, nullptr);
-    EXPECT_EQ(touchEvent->roundToken, 7u);
+    ASSERT_EQ(masterReceived[0].semantic.which_payload,
+              domes_peer_drill_PeerMessage_touch_event_tag);
+    EXPECT_EQ(masterReceived[0].semantic.payload.touch_event.round_token, 7u);
 }

@@ -19,7 +19,7 @@ struct FlowEvent {
     uint64_t timestampUs;
     uint16_t srcPod;
     uint16_t dstPod;
-    SimMessageType type;
+    pb_size_t payloadTag;
     uint32_t sequence;
 
     bool operator==(const FlowEvent&) const = default;
@@ -36,9 +36,9 @@ struct DeliveryContext {
     uint16_t srcPod;
     uint16_t addressedPod;
     uint16_t dstPod;
-    SimMessageType type;
+    pb_size_t payloadTag;
     uint32_t sequence;
-    std::vector<uint8_t> payload;
+    std::vector<uint8_t> legacyBytes;
 
     bool operator==(const DeliveryContext&) const = default;
 };
@@ -84,20 +84,36 @@ public:
         replayMismatch_ = false;
     }
 
-    void send(SimMessage msg) {
-        auto& hdr = getMutableHeader(msg);
-        hdr.timestampUs = clock_.nowUs();
-        hdr.sequence = nextSequence_++;
+    domes::peer_drill::CodecError send(SimMessage message) {
+        const auto expectedSenderMac = senderMacForPod(message.srcPodId);
+        if (message.semantic.sender_mac.size != expectedSenderMac.size() ||
+            !std::equal(expectedSenderMac.begin(), expectedSenderMac.end(),
+                        message.semantic.sender_mac.bytes)) {
+            codecFailure_ = domes::peer_drill::CodecError::kMalformed;
+            return *codecFailure_;
+        }
 
-        std::ostringstream oss;
-        oss << "espnow.send " << messageTypeName(hdr.type) << " pod" << hdr.srcPodId << "->";
-        if (hdr.dstPodId == kBroadcastPodId)
-            oss << "ALL";
-        else
-            oss << "pod" << hdr.dstPodId;
-        log_.log(hdr.srcPodId, "espnow", oss.str());
+        message.sentAtUs = clock_.nowUs();
+        message.sequence = nextSequence_++;
+        message.semantic.sender_timestamp_us = static_cast<uint32_t>(message.sentAtUs);
+        const auto result = domes::peer_drill::encodeLegacyV1(message.semantic, message.legacy);
+        if (result != domes::peer_drill::CodecError::kOk) {
+            codecFailure_ = result;
+            return result;
+        }
 
-        pending_.push_back(std::move(msg));
+        std::ostringstream stream;
+        stream << "espnow.send " << messageTypeName(messageTag(message)) << " pod"
+               << message.srcPodId << "->";
+        if (message.dstPodId == kBroadcastPodId) {
+            stream << "ALL";
+        } else {
+            stream << "pod" << message.dstPodId;
+        }
+        log_.log(message.srcPodId, "espnow", stream.str());
+
+        pending_.push_back(std::move(message));
+        return domes::peer_drill::CodecError::kOk;
     }
 
     void deliverPending() {
@@ -105,8 +121,9 @@ public:
 
         std::stable_sort(scheduled_.begin(), scheduled_.end(),
                          [](const ScheduledDelivery& lhs, const ScheduledDelivery& rhs) {
-                             if (lhs.deliverAtUs != rhs.deliverAtUs)
+                             if (lhs.deliverAtUs != rhs.deliverAtUs) {
                                  return lhs.deliverAtUs < rhs.deliverAtUs;
+                             }
                              return lhs.order < rhs.order;
                          });
 
@@ -119,13 +136,22 @@ public:
             }
 
             auto handler = handlers_.find(delivery.dstPod);
-            if (handler == handlers_.end())
+            if (handler == handlers_.end()) {
                 continue;
+            }
 
-            const auto& header = getHeader(delivery.message);
-            flowEvents_.push_back(
-                {clock_.nowUs(), header.srcPodId, delivery.dstPod, header.type, header.sequence});
-            handler->second(delivery.message);
+            SimMessage decoded = delivery.message;
+            decoded.semantic = domes_peer_drill_PeerMessage_init_zero;
+            const auto result =
+                domes::peer_drill::decodeLegacyV1(decoded.legacy.view(), decoded.semantic);
+            if (result != domes::peer_drill::CodecError::kOk) {
+                codecFailure_ = result;
+                continue;
+            }
+
+            flowEvents_.push_back({clock_.nowUs(), decoded.srcPodId, delivery.dstPod,
+                                   messageTag(decoded), decoded.sequence});
+            handler->second(decoded);
         }
         scheduled_ = std::move(waiting);
     }
@@ -139,10 +165,12 @@ public:
     }
 
     bool replayMismatch() const { return replayMismatch_; }
+    std::optional<domes::peer_drill::CodecError> codecFailure() const { return codecFailure_; }
 
     std::optional<uint64_t> nextDeliveryTimeUs() const {
-        if (scheduled_.empty())
+        if (scheduled_.empty()) {
             return std::nullopt;
+        }
 
         auto next =
             std::min_element(scheduled_.begin(), scheduled_.end(),
@@ -169,41 +197,50 @@ private:
         pending_.clear();
 
         for (const auto& message : messages) {
-            const auto& header = getHeader(message);
-            if (header.dstPodId == kBroadcastPodId) {
+            if (message.dstPodId == kBroadcastPodId) {
                 for (const auto& [podId, handler] : handlers_) {
                     (void)handler;
-                    if (podId != header.srcPodId)
+                    if (podId != message.srcPodId) {
                         resolveDelivery(message, podId);
+                    }
                 }
-            } else if (handlers_.contains(header.dstPodId)) {
-                resolveDelivery(message, header.dstPodId);
+            } else if (handlers_.contains(message.dstPodId)) {
+                resolveDelivery(message, message.dstPodId);
             }
         }
     }
 
     void resolveDelivery(const SimMessage& message, uint16_t dstPod) {
-        const auto& header = getHeader(message);
         DeliveryContext context{
-            header.timestampUs, header.srcPodId, header.dstPodId,          dstPod,
-            header.type,        header.sequence, canonicalPayload(message)};
+            message.sentAtUs,
+            message.srcPodId,
+            message.dstPodId,
+            dstPod,
+            messageTag(message),
+            message.sequence,
+            {message.legacy.view().begin(), message.legacy.view().end()},
+        };
         auto directive = chooseDirective(context);
-        if (!directive)
+        if (!directive) {
             return;
+        }
         deliveryRecord_.push_back({context, *directive});
 
-        if (directive->action == DeliveryAction::kDrop)
+        if (directive->action == DeliveryAction::kDrop) {
             return;
+        }
 
         schedule(message, dstPod, context.sentAtUs, directive->delayUs);
-        if (directive->action == DeliveryAction::kDuplicate)
+        if (directive->action == DeliveryAction::kDuplicate) {
             schedule(message, dstPod, context.sentAtUs, directive->delayUs);
+        }
     }
 
     std::optional<DeliveryDirective> chooseDirective(const DeliveryContext& context) {
         if (replayMode_) {
-            if (replayMismatch_)
+            if (replayMismatch_) {
                 return std::nullopt;
+            }
             if (replayCursor_ >= replayRecord_.size()) {
                 replayMismatch_ = true;
                 return std::nullopt;
@@ -236,6 +273,7 @@ private:
     std::vector<DeliveryDecision> replayRecord_;
     size_t replayCursor_ = 0;
     bool replayMismatch_ = false;
+    std::optional<domes::peer_drill::CodecError> codecFailure_;
     uint32_t nextSequence_ = 0;
     uint64_t nextDeliveryOrder_ = 0;
 };

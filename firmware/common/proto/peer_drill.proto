@@ -1,0 +1,69 @@
+// Portable semantic contract for the current DOMES peer/drill messages.
+//
+// This schema is the semantic type authority shared by nanopb, prost, and
+// Dart. ESP-NOW continues to carry the fixed Legacy-V1 bytes produced by the
+// production peerDrillCodec; protobuf wire bytes are never transmitted.
+syntax = "proto3";
+package domes.peer_drill;
+
+// Existing feedback bitmask values. Values outside this enum are invalid.
+enum FeedbackMode {
+    FEEDBACK_MODE_NONE = 0;
+    FEEDBACK_MODE_LED = 1;
+    FEEDBACK_MODE_AUDIO = 2;
+    FEEDBACK_MODE_LED_AND_AUDIO = 3;
+}
+
+message Beacon {}
+message Ping {}
+message Pong {}
+message JoinGame {}
+message StopAll {}
+
+message ArmTouch {
+    fixed32 round_token = 1;
+    uint32 timeout_ms = 2;
+    FeedbackMode feedback_mode = 3;
+}
+
+message SetColor {
+    uint32 red = 1;
+    uint32 green = 2;
+    uint32 blue = 3;
+}
+
+message SimulateTouch {
+    fixed32 round_token = 1;
+    uint32 pad_index = 2;
+}
+
+message TouchEvent {
+    fixed32 round_token = 1;
+    uint32 reaction_time_us = 2;
+    uint32 pad_index = 3;
+}
+
+message TimeoutEvent {
+    fixed32 round_token = 1;
+}
+
+message PeerMessage {
+    // The compatibility codec accepts exactly 1 without adding a byte to the
+    // unchanged Legacy-V1 ESP-NOW packet.
+    uint32 protocol_version = 1;
+    bytes sender_mac = 2;
+    fixed32 sender_timestamp_us = 3;
+
+    oneof payload {
+        Beacon beacon = 10;
+        Ping ping = 11;
+        Pong pong = 12;
+        JoinGame join_game = 13;
+        ArmTouch arm_touch = 14;
+        SetColor set_color = 15;
+        StopAll stop_all = 16;
+        SimulateTouch simulate_touch = 17;
+        TouchEvent touch_event = 18;
+        TimeoutEvent timeout_event = 19;
+    }
+}

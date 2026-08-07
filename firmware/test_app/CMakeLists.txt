@@ -59,6 +59,7 @@ add_executable(test_app
     main/test_ota_session_coordinator.cpp
     main/test_ota_state_machine.cpp
     main/test_esp_now_protocol.cpp
+    main/test_peer_drill_codec.cpp
     main/test_platform_inputs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../domes/main/platform/qemu/deterministicPlatformInputs.cpp
     main/test_qemu_peripheral_adapters.cpp
