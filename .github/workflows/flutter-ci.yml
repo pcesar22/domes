@@ -29,7 +29,8 @@ jobs:
             liblzma-dev \
             ninja-build \
             pkg-config \
-            protobuf-compiler
+            protobuf-compiler \
+            python3-protobuf
 
       - name: Install Flutter
         run: tools/ci/install_flutter.sh

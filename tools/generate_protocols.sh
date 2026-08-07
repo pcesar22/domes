@@ -50,6 +50,10 @@ if $check; then
 fi
 
 validate_peer_drill_descriptor() {
+    if ! python3 -c 'from google.protobuf import descriptor_pb2' >/dev/null 2>&1; then
+        echo "Python protobuf is required to validate peer_drill.proto descriptors" >&2
+        return 1
+    fi
     local -a descriptor_protoc=(protoc)
     if ! command -v protoc >/dev/null 2>&1; then
         if ! python3 -c 'import grpc_tools.protoc' >/dev/null 2>&1; then
