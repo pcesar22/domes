@@ -1202,6 +1202,40 @@ def verify_worker_artifact(
         )
 
 
+def output_schema_contract_errors(document: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+
+    def visit(schema: dict[str, Any], path: str) -> None:
+        schema_type = schema.get("type")
+        if schema_type == "object":
+            properties = schema.get("properties")
+            if not isinstance(properties, dict):
+                errors.append(f"{path} must declare object properties")
+                return
+            if schema.get("additionalProperties") is not False:
+                errors.append(f"{path} must set additionalProperties to false")
+            required = schema.get("required")
+            if not isinstance(required, list) or set(required) != set(properties):
+                errors.append(f"{path} must require every declared property")
+            for name, definition in properties.items():
+                property_path = f"{path}.properties.{name}"
+                if not isinstance(definition, dict):
+                    errors.append(f"{property_path} must be a schema object")
+                    continue
+                if "type" not in definition:
+                    errors.append(f"{property_path} must declare a type")
+                visit(definition, property_path)
+        if schema_type == "array":
+            items = schema.get("items")
+            if not isinstance(items, dict):
+                errors.append(f"{path} must declare array items")
+            else:
+                visit(items, f"{path}.items")
+
+    visit(document, "$")
+    return errors
+
+
 def validate_repository() -> list[str]:
     errors: list[str] = []
     try:
@@ -1220,6 +1254,11 @@ def validate_repository() -> list[str]:
             if document.get("type") != "object" or not document.get("required"):
                 errors.append(
                     f"invalid result schema contract: {schema.relative_to(ROOT)}"
+                )
+            for contract_error in output_schema_contract_errors(document):
+                errors.append(
+                    f"invalid result schema {schema.relative_to(ROOT)}: "
+                    f"{contract_error}"
                 )
         except (OSError, json.JSONDecodeError) as error:
             errors.append(f"invalid result schema {schema.relative_to(ROOT)}: {error}")
