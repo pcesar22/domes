@@ -26,6 +26,7 @@ when documents disagree; do not resolve conflicts by copying the same fact into 
 | As-built software boundaries and decisions | [`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md) | Implementation source and tests |
 | Deterministic firmware virtual-platform target | [`research/architecture/13-deterministic-virtual-platform.md`](../research/architecture/13-deterministic-virtual-platform.md) | Current host boundary in [`research/architecture/10-host-simulation.md`](../research/architecture/10-host-simulation.md) and delivery state in [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) |
 | Detailed design-document lifecycle | [`research/architecture/README.md`](../research/architecture/README.md) | [`research/README.md`](../research/README.md) |
+| Agent project brain and role boundaries | [`agent-system/README.md`](agent-system/README.md) | [`WORKFLOW.md`](../WORKFLOW.md) and GitHub task state |
 
 Generated protobuf files are build artifacts derived from `.proto` files. They are never the place
 to introduce a message or enum.
@@ -57,6 +58,7 @@ to introduce a message or enum.
 | Decide whether a product phase may start or exit | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) |
 | Create or audit phases, gates, work packages, or hardware releases | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) |
 | Inspect archived plans | [`research/archive/README.md`](../research/archive/README.md) |
+| Create, dispatch, or judge agent work | [`agent-system/README.md`](agent-system/README.md) and [`WORKFLOW.md`](../WORKFLOW.md) |
 
 ## Document Lifecycle
 

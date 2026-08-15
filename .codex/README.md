@@ -1,6 +1,7 @@
 # DOMES Codex Configuration
 
-This directory contains repository-scoped Codex defaults and narrow specialist agents. Codex loads
+This directory contains repository-scoped Codex defaults, narrow specialist agents, and the
+structured contracts used by the external deterministic agent control plane. Codex loads
 the project layer only after the checkout is trusted. Review these files before trusting a fork or
 unfamiliar branch; an untrusted checkout ignores project-local `.codex/` configuration.
 
@@ -9,9 +10,14 @@ The primary agent is pinned to `gpt-5.6-sol` at medium reasoning. Generic child 
 models and caps concurrently open subagent threads at two. It does not perform semantic routing or
 change approval policy, network access, or the primary sandbox.
 
-The primary routes specialists automatically when a trigger below applies and delegation materially
-reduces uncertainty or risk. It remains the sole writer and owns scope, decisions, synthesis, and
-verification.
+Interactive primary sessions route specialists automatically when a trigger below applies and
+delegation materially reduces uncertainty or risk. It remains the sole writer and owns scope,
+decisions, synthesis, and verification.
+
+Autonomous issue execution is a separate workflow. `WORKFLOW.md` and
+`docs/agent-system/README.md` define disposable requirements-steward, planner, worker, judge, and
+verification roles. Their prompts and machine-readable result schemas live under
+`.codex/orchestration/`. The scheduler receives final structured results, never raw transcripts.
 
 ## Specialist Roles
 
