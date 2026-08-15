@@ -55,6 +55,18 @@ class WorkflowTest(unittest.TestCase):
     def test_repository_contracts_validate(self) -> None:
         self.assertEqual([], control.validate_repository())
 
+    def test_output_schema_requires_explicit_property_types(self) -> None:
+        document = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["state"],
+            "properties": {"state": {"enum": ["ready"]}},
+        }
+        self.assertEqual(
+            ["$.properties.state must declare a type"],
+            control.output_schema_contract_errors(document),
+        )
+
     def test_front_matter_rejects_unsupported_tracker(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "WORKFLOW.md"
