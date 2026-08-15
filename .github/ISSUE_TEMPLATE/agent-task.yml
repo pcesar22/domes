@@ -1,0 +1,71 @@
+name: Agent task
+description: Create a specification-pinned task for deterministic agent dispatch
+title: "[Agent] "
+labels:
+  - agent:needs-specification
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The issue remains non-dispatchable until every contract field is complete, the specification
+        revision is a full commit SHA, and exactly one `agent:*` state label is present.
+  - type: input
+    id: specification_revision
+    attributes:
+      label: Specification revision
+      description: Full 40-character Git commit governing product and architecture requirements.
+      placeholder: 0123456789abcdef0123456789abcdef01234567
+    validations:
+      required: true
+  - type: textarea
+    id: parent_objective
+    attributes:
+      label: Parent objective
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+    validations:
+      required: true
+  - type: textarea
+    id: required_behavior
+    attributes:
+      label: Required behavior
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_checks
+    attributes:
+      label: Acceptance checks
+      description: Observable checks; distinguish software, accepted commands, and physical proof.
+    validations:
+      required: true
+  - type: textarea
+    id: allowed_architectural_surfaces
+    attributes:
+      label: Allowed architectural surfaces
+      description: One repository-relative path or glob per line; these are mechanically enforced.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Use `None` or one GitHub issue reference per line.
+      value: None
+    validations:
+      required: true
+  - type: textarea
+    id: required_proof
+    attributes:
+      label: Required proof
+    validations:
+      required: true

@@ -198,6 +198,7 @@ check_host_tooling() {
         cd "$ROOT_DIR" &&
             pre-commit run --all-files --show-diff-on-failure &&
             python3 -m unittest discover -s tools/agent_eval -p 'test_*.py' -v &&
+            python3 -m unittest discover -s tools/agent_control -p 'test_*.py' -v &&
             python3 -m unittest discover -s tools/ci -p 'test_*.py' -v &&
             python3 -m unittest discover -s tools/doctor -p 'test_*.py' -v &&
             python3 -m unittest discover -s tools/docs -p 'test_*.py' -v &&
