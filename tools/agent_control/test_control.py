@@ -316,6 +316,15 @@ class TicketValidationTest(unittest.TestCase):
         ci_pending = automated_ticket(22, self.revision)
         self.assertFalse(control.autopilot_queue_idle((human, ci_pending)))
 
+    def test_dependency_blocked_ready_work_does_not_block_selector(self) -> None:
+        dependency = make_ticket(23, self.revision, label="agent:blocked")
+        waiting = make_ticket(24, self.revision, dependencies="#23")
+        self.assertTrue(control.autopilot_queue_idle((dependency, waiting)))
+        runnable = control.validate_ticket(
+            make_ticket(25, self.revision), check_revision=False
+        )
+        self.assertFalse(control.autopilot_queue_idle((waiting,), (runnable,)))
+
 
 class CommandLineTest(unittest.TestCase):
     def test_labels_are_complete_and_state_prefixed(self) -> None:
@@ -616,8 +625,7 @@ class AutopilotReviewTest(unittest.TestCase):
             mock.patch.object(control, "post_controller_comment") as comment,
         ):
             result = control.reconcile_human_reviews(workflow, (ticket,))
-        self.assertEqual("agent:human-review", result[0]["state"])
-        self.assertEqual("human", result[0]["review_authority"])
+        self.assertEqual([], result)
         transition.assert_not_called()
         comment.assert_not_called()
 
@@ -632,8 +640,7 @@ class AutopilotReviewTest(unittest.TestCase):
             mock.patch.object(control, "post_controller_comment") as comment,
         ):
             result = control.reconcile_human_reviews(workflow, (ticket,))
-        self.assertEqual("agent:human-review", result[0]["state"])
-        self.assertEqual("human", result[0]["review_authority"])
+        self.assertEqual([], result)
         validate.assert_not_called()
         artifact.assert_not_called()
         pull_request_loader.assert_not_called()

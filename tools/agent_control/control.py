@@ -100,17 +100,6 @@ MANAGED_LABELS = {
     "priority:p3": ("C2E0C6", "Low dispatch priority"),
 }
 
-AUTOPILOT_ACTIVE_STATES = frozenset(
-    {
-        "agent:plan",
-        "agent:ready",
-        "agent:running",
-        "agent:rework",
-        "agent:agent-review",
-        "agent:ci-pending",
-        "agent:verification",
-    }
-)
 AUTOPILOT_MARKER_RE = re.compile(
     r"<!-- domes-autopilot-contract:v1 digest=([0-9a-f]{64}) -->"
 )
@@ -1465,9 +1454,16 @@ def apply_selector_result(
     )
 
 
-def autopilot_queue_idle(tickets: Sequence[Ticket]) -> bool:
+def autopilot_queue_idle(
+    tickets: Sequence[Ticket],
+    runnable: Sequence[TicketValidation] | None = None,
+) -> bool:
+    if runnable is None:
+        runnable, _ = eligible_queue(tickets, check_revision=False)
+    if runnable:
+        return False
     return not any(
-        ticket.state == "OPEN" and ticket.agent_state in AUTOPILOT_ACTIVE_STATES
+        ticket.state == "OPEN" and ticket.agent_state == "agent:ci-pending"
         for ticket in tickets
     )
 
@@ -2992,13 +2988,6 @@ def reconcile_human_reviews(
             continue
         sections = parse_sections(ticket.body)
         if not automated_delivery(sections):
-            results.append(
-                {
-                    "issue": ticket.number,
-                    "state": "agent:human-review",
-                    "review_authority": "human",
-                }
-            )
             continue
         try:
             validation = validate_ticket(ticket)
@@ -3050,15 +3039,7 @@ def reconcile_human_reviews(
                 )
                 results.append({"issue": ticket.number, "state": "agent:rework"})
                 continue
-            results.append(
-                {
-                    "issue": ticket.number,
-                    "state": "agent:human-review",
-                    "pull_request": pull_request.number,
-                    "head": pull_request.head_oid,
-                    "review_authority": "human",
-                }
-            )
+            continue
         except TrackerError as error:
             results.append(
                 {
@@ -3531,7 +3512,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         selector_result: dict[str, Any] | None = None
                         if (
                             policy is not None
-                            and autopilot_queue_idle(tickets)
+                            and autopilot_queue_idle(tickets, eligible)
                             and time.monotonic() >= next_selector_at
                         ):
                             emit_watch_status(
