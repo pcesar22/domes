@@ -101,6 +101,10 @@ final result files live under
 `${XDG_STATE_HOME:-~/.local/state}/domes-agent-control/`; they are diagnostic state and are never
 fed to another role.
 
+When a fresh controller must recover a structured handoff from issue comments, it accepts only
+comments whose GitHub author exactly matches `tracker_actor` in `WORKFLOW.md`. Other collaborators
+cannot forge a newer worker or judge marker, bind a stack parent, or inflate a retry count.
+
 Agent workspaces are disposable standalone clones below the configured workspace root, with private
 `.git` metadata inside the sandbox. Every role starts from a new controller-created clone; the host
 never invokes Git against metadata left by a previous worker. Durable work must be pushed to the
@@ -151,6 +155,18 @@ contract. It runs whenever a role slot would otherwise be unused, revalidates it
 fresh tracker state, and cannot edit the project brain or implement work. A planner task explicitly
 marks each child `execute` or `plan`; recursive planning therefore creates another tracked,
 bounded `agent:plan` issue instead of an untracked conversation.
+
+An executable software ticket may also proceed while its sole dependency waits in
+`agent:human-review`. The controller validates the parent's exact reviewed PR head, branches the
+child from that commit, and requires the child PR to target the parent branch. This exception is
+one level deep and forbids fan-in and child hardware operations. Parent head movement, requested
+changes, conflict, closure, rework, or merge invalidates the child binding and forces a fresh
+worker/judge/CI cycle; after parent merge the child is rebuilt and retargeted to `main`. Neither PR
+is approved or merged by the controller. If a human first merges an already review-ready child into
+its exact parent branch, the child remains nonterminal until the controller proves that integration
+commit reached `main`; a parent that drops or fails to land it blocks only that artifact without
+rewriting its human-authoritative issue contract. The selector continues other work while a fresh
+delivery is stewarded.
 
 ## Safety and authority
 

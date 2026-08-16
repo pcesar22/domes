@@ -93,6 +93,17 @@ until the complete DAG has been materialized. A planner child explicitly marked 
 fresh planner context; it may only decompose its inherited bounded objective and cannot expand the
 parent's accepted surfaces, hardware operations, or autonomy policy.
 
+An implementation dependency does not globally idle delivery while a human reviews its parent.
+The controller may execute one automated software child with no hardware operations on the exact
+reviewed head of its sole nonterminal `agent:human-review` parent. The child PR targets the parent
+branch, forming one explicit stack level. The controller rejects fan-in, nested stacks, unstable or
+changed parent artifacts, and any stacked child that needs hardware. A parent change or merge
+invalidates the child's prior worker, judge, and CI evidence; the child must be regenerated against
+the new exact base before returning to human review. A human may instead merge an already
+review-ready child into the exact parent branch. That child remains nonterminal until the
+controller proves its integration commit reached `main`; a dropped or abandoned integration is
+blocked without rewriting the governing contract and requires a fresh steward-approved delivery.
+
 Even with a non-empty hardware operation list, Codex remains workspace-write with no direct device
 access. Dispatch also requires explicit ticketed board aliases, the controller's
 `--allow-registered-hardware` opt-in, and an exact
