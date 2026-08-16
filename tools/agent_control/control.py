@@ -1046,10 +1046,14 @@ def ensure_workspace(workflow: Workflow, item: TicketValidation, role: str) -> P
 
 
 def transition(workflow: Workflow, ticket: Ticket, new_state: str) -> None:
+    if ticket.agent_labels == (new_state,):
+        return
     command = ["gh", "issue", "edit", str(ticket.number), "--repo", workflow.repository]
     for label in ticket.agent_labels:
-        command.extend(("--remove-label", label))
-    command.extend(("--add-label", new_state))
+        if label != new_state:
+            command.extend(("--remove-label", label))
+    if new_state not in ticket.agent_labels:
+        command.extend(("--add-label", new_state))
     result = subprocess.run(
         command, cwd=ROOT, check=False, capture_output=True, text=True
     )
@@ -1120,11 +1124,18 @@ def bind_ticket_pull_request(
 
 
 def set_issue_priority(workflow: Workflow, ticket: Ticket, priority: str) -> None:
+    target = f"priority:{priority}"
+    existing = tuple(
+        label for label in ticket.labels if re.fullmatch(r"priority:p[0-9]+", label)
+    )
+    if existing == (target,):
+        return
     command = ["gh", "issue", "edit", str(ticket.number), "--repo", workflow.repository]
-    for label in ticket.labels:
-        if re.fullmatch(r"priority:p[0-9]+", label):
+    for label in existing:
+        if label != target:
             command.extend(("--remove-label", label))
-    command.extend(("--add-label", f"priority:{priority}"))
+    if target not in existing:
+        command.extend(("--add-label", target))
     result = subprocess.run(
         command, cwd=ROOT, check=False, capture_output=True, text=True
     )
@@ -1305,6 +1316,14 @@ def validate_selector_result(
             }
         ):
             raise ControlError("selector referenced an unavailable existing issue")
+        issue_dependencies = validate_ticket(issue, check_revision=False).dependencies
+        if any(
+            dependency not in by_number or not terminal(by_number[dependency])
+            for dependency in issue_dependencies
+        ):
+            raise ControlError(
+                "selector referenced a dependency-blocked existing issue"
+            )
     for ticket in tickets:
         if ticket.number == issue_number or not AUTOPILOT_MARKER_RE.search(ticket.body):
             continue

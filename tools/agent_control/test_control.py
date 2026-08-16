@@ -371,6 +371,19 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual("agent:ready", claimed.source_state)
         self.assertIs(retained, rework)
 
+    def test_same_state_and_priority_updates_are_noops(self) -> None:
+        workflow = control.load_workflow()
+        ticket = make_ticket(
+            9,
+            "a" * 40,
+            label="agent:ready",
+            extra_labels=("priority:p1",),
+        )
+        with mock.patch.object(control.subprocess, "run") as run:
+            control.transition(workflow, ticket, "agent:ready")
+            control.set_issue_priority(workflow, ticket, "p1")
+        run.assert_not_called()
+
     def test_mutating_run_is_pinned_to_reviewed_host(self) -> None:
         workflow = control.load_workflow()
         with mock.patch.object(
@@ -749,6 +762,23 @@ class SelectorAndPlanTest(unittest.TestCase):
                     workflow,
                     policy,
                     (make_ticket(7, self.revision),),
+                    (),
+                )
+
+    def test_selector_rejects_dependency_blocked_existing_issue(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        dependency = make_ticket(6, self.revision, label="agent:blocked")
+        waiting = make_ticket(7, self.revision, dependencies="#6")
+        with mock.patch.object(
+            control, "origin_main_revision", return_value=self.revision
+        ):
+            with self.assertRaisesRegex(control.ControlError, "dependency-blocked"):
+                control.validate_selector_result(
+                    self.selector_result(existing_issue=7),
+                    workflow,
+                    policy,
+                    (dependency, waiting),
                     (),
                 )
 
