@@ -745,6 +745,11 @@ def _directory_size(path: Path, stop_after: int) -> int:
         current = pending.pop()
         try:
             entries = os.scandir(current)
+        except FileNotFoundError:
+            # Candidate compilers create and remove temporary directories while
+            # the monitor walks. Deleted open files are accounted separately,
+            # and the post-exit scan observes all retained evidence.
+            continue
         except OSError as error:
             raise BrokerError("candidate evidence tree became unreadable") from error
         with entries:
@@ -755,14 +760,17 @@ def _directory_size(path: Path, stop_after: int) -> int:
                         "candidate process exceeded aggregate evidence entry limit"
                     )
                 try:
-                    if entry.is_symlink():
+                    metadata = entry.stat(follow_symlinks=False)
+                    if stat.S_ISLNK(metadata.st_mode):
                         continue
-                    if entry.is_dir(follow_symlinks=False):
+                    if stat.S_ISDIR(metadata.st_mode):
                         pending.append(Path(entry.path))
-                    elif entry.is_file(follow_symlinks=False):
-                        total += entry.stat(follow_symlinks=False).st_size
+                    elif stat.S_ISREG(metadata.st_mode):
+                        total += metadata.st_size
                         if total > stop_after:
                             return total
+                except FileNotFoundError:
+                    continue
                 except OSError as error:
                     raise BrokerError(
                         "candidate evidence tree changed during scan"

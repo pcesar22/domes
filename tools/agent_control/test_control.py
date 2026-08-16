@@ -1168,6 +1168,21 @@ class SelectorAndPlanTest(unittest.TestCase):
 
 
 class ReviewFixRegressionTest(unittest.TestCase):
+    def test_trusted_tool_record_preserves_multicall_invocation_alias(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "multicall"
+            alias = root / "cargo"
+            target.write_bytes(b"trusted executable")
+            alias.symlink_to(target)
+
+            record = control._trusted_tool_record(alias)
+
+            self.assertEqual(str(alias), record["path"])
+            self.assertEqual(
+                hashlib.sha256(target.read_bytes()).hexdigest(), record["sha256"]
+            )
+
     revision = "a" * 40
 
     def complete_build_provenance(

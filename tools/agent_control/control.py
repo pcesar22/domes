@@ -1193,6 +1193,14 @@ def registered_hardware_preflight() -> dict[str, Any]:
     }
 
 
+def _trusted_tool_record(path: Path) -> dict[str, str]:
+    """Attest tool bytes without discarding multicall invocation aliases."""
+    return {
+        "path": str(path.absolute()),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+
 def trusted_hardware_tools() -> dict[str, dict[str, str]]:
     """Build/verify host tooling before a worker gets a broker capability."""
     cli = ROOT / "tools/domes-cli/target/release/domes-cli"
@@ -1291,12 +1299,6 @@ def trusted_hardware_tools() -> dict[str, dict[str, str]]:
     ):
         raise ControlError("trusted ESP-IDF v5.4.4 build tools are unavailable")
 
-    def record(path: Path) -> dict[str, str]:
-        return {
-            "path": str(path.resolve()),
-            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        }
-
     git = Path("/usr/bin/git")
     bwrap = Path("/usr/bin/bwrap")
     cargo = Path("/usr/bin/cargo")
@@ -1308,30 +1310,30 @@ def trusted_hardware_tools() -> dict[str, dict[str, str]]:
         path.is_file() for path in (git, bwrap, cargo, cc, prlimit, python3, rustc)
     ):
         raise ControlError("trusted host git and sandbox build tools are unavailable")
-    idf_py_record = record(idf_py)
+    idf_py_record = _trusted_tool_record(idf_py)
     idf_py_record.update({"version": "v5.4.4", "revision": idf_revision.stdout.strip()})
     recorded = {
-        "domes-cli": record(cli),
-        "bwrap": record(bwrap),
-        "cargo": record(cargo),
-        "cc": record(cc),
-        "prlimit": record(prlimit),
-        "python3": record(python3),
-        "rustc": record(rustc),
-        "esptool": record(esptool),
+        "domes-cli": _trusted_tool_record(cli),
+        "bwrap": _trusted_tool_record(bwrap),
+        "cargo": _trusted_tool_record(cargo),
+        "cc": _trusted_tool_record(cc),
+        "prlimit": _trusted_tool_record(prlimit),
+        "python3": _trusted_tool_record(python3),
+        "rustc": _trusted_tool_record(rustc),
+        "esptool": _trusted_tool_record(esptool),
         "idf-python": {
             "path": str(idf_python.absolute()),
             "sha256": hashlib.sha256(idf_python.read_bytes()).hexdigest(),
         },
-        "esp-rom-elf": record(rom),
-        "esp32ulp-elf-as": record(ulp),
-        "xtensa-esp32s3-elf-gcc": record(xtensa),
-        "git": record(git),
-        "idf-export": record(idf_export),
+        "esp-rom-elf": _trusted_tool_record(rom),
+        "esp32ulp-elf-as": _trusted_tool_record(ulp),
+        "xtensa-esp32s3-elf-gcc": _trusted_tool_record(xtensa),
+        "git": _trusted_tool_record(git),
+        "idf-export": _trusted_tool_record(idf_export),
         "idf.py": idf_py_record,
     }
     lock = ROOT / "firmware" / "domes" / "dependencies.lock"
-    lock_record = record(lock)
+    lock_record = _trusted_tool_record(lock)
     recorded["dependencies.lock"] = lock_record
     cache_root = Path.home() / ".cache" / "Espressif" / "ComponentManager"
     for index, (name, version, component_hash) in enumerate(

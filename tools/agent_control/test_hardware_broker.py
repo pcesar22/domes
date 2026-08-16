@@ -224,6 +224,28 @@ class HardwareBrokerTest(unittest.TestCase):
                     5,
                 )
 
+    def test_directory_scan_tolerates_compiler_temp_file_disappearance(self):
+        class VanishingEntry:
+            path = "/tmp/vanished"
+
+            @staticmethod
+            def stat(*, follow_symlinks):
+                self.assertFalse(follow_symlinks)
+                raise FileNotFoundError("compiler removed temporary file")
+
+        class Entries:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                return iter((VanishingEntry(),))
+
+        with mock.patch.object(broker.os, "scandir", return_value=Entries()):
+            self.assertEqual(0, broker._directory_size(Path("/tmp"), 1024))
+
     def test_non_trace_hardware_command_uses_bounded_streaming_runner(self):
         with tempfile.TemporaryDirectory() as directory:
             cap = self.capability(Path(directory))
