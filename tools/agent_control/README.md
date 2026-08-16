@@ -47,12 +47,14 @@ This is not a general hardware permission. A ticket must also contain an explici
 `Hardware operations` section and explicit `Hardware boards` aliases. Before dispatch, the controller verifies the two registered NFF
 CP2102N identities, takes an exclusive hardware lease, and starts a host-side broker. Codex remains
 in the workspace-write sandbox with no direct `/dev` access; it receives only a temporary
-ticket/specification-bound queue capability and only the ticketed board aliases. The broker revalidates the
-private udev mapping immediately before each request and executes fixed argv for only the ticketed
-operation. It requires a committed tracked-clean worktree and binds each manifest event to that
-commit. Flash and OTA images are built by the host broker from a private clean clone with ESP-IDF
-v5.4.4; worker-supplied build artifacts are rejected. It retains device evidence under the
-ticket's controller state.
+ticket/specification-bound queue capability and only the ticketed board aliases. The implementation
+worker never receives that capability. It first pushes a PR head; a fresh read-only judge must
+approve that immutable head for finite hardware verification. The broker then revalidates the
+private udev mapping immediately before each request and permits only the judged remote head and
+ticketed operation. Flash and OTA images are built by the host broker from a fresh GitHub clone in a
+networkless `bwrap` sandbox with an explicit ESP-IDF v5.4.4 Python/compiler/ULP/ROM toolchain and
+registry-hash-verified locked components. Worker-supplied builds, host Git metadata, and broad
+`export.sh` activation are rejected. Device evidence remains in controller-private ticket state.
 
 `flash-trace-acceptance` is distinct from ordinary `flash` and must appear explicitly in the
 ticket's finite `Hardware operations` list. The broker generates its private Kconfig defaults from
@@ -62,6 +64,18 @@ always rebuilds the trace-disabled default profile for restoration. Failed attem
 hash-chained audit manifest and are disclosed to the independent judge; they are not silently
 dropped or converted into passing evidence.
 
+For `trace-dump`, the broker derives the board's active image from that manifest and rejects any
+rebuild whose application hash differs. It builds the exact PR-head CLI inside a metadata-free,
+network-isolated `bwrap` sandbox with a cleared environment, then runs it in a second sandbox that
+can see only a broker-owned PTY, the matching application image, the trace-name map, and a dedicated
+output directory. The PTY relay forwards exactly one CRC-valid empty trace-dump frame and records
+the device responses; the candidate never receives the physical serial path. The broker independently
+binds the firmware image, framed session identity, complete raw event stream, and candidate CLI. It
+then runs the judged trace normalizer in another networkless sandbox and returns only artifact IDs,
+hashes, and a privacy-safe semantic summary. A fresh final judge receives a controller attestation
+created by rehashing the private artifacts; raw evidence, device paths, factory IDs, and worker
+transcripts never enter judge or tracker context.
+
 A failed preflight blocks only that ticket. It is automatically requeued only when a later
 preflight succeeds and the saved typed blocker still matches the same issue, specification, and PR
 head. Old comments and prose are not recovery authority.
@@ -69,7 +83,7 @@ head. Old comments and prose are not recovery authority.
 For a live tmux/operator view instead of machine-readable JSON snapshots:
 
 ```bash
-python3 tools/agent_control/control.py run --execute --watch --autopilot --dashboard
+python3 tools/agent_control/control.py run --execute --watch --autopilot --dashboard --allow-registered-hardware
 ```
 
 The dashboard refreshes every poll and shows active roles, CI state, review-ready PRs, blockers, and
@@ -86,12 +100,12 @@ final result files live under
 `${XDG_STATE_HOME:-~/.local/state}/domes-agent-control/`; they are diagnostic state and are never
 fed to another role.
 
-Agent workspaces are standalone clones below the configured workspace root, with private `.git`
-metadata inside the sandbox. The controller never grants a worker write access to the source
-repository's shared Git administration directory or reuses an operator worktree. This lets workers
-commit and push their own branch without weakening workspace isolation. Codex receives an explicit
-writable-directory grant for only that private `.git`, because its normal workspace sandbox protects
-Git metadata even when it is inside the workspace.
+Agent workspaces are disposable standalone clones below the configured workspace root, with private
+`.git` metadata inside the sandbox. Every role starts from a new controller-created clone; the host
+never invokes Git against metadata left by a previous worker. Durable work must be pushed to the
+ticket branch/PR. This prevents worker configuration, hooks, filters, refs, or object state from
+becoming control-plane authority. Codex receives an explicit writable-directory grant for only the
+current clone's private `.git`.
 
 Each failed or timed-out role is restarted up to two times with bounded exponential backoff.
 `--watch` is ordinary foreground process behavior; hosting it later is an operational choice and is
@@ -141,7 +155,8 @@ cannot edit the project brain or implement work.
 - Controller-marked `software-review-required` tickets are implemented, published, independently
   judged, and repaired through exact-head CI. They then stop at `agent:human-review`; the controller
   never submits a GitHub approval or merge. It continues separate unblocked work while review waits.
-- It never releases, adds `hw-test`, performs destructive device actions, or deletes a worktree.
+- It never releases, adds `hw-test`, performs destructive device actions, or deletes an operator
+  worktree. Disposable controller-owned agent clones are replaced between roles.
 - `--allow-registered-hardware` does not authorize `hw-test`, erase, NVS/factory reset, eFuse,
   secure boot, encryption, key, release, or arbitrary host commands.
 - JSONL logs are retained for operator diagnosis but excluded from cross-role prompts.

@@ -13,4 +13,11 @@ generated consumers, and evidence that does not reach the required level. Softwa
 acceptance never establishes physical behavior. Return `blocked` only for an external condition
 that prevents a sound verdict; ordinary defects are `reject` with required rework.
 
+For a ticket with authorized hardware operations, judgment is deliberately two-pass. On the first
+pass, controller hardware evidence is absent: review the exact pushed commit for correctness,
+scope, destructive-device behavior, and readiness for the finite ticketed hardware operations.
+Approve a safe implementation to authorize the separate hardware verification worker; do not
+reject solely because physical evidence is not present yet. After that worker returns, the
+controller supplies its private-evidence attestation and you perform final acceptance judgment.
+
 Return only the schema-conforming verdict. You cannot modify files or waive requirements.

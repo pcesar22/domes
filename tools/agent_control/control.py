@@ -590,6 +590,37 @@ def paths_outside_surfaces(paths: Sequence[str], surfaces: Sequence[str]) -> lis
     )
 
 
+def changed_paths_for_diff(cwd: Path, revision: str) -> tuple[str, ...]:
+    changed = _git(
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--name-status",
+        "--find-renames",
+        "--diff-filter=ACDMRT",
+        "-z",
+        revision,
+        "--",
+        cwd=cwd,
+    )
+    if changed.returncode != 0:
+        raise ControlError("cannot resolve artifact diff")
+    fields = [field for field in changed.stdout.split("\0") if field]
+    paths: list[str] = []
+    offset = 0
+    while offset < len(fields):
+        status = fields[offset]
+        offset += 1
+        path_count = 2 if status.startswith(("R", "C")) else 1
+        if not re.fullmatch(
+            r"(?:[ACDMT]|[RC][0-9]{1,3})", status
+        ) or offset + path_count > len(fields):
+            raise ControlError("artifact diff name-status output is invalid")
+        paths.extend(fields[offset : offset + path_count])
+        offset += path_count
+    return tuple(paths)
+
+
 def protected_autonomous_paths(
     paths: Sequence[str], policy: AutopilotPolicy
 ) -> list[str]:
@@ -1002,10 +1033,42 @@ def requires_registered_hardware(sections: dict[str, str]) -> bool:
 
 
 def requires_worker_hardware_access(item: TicketValidation) -> bool:
-    return requires_registered_hardware(item.sections) and role_for(item.ticket) in {
-        "worker",
-        "verification-worker",
-    }
+    return (
+        requires_registered_hardware(item.sections)
+        and role_for(item.ticket) == "verification-worker"
+    )
+
+
+def validate_hardware_judge_checkpoint(
+    workflow: Workflow,
+    item: TicketValidation,
+    prior_handoff: dict[str, Any] | None,
+    pull_request: PullRequest,
+) -> None:
+    """Require a fresh judge approval for the exact live PR head before hardware."""
+    expected_pull_request = existing_pull_request(item.sections)
+    if expected_pull_request < 1:
+        raise ControlError(
+            f"issue #{item.ticket.number}: hardware verification requires one "
+            "ticket-bound pull request"
+        )
+    if prior_handoff is None or prior_handoff.get("verdict") != "approve":
+        raise ControlError(
+            f"issue #{item.ticket.number}: hardware verification requires an "
+            "approved judge handoff"
+        )
+    if (
+        prior_handoff.get("commit") != pull_request.head_oid
+        or prior_handoff.get("pull_request") != expected_pull_request
+        or pull_request.number != expected_pull_request
+        or pull_request.state != "OPEN"
+        or pull_request.is_draft
+        or pull_request.base_ref != workflow.base_branch
+    ):
+        raise ControlError(
+            f"issue #{item.ticket.number}: live pull request head is not the "
+            "judge-approved hardware checkpoint"
+        )
 
 
 def build_prompt(
@@ -1046,8 +1109,9 @@ def build_prompt(
         prompt += (
             "\n# Controller-validated hardware evidence\n\n"
             "This attestation is produced from the host broker's private hash-chained "
-            "manifest, independently of the worker handoff. Inspect the retained "
-            "manifest when judging hardware-command evidence.\n\n"
+            "manifest and freshly rehashed private artifacts, independently of the "
+            "worker handoff. Judge from this privacy-safe attestation; the private "
+            "manifest is deliberately not exposed to any agent.\n\n"
             f"```json\n{json.dumps(controller_evidence, indent=2, sort_keys=True)}\n```\n"
         )
     return prompt
@@ -1147,6 +1211,9 @@ def trusted_hardware_tools() -> dict[str, dict[str, str]]:
     if not candidates:
         raise ControlError("ESP-IDF v5.4.4 esptool environment is unavailable")
     esptool = candidates[-1]
+    idf_python = esptool.parent / "python"
+    if not idf_python.is_file():
+        raise ControlError("ESP-IDF v5.4.4 Python environment is unavailable")
     version = subprocess.run(
         [str(esptool), "version"], check=False, capture_output=True, text=True
     )
@@ -1154,6 +1221,34 @@ def trusted_hardware_tools() -> dict[str, dict[str, str]]:
         version.stdout + version.stderr
     ):
         raise ControlError("trusted ESP-IDF v5.4.4 esptool failed version check")
+    tools_root = Path.home() / ".espressif" / "tools"
+    xtensa_candidates = sorted(
+        tools_root.glob("xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc")
+    )
+    ulp_candidates = sorted(
+        tools_root.glob("esp32ulp-elf/*/esp32ulp-elf/bin/esp32ulp-elf-as")
+    )
+    rom_candidates = sorted(tools_root.glob("esp-rom-elfs/*/esp32s3_rev0_rom.elf"))
+    if not xtensa_candidates or not ulp_candidates or not rom_candidates:
+        raise ControlError("pinned ESP32-S3 build tool paths are unavailable")
+    xtensa, ulp, rom = (
+        xtensa_candidates[-1],
+        ulp_candidates[-1],
+        rom_candidates[-1],
+    )
+    xtensa_version = subprocess.run(
+        [str(xtensa), "--version"], check=False, capture_output=True, text=True
+    )
+    ulp_version = subprocess.run(
+        [str(ulp), "--version"], check=False, capture_output=True, text=True
+    )
+    if (
+        xtensa_version.returncode
+        or "esp-14.2.0_20260121" not in xtensa_version.stdout
+        or ulp_version.returncode
+        or "2.38" not in ulp_version.stdout
+    ):
+        raise ControlError("pinned ESP32-S3 compilers failed version checks")
     idf_root = Path.home() / "esp" / "esp-idf"
     idf_export = idf_root / "export.sh"
     idf_py = idf_root / "tools" / "idf.py"
@@ -1194,17 +1289,199 @@ def trusted_hardware_tools() -> dict[str, dict[str, str]]:
         }
 
     git = Path("/usr/bin/git")
-    if not git.is_file():
-        raise ControlError("trusted host git is unavailable")
+    bwrap = Path("/usr/bin/bwrap")
+    cargo = Path("/usr/bin/cargo")
+    cc = Path("/usr/bin/cc")
+    prlimit = Path("/usr/bin/prlimit")
+    python3 = Path("/usr/bin/python3")
+    rustc = Path("/usr/bin/rustc")
+    if not all(
+        path.is_file() for path in (git, bwrap, cargo, cc, prlimit, python3, rustc)
+    ):
+        raise ControlError("trusted host git and sandbox build tools are unavailable")
     idf_py_record = record(idf_py)
     idf_py_record.update({"version": "v5.4.4", "revision": idf_revision.stdout.strip()})
-    return {
+    recorded = {
         "domes-cli": record(cli),
+        "bwrap": record(bwrap),
+        "cargo": record(cargo),
+        "cc": record(cc),
+        "prlimit": record(prlimit),
+        "python3": record(python3),
+        "rustc": record(rustc),
         "esptool": record(esptool),
+        "idf-python": {
+            "path": str(idf_python.absolute()),
+            "sha256": hashlib.sha256(idf_python.read_bytes()).hexdigest(),
+        },
+        "esp-rom-elf": record(rom),
+        "esp32ulp-elf-as": record(ulp),
+        "xtensa-esp32s3-elf-gcc": record(xtensa),
         "git": record(git),
         "idf-export": record(idf_export),
         "idf.py": idf_py_record,
     }
+    lock = ROOT / "firmware" / "domes" / "dependencies.lock"
+    lock_record = record(lock)
+    recorded["dependencies.lock"] = lock_record
+    cache_root = Path.home() / ".cache" / "Espressif" / "ComponentManager"
+    for index, (name, version, component_hash) in enumerate(
+        _managed_component_requirements(lock)
+    ):
+        namespace, component = name.split("/", 1)
+        destination = f"{namespace}__{component}"
+        matches = list(
+            cache_root.glob(f"service_*/{destination}_{version}_{component_hash[:8]}")
+        )
+        if len(matches) != 1:
+            raise ControlError(
+                f"pinned managed component cache is unavailable: {name}@{version}"
+            )
+        component_root = matches[0].resolve()
+        tree_sha256 = _verified_component_tree(
+            component_root, component_hash, idf_python
+        )
+        recorded[f"managed-component-{index}"] = {
+            "path": str(component_root),
+            "sha256": tree_sha256,
+            "component_hash": component_hash,
+            "destination": destination,
+            "version": version,
+        }
+    return recorded
+
+
+def _managed_component_requirements(lock: Path) -> list[tuple[str, str, str]]:
+    """Read the finite service-component records from an ESP-IDF lock file."""
+    try:
+        lines = lock.read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise ControlError("firmware dependency lock is unavailable") from error
+    records: list[tuple[str, str, str]] = []
+    current = ""
+    version = ""
+    component_hash = ""
+
+    def finish() -> None:
+        nonlocal current, version, component_hash
+        if current and "/" in current:
+            if (
+                not re.fullmatch(r"[a-z0-9_.-]+/[a-z0-9_.-]+", current)
+                or not re.fullmatch(r"[A-Za-z0-9_.+-]+", version)
+                or not re.fullmatch(r"[0-9a-f]{64}", component_hash)
+            ):
+                raise ControlError("firmware dependency lock is not finite and pinned")
+            records.append((current, version, component_hash))
+        current = version = component_hash = ""
+
+    in_dependencies = False
+    for line in lines:
+        if line == "dependencies:":
+            in_dependencies = True
+            continue
+        if in_dependencies and line and not line.startswith(" "):
+            finish()
+            break
+        match = re.fullmatch(r" {2}([^ :][^:]*):", line) if in_dependencies else None
+        if match:
+            finish()
+            if re.fullmatch(r"[a-z0-9_.-]+/[a-z0-9_.-]+", match.group(1)):
+                current = match.group(1)
+            continue
+        if current:
+            hash_match = re.fullmatch(r"    component_hash: ([0-9a-f]{64})", line)
+            version_match = re.fullmatch(r"    version: ['\"]?([^'\"]+)['\"]?", line)
+            if hash_match:
+                component_hash = hash_match.group(1)
+            elif version_match:
+                version = version_match.group(1)
+    else:
+        finish()
+    if not records or len({name for name, _, _ in records}) != len(records):
+        raise ControlError("firmware dependency lock has no unique service components")
+    return records
+
+
+def _verified_component_tree(root: Path, expected_hash: str, idf_python: Path) -> str:
+    """Verify registry checksums, then hash the entire pinned component tree."""
+    if not root.is_dir() or root.is_symlink():
+        raise ControlError("managed component cache path is unsafe")
+    validated = subprocess.run(
+        [
+            str(idf_python),
+            "-c",
+            (
+                "from idf_component_tools.hash_tools.validate import "
+                "validate_hash_eq_hashdir; import sys; "
+                "validate_hash_eq_hashdir(sys.argv[1], sys.argv[2])"
+            ),
+            str(root),
+            expected_hash,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            "HOME": "/tmp",
+            "LANG": "C.UTF-8",
+            "PATH": "/usr/bin:/bin",
+            "PYTHONNOUSERSITE": "1",
+        },
+    )
+    if validated.returncode:
+        raise ControlError("managed component cache does not match dependency lock")
+    try:
+        checksums = json.loads((root / "CHECKSUMS.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ControlError("managed component checksum evidence is invalid") from error
+    if (
+        not isinstance(checksums, dict)
+        or checksums.get("algorithm") != "sha256"
+        or not isinstance(checksums.get("files"), list)
+    ):
+        raise ControlError("managed component checksum evidence is invalid")
+    listed: set[str] = set()
+    for entry in checksums["files"]:
+        if not isinstance(entry, dict):
+            raise ControlError("managed component checksum entry is invalid")
+        relative = entry.get("path")
+        digest = entry.get("hash")
+        size = entry.get("size")
+        if (
+            not isinstance(relative, str)
+            or relative.startswith("/")
+            or ".." in Path(relative).parts
+            or not re.fullmatch(r"[0-9a-f]{64}", str(digest))
+            or not isinstance(size, int)
+            or isinstance(size, bool)
+            or relative in listed
+        ):
+            raise ControlError("managed component checksum entry is unsafe")
+        candidate = root / relative
+        if (
+            not candidate.is_file()
+            or candidate.is_symlink()
+            or candidate.stat().st_size != size
+            or hashlib.sha256(candidate.read_bytes()).hexdigest() != digest
+        ):
+            raise ControlError("managed component cache failed checksum verification")
+        listed.add(relative)
+    actual = {
+        str(path.relative_to(root))
+        for path in root.rglob("*")
+        if path.is_file() and path.name not in {".component_hash", "CHECKSUMS.json"}
+    }
+    if actual != listed or any(path.is_symlink() for path in root.rglob("*")):
+        raise ControlError("managed component cache contains unverified entries")
+    digest = hashlib.sha256()
+    for path in sorted((item for item in root.rglob("*") if item.is_file())):
+        relative = str(path.relative_to(root)).encode("utf-8")
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        data = path.read_bytes()
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+    return digest.hexdigest()
 
 
 def hardware_block_reason(
@@ -1218,6 +1495,11 @@ def hardware_block_reason(
         "issue": ticket.number,
         "spec_revision": sections["Specification revision"],
         "pr_head": pr_head,
+        "resume_state": (
+            "agent:verification"
+            if ticket.agent_state == "agent:verification"
+            else "agent:rework"
+        ),
     }
 
 
@@ -1234,6 +1516,7 @@ def recoverable_hardware_blockers(
         "issue",
         "spec_revision",
         "pr_head",
+        "resume_state",
     }
     if set(reason) != expected_keys:
         return False
@@ -1243,6 +1526,8 @@ def recoverable_hardware_blockers(
     ):
         return False
     if reason.get("code") not in {"preflight-unavailable", "lease-held"}:
+        return False
+    if reason.get("resume_state") not in {"agent:verification", "agent:rework"}:
         return False
     if (
         isinstance(reason.get("issue"), bool)
@@ -1311,7 +1596,7 @@ def recover_hardware_blocked_tickets(
             except ControlError:
                 continue
         if recoverable_hardware_blockers(reason, ticket, sections, pr_head):
-            transition(workflow, ticket, "agent:rework")
+            transition(workflow, ticket, str(reason["resume_state"]))
             path.unlink(missing_ok=True)
             recovered.append(ticket.number)
     return recovered
@@ -1325,14 +1610,18 @@ def block_hardware_preflight_tickets(
     for ticket in tickets:
         # A running worker may be holding a valid process/lease; never replace its
         # handoff merely because a later global preflight is transiently unavailable.
-        if ticket.agent_state not in {"agent:ready", "agent:rework"}:
+        if ticket.agent_state not in {
+            "agent:ready",
+            "agent:rework",
+            "agent:verification",
+        }:
             continue
         sections = parse_sections(ticket.body)
         try:
-            if not requires_registered_hardware(sections) or role_for(ticket) not in {
-                "worker",
-                "verification-worker",
-            }:
+            if (
+                not requires_registered_hardware(sections)
+                or role_for(ticket) != "verification-worker"
+            ):
                 continue
         except ControlError:
             continue
@@ -1351,8 +1640,36 @@ def block_hardware_preflight_tickets(
 
 
 def _git(*arguments: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    for key in ("GIT_EXTERNAL_DIFF", "GIT_DIFF_OPTS", "GIT_CONFIG_COUNT"):
+        environment.pop(key, None)
+    environment.update(
+        {
+            "GIT_PAGER": "cat",
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_ATTR_NOSYSTEM": "1",
+        }
+    )
     return subprocess.run(
-        ["git", *arguments], cwd=cwd, check=False, capture_output=True, text=True
+        [
+            "git",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.attributesFile=/dev/null",
+            "-c",
+            "core.excludesFile=/dev/null",
+            "-c",
+            "protocol.ext.allow=never",
+            *arguments,
+        ],
+        cwd=cwd,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
     )
 
 
@@ -1362,6 +1679,12 @@ def origin_main_revision(workflow: Workflow) -> str:
     if resolved.returncode != 0 or not FULL_SHA.fullmatch(revision):
         raise ControlError(f"cannot resolve origin/{workflow.base_branch}")
     return revision
+
+
+def trusted_repository_url(workflow: Workflow) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", workflow.repository):
+        raise ControlError("workflow repository is not a finite GitHub slug")
+    return f"https://github.com/{workflow.repository}.git"
 
 
 def refresh_base_branch(workflow: Workflow) -> None:
@@ -1590,10 +1913,20 @@ def ensure_workspace(workflow: Workflow, item: TicketValidation, role: str) -> P
                 f"issue #{item.ticket.number}: existing PR must be open against "
                 f"{workflow.base_branch}"
             )
-    if workspace.exists():
-        _assert_clean_workspace(workspace, issue=item.ticket.number)
-    else:
-        _clone_agent_workspace(workspace, issue=item.ticket.number)
+    # The previous role owned its repository metadata. Durable work must already
+    # be pushed, so discard it without invoking Git and start from trusted state.
+    workflow.workspace_root.mkdir(parents=True, exist_ok=True)
+    workspace_root = workflow.workspace_root.resolve(strict=True)
+    if (
+        workspace.parent.resolve(strict=True) != workspace_root
+        or workspace.name != f"issue-{item.ticket.number}"
+    ):
+        raise ControlError(f"issue #{item.ticket.number}: unsafe workspace path")
+    if workspace.is_symlink():
+        workspace.unlink()
+    elif workspace.exists():
+        shutil.rmtree(workspace)
+    _clone_agent_workspace(workspace, issue=item.ticket.number)
     _prepare_agent_workspace(
         workflow,
         workspace,
@@ -2209,6 +2542,7 @@ def result_state(
     *,
     autopilot: bool = False,
     ticket_sections: dict[str, str] | None = None,
+    hardware_attested: bool = False,
 ) -> str:
     if role == "worker" and result["blockers"]:
         return "agent:blocked"
@@ -2223,7 +2557,12 @@ def result_state(
             and ticket_sections is not None
             and automated_delivery(ticket_sections)
         ):
-            approved_state = "agent:ci-pending"
+            approved_state = (
+                "agent:ci-pending"
+                if not requires_registered_hardware(ticket_sections)
+                or hardware_attested
+                else "agent:verification"
+            )
         return {
             "approve": approved_state,
             "reject": "agent:rework",
@@ -2326,6 +2665,44 @@ def validate_result_semantics(role: str, result: dict[str, Any]) -> None:
             raise ControlError(
                 "human review requires every verification check resolved"
             )
+
+
+def validate_hardware_verification_result(
+    item: TicketValidation,
+    result: dict[str, Any],
+    attestation: dict[str, Any],
+) -> None:
+    """Prevent a hardware worker from bypassing the final independent judge."""
+    state = result.get("state")
+    blockers = result.get("blockers")
+    checks = result.get("checks")
+    if state == "human_review":
+        raise ControlError(
+            f"issue #{item.ticket.number}: successful hardware verification "
+            "must return through the final independent judge"
+        )
+    if state == "blocked":
+        has_failed_or_pending_check = isinstance(checks, list) and any(
+            isinstance(check, dict) and check.get("status") in {"failed", "pending"}
+            for check in checks
+        )
+        if (
+            not isinstance(blockers, list)
+            or not blockers
+            or (
+                not has_failed_or_pending_check
+                and attestation.get("failed_event_count", 0) < 1
+            )
+        ):
+            raise ControlError(
+                f"issue #{item.ticket.number}: blocked hardware verification "
+                "requires a concrete failed or pending check"
+            )
+    elif state != "agent_review":
+        raise ControlError(
+            f"issue #{item.ticket.number}: hardware verification returned an "
+            "unsupported state"
+        )
 
 
 def normalized_plan(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2613,6 +2990,7 @@ def attest_hardware_manifest(
     manifest: Path,
     checkpoint_head: str,
     artifact_head: str,
+    trusted_tool_records: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Validate controller-owned broker evidence and bind it to the reviewed artifact."""
     path = manifest
@@ -2631,9 +3009,40 @@ def attest_hardware_manifest(
     successful_events = 0
     failed_events = 0
     trace_profile_boards: set[int] = set()
-    final_successful_flash: dict[int, str] = {}
+    final_successful_flash: dict[int, str | None] = {}
+    active_board_images: dict[int, dict[str, Any]] = {}
+    event_summaries: list[dict[str, Any]] = []
     allowed_operations = set(hardware_operations(item.sections))
     allowed_boards = set(hardware_boards(item.sections))
+    trusted_tools = (
+        trusted_hardware_tools()
+        if trusted_tool_records is None
+        else trusted_tool_records
+    )
+    expected_managed = {
+        str(record.get("destination")): record
+        for name, record in trusted_tools.items()
+        if name.startswith("managed-component-") and isinstance(record, dict)
+    }
+    private_trace_hashes: set[str] = set()
+    evidence_root = path.parent
+    for pattern in (
+        "trace-output-*/trace.json",
+        "trace-output-*/trace.json.raw",
+        "trace-output-*/trace.json.raw.session.json",
+        "normalized-trace-*/trace.replay.json",
+        "normalized-trace-*/trace.semantic.json",
+    ):
+        for artifact in evidence_root.glob(pattern):
+            if (
+                not artifact.is_file()
+                or artifact.is_symlink()
+                or artifact.stat().st_size > 8 * 1024 * 1024
+            ):
+                raise ControlError(
+                    f"issue #{item.ticket.number}: private trace evidence is unsafe"
+                )
+            private_trace_hashes.add(hashlib.sha256(artifact.read_bytes()).hexdigest())
     for index, line in enumerate(lines, start=1):
         try:
             event = json.loads(line)
@@ -2680,8 +3089,21 @@ def attest_hardware_manifest(
             raise ControlError(
                 f"issue #{item.ticket.number}: hardware manifest board binding is invalid"
             )
+        event_summary: dict[str, Any] = {
+            "sequence": index,
+            "operation": operation,
+            "board": event.get("board"),
+            "artifact_head": event.get("artifact_head"),
+            "board_identity_sha256": event.get("board_identity_sha256"),
+            "status": "failed" if failed else "passed",
+        }
+        event_summaries.append(event_summary)
         if failed:
             failed_events += 1
+            if operation in {"flash", "flash-trace-acceptance", "ota"}:
+                board = int(event["board"])
+                active_board_images.pop(board, None)
+                final_successful_flash[board] = None
             previous = str(event_digest)
             continue
         successful_events += 1
@@ -2695,7 +3117,7 @@ def attest_hardware_manifest(
             )
             if (
                 not isinstance(provenance, dict)
-                or provenance.get("kind") != "controller-clean-clone-idf-build"
+                or provenance.get("kind") != "controller-bwrap-clean-clone-idf-build"
                 or provenance.get("source_head") != artifact_head
                 or provenance.get("build_profile") != expected_profile
                 or provenance.get("idf_version") != "v5.4.4"
@@ -2705,6 +3127,13 @@ def attest_hardware_manifest(
                     for name in (
                         "idf_export_sha256",
                         "idf_py_sha256",
+                        "bwrap_sha256",
+                        "prlimit_sha256",
+                        "xtensa_compiler_sha256",
+                        "ulp_tool_sha256",
+                        "rom_elf_sha256",
+                        "idf_python_sha256",
+                        "dependencies_lock_sha256",
                         "submodules_sha256",
                         "sdkconfig_defaults_sha256",
                         "sdkconfig_sha256",
@@ -2716,6 +3145,55 @@ def attest_hardware_manifest(
             ):
                 raise ControlError(
                     f"issue #{item.ticket.number}: trusted firmware build provenance is invalid"
+                )
+            if (
+                provenance["idf_export_sha256"] != trusted_tools["idf-export"]["sha256"]
+                or provenance["idf_py_sha256"] != trusted_tools["idf.py"]["sha256"]
+                or provenance["bwrap_sha256"] != trusted_tools["bwrap"]["sha256"]
+                or provenance["prlimit_sha256"] != trusted_tools["prlimit"]["sha256"]
+                or provenance["xtensa_compiler_sha256"]
+                != trusted_tools["xtensa-esp32s3-elf-gcc"]["sha256"]
+                or provenance["ulp_tool_sha256"]
+                != trusted_tools["esp32ulp-elf-as"]["sha256"]
+                or provenance["rom_elf_sha256"]
+                != trusted_tools["esp-rom-elf"]["sha256"]
+                or provenance["idf_python_sha256"]
+                != trusted_tools["idf-python"]["sha256"]
+                or provenance["dependencies_lock_sha256"]
+                != trusted_tools["dependencies.lock"]["sha256"]
+                or not isinstance(provenance.get("managed_components"), list)
+            ):
+                raise ControlError(
+                    f"issue #{item.ticket.number}: firmware tool authority changed"
+                )
+            actual_managed = {
+                str(record.get("destination")): record
+                for record in provenance["managed_components"]
+                if isinstance(record, dict)
+            }
+            if (
+                set(actual_managed) != set(expected_managed)
+                or any(
+                    actual_managed[destination].get(key)
+                    != expected_managed[destination].get(key)
+                    for destination in expected_managed
+                    for key in ("destination", "version", "component_hash")
+                )
+                or any(
+                    actual_managed[destination].get("source_tree_sha256")
+                    != expected_managed[destination].get("sha256")
+                    for destination in expected_managed
+                )
+                or any(
+                    not re.fullmatch(
+                        r"[0-9a-f]{64}",
+                        str(record.get("staged_tree_sha256", "")),
+                    )
+                    for record in actual_managed.values()
+                )
+            ):
+                raise ControlError(
+                    f"issue #{item.ticket.number}: managed component provenance is invalid"
                 )
             expected_inputs = (
                 {
@@ -2736,11 +3214,192 @@ def attest_hardware_manifest(
                 raise ControlError(
                     f"issue #{item.ticket.number}: trusted firmware input hashes are invalid"
                 )
+            image_sha256 = next(
+                str(record["sha256"])
+                for record in inputs
+                if isinstance(record, dict) and record.get("artifact") == "domes.bin"
+            )
+            board = int(event["board"])
+            active_board_images[board] = {
+                "artifact_head": artifact_head,
+                "build_profile": expected_profile,
+                "domes_bin_sha256": image_sha256,
+                "build_provenance": provenance,
+            }
             if operation in {"flash", "flash-trace-acceptance"}:
-                board = int(event["board"])
                 final_successful_flash[board] = str(operation)
                 if operation == "flash-trace-acceptance":
                     trace_profile_boards.add(board)
+        elif operation == "trace-dump":
+            board = int(event["board"])
+            active = active_board_images.get(board)
+            selected = event.get("selected_flash")
+            provenance = event.get("build_provenance")
+            inputs = event.get("inputs")
+            trace_hashes = event.get("trace_hashes")
+            candidate_cli = event.get("candidate_cli_provenance")
+            trace_relay = event.get("trace_relay")
+            normalization = event.get("normalization")
+            trace_identity = event.get("trace_identity")
+            input_hashes = (
+                {
+                    record.get("artifact"): record.get("sha256")
+                    for record in inputs
+                    if isinstance(record, dict)
+                    and re.fullmatch(r"[0-9a-f]{64}", str(record.get("sha256", "")))
+                }
+                if isinstance(inputs, list)
+                else {}
+            )
+            expected_selected = (
+                {
+                    "artifact_head": active["artifact_head"],
+                    "build_profile": active["build_profile"],
+                    "domes_bin_sha256": active["domes_bin_sha256"],
+                }
+                if active is not None
+                else None
+            )
+            valid_trace_hashes = (
+                isinstance(trace_hashes, dict)
+                and set(trace_hashes)
+                == {"trace_sha256", "raw_sha256", "session_sha256"}
+                and all(
+                    re.fullmatch(r"[0-9a-f]{64}", str(trace_hashes.get(name, "")))
+                    for name in ("trace_sha256", "raw_sha256", "session_sha256")
+                )
+            )
+            valid_trace_relay = (
+                isinstance(trace_relay, dict)
+                and set(trace_relay)
+                == {
+                    "kind",
+                    "transcript_sha256",
+                    "tx_frame_count",
+                    "rx_frame_count",
+                    "data_frame_count",
+                    "raw_bytes",
+                    "event_count",
+                }
+                and trace_relay.get("kind") == "broker-pty-frame-filter-v1"
+                and re.fullmatch(
+                    r"[0-9a-f]{64}", str(trace_relay.get("transcript_sha256", ""))
+                )
+                is not None
+                and trace_relay.get("tx_frame_count") == 1
+                and isinstance(trace_relay.get("data_frame_count"), int)
+                and trace_relay["data_frame_count"] > 0
+                and trace_relay.get("rx_frame_count")
+                == trace_relay["data_frame_count"] + 2
+                and isinstance(trace_relay.get("raw_bytes"), int)
+                and trace_relay["raw_bytes"] > 0
+                and trace_relay["raw_bytes"] % 16 == 0
+                and trace_relay.get("event_count") == trace_relay["raw_bytes"] // 16
+            )
+            if (
+                active is None
+                or selected != expected_selected
+                or provenance != active["build_provenance"]
+                or not isinstance(inputs, list)
+                or len(inputs) != 2
+                or set(input_hashes) != {"domes.bin", "trace_names.json"}
+                or input_hashes.get("domes.bin") != active["domes_bin_sha256"]
+                or not valid_trace_hashes
+                or not valid_trace_relay
+                or event.get("artifact_sha256") != trace_hashes["trace_sha256"]
+                or event.get("artifact_id")
+                != f"trace-{trace_hashes['trace_sha256'][:16]}"
+                or not isinstance(candidate_cli, dict)
+                or candidate_cli.get("source_head") != artifact_head
+                or any(
+                    not re.fullmatch(r"[0-9a-f]{64}", str(candidate_cli.get(name, "")))
+                    for name in (
+                        "cargo_lock_sha256",
+                        "candidate_cli_sha256",
+                        "bwrap_sha256",
+                        "cargo_sha256",
+                        "cc_sha256",
+                        "prlimit_sha256",
+                        "pty_compat_source_sha256",
+                        "pty_compat_binary_sha256",
+                        "rustc_sha256",
+                    )
+                )
+                or not isinstance(candidate_cli.get("cargo_version"), str)
+                or not candidate_cli["cargo_version"]
+                or not isinstance(candidate_cli.get("rustc_version"), str)
+                or not candidate_cli["rustc_version"]
+                or not isinstance(candidate_cli.get("cc_version"), str)
+                or not candidate_cli["cc_version"]
+                or candidate_cli.get("prlimit_sha256")
+                != trusted_tools["prlimit"]["sha256"]
+                or candidate_cli.get("bwrap_sha256") != trusted_tools["bwrap"]["sha256"]
+                or candidate_cli.get("cargo_sha256") != trusted_tools["cargo"]["sha256"]
+                or candidate_cli.get("cc_sha256") != trusted_tools["cc"]["sha256"]
+                or candidate_cli.get("rustc_sha256") != trusted_tools["rustc"]["sha256"]
+                or not isinstance(normalization, dict)
+                or normalization.get("kind") != "controller-bwrap-trace-normalizer-v1"
+                or normalization.get("source_head") != artifact_head
+                or normalization.get("raw_sha256") != trace_hashes["raw_sha256"]
+                or normalization.get("session_sha256") != trace_hashes["session_sha256"]
+                or any(
+                    not re.fullmatch(r"[0-9a-f]{64}", str(normalization.get(name, "")))
+                    for name in (
+                        "normalizer_sha256",
+                        "trace_proto_sha256",
+                        "python_sha256",
+                        "bwrap_sha256",
+                        "prlimit_sha256",
+                        "replay_sha256",
+                        "semantic_sha256",
+                    )
+                )
+                or normalization.get("python_sha256")
+                != trusted_tools["python3"]["sha256"]
+                or normalization.get("bwrap_sha256") != trusted_tools["bwrap"]["sha256"]
+                or normalization.get("prlimit_sha256")
+                != trusted_tools["prlimit"]["sha256"]
+                or normalization.get("replay_sha256") not in private_trace_hashes
+                or normalization.get("semantic_sha256") not in private_trace_hashes
+                or trace_hashes["trace_sha256"] not in private_trace_hashes
+                or trace_hashes["raw_sha256"] not in private_trace_hashes
+                or trace_hashes["session_sha256"] not in private_trace_hashes
+                or not isinstance(normalization.get("summary"), dict)
+                or not isinstance(trace_identity, dict)
+                or trace_identity.get("registered_device_match") is not True
+                or trace_identity.get("candidate_file_sha256")
+                != active["domes_bin_sha256"]
+                or not isinstance(trace_identity.get("firmware_version"), str)
+                or not trace_identity["firmware_version"]
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(trace_identity.get("app_image_sha256", "")),
+                )
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(trace_identity.get("app_elf_sha256", "")),
+                )
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(trace_identity.get("device_identity_run_sha256", "")),
+                )
+            ):
+                raise ControlError(
+                    f"issue #{item.ticket.number}: trace dump artifact binding is invalid"
+                )
+            event_summary["trace"] = {
+                "trace_sha256": trace_hashes["trace_sha256"],
+                "raw_sha256": trace_hashes["raw_sha256"],
+                "session_sha256": trace_hashes["session_sha256"],
+                "firmware_version": trace_identity.get("firmware_version"),
+                "app_elf_sha256": trace_identity.get("app_elf_sha256"),
+                "app_image_sha256": trace_identity.get("app_image_sha256"),
+                "candidate_file_sha256": trace_identity.get("candidate_file_sha256"),
+                "registered_device_match": True,
+                "normalization": normalization["summary"],
+                "replay_sha256": normalization["replay_sha256"],
+                "semantic_sha256": normalization["semantic_sha256"],
+            }
         previous = str(event_digest)
     unrestored = sorted(
         board
@@ -2765,6 +3424,7 @@ def attest_hardware_manifest(
         "successful_event_count": successful_events,
         "failed_event_count": failed_events,
         "last_event_sha256": previous,
+        "events": event_summaries,
     }
     write_handoff(run_root / "hardware-attestation.json", attestation)
     return attestation
@@ -3052,6 +3712,38 @@ def post_result(
         )
 
 
+def sanitize_public_handoff(value: Any, workspace: Path, run_root: Path) -> Any:
+    """Remove host-local paths and stable device identifiers from tracker state."""
+    if isinstance(value, dict):
+        return {
+            str(key): sanitize_public_handoff(item, workspace, run_root)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [sanitize_public_handoff(item, workspace, run_root) for item in value]
+    if not isinstance(value, str):
+        return value
+    rendered = value.replace(str(workspace), "$WORKSPACE").replace(
+        str(run_root), "controller-private-evidence"
+    )
+    rendered = re.sub(
+        r"/dev/(?:tty(?:USB|ACM)[0-9]+|serial/[A-Za-z0-9_./:-]+)",
+        "<redacted-device-path>",
+        rendered,
+    )
+    rendered = re.sub(
+        r"/home/[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+",
+        "<redacted-local-path>",
+        rendered,
+    )
+    rendered = re.sub(
+        r"(?<![0-9a-f])[0-9a-f]{12}(?![0-9a-f])",
+        "<redacted-device-id>",
+        rendered,
+    )
+    return rendered
+
+
 def execute_one(
     workflow: Workflow,
     item: TicketValidation,
@@ -3077,7 +3769,7 @@ def _execute_one(
 ) -> dict[str, Any]:
     role = role_for(item.ticket)
     hardware_required = requires_registered_hardware(item.sections)
-    hardware_worker = role in {"worker", "verification-worker"}
+    hardware_worker = role == "verification-worker"
     hardware_access = hardware_required and hardware_worker
     if hardware_access and hardware_capability is None:
         raise ControlError(
@@ -3091,20 +3783,44 @@ def _execute_one(
     lease_path = run_root / "active-process.json"
     terminate_recorded_process_group(lease_path)
     workspace = ensure_workspace(workflow, item, role)
+    prior_handoff = required_prior_handoff(
+        workflow,
+        item.ticket,
+        run_root,
+        role,
+        item.source_state or item.ticket.agent_state,
+    )
+    if (
+        prior_handoff is not None
+        and prior_handoff.get("spec_revision")
+        != item.sections["Specification revision"]
+    ):
+        raise ControlError(
+            f"issue #{item.ticket.number}: prior handoff specification mismatch"
+        )
     broker_capability: dict[str, Any] | None = None
     hardware_lease: DeviceLease | None = None
     broker_process: subprocess.Popen[str] | None = None
     hardware_evidence: Path | None = None
     hardware_checkpoint_head = item.sections["Specification revision"]
     if hardware_access:
+        # Load and validate the judge handoff before taking the global lease,
+        # creating a capability, or starting either the broker or an agent.
+        # The broker independently rejects a later remote-head change.
+        pull_request_number = existing_pull_request(item.sections)
+        if pull_request_number < 1:
+            raise ControlError(
+                f"issue #{item.ticket.number}: hardware verification requires one "
+                "ticket-bound pull request"
+            )
+        pull_request = load_pull_request(workflow, pull_request_number)
+        validate_hardware_judge_checkpoint(workflow, item, prior_handoff, pull_request)
         # The controller owns the only lease.  Codex receives this directory, never
         # a /dev path; the host broker rechecks identity before every operation.
-        pull_request_number = existing_pull_request(item.sections)
-        if pull_request_number:
-            hardware_checkpoint_head = load_pull_request(
-                workflow, pull_request_number
-            ).head_oid
+        hardware_checkpoint_head = pull_request.head_oid
         pr_head = hardware_checkpoint_head
+        base_head = origin_main_revision(workflow)
+        head_ref = pull_request.head_ref
         evidence = run_root / "hardware-evidence" / f"run-{time.time_ns()}"
         hardware_evidence = evidence
         tools = trusted_hardware_tools()
@@ -3149,6 +3865,12 @@ def _execute_one(
             ports=list(hardware_capability["ports"]),
             operations=list(hardware_operations(item.sections)),
             boards=list(hardware_boards(item.sections)),
+            base_head=base_head,
+            allowed_surfaces=list(
+                allowed_surfaces(item.sections["Allowed architectural surfaces"])
+            ),
+            repository_url=trusted_repository_url(workflow),
+            head_ref=head_ref,
             trusted_tools=tools,
         )
         broker_capability = {
@@ -3189,21 +3911,6 @@ def _execute_one(
         with _HARDWARE_RUNTIME_LOCK:
             _HARDWARE_RUNTIMES[item.ticket.number]["broker_ready"] = True
     schema = ORCHESTRATION_DIR / "schemas" / SCHEMA_BY_ROLE[role]
-    prior_handoff = required_prior_handoff(
-        workflow,
-        item.ticket,
-        run_root,
-        role,
-        item.source_state or item.ticket.agent_state,
-    )
-    if (
-        prior_handoff is not None
-        and prior_handoff.get("spec_revision")
-        != item.sections["Specification revision"]
-    ):
-        raise ControlError(
-            f"issue #{item.ticket.number}: prior handoff specification mismatch"
-        )
     pending_plan_path = run_root / "pending-plan.json"
     if (
         role == "planner"
@@ -3256,19 +3963,30 @@ def _execute_one(
             recorded_attestation = json.loads(
                 attestation_path.read_text(encoding="utf-8")
             )
+            if recorded_attestation.get("artifact_head") != prior_handoff.get("commit"):
+                recorded_attestation = {}
+            if not recorded_attestation:
+                raise FileNotFoundError("no attestation for current artifact")
             recorded_manifest = Path(recorded_attestation["manifest"]).resolve(
                 strict=True
             )
             recorded_manifest.relative_to(
                 (run_root / "hardware-evidence").resolve(strict=True)
             )
-            controller_evidence = attest_hardware_manifest(
+            validated_attestation = attest_hardware_manifest(
                 item,
                 run_root,
                 recorded_manifest,
                 str(recorded_attestation["checkpoint_head"]),
                 str(prior_handoff["commit"]),
             )
+            controller_evidence = {
+                key: value
+                for key, value in validated_attestation.items()
+                if key != "manifest"
+            }
+        except FileNotFoundError:
+            controller_evidence = None
         except (
             KeyError,
             OSError,
@@ -3349,26 +4067,7 @@ def _execute_one(
             hardware_checkpoint_head,
             str(result.get("commit", "")),
         )
-        if role == "worker":
-            result = dict(result)
-            result["verification"] = [
-                *result.get("verification", []),
-                {
-                    "level": "accepted_command",
-                    "command_or_observation": (
-                        "controller-validated registered-hardware broker audit "
-                        f"manifest: {attestation.get('successful_event_count', 0)} "
-                        "successful event(s), "
-                        f"{attestation.get('failed_event_count', 0)} failed attempt(s) "
-                        "retained; operation outcomes remain subject to independent review"
-                    ),
-                    "status": "passed",
-                    "artifact": (
-                        f"{attestation['manifest']} sha256="
-                        f"{attestation['manifest_sha256']}"
-                    ),
-                },
-            ]
+        validate_hardware_verification_result(item, result, attestation)
     validate_result_semantics(role, result)
     if role == "judge":
         if prior_handoff is None:
@@ -3401,6 +4100,7 @@ def _execute_one(
         verify_worker_artifact(workflow, workspace, item, result)
         if role == "worker" and not existing_pull_request(item.sections):
             bind_ticket_pull_request(workflow, item, int(result["pull_request"]))
+    result = sanitize_public_handoff(result, workspace, run_root)
     if (
         role == "planner"
         and autopilot
@@ -3415,6 +4115,7 @@ def _execute_one(
         result,
         autopilot=autopilot,
         ticket_sections=item.sections,
+        hardware_attested=controller_evidence is not None,
     )
     materialized: list[int] = []
     if role == "planner" and autopilot and automated_delivery(item.sections):
@@ -3765,33 +4466,20 @@ def verify_worker_artifact(
         raise ControlError(
             f"issue #{item.ticket.number}: worker returned an invalid commit"
         )
-    head = _git("rev-parse", "HEAD", cwd=workspace)
-    if head.returncode != 0 or head.stdout.strip() != commit:
-        raise ControlError(
-            f"issue #{item.ticket.number}: worker commit is not workspace HEAD"
-        )
-    dirty = _git("status", "--porcelain", "--untracked-files=all", cwd=workspace)
-    if dirty.returncode != 0 or dirty.stdout.strip():
-        raise ControlError(f"issue #{item.ticket.number}: worker left a dirty worktree")
-    changed = _git(
-        "diff",
-        "--name-only",
-        "--diff-filter=ACDMR",
-        f"origin/main...{commit}",
-        "--",
-        cwd=workspace,
-    )
-    if changed.returncode != 0:
-        raise ControlError(f"issue #{item.ticket.number}: cannot resolve worker diff")
     surfaces = allowed_surfaces(item.sections["Allowed architectural surfaces"])
-    changed_paths = tuple(changed.stdout.splitlines())
-    violations = paths_outside_surfaces(changed_paths, surfaces)
-    if violations:
-        raise ControlError(
-            f"issue #{item.ticket.number}: changes outside allowed surfaces: "
-            f"{', '.join(violations)}"
-        )
     if not automated_delivery(item.sections):
+        branch = f"codex/issue-{item.ticket.number}"
+        remote = _git(
+            "ls-remote",
+            "--exit-code",
+            trusted_repository_url(workflow),
+            f"refs/heads/{branch}",
+        )
+        fields = remote.stdout.split()
+        if remote.returncode or len(fields) != 2 or fields[0] != commit:
+            raise ControlError(
+                f"issue #{item.ticket.number}: worker artifact was not pushed"
+            )
         return
     pull_request_number = result.get("pull_request")
     if not isinstance(pull_request_number, int) or pull_request_number < 1:
@@ -3804,14 +4492,11 @@ def verify_worker_artifact(
             f"issue #{item.ticket.number}: worker changed the existing pull request"
         )
     pull_request = load_pull_request(workflow, pull_request_number)
-    branch = _git("branch", "--show-current", cwd=workspace)
     if (
         pull_request.state != "OPEN"
         or pull_request.is_draft
         or pull_request.base_ref != workflow.base_branch
         or pull_request.head_oid != commit
-        or branch.returncode != 0
-        or branch.stdout.strip() != pull_request.head_ref
     ):
         raise ControlError(
             f"issue #{item.ticket.number}: pull request does not match worker artifact"

@@ -20,14 +20,22 @@ The host broker owns the registered CP2102N endpoints, revalidates device
 identity for every request, serializes device use, and retains returned evidence outside the
 worktree. Never search for or invoke a device path, hardware tool, or alternate transport directly.
 
-The broker capability is ticket- and specification-bound; its private manifest binds every request
-to the committed worktree HEAD for independent review. It never permits `hw-test`,
+Hardware is deliberately withheld from the implementation worker until its pushed PR head passes
+a fresh independent safety review. Push the exact committed PR head before hardware verification;
+the later verification worker can exercise only that immutable reviewed commit. The broker
+capability is ticket- and specification-bound; its private manifest binds every request to the
+pushed reviewed head. It never permits `hw-test`,
 erase, NVS/factory reset, eFuse, secure boot, encryption, key, release, or arbitrary command
 execution. For `flash` and `ota`, do not pass a path: the broker builds the committed source in a
 private clean clone with pinned ESP-IDF. `flash-trace-acceptance` is a distinct ticket-allowlisted
 operation that builds the committed head with the finite physical trace-acceptance profile; use
 ordinary `flash` afterward when the ticket requires restoration of the trace-disabled default
-image. Record broker results and retained artifact paths in your schema result. If a required
+image. A successful `trace-dump` result includes controller-attested artifact identifiers;
+normalization is performed in the controller's private sandbox, not by the worker. Before any
+firmware build, ensure the pushed branch descends from the capability's
+`required_base_head`; the broker rejects changes outside the ticket's architectural surfaces. Record
+broker results and retained artifact identifiers, never local paths or stable device identifiers, in
+your schema result. If a required
 request fails, report that exact blocker; do not substitute simulation or command acceptance for
 device evidence.
 
