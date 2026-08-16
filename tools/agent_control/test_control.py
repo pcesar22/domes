@@ -1012,6 +1012,19 @@ class ReviewFixRegressionTest(unittest.TestCase):
         self.assertIn("#63 judge → ci-pending", rendered)
         self.assertNotIn("raw-worker-events", rendered)
 
+    def test_dashboard_identifies_manual_review_without_pull_request(self) -> None:
+        workflow = control.load_workflow()
+        ticket = make_ticket(66, self.revision, label="agent:human-review")
+        rendered = control.render_dashboard(
+            workflow,
+            (ticket,),
+            (),
+            (),
+            {},
+            {"ci": [{"issue": 66, "state": "agent:human-review"}]},
+        )
+        self.assertIn("manual review (no PR) | issue #66", rendered)
+
     def test_pull_request_loader_rejects_incomplete_paginated_file_list(self) -> None:
         workflow = control.load_workflow()
         document = {

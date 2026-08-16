@@ -3262,7 +3262,12 @@ def render_dashboard(
         for ticket in reviews:
             sections = parse_sections(ticket.body)
             pull_request = existing_pull_request(sections)
-            pr_text = f"PR #{pull_request}" if pull_request else "PR pending"
+            if pull_request:
+                pr_text = f"PR #{pull_request}"
+            elif automated_delivery(sections):
+                pr_text = "PR pending"
+            else:
+                pr_text = "manual review (no PR)"
             lines.append(
                 f"  {pr_text} | issue #{ticket.number} | {_single_line(ticket.title)}"
             )
