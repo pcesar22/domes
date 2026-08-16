@@ -1077,6 +1077,7 @@ def build_prompt(
     prior_handoff: dict[str, Any] | None = None,
     hardware_capability: dict[str, Any] | None = None,
     controller_evidence: dict[str, Any] | None = None,
+    required_base_head: str | None = None,
 ) -> str:
     role_prompt = (ORCHESTRATION_DIR / "prompts" / f"{role}.md").read_text(
         encoding="utf-8"
@@ -1091,6 +1092,14 @@ def build_prompt(
         "# Ticket acceptance contract\n\n"
         f"{item.ticket.body}\n"
     )
+    if required_base_head is not None:
+        if not FULL_SHA.fullmatch(required_base_head):
+            raise ControlError("required base revision must be a full commit SHA")
+        prompt += (
+            "\n# Controller repository checkpoint\n\n"
+            f"Current required base revision: `{required_base_head}`\n"
+            "The pushed pull-request head must descend from this exact revision.\n"
+        )
     if prior_handoff is not None:
         prompt += (
             "\n# Prior schema-validated handoff\n\n"
@@ -2544,7 +2553,14 @@ def result_state(
     ticket_sections: dict[str, str] | None = None,
     hardware_attested: bool = False,
 ) -> str:
-    if role == "worker" and result["blockers"]:
+    if (
+        role == "worker"
+        and result["blockers"]
+        and not (
+            ticket_sections is not None
+            and requires_registered_hardware(ticket_sections)
+        )
+    ):
         return "agent:blocked"
     if role == "planner" and result["blockers"]:
         return "agent:blocked"
@@ -3771,6 +3787,12 @@ def _execute_one(
     hardware_required = requires_registered_hardware(item.sections)
     hardware_worker = role == "verification-worker"
     hardware_access = hardware_required and hardware_worker
+    required_base_head = (
+        origin_main_revision(workflow)
+        if role in {"worker", "verification-worker"}
+        and automated_delivery(item.sections)
+        else None
+    )
     if hardware_access and hardware_capability is None:
         raise ControlError(
             f"issue #{item.ticket.number}: registered hardware requires --allow-registered-hardware preflight"
@@ -3819,7 +3841,7 @@ def _execute_one(
         # a /dev path; the host broker rechecks identity before every operation.
         hardware_checkpoint_head = pull_request.head_oid
         pr_head = hardware_checkpoint_head
-        base_head = origin_main_revision(workflow)
+        base_head = required_base_head or origin_main_revision(workflow)
         head_ref = pull_request.head_ref
         evidence = run_root / "hardware-evidence" / f"run-{time.time_ns()}"
         hardware_evidence = evidence
@@ -4033,6 +4055,7 @@ def _execute_one(
                 prior_handoff,
                 broker_capability if hardware_access else None,
                 controller_evidence,
+                required_base_head,
             ),
             event_path,
             stderr_path,
@@ -4097,7 +4120,13 @@ def _execute_one(
                 "independent agent review"
             )
     if role in {"worker", "verification-worker"} and automated_delivery(item.sections):
-        verify_worker_artifact(workflow, workspace, item, result)
+        verify_worker_artifact(
+            workflow,
+            workspace,
+            item,
+            result,
+            required_base_head=required_base_head,
+        )
         if role == "worker" and not existing_pull_request(item.sections):
             bind_ticket_pull_request(workflow, item, int(result["pull_request"]))
     result = sanitize_public_handoff(result, workspace, run_root)
@@ -4460,6 +4489,8 @@ def verify_worker_artifact(
     workspace: Path,
     item: TicketValidation,
     result: dict[str, Any],
+    *,
+    required_base_head: str | None = None,
 ) -> None:
     commit = result.get("commit", "")
     if not FULL_SHA.fullmatch(commit):
@@ -4506,6 +4537,34 @@ def verify_worker_artifact(
         raise ControlError(
             f"issue #{item.ticket.number}: PR changes outside allowed surfaces: "
             f"{', '.join(pr_violations)}"
+        )
+    if required_base_head is None or not FULL_SHA.fullmatch(required_base_head):
+        raise ControlError(
+            f"issue #{item.ticket.number}: autonomous worker is missing the "
+            "controller-pinned base revision"
+        )
+    fetched = _git(
+        "fetch",
+        "--quiet",
+        "--no-write-fetch-head",
+        trusted_repository_url(workflow),
+        commit,
+    )
+    if fetched.returncode != 0:
+        raise ControlError(
+            fetched.stderr.strip()
+            or f"issue #{item.ticket.number}: cannot fetch the exact remote PR head"
+        )
+    ancestry = _git("merge-base", "--is-ancestor", required_base_head, commit)
+    if ancestry.returncode == 1:
+        raise ControlError(
+            f"issue #{item.ticket.number}: worker artifact must descend from current "
+            f"base revision {required_base_head}; reconcile and push the existing PR"
+        )
+    if ancestry.returncode != 0:
+        raise ControlError(
+            ancestry.stderr.strip()
+            or f"issue #{item.ticket.number}: cannot verify PR base ancestry"
         )
 
 

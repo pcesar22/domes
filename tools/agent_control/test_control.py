@@ -649,6 +649,78 @@ class ResultSemanticsTest(unittest.TestCase):
 class AutopilotReviewTest(unittest.TestCase):
     revision = "a" * 40
 
+    def test_worker_prompt_pins_base_and_defers_hardware(self) -> None:
+        ticket = automated_ticket(30, self.revision, label="agent:rework")
+        item = control.validate_ticket(ticket, check_revision=False)
+        prompt = control.build_prompt(
+            item,
+            "worker",
+            required_base_head="b" * 40,
+        )
+        self.assertIn(f"Current required base revision: `{'b' * 40}`", prompt)
+        self.assertIn("reconciliation-only commit is valid", prompt)
+        self.assertIn("never an\nimplementation-worker blocker", prompt)
+
+    def test_hardware_implementation_blocker_routes_to_independent_judge(self) -> None:
+        ticket = automated_ticket(33, self.revision, label="agent:rework")
+        sections = control.parse_sections(ticket.body)
+        sections["Hardware operations"] = "info"
+        sections["Hardware boards"] = "0"
+        result = {"blockers": ["No hardware capability was supplied."]}
+        self.assertEqual(
+            "agent:agent-review",
+            control.result_state(
+                "worker",
+                result,
+                autopilot=True,
+                ticket_sections=sections,
+            ),
+        )
+
+    def test_worker_artifact_must_descend_from_controller_base(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(40, self.revision, label="agent:rework")
+        item = control.validate_ticket(ticket, check_revision=False)
+        pr = pull_request(control.load_autopilot_policy(), head="c" * 40)
+        result = {"commit": pr.head_oid, "pull_request": pr.number}
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        behind = subprocess.CompletedProcess([], 1, "", "")
+        with (
+            mock.patch.object(control, "load_pull_request", return_value=pr),
+            mock.patch.object(control, "_git", side_effect=(completed, behind)) as git,
+            self.assertRaisesRegex(control.ControlError, "must descend from current"),
+        ):
+            control.verify_worker_artifact(
+                workflow,
+                Path("/unused"),
+                item,
+                result,
+                required_base_head="b" * 40,
+            )
+        self.assertEqual(
+            ("merge-base", "--is-ancestor", "b" * 40, "c" * 40),
+            git.call_args_list[-1].args,
+        )
+
+    def test_worker_artifact_accepts_descendant_of_controller_base(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(42, self.revision, label="agent:rework")
+        item = control.validate_ticket(ticket, check_revision=False)
+        pr = pull_request(control.load_autopilot_policy(), head="c" * 40)
+        result = {"commit": pr.head_oid, "pull_request": pr.number}
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with (
+            mock.patch.object(control, "load_pull_request", return_value=pr),
+            mock.patch.object(control, "_git", return_value=completed),
+        ):
+            control.verify_worker_artifact(
+                workflow,
+                Path("/unused"),
+                item,
+                result,
+                required_base_head="b" * 40,
+            )
+
     def test_required_ci_reports_green_pending_failed_and_missing(self) -> None:
         policy = control.load_autopilot_policy()
         green = pull_request(policy)
