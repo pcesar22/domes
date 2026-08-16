@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DOMES verification worker result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issue", "spec_revision", "state", "commit", "pull_request", "checks", "repairs", "blockers"],
+  "properties": {
+    "issue": {"type": "integer", "minimum": 1},
+    "spec_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "state": {"type": "string", "enum": ["human_review", "agent_review", "blocked"]},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "pull_request": {"type": ["integer", "null"], "minimum": 1},
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "url"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "enum": ["passed", "failed", "pending", "skipped"]},
+          "url": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "repairs": {"type": "array", "items": {"type": "string"}},
+    "blockers": {"type": "array", "items": {"type": "string"}}
+  }
+}
