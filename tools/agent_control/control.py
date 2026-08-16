@@ -2733,6 +2733,23 @@ def validate_hardware_verification_result(
         )
 
 
+def hardware_attestation_artifact_head(
+    item: TicketValidation,
+    result: dict[str, Any],
+    checkpoint_head: str,
+) -> str:
+    """Bind broker evidence to the judged head when verification pushes a repair."""
+    returned_head = str(result.get("commit", ""))
+    if returned_head == checkpoint_head:
+        return returned_head
+    if result.get("state") != "agent_review" or not result.get("repairs"):
+        raise ControlError(
+            f"issue #{item.ticket.number}: changed hardware-verification artifact "
+            "must be a repair returning through independent review"
+        )
+    return checkpoint_head
+
+
 def normalized_plan(result: dict[str, Any]) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     for task in sorted(result["tasks"], key=lambda item: item["key"]):
@@ -4103,12 +4120,17 @@ def _execute_one(
         )
     if hardware_access:
         assert hardware_evidence is not None
+        attested_artifact_head = hardware_attestation_artifact_head(
+            item,
+            result,
+            hardware_checkpoint_head,
+        )
         attestation = attest_hardware_manifest(
             item,
             run_root,
             hardware_evidence / "broker-manifest.jsonl",
             hardware_checkpoint_head,
-            str(result.get("commit", "")),
+            attested_artifact_head,
         )
         validate_hardware_verification_result(item, result, attestation)
     validate_result_semantics(

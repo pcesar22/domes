@@ -1344,6 +1344,33 @@ class ReviewFixRegressionTest(unittest.TestCase):
             {"successful_event_count": 1, "failed_event_count": 0},
         )
 
+    def test_hardware_repair_attests_manifest_to_judged_checkpoint(self) -> None:
+        ticket = self.hardware_ticket(610, label="agent:verification")
+        item = control.validate_ticket(ticket, check_revision=False)
+        checkpoint = "b" * 40
+        result = {
+            "state": "agent_review",
+            "commit": "c" * 40,
+            "repairs": ["Replace a rejected read-only identity API."],
+        }
+        self.assertEqual(
+            checkpoint,
+            control.hardware_attestation_artifact_head(item, result, checkpoint),
+        )
+        result["repairs"] = []
+        with self.assertRaisesRegex(control.ControlError, "must be a repair"):
+            control.hardware_attestation_artifact_head(item, result, checkpoint)
+
+    def test_unchanged_hardware_result_attests_exact_returned_head(self) -> None:
+        ticket = self.hardware_ticket(611, label="agent:verification")
+        item = control.validate_ticket(ticket, check_revision=False)
+        checkpoint = "b" * 40
+        result = {"state": "agent_review", "commit": checkpoint, "repairs": []}
+        self.assertEqual(
+            checkpoint,
+            control.hardware_attestation_artifact_head(item, result, checkpoint),
+        )
+
     def test_trace_acceptance_operation_requires_default_restore_capability(
         self,
     ) -> None:
