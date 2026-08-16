@@ -44,7 +44,7 @@ bool populateEvidenceIdentity(domes_trace_TraceSessionInfo& msg) {
     }
     msg.app_image_sha256.size = sizeof(msg.app_image_sha256.bytes);
 
-    if (esp_efuse_mac_get_default(msg.device_uid.bytes) != ESP_OK) {
+    if (esp_read_mac(msg.device_uid.bytes, ESP_MAC_BASE) != ESP_OK) {
         ESP_LOGE(kTag, "Unable to read the factory base MAC for trace evidence");
         return false;
     }
