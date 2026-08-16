@@ -58,7 +58,14 @@ public:
     SimAudioDriver& audio() { return audio_; }
 
     void setEventCallback(domes::game::GameEventCallback cb) {
-        engine_.setEventCallback(std::move(cb));
+        (void)replaceEventCallback(std::move(cb));
+    }
+
+    domes::game::GameEventCallback replaceEventCallback(domes::game::GameEventCallback cb) {
+        auto previous = std::move(eventCallback_);
+        eventCallback_ = std::move(cb);
+        engine_.setEventCallback(eventCallback_);
+        return previous;
     }
 
     void tick() {
@@ -77,6 +84,7 @@ private:
     domes::config::FeatureManager features_;
     domes::config::ModeManager mode_;
     domes::game::GameEngine engine_;
+    domes::game::GameEventCallback eventCallback_;
 };
 
 }  // namespace sim

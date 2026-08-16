@@ -10,10 +10,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Path to proto files (relative to this crate's Cargo.toml)
     let proto_dir = PathBuf::from("../../firmware/common/proto");
     let config_proto = proto_dir.join("config.proto");
+    let peer_drill_proto = proto_dir.join("peer_drill.proto");
     let trace_proto = proto_dir.join("trace.proto");
 
     // Tell Cargo to rerun this if any proto file changes
     println!("cargo:rerun-if-changed={}", config_proto.display());
+    println!("cargo:rerun-if-changed={}", peer_drill_proto.display());
     println!("cargo:rerun-if-changed={}", trace_proto.display());
 
     // Generate Rust code from protos
@@ -21,7 +23,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Use BTreeMap for deterministic output
         .btree_map(["."])
         // Compile all proto files
-        .compile_protos(&[&config_proto, &trace_proto], &[&proto_dir])?;
+        .compile_protos(
+            &[&config_proto, &peer_drill_proto, &trace_proto],
+            &[&proto_dir],
+        )?;
 
     Ok(())
 }

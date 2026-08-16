@@ -59,7 +59,7 @@ int main(int argc, char* argv[]) {
         auto& pod = sim.addPod(static_cast<uint16_t>(i));
         handlers.push_back(std::make_unique<PodCommandHandler>(pod, *bus, sim.log()));
         auto* handler = handlers.back().get();
-        bus->registerPod(pod.podId(),
+        bus->registerPod(pod.podId(), i == 0 ? kMasterPeerRole : kSlavePeerRole,
                          [handler](const SimMessage& msg) { handler->onMessage(msg); });
     }
 
@@ -113,6 +113,12 @@ int main(int argc, char* argv[]) {
     TRACE_BEGIN(TRACE_ID("Drill.Execute"), Category::kGame);
     DrillResult result = drill.execute(steps, touches);
     TRACE_END(TRACE_ID("Drill.Execute"), Category::kGame);
+    if (!result.succeeded()) {
+        fprintf(stderr, "ERROR: Drill aborted on peer codec failure (%u); trace not exported\n",
+                static_cast<unsigned>(result.codecError));
+        Recorder::shutdown();
+        return 1;
+    }
 
     // --- Print results ---
     printf("=== Drill Results ===\n");

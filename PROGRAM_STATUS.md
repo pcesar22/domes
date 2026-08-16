@@ -11,24 +11,17 @@ belong in [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md), ta
 [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md), and verification procedures
 in [`docs/TESTING.md`](docs/TESTING.md).
 
-**As of:** 2026-08-05, FS-WP-002C scheduler and causality observability remains `Active` / `Amber`.
-[PR 102](https://github.com/pcesar22/domes/pull/102) merged as `7b1554a`, issue
-[101](https://github.com/pcesar22/domes/issues/101) reopened for physical closure, and final implementation head `b3cb19c`
-passed required [Software CI run 31068033646](https://github.com/pcesar22/domes/actions/runs/31068033646),
-including 100/100 accepted QEMU runs. A fresh operator-correlated pod-2 trace passed normalization
-with 75 events and zero drops/discontinuities, but its retained session does not bind the exact image
-hash or stable hardware identity. The default image was observed idle with tracing disabled, but
-post-restoration command output was not retained, `system health` missed its 16 KiB thresholds, and
-the separate 30 KiB heap self-test passed only 9/10. Those gaps prevent technical exit.
-FS-WP-002B and FS-WP-002D
-remain consolidated in [PR 100](https://github.com/pcesar22/domes/pull/100) against `main`.
-FS-WP-002D is `Complete` /
-`Green`: required [Software CI run 31039047667](https://github.com/pcesar22/domes/actions/runs/31039047667)
-rebuilt runtime implementation head `f36447f931f9216b7733ff4685ffc5ccaab895ce`, passed 100 identical
-QEMU runtime processes, and passed the aggregate `CI Gate`. Its qualified `firmware/domes` source tree is
-`f0db7c5516879de37a5a04ec2ee052ace8ebe0f2`. Generated qualification output is not stored in Git;
-the PR records the manual campaign outcomes and CI retains the exact-checkout result. Every later PR
-head, including status-only changes, remains subject to the same required checks before merge.
+**As of:** 2026-08-07, FS-WP-002C scheduler and causality observability is at the human review and
+merge boundary in open [PR 105](https://github.com/pcesar22/domes/pull/105). Its exact rebased head
+`d9a22c6` is reported as mergeable with required Software CI and device-bound physical closure
+passed, but the package remains `Active` / `Amber` until independent review and merge. FS-WP-003A
+has advanced independently in open [PR 107](https://github.com/pcesar22/domes/pull/107): its first
+slice now owns the ten current peer semantics and sender roles in one generated nanopb/prost/Dart contract, maps them
+through an exact Legacy-V1 codec, and makes the native simulator exercise actual production bytes.
+Bounded nanopb storage, matching C++/Rust/Dart validators, exhaustive schema-drift checks,
+exact-byte and fail-closed simulator tests, and a fresh isolated ESP-IDF v5.4.4 build pass locally.
+This is not FS-WP-003A completion: exact-head CI/review, live firmware adoption, operational
+app/CLI convergence, and rolling two-board compatibility remain.
 
 ## CEO Control Panel
 
@@ -42,11 +35,11 @@ head, including status-only changes, remains subject to the same required checks
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
 | Latest completed execution package | `FS-WP-002D`, `Complete` / `Green`; [PR 100](https://github.com/pcesar22/domes/pull/100), issue [99](https://github.com/pcesar22/domes/issues/99), and required [Software CI](https://github.com/pcesar22/domes/actions/runs/31039047667) passed |
-| Current execution package | `FS-WP-002C`, `Active` / `Amber`; implementation is merged, but exact physical identity binding and passing default-image verification remain |
+| Current execution package | `FS-WP-003A`, `Active` / `Amber`; first portable-contract/Legacy-V1-codec/simulator slice is open in PR 107 after local implementation review, while exact-head CI/review and live adoption remain |
 | Next program action | Select and start VC1 now; in parallel, record the HW owner/budget decision and then start HW-WP-001 while active PS1 and FS1 work continues |
-| Next autonomous execution delivery | Bind the FS-WP-002C physical session to exact image/hardware identity, repeat capture, retain restoration evidence, and pass required health/self-test checks; do not begin FS-WP-002E |
-| Current AI execution blocker | Default-image free heap is below both required health thresholds and the separate 30 KiB self-test threshold; physical-session identity binding is not implemented |
-| PR merge condition | Retained evidence must close both physical identity and default-image verification gaps, and the final follow-up head must pass required CI; live checks remain authoritative |
+| Next autonomous execution delivery | After this FS-WP-003A slice is published and passes exact-head CI/review, adopt its codec in live firmware without changing ESP-NOW bytes, then converge operational CLI/app behavior |
+| Current AI execution blocker | No software implementation blocker; FS-WP-002C awaits human review/merge, while FS-WP-003A PR 107 awaits exact-head CI/review |
+| PR merge condition | PR 105 remains a human review/merge action; PR 107 must pass exact-head CI and human review before integration |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
 | First product-hardware purchase authorization | G2 EVT Release to Fab, forecast 2026-11-02 |
@@ -70,12 +63,34 @@ start PCB layout, or order EVT boards until the corresponding gates pass.
 | HW-WP-001 NFF Characterization and Product Architecture Downselect | `Ready now` | HR0-HR2 evidence; analysis, supplier work, evaluation kits, and coupons only |
 | Product/system requirement allocation | `Active` | Stabilize hardware-driving values or explicit ranges/fallbacks for G1 |
 | Physical NFF closure | `Active` | Both boards, all peripherals, exact populated parts, current/power/timing/RF evidence |
-| Deterministic virtual platform | `Active` | A, B, and D are complete; C implementation is merged but its physical exit remains open, and predictive claims still require the remaining FS2 ladder plus independent held-out qualification |
-| General drill/protocol convergence | `Ready now` | One protobuf-owned drill, timing, authority, result, and recovery contract across firmware/sim/app |
+| Deterministic virtual platform | `Active` | A, B, and D are complete; C is at the PR 105 review/merge boundary, and predictive claims still require the remaining FS2 ladder plus independent held-out qualification |
+| General drill/protocol convergence | `Active` | First generated peer semantic/Legacy-V1 codec/simulator slice passes locally; live firmware, operational app/CLI, and two-board compatibility remain |
 | Four economical ESP32-S3 alpha nodes | `Ready now` | System-scale development inventory, not product hardware |
 | FMEA, compliance, supply, CM, DFM/DFT, and test planning | `Ready now` | Planning and risk closure; no approval or production claim |
 
 ### Current Execution Delivery
+
+#### FS-WP-003A: Portable Peer/Drill Contract
+
+**Objective:** Establish one generated semantic authority for the ten current production peer
+variants while preserving exact Legacy-V1 ESP-NOW bytes through a production-owned compatibility
+codec.
+
+The first slice generates bounded nanopb storage plus prost and Dart types, enforces matching
+semantic bounds and sender-role direction in explicit C++/Rust/Dart validators, proves exact bytes
+for every current variant, and converges the native simulator on codec-produced production bytes.
+The simulator derives role from registered source identity, reports codec failures instead of
+ordinary drill results, and scopes callbacks across delayed delivery and master-target paths. Local
+descriptor/generated drift, 310 host tests, 102 Rust unit plus 10 integration tests, four focused
+Dart tests, clean Dart analysis, three sanitizer regressions, a normal 116-event trace, and an
+isolated ESP-IDF v5.4.4 build pass, and final protocol/firmware reviews report no remaining
+publication blockers. The installed Flutter 3.38.9 full-suite attempt stalled after 53 tests and
+was stopped; repository-pinned Flutter 3.44.8 CI remains authoritative. No live firmware
+packet path, radio behavior, attached pod, or host frame/status envelope was changed or exercised.
+The package stays `Active` / `Amber` pending PR 107 exact-head CI/review, live firmware and operational
+CLI/app adoption, and a separately authorized rolling two-board compatibility run.
+
+### Delivery At Human Review/Merge Boundary
 
 #### FS-WP-002C: Scheduler, ISR, Synchronization, And Causality Observability
 
@@ -89,21 +104,19 @@ edges, fail-closed evidence validation, and measured enabled/disabled overhead o
 | State / health | `Active` / `Amber` |
 | Execution issue / plan | Reopened issue [101](https://github.com/pcesar22/domes/issues/101); [execution plan](docs/plans/scheduler-trace-observability.md) |
 | Inputs | Merged FS-WP-002D target runtime, existing 16-byte trace ABI, ESP-IDF v5.4.4 trace facility, registered NFF boards |
-| Dependencies/blockers | Final head `b3cb19c` passed Software CI run 31068033646 and PR 102 merged; the physical session lacks exact image/hardware binding, retained restoration output is incomplete, and required health/self-test checks fail on heap |
-| Gate/risk unlocked | None yet; passing the remaining physical exit criteria will unlock FS-WP-002E production radio seam work |
+| Dependencies/blockers | Open PR 105 head `d9a22c6` reports passing exact-head Software CI and device-bound physical closure; independent review and merge remain |
+| Gate/risk unlocked | None yet; merging the reviewed physical-closure candidate will unlock FS-WP-002E production radio seam work |
 | Stop condition | No scheduler replacement, unbounded hook/ISR work, reserved protobuf reuse, unmeasured 16-byte ABI migration, FS-WP-002E work, or hardware-equivalence/predictive claim |
 
 Acceptance requires stable mappings, per-core task/ISR/queue/semaphore/timeout/callback evidence, one
 synthetic interrupt causal chain, retained raw hashes, a versioned zero-exclusion normalizer, 100
 identical complete fixed QEMU traces, hard failure on invalid evidence, measured QEMU/NFF overhead,
-and preservation of default physical behavior. Final implementation `b3cb19c` passed 100/100
-accepted QEMU processes with one complete trace signature and all eight software checks in Software
-CI run 31068033646, including the aggregate `CI Gate`. An operator-correlated pod-2 run produced 75
-semantically accepted events with zero drops/discontinuities and 154/267 us disabled/enabled
-overhead. It remains provisional because the retained session does not bind exact image and hardware
-identity. Default-image health and the complete self-test did not pass their distinct heap checks,
-and restoration command output was not retained. This is provisional target-runtime/framed-command
-evidence, not physical actuation, RF, hardware-equivalence, or predictive evidence.
+and preservation of default physical behavior. PR 105 is the physical-closure candidate: it binds
+the retained session to registered pod 2 and the exact image, reports 74 accepted events with zero
+drops/discontinuities, restores the default image, and reports passing health plus 10/10 self-test
+on two boots. Its required Software CI run 31078935256 passed. These are candidate results until
+independent review and merge, and they do not establish physical peripheral or radio behavior,
+hardware equivalence, prediction, or successful guarded serial update.
 
 ### Latest Completed Execution Delivery
 
@@ -120,7 +133,7 @@ validation, and preserved physical behavior.
 | Execution issue / review package | Issue [99](https://github.com/pcesar22/domes/issues/99); one consolidated [PR 100](https://github.com/pcesar22/domes/pull/100) |
 | Inputs | FS-WP-002B feasibility foundation in the same PR; ESP-IDF v5.4.4; two registered NFF boards and Intel AX210 |
 | Dependencies/blockers | None; runtime implementation head `f36447f931f9216b7733ff4685ffc5ccaab895ce` passed 100 fresh QEMU runtime processes and aggregate `CI Gate` in [run 31039047667](https://github.com/pcesar22/domes/actions/runs/31039047667), and PR 100 merged |
-| Gate/risk unlocked | Scheduler/ISR/causality observability package `FS-WP-002C`; its implementation merged in PR 102, while physical exit remains open |
+| Gate/risk unlocked | Scheduler/ISR/causality observability package `FS-WP-002C`; its implementation merged in PR 102 and its physical-closure candidate awaits review/merge in PR 105 |
 | Stop condition | Met; C and later radio/predictive work remain outside this delivery |
 
 The prior manual technical campaign passed with 100/100 fresh QEMU target processes, one normalized
@@ -143,16 +156,17 @@ These forecasts are planning targets, not evidence. Entry criteria, not date, au
 | FS-WP-002A | Deterministic host clock, network faults, identity, and exact delivery replay | `Complete` / `Green` | Existing host simulator | Merged [PR 97](https://github.com/pcesar22/domes/pull/97), exact replay and green required CI | 2026-08-04 | 2026-08-04 actual |
 | FS-WP-002B | ESP32-S3 QEMU feasibility and adoption decision | `Complete` / `Green` | `A` complete | `Viable`: 100/100 fixed runs, HMP/GDB, immutable pinned engine, complete fidelity inventory and numeric adoption budget | 2026-08-14 | 2026-08-04 actual |
 | FS-WP-002D | Physical/QEMU composition roots and deterministic platform inputs | `Complete` / `Green` | `B` is `Viable`; issue [99](https://github.com/pcesar22/domes/issues/99) | 100/100 QEMU runs, source-equivalent two-board regression, and required exact-checkout 100-process QEMU runtime CI and aggregate gate passed | 2026-08-25 | 2026-08-05 actual |
-| FS-WP-002C | Stable scheduler, ISR, synchronization, causality, and trace normalization | `Active` / `Amber` | `D` passed; implementation merged, physical evidence incomplete | QEMU and hardware use one bounded raw/normalized trace contract with stable IDs, full causal graph, exact identity, overflow failure, measured overhead, and passing default-image verification | 2026-09-04 | 2026-08-05 baseline; physical closure reopened 2026-08-05 |
+| FS-WP-002C | Stable scheduler, ISR, synchronization, causality, and trace normalization | `Active` / `Amber` | `D` passed; implementation merged; PR 105 physical-closure candidate passed reported CI/device checks and awaits review/merge | QEMU and hardware use one bounded raw/normalized trace contract with stable IDs, full causal graph, exact identity, overflow failure, measured overhead, and passing default-image verification | 2026-09-04 | 2026-08-07 review/merge boundary |
 | FS-WP-002E | Production `IEspNowRadio` seam and trace correlation below `EspNowTransport` | `Not due` / `Not rated` | `C` passes and this package is selected | Physical path passes two-board regression; causal tokens cross callback/ring/dequeue without wire or pending-frame-capacity change | 2026-09-11 | 2026-09-11 |
-| FS-WP-003A | Portable protobuf-owned peer/drill codec and role semantics, required FS3 input | `Ready` / `Red` | Current physical/simulator/app contracts and compatibility baseline identified | Generated nanopb/prost/Dart contract replaces duplicated semantics and passes host/app/CLI/build/two-board migration regression | 2026-09-15 | 2026-09-15 |
+| FS-WP-003A | Portable protobuf-owned peer/drill codec and role semantics, required FS3 input | `Active` / `Amber` | First generated semantic/Legacy-V1 codec/native-simulator slice is in PR 107; exact-head CI/review, live adoption, and hardware compatibility remain | Generated nanopb/prost/Dart contract replaces duplicated semantics and passes host/app/CLI/build/two-board migration regression | 2026-09-15 | 2026-09-15 |
 | FS-WP-002F | One real QEMU DUT plus deterministic in-process peer backplane | `Not due` / `Not rated` | `E` and `FS-WP-003A` pass | Production transport/task/codec path passes complete deterministic fault and exact-replay matrix with role rotation inside patch budget | 2026-09-28 | 2026-09-28 |
 | FS-WP-002G | Scheduling, concurrency, mutation, fault-campaign, and CI tiers | `Not due` / `Not rated` | `F` passes | Critical mutants all detected; evidence modes remain distinct; 1,000 repeats and 20 shadow jobs meet zero-flake and p95 runtime limits | 2026-10-12 | 2026-10-12 |
 | FS-WP-002H | Hardware-calibrated model and frozen prediction candidate | `Not due` / `Not rated` | `G`, FS1, and stable FS3 evidence | Calibration-only tuning, clock uncertainty, frozen bounds/envelope, drift and invalidation rules | 2026-10-26 | 2026-10-26 |
 | VC-WP-002A | Independent held-out predictive qualification | `Not due` / `Not rated` | `H` frozen and independent corpus fixed | 100% critical and >=95% complete in-envelope mutant detection, fixed metric bounds, no unexplained held-out divergence, published verdict | 2026-10-30 | 2026-10-30 |
 
 `FS-WP-003A` is shown because it is a hard software dependency for the target peer backplane. It
-advances FS3, not FS2, and does not count as simulation progress by proximity.
+advances FS3, not FS2, and does not count as simulation progress by proximity. Its first candidate
+slice is software evidence, not merged integration or physical compatibility proof.
 
 Dependency order is `A -> B -> D -> C -> E`, with `FS-WP-003A` able to proceed independently;
 then `(E + FS-WP-003A) -> F -> G`, then `(FS1 + FS3 + G) -> H -> VC-WP-002A`.
@@ -256,8 +270,8 @@ laundering a failed model into gate evidence.
 | --- | --- | --- | --- | --- | --- | --- |
 | FS0 | Reproducible CI and automated two-board platform | AI firmware/software lead | `Complete` | `Green` | 2026-08-03 actual | Preserve required CI and rerun hardware evidence after behavioral change |
 | FS1 | Complete physical NFF reference and product-interface inventory | AI firmware/software lead | `Active` | `Amber` | 2026-08-24 | Finish audio/volume; observe peripherals; capture current/power/timing; confirm exact parts |
-| FS2 | Layered deterministic virtual platform with a measured prediction envelope | AI simulation lead | `Active` | `Amber` | 2026-10-30 | `A`, `B`, and `D` are complete; close C's physical exit before E, and retain `Low` confidence until the full ladder and independent qualification pass |
-| FS3 | One production-owned drill/runtime contract across firmware, simulator and app | AI firmware/software lead | `Ready` | `Red` | 2026-10-19 | Deliver `FS-WP-003A` portable protobuf peer/drill contract by 2026-09-15, then close fixed two-pod and host-wall-clock scoring divergence |
+| FS2 | Layered deterministic virtual platform with a measured prediction envelope | AI simulation lead | `Active` | `Amber` | 2026-10-30 | `A`, `B`, and `D` are complete; review and merge C's physical-closure candidate before E, and retain `Low` confidence until the full ladder and independent qualification pass |
+| FS3 | One production-owned drill/runtime contract across firmware, simulator and app | AI firmware/software lead | `Active` | `Amber` | 2026-10-19 | Pass exact-head CI/review for FS-WP-003A PR 107, then adopt it live and close app/CLI and rolling-compatibility exits |
 | FS4 | Six-node runtime, mobile/control, diagnostics, failure recovery and soak | AI systems/software lead | `Ready` | `Amber` | 2026-10-19 | Execute on NFF plus economical alpha nodes; feed critical results into G2 |
 | FS5 | EVT BSP, board profile, factory/service tooling and bring-up | AI firmware lead | `Not due` | `Not rated` | 2027-02-08 | Scaffold after G1; exact profile must build before G2 and remain separate from NFF |
 | FS6 | DVT/PVT/release software candidates | AI firmware/software lead | `Not due` | `Not rated` | 2027-12-13 | Bind each candidate to exact hardware, app, CLI, tests, update and recovery evidence |
@@ -331,6 +345,8 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | --- | --- | --- |
 | 2026-08-05 | FS-WP-002B and D consolidated into one reviewable simulation delivery with reproducible tooling, concise qualification, independent reviews, and passing exact-checkout QEMU CI | D is complete and C is eligible but unselected; no scheduler, hardware-equivalence, or predictive claim is created |
 | 2026-08-05 | FS-WP-002C review repaired scheduler identities, cache-safe hook access, raw-evidence bounds, and fail-closed normalization; final code passed 100/100 QEMU and merge-ref CI, then an operator-correlated pod-2 trace passed semantic normalization | C remains active until exact physical identity is bound and retained default-image health/self-test evidence passes; no actuation, RF, hardware-equivalence, or predictive claim is created |
+| 2026-08-07 | FS-WP-002C PR 105 reports exact image/device binding, recovered heap, passing restored-image health and 10/10 self-test, and required exact-head CI | C reaches the human review/merge boundary; the candidate does not prove physical peripheral/radio behavior or successful guarded serial update |
+| 2026-08-07 | FS-WP-003A PR 107 creates the generated ten-variant semantic contract, exact Legacy-V1 codec, and native simulator byte-path convergence with passing local software/build evidence | FS3 advances independently but remains active; exact-head CI/review, live firmware and operational app/CLI adoption, and rolling two-board compatibility remain |
 | 2026-08-14 | Product brief, hardware-driving requirement draft, and initial risk register | Conflicts and missing measurements surface early while simulation implementation proceeds on its separate ladder |
 | 2026-08-24 | NFF physical/peripheral/electrical characterization baseline | Guesses are replaced before selection freeze |
 | 2026-08-31 | Architecture/component shortlist and bounded risk-coupon review | Weak candidates are removed |
@@ -351,10 +367,11 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 
 | Evidence | Source | Result | Boundary |
 | --- | --- | --- | --- |
-| Current main software CI | Commit `7b1554a9acd3c4db9899f1c077b1591633db481a`, [run 31068879786](https://github.com/pcesar22/domes/actions/runs/31068879786) | Passed | Builds, tests, generated artifacts, lint, docs, Flutter Linux/iOS, ESP-IDF release checks, 100-process QEMU runtime, and aggregate `CI Gate` |
+| Current accepted source baseline | Live `origin/main` `ead26725804feea5e37e453b26f5c4115fab304a` | Exact baseline verified before the FS-WP-003A slice | Local baseline identity only; no new GitHub CI claim is made for this cycle |
 | Deterministic replay foundation | [PR 97](https://github.com/pcesar22/domes/pull/97), merged 2026-08-04 | Accepted | FS-WP-002A only: explicit host time, deterministic faults, delivery identity, and exact delivery replay; no trace-normalization, target-scheduler, or predictive claim |
 | ESP32-S3 QEMU simulation delivery | [PR 100](https://github.com/pcesar22/domes/pull/100), [Software CI run 31039047667](https://github.com/pcesar22/domes/actions/runs/31039047667) | `B` is `Viable`; `D` is `Complete` / `Green`; exact-checkout CI rebuilt runtime implementation head `f36447f931f9216b7733ff4685ffc5ccaab895ce`, executed 100 identical fresh production-runtime QEMU processes, and passed aggregate `CI Gate`; manual 100/100 campaigns, linked closure, source-equivalent two-board regression, current host tooling, and independent review also passed; every later PR head remains gated before merge | Target execution and declared production/adapted/modeled/disabled runtime profile only; successful results stay in CI logs and failure diagnostics are uploaded outside Git; no scheduler-trace, radio/RF, peripheral-actuation, cycle-accuracy, hardware-equivalence, or predictive claim |
-| Scheduler and causality trace implementation | Merged [PR 102](https://github.com/pcesar22/domes/pull/102), issue [101](https://github.com/pcesar22/domes/issues/101) reopened for physical closure, final implementation `b3cb19c`, and [Software CI run 31068033646](https://github.com/pcesar22/domes/actions/runs/31068033646) | CI merge ref `b451b118` passed all eight software checks, 100/100 accepted QEMU runs with trace signature `a98007744af8b34395141cd9c3303bee95d5e983f2531b5cd0a1073c1ada85d4`, and `CI Gate`. Operator-correlated pod-2 evidence has 75 events, zero drops/discontinuities, complete causality, 154/267 us overhead, raw SHA-256 `b3232cf4...d98ec`, and normalizer-declared content SHA-256 `78d2694b...7225` | Provisional target-runtime/framed-command evidence only: the session lacks exact image/hardware binding; restoration outputs were not retained; 16 KiB health and separate 30 KiB self-test heap checks failed. No physical actuation, RF, hardware-equivalence, or predictive claim |
+| Scheduler and causality trace closure candidate | Merged [PR 102](https://github.com/pcesar22/domes/pull/102) plus open [PR 105](https://github.com/pcesar22/domes/pull/105), head `d9a22c6`, and [Software CI run 31078935256](https://github.com/pcesar22/domes/actions/runs/31078935256) | PR 105 reports exact device/image-bound 74-event trace with zero drops/discontinuities, restored default-image health, 10/10 self-test on two boots, and passing required CI | Candidate evidence pending review/merge; no physical peripheral/radio, hardware-equivalence, predictive, or successful guarded serial-update claim |
+| FS-WP-003A portable peer/drill first slice | Open [PR 107](https://github.com/pcesar22/domes/pull/107) from accepted `ead2672`; [execution plan](docs/plans/portable-peer-drill-contract.md) | Descriptor/generated drift, exact-byte/negative codec, 310 host, 102 Rust unit plus 10 integration, four focused Dart, Dart analysis, three ASan/UBSan regressions, normal 116-event trace, and fresh isolated ESP-IDF v5.4.4 build pass; specialist review findings were repaired and final reviews report no blocker | Not integrated; full local Flutter suite stalled under non-pinned 3.38.9 and exact-head CI is pending; no live firmware adoption, operational app/CLI flow, attached-pod access, radio behavior, or rolling two-board compatibility evidence |
 | Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains and CI behavior |
 | Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
 

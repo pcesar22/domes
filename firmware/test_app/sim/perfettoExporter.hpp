@@ -86,13 +86,13 @@ public:
         for (const auto& flow : flowEvents) {
             comma();
             json << "{\"ph\":\"s\",\"pid\":" << flow.srcPod << ",\"tid\":200"
-                 << ",\"ts\":" << flow.timestampUs << ",\"name\":\"" << messageTypeName(flow.type)
-                 << "\""
+                 << ",\"ts\":" << flow.timestampUs << ",\"name\":\""
+                 << messageTypeName(flow.payloadTag) << "\""
                  << ",\"id\":" << flow.sequence << "}";
             comma();
             json << "{\"ph\":\"f\",\"pid\":" << flow.dstPod << ",\"tid\":200"
-                 << ",\"ts\":" << flow.timestampUs << ",\"name\":\"" << messageTypeName(flow.type)
-                 << "\""
+                 << ",\"ts\":" << flow.timestampUs << ",\"name\":\""
+                 << messageTypeName(flow.payloadTag) << "\""
                  << ",\"id\":" << flow.sequence << ",\"bp\":\"e\"}";
         }
 

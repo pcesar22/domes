@@ -130,6 +130,341 @@ pub mod config {
     }
 }
 
+/// Portable peer/drill semantic types (generated from peer_drill.proto).
+#[allow(dead_code)]
+pub mod peer_drill {
+    include!(concat!(env!("OUT_DIR"), "/domes.peer_drill.rs"));
+
+    use peer_message::Payload;
+
+    /// Stable semantic validation failures shared with nanopb and Dart consumers.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum ValidationError {
+        UnsupportedVersion,
+        BadMacLength,
+        MissingPayload,
+        BadEnum,
+        BadChannel,
+        BadPad,
+        ZeroToken,
+        BadRole,
+    }
+
+    impl PeerMessage {
+        /// Validate bounded fields and sender direction before operational use.
+        pub fn validate_for_sender_role(
+            &self,
+            sender_role: PeerRole,
+        ) -> Result<(), ValidationError> {
+            if self.protocol_version != 1 {
+                return Err(ValidationError::UnsupportedVersion);
+            }
+            if self.sender_mac.len() != 6 {
+                return Err(ValidationError::BadMacLength);
+            }
+
+            let payload = self
+                .payload
+                .as_ref()
+                .ok_or(ValidationError::MissingPayload)?;
+            match payload {
+                Payload::ArmTouch(arm) => {
+                    if arm.round_token == 0 {
+                        return Err(ValidationError::ZeroToken);
+                    }
+                    FeedbackMode::try_from(arm.feedback_mode)
+                        .map_err(|_| ValidationError::BadEnum)?;
+                }
+                Payload::SetColor(color) => {
+                    if color.red > 255 || color.green > 255 || color.blue > 255 {
+                        return Err(ValidationError::BadChannel);
+                    }
+                }
+                Payload::SimulateTouch(touch) => {
+                    if touch.round_token == 0 {
+                        return Err(ValidationError::ZeroToken);
+                    }
+                    if touch.pad_index > 3 {
+                        return Err(ValidationError::BadPad);
+                    }
+                }
+                Payload::TouchEvent(touch) => {
+                    if touch.round_token == 0 {
+                        return Err(ValidationError::ZeroToken);
+                    }
+                    if touch.pad_index > 3 {
+                        return Err(ValidationError::BadPad);
+                    }
+                }
+                Payload::TimeoutEvent(timeout) if timeout.round_token == 0 => {
+                    return Err(ValidationError::ZeroToken);
+                }
+                _ => {}
+            }
+
+            let role_allowed = match payload {
+                Payload::Beacon(_) | Payload::Ping(_) | Payload::Pong(_) => true,
+                Payload::JoinGame(_)
+                | Payload::ArmTouch(_)
+                | Payload::SetColor(_)
+                | Payload::StopAll(_)
+                | Payload::SimulateTouch(_) => sender_role == PeerRole::Master,
+                Payload::TouchEvent(_) | Payload::TimeoutEvent(_) => sender_role == PeerRole::Slave,
+            };
+            if !role_allowed {
+                return Err(ValidationError::BadRole);
+            }
+            Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::peer_message::Payload;
+        use super::*;
+        use prost::Message;
+
+        const ARM_FIXTURE: &[u8] = &[
+            0x8A, 0x01, 0x0A, 0x0D, 0xD4, 0xC3, 0xB2, 0xA1, 0x10, 0xB8, 0x17, 0x18, 0x03, 0x80,
+            0x10, 0x01, 0x8A, 0x10, 0x06, 0x94, 0xA9, 0x90, 0x0A, 0xEB, 0xC0, 0x95, 0x10, 0x44,
+            0x33, 0x22, 0x11,
+        ];
+
+        fn message(payload: Payload) -> PeerMessage {
+            PeerMessage {
+                protocol_version: 1,
+                sender_mac: vec![0x94, 0xA9, 0x90, 0x0A, 0xEB, 0xC0],
+                timestamp_us: 0x1122_3344,
+                payload: Some(payload),
+            }
+        }
+
+        fn first_field_number(payload: Payload) -> u32 {
+            let bytes = PeerMessage {
+                payload: Some(payload),
+                ..Default::default()
+            }
+            .encode_to_vec();
+            let mut key = 0u32;
+            let mut shift = 0;
+            for byte in bytes {
+                key |= u32::from(byte & 0x7f) << shift;
+                if byte & 0x80 == 0 {
+                    return key >> 3;
+                }
+                shift += 7;
+            }
+            panic!("oneof field key must be a complete varint");
+        }
+
+        #[test]
+        fn generated_oneof_discriminators_equal_every_legacy_v1_type() {
+            let variants = [
+                (Payload::Beacon(Beacon {}), 0x01),
+                (Payload::Ping(Ping {}), 0x02),
+                (Payload::Pong(Pong {}), 0x03),
+                (Payload::JoinGame(JoinGame {}), 0x10),
+                (Payload::ArmTouch(ArmTouch::default()), 0x11),
+                (Payload::SetColor(SetColor::default()), 0x12),
+                (Payload::StopAll(StopAll {}), 0x13),
+                (Payload::SimulateTouch(SimulateTouch::default()), 0x14),
+                (Payload::TouchEvent(TouchEvent::default()), 0x20),
+                (Payload::TimeoutEvent(TimeoutEvent::default()), 0x21),
+            ];
+
+            for (payload, expected) in variants {
+                assert_eq!(first_field_number(payload), expected);
+            }
+        }
+
+        #[test]
+        fn generated_fixed32_arm_fixture_round_trips_exactly() {
+            let message = PeerMessage {
+                protocol_version: 1,
+                sender_mac: vec![0x94, 0xA9, 0x90, 0x0A, 0xEB, 0xC0],
+                timestamp_us: 0x1122_3344,
+                payload: Some(Payload::ArmTouch(ArmTouch {
+                    round_token: 0xA1B2_C3D4,
+                    timeout_ms: 3000,
+                    feedback_mode: FeedbackMode::LedAndAudio.into(),
+                })),
+            };
+
+            assert_eq!(message.encode_to_vec(), ARM_FIXTURE);
+            let decoded = PeerMessage::decode(ARM_FIXTURE).expect("fixture must decode");
+            assert_eq!(decoded.protocol_version, 1);
+            assert_eq!(decoded.sender_mac.len(), 6);
+            let Some(Payload::ArmTouch(arm)) = decoded.payload else {
+                panic!("fixture must select arm_touch");
+            };
+            assert_eq!(arm.round_token, 0xA1B2_C3D4);
+            assert_eq!(arm.timeout_ms, 3000);
+            assert_eq!(arm.feedback_mode, FeedbackMode::LedAndAudio as i32);
+        }
+
+        #[test]
+        fn semantic_validation_covers_bounds_and_role_direction() {
+            let mut arm = message(Payload::ArmTouch(ArmTouch {
+                round_token: u32::MAX,
+                timeout_ms: u32::MAX,
+                feedback_mode: FeedbackMode::LedAndAudio.into(),
+            }));
+            assert_eq!(arm.validate_for_sender_role(PeerRole::Master), Ok(()));
+            assert_eq!(
+                arm.validate_for_sender_role(PeerRole::Slave),
+                Err(ValidationError::BadRole)
+            );
+            assert_eq!(
+                arm.validate_for_sender_role(PeerRole::Unspecified),
+                Err(ValidationError::BadRole)
+            );
+
+            arm.protocol_version = 0;
+            assert_eq!(
+                arm.validate_for_sender_role(PeerRole::Master),
+                Err(ValidationError::UnsupportedVersion)
+            );
+            arm.protocol_version = 2;
+            assert_eq!(
+                arm.validate_for_sender_role(PeerRole::Master),
+                Err(ValidationError::UnsupportedVersion)
+            );
+            arm.protocol_version = 1;
+
+            for size in [0, 5, 7] {
+                arm.sender_mac = vec![0; size];
+                assert_eq!(
+                    arm.validate_for_sender_role(PeerRole::Master),
+                    Err(ValidationError::BadMacLength)
+                );
+            }
+            arm.sender_mac = vec![0; 6];
+
+            if let Some(Payload::ArmTouch(arm_payload)) = arm.payload.as_mut() {
+                arm_payload.round_token = 0;
+            }
+            assert_eq!(
+                arm.validate_for_sender_role(PeerRole::Master),
+                Err(ValidationError::ZeroToken)
+            );
+            if let Some(Payload::ArmTouch(arm_payload)) = arm.payload.as_mut() {
+                arm_payload.round_token = 1;
+                arm_payload.feedback_mode = 4;
+            }
+            assert_eq!(
+                arm.validate_for_sender_role(PeerRole::Master),
+                Err(ValidationError::BadEnum)
+            );
+
+            let mut color = message(Payload::SetColor(SetColor {
+                red: 255,
+                green: 255,
+                blue: 255,
+            }));
+            assert_eq!(color.validate_for_sender_role(PeerRole::Master), Ok(()));
+            if let Some(Payload::SetColor(color_payload)) = color.payload.as_mut() {
+                color_payload.red = 256;
+            }
+            assert_eq!(
+                color.validate_for_sender_role(PeerRole::Master),
+                Err(ValidationError::BadChannel)
+            );
+
+            let mut touch = message(Payload::TouchEvent(TouchEvent {
+                round_token: 1,
+                reaction_time_us: u32::MAX,
+                pad_index: 3,
+            }));
+            assert_eq!(touch.validate_for_sender_role(PeerRole::Slave), Ok(()));
+            assert_eq!(
+                touch.validate_for_sender_role(PeerRole::Master),
+                Err(ValidationError::BadRole)
+            );
+            if let Some(Payload::TouchEvent(touch_payload)) = touch.payload.as_mut() {
+                touch_payload.pad_index = 4;
+            }
+            assert_eq!(
+                touch.validate_for_sender_role(PeerRole::Slave),
+                Err(ValidationError::BadPad)
+            );
+
+            let discovery = message(Payload::Beacon(Beacon {}));
+            for role in [PeerRole::Unspecified, PeerRole::Master, PeerRole::Slave] {
+                assert_eq!(discovery.validate_for_sender_role(role), Ok(()));
+            }
+
+            let missing = PeerMessage {
+                protocol_version: 1,
+                sender_mac: vec![0; 6],
+                ..Default::default()
+            };
+            assert_eq!(
+                missing.validate_for_sender_role(PeerRole::Master),
+                Err(ValidationError::MissingPayload)
+            );
+        }
+
+        #[test]
+        fn semantic_validation_covers_every_sender_role_and_message() {
+            let discovery = [
+                Payload::Beacon(Beacon {}),
+                Payload::Ping(Ping {}),
+                Payload::Pong(Pong {}),
+            ];
+            for payload in discovery {
+                let message = message(payload);
+                for role in [PeerRole::Unspecified, PeerRole::Master, PeerRole::Slave] {
+                    assert_eq!(message.validate_for_sender_role(role), Ok(()));
+                }
+            }
+
+            let master_messages = [
+                Payload::JoinGame(JoinGame {}),
+                Payload::ArmTouch(ArmTouch {
+                    round_token: 1,
+                    timeout_ms: 0,
+                    feedback_mode: FeedbackMode::None.into(),
+                }),
+                Payload::SetColor(SetColor::default()),
+                Payload::StopAll(StopAll {}),
+                Payload::SimulateTouch(SimulateTouch {
+                    round_token: 1,
+                    pad_index: 0,
+                }),
+            ];
+            for payload in master_messages {
+                let message = message(payload);
+                assert_eq!(message.validate_for_sender_role(PeerRole::Master), Ok(()));
+                for role in [PeerRole::Unspecified, PeerRole::Slave] {
+                    assert_eq!(
+                        message.validate_for_sender_role(role),
+                        Err(ValidationError::BadRole)
+                    );
+                }
+            }
+
+            let slave_messages = [
+                Payload::TouchEvent(TouchEvent {
+                    round_token: 1,
+                    reaction_time_us: 0,
+                    pad_index: 0,
+                }),
+                Payload::TimeoutEvent(TimeoutEvent { round_token: 1 }),
+            ];
+            for payload in slave_messages {
+                let message = message(payload);
+                assert_eq!(message.validate_for_sender_role(PeerRole::Slave), Ok(()));
+                for role in [PeerRole::Unspecified, PeerRole::Master] {
+                    assert_eq!(
+                        message.validate_for_sender_role(role),
+                        Err(ValidationError::BadRole)
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Trace protocol types (generated from trace.proto)
 #[allow(dead_code)]
 pub mod trace {
