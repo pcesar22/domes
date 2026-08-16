@@ -88,7 +88,7 @@ MANAGED_LABELS = {
     ),
     "agent:ci-pending": (
         "1D76DB",
-        "Independent approval recorded; controller is reconciling exact-head CI",
+        "Independent agent judgment recorded; controller is reconciling exact-head CI",
     ),
     "agent:verification": ("006B75", "Judge-approved work awaits CI verification"),
     "agent:human-review": ("FBCA04", "Agent workflow complete; human review boundary"),
@@ -100,17 +100,6 @@ MANAGED_LABELS = {
     "priority:p3": ("C2E0C6", "Low dispatch priority"),
 }
 
-AUTOPILOT_ACTIVE_STATES = frozenset(
-    {
-        "agent:plan",
-        "agent:ready",
-        "agent:running",
-        "agent:rework",
-        "agent:agent-review",
-        "agent:ci-pending",
-        "agent:verification",
-    }
-)
 AUTOPILOT_MARKER_RE = re.compile(
     r"<!-- domes-autopilot-contract:v1 digest=([0-9a-f]{64}) -->"
 )
@@ -123,6 +112,11 @@ PLAN_TASK_MARKER_RE = re.compile(
     r"key=([^ ]+) uid=([0-9a-f]{64}) -->"
 )
 SELECTOR_COOLDOWN_SECONDS = 600
+AUTOMATED_REVIEW_POLICY = "software-review-required"
+LEGACY_AUTOMERGE_POLICY = "software-auto-merge"
+AUTOMATED_DELIVERY_POLICIES = frozenset(
+    {AUTOMATED_REVIEW_POLICY, LEGACY_AUTOMERGE_POLICY}
+)
 
 
 class ControlError(RuntimeError):
@@ -152,9 +146,9 @@ class AutopilotPolicy:
     policy_name: str
     allowed_work_classes: tuple[str, ...]
     required_ci_checks: tuple[str, ...]
-    forbidden_auto_merge_paths: tuple[str, ...]
+    protected_autonomous_paths: tuple[str, ...]
     max_ci_repair_cycles: int
-    merge_method: str
+    review_authority: str
 
 
 @dataclass(frozen=True)
@@ -312,9 +306,9 @@ def load_autopilot_policy(
         "policy_name",
         "allowed_work_classes",
         "required_ci_checks",
-        "forbidden_auto_merge_paths",
+        "protected_autonomous_paths",
         "max_ci_repair_cycles",
-        "merge_method",
+        "review_authority",
     }
     if not isinstance(document, dict) or set(document) != required:
         raise ControlError(f"{path}: autopilot policy keys do not match schema")
@@ -323,7 +317,7 @@ def load_autopilot_policy(
     for key in (
         "allowed_work_classes",
         "required_ci_checks",
-        "forbidden_auto_merge_paths",
+        "protected_autonomous_paths",
     ):
         values = document[key]
         if (
@@ -340,9 +334,8 @@ def load_autopilot_policy(
         or not 1 <= repairs <= 10
     ):
         raise ControlError(f"{path}: max_ci_repair_cycles must be between 1 and 10")
-    merge_method = document["merge_method"]
-    if merge_method not in {"merge", "squash", "rebase"}:
-        raise ControlError(f"{path}: unsupported merge method")
+    if document["review_authority"] != "human":
+        raise ControlError(f"{path}: review_authority must be `human`")
     policy_name = document["policy_name"]
     if not isinstance(policy_name, str) or not policy_name.strip():
         raise ControlError(f"{path}: policy_name must be a non-empty string")
@@ -351,9 +344,9 @@ def load_autopilot_policy(
         policy_name=policy_name,
         allowed_work_classes=tuple(document["allowed_work_classes"]),
         required_ci_checks=tuple(document["required_ci_checks"]),
-        forbidden_auto_merge_paths=tuple(document["forbidden_auto_merge_paths"]),
+        protected_autonomous_paths=tuple(document["protected_autonomous_paths"]),
         max_ci_repair_cycles=repairs,
-        merge_method=merge_method,
+        review_authority="human",
     )
 
 
@@ -374,6 +367,10 @@ def parse_sections(body: str) -> dict[str, str]:
 
 def autonomy_policy(sections: dict[str, str]) -> str:
     return sections.get("Autonomy policy", "review-only").strip().casefold()
+
+
+def automated_delivery(sections: dict[str, str]) -> bool:
+    return autonomy_policy(sections) in AUTOMATED_DELIVERY_POLICIES
 
 
 def existing_pull_request(sections: dict[str, str]) -> int:
@@ -463,21 +460,25 @@ def validate_ticket(ticket: Ticket, *, check_revision: bool = True) -> TicketVal
     except ControlError as error:
         errors.append(str(error))
     policy = autonomy_policy(sections)
-    if policy not in {"review-only", "software-auto-merge"}:
-        errors.append("Autonomy policy must be `review-only` or `software-auto-merge`")
-    if policy == "software-auto-merge":
+    if policy not in {"review-only", *AUTOMATED_DELIVERY_POLICIES}:
+        errors.append(
+            "Autonomy policy must be `review-only` or " f"`{AUTOMATED_REVIEW_POLICY}`"
+        )
+    if policy in AUTOMATED_DELIVERY_POLICIES:
         if not sections.get("Work package", "").strip():
-            errors.append("software-auto-merge requires Work package")
+            errors.append(f"{AUTOMATED_REVIEW_POLICY} requires Work package")
         if sections.get("Work class", "").strip() not in {
             "software",
             "executed-validation",
         }:
             errors.append(
-                "software-auto-merge requires software or executed-validation Work class"
+                f"{AUTOMATED_REVIEW_POLICY} requires software or "
+                "executed-validation Work class"
             )
         if not has_valid_autopilot_marker(ticket, sections):
             errors.append(
-                "software-auto-merge requires a valid controller contract marker"
+                f"{AUTOMATED_REVIEW_POLICY} requires a valid controller "
+                "contract marker"
             )
     try:
         existing_pull_request(sections)
@@ -534,24 +535,24 @@ def paths_outside_surfaces(paths: Sequence[str], surfaces: Sequence[str]) -> lis
     )
 
 
-def forbidden_auto_merge_paths(
+def protected_autonomous_paths(
     paths: Sequence[str], policy: AutopilotPolicy
 ) -> list[str]:
     return sorted(
         path
         for path in paths
         if any(
-            path_matches(path, pattern) for pattern in policy.forbidden_auto_merge_paths
+            path_matches(path, pattern) for pattern in policy.protected_autonomous_paths
         )
     )
 
 
-def forbidden_auto_merge_surfaces(
+def protected_autonomous_surfaces(
     surfaces: Sequence[str], policy: AutopilotPolicy
 ) -> list[str]:
     tracked = _git("ls-files")
     tracked_paths = tracked.stdout.splitlines() if tracked.returncode == 0 else []
-    forbidden_paths = forbidden_auto_merge_paths(tracked_paths, policy)
+    forbidden_paths = protected_autonomous_paths(tracked_paths, policy)
     return sorted(
         surface
         for surface in surfaces
@@ -559,7 +560,7 @@ def forbidden_auto_merge_surfaces(
         or any(path_matches(path, surface) for path in forbidden_paths)
         or any(
             _static_prefix(forbidden) and surfaces_overlap((surface,), (forbidden,))
-            for forbidden in policy.forbidden_auto_merge_paths
+            for forbidden in policy.protected_autonomous_paths
         )
     )
 
@@ -1045,10 +1046,14 @@ def ensure_workspace(workflow: Workflow, item: TicketValidation, role: str) -> P
 
 
 def transition(workflow: Workflow, ticket: Ticket, new_state: str) -> None:
+    if ticket.agent_labels == (new_state,):
+        return
     command = ["gh", "issue", "edit", str(ticket.number), "--repo", workflow.repository]
     for label in ticket.agent_labels:
-        command.extend(("--remove-label", label))
-    command.extend(("--add-label", new_state))
+        if label != new_state:
+            command.extend(("--remove-label", label))
+    if new_state not in ticket.agent_labels:
+        command.extend(("--add-label", new_state))
     result = subprocess.run(
         command, cwd=ROOT, check=False, capture_output=True, text=True
     )
@@ -1119,11 +1124,18 @@ def bind_ticket_pull_request(
 
 
 def set_issue_priority(workflow: Workflow, ticket: Ticket, priority: str) -> None:
+    target = f"priority:{priority}"
+    existing = tuple(
+        label for label in ticket.labels if re.fullmatch(r"priority:p[0-9]+", label)
+    )
+    if existing == (target,):
+        return
     command = ["gh", "issue", "edit", str(ticket.number), "--repo", workflow.repository]
-    for label in ticket.labels:
-        if re.fullmatch(r"priority:p[0-9]+", label):
+    for label in existing:
+        if label != target:
             command.extend(("--remove-label", label))
-    command.extend(("--add-label", f"priority:{priority}"))
+    if target not in existing:
+        command.extend(("--add-label", target))
     result = subprocess.run(
         command, cwd=ROOT, check=False, capture_output=True, text=True
     )
@@ -1277,15 +1289,15 @@ def validate_selector_result(
         raise ControlError("selector returned a prohibited work class")
     if result["priority"] not in {"p0", "p1", "p2", "p3"}:
         raise ControlError("selector returned an invalid priority")
-    if result["autonomy_policy"] not in {"software-auto-merge", "review-only"}:
+    if result["autonomy_policy"] not in {AUTOMATED_REVIEW_POLICY, "review-only"}:
         raise ControlError("selector returned an invalid autonomy policy")
     surfaces = allowed_surfaces("\n".join(result["allowed_surfaces"]))
-    if result["autonomy_policy"] == "software-auto-merge":
-        forbidden = forbidden_auto_merge_surfaces(surfaces, policy)
-        if forbidden:
+    if result["autonomy_policy"] == AUTOMATED_REVIEW_POLICY:
+        protected = protected_autonomous_surfaces(surfaces, policy)
+        if protected:
             raise ControlError(
-                "selector requested auto-merge for forbidden surfaces: "
-                + ", ".join(forbidden)
+                "selector requested autonomous delivery for protected surfaces: "
+                + ", ".join(protected)
             )
     by_number = {ticket.number: ticket for ticket in tickets}
     issue_number = int(result["existing_issue"])
@@ -1304,6 +1316,14 @@ def validate_selector_result(
             }
         ):
             raise ControlError("selector referenced an unavailable existing issue")
+        issue_dependencies = validate_ticket(issue, check_revision=False).dependencies
+        if any(
+            dependency not in by_number or not terminal(by_number[dependency])
+            for dependency in issue_dependencies
+        ):
+            raise ControlError(
+                "selector referenced a dependency-blocked existing issue"
+            )
     for ticket in tickets:
         if ticket.number == issue_number or not AUTOPILOT_MARKER_RE.search(ticket.body):
             continue
@@ -1332,14 +1352,14 @@ def validate_selector_result(
             raise ControlError(
                 "selector referenced an unavailable existing pull request"
             )
-        if result["autonomy_policy"] == "software-auto-merge":
+        if result["autonomy_policy"] == AUTOMATED_REVIEW_POLICY:
             pull_request = load_pull_request(workflow, pull_request_number)
             outside = paths_outside_surfaces(pull_request.files, surfaces)
-            forbidden = forbidden_auto_merge_paths(pull_request.files, policy)
-            if outside or forbidden:
+            protected = protected_autonomous_paths(pull_request.files, policy)
+            if outside or protected:
                 raise ControlError(
                     "selector existing pull request violates path policy: "
-                    + ", ".join(outside or forbidden)
+                    + ", ".join(outside or protected)
                 )
     status = _git("show", f"origin/{workflow.base_branch}:PROGRAM_STATUS.md")
     status_text = status.stdout if status.returncode == 0 else ""
@@ -1453,9 +1473,16 @@ def apply_selector_result(
     )
 
 
-def autopilot_queue_idle(tickets: Sequence[Ticket]) -> bool:
+def autopilot_queue_idle(
+    tickets: Sequence[Ticket],
+    runnable: Sequence[TicketValidation] | None = None,
+) -> bool:
+    if runnable is None:
+        runnable, _ = eligible_queue(tickets, check_revision=False)
+    if runnable:
+        return False
     return not any(
-        ticket.state == "OPEN" and ticket.agent_state in AUTOPILOT_ACTIVE_STATES
+        ticket.state == "OPEN" and ticket.agent_state == "agent:ci-pending"
         for ticket in tickets
     )
 
@@ -1535,18 +1562,34 @@ def run_selector(
         "-",
     ]
     failures: list[str] = []
+    result: dict[str, Any]
     for attempt in range(1, 4):
+        prompt = build_selector_prompt(workflow, policy, tickets, pull_requests)
+        if failures:
+            prompt += (
+                "\n\n# Previous selector attempt was rejected\n\n"
+                f"Correct this validation failure: {failures[-1][:1000]}\n"
+            )
         returncode, failure = run_codex_attempt(
             command,
-            build_selector_prompt(workflow, policy, tickets, pull_requests),
+            prompt,
             event_path,
             stderr_path,
             workflow.stall_timeout_seconds,
             lease_path,
         )
-        if returncode == 0:
-            break
-        failures.append(failure)
+        if returncode != 0:
+            failures.append(failure)
+        else:
+            try:
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                validate_selector_result(
+                    result, workflow, policy, tickets, pull_requests
+                )
+            except (ControlError, json.JSONDecodeError) as error:
+                failures.append(f"attempt {attempt} validation: {error}")
+            else:
+                break
         if attempt < 3:
             time.sleep(
                 min(10 * (2 ** (attempt - 1)), workflow.max_retry_backoff_seconds)
@@ -1555,8 +1598,6 @@ def run_selector(
         raise ControlError(
             "autonomous selector failed after 3 attempts: " + "; ".join(failures)
         )
-    result = json.loads(result_path.read_text(encoding="utf-8"))
-    validate_selector_result(result, workflow, policy, tickets, pull_requests)
     write_handoff(run_root / "handoff-selector.json", result)
     selected = apply_selector_result(workflow, result, tickets)
     return {
@@ -1611,7 +1652,7 @@ def result_state(
         if (
             autopilot
             and ticket_sections is not None
-            and autonomy_policy(ticket_sections) == "software-auto-merge"
+            and automated_delivery(ticket_sections)
         ):
             approved_state = "agent:ci-pending"
         return {
@@ -1624,7 +1665,7 @@ def result_state(
         if (
             autopilot
             and ticket_sections is not None
-            and autonomy_policy(ticket_sections) == "software-auto-merge"
+            and automated_delivery(ticket_sections)
         ):
             resolved_state = "agent:ci-pending"
         return {
@@ -1833,7 +1874,7 @@ def materialize_plan(
     if result["blockers"]:
         return []
     parent_policy = autonomy_policy(parent.sections)
-    if parent_policy != "software-auto-merge":
+    if parent_policy not in AUTOMATED_DELIVERY_POLICIES:
         raise ControlError(
             "automatic plan materialization requires autopilot parent policy"
         )
@@ -2255,7 +2296,7 @@ def execute_one(
     if (
         role == "planner"
         and autopilot
-        and autonomy_policy(item.sections) == "software-auto-merge"
+        and automated_delivery(item.sections)
         and pending_plan_path.is_file()
     ):
         pending_plan = json.loads(pending_plan_path.read_text(encoding="utf-8"))
@@ -2370,17 +2411,14 @@ def execute_one(
                 f"issue #{item.ticket.number}: every CI repair must return through "
                 "independent agent review"
             )
-    if (
-        role in {"worker", "verification-worker"}
-        and autonomy_policy(item.sections) == "software-auto-merge"
-    ):
+    if role in {"worker", "verification-worker"} and automated_delivery(item.sections):
         verify_worker_artifact(workflow, workspace, item, result)
         if role == "worker" and not existing_pull_request(item.sections):
             bind_ticket_pull_request(workflow, item, int(result["pull_request"]))
     if (
         role == "planner"
         and autopilot
-        and autonomy_policy(item.sections) == "software-auto-merge"
+        and automated_delivery(item.sections)
         and not result["blockers"]
     ):
         write_handoff(pending_plan_path, result)
@@ -2393,11 +2431,7 @@ def execute_one(
         ticket_sections=item.sections,
     )
     materialized: list[int] = []
-    if (
-        role == "planner"
-        and autopilot
-        and autonomy_policy(item.sections) == "software-auto-merge"
-    ):
+    if role == "planner" and autopilot and automated_delivery(item.sections):
         if result["blockers"]:
             next_state = "agent:blocked"
         else:
@@ -2661,7 +2695,7 @@ def verify_worker_artifact(
             f"issue #{item.ticket.number}: changes outside allowed surfaces: "
             f"{', '.join(violations)}"
         )
-    if autonomy_policy(item.sections) != "software-auto-merge":
+    if not automated_delivery(item.sections):
         return
     pull_request_number = result.get("pull_request")
     if not isinstance(pull_request_number, int) or pull_request_number < 1:
@@ -2781,39 +2815,28 @@ def post_controller_comment(
         )
 
 
-def finalize_merged_ticket(
+def finalize_human_merged_ticket(
     workflow: Workflow,
-    policy: AutopilotPolicy,
     ticket: Ticket,
     pull_request: PullRequest,
-    *,
-    recovered: bool,
 ) -> dict[str, Any]:
     try:
-        # Keep the issue in ci-pending until local base state can be refreshed. If
-        # this read-side operation fails, the next poll can recover the verified
-        # merged PR without leaving a partially finalized tracker state.
         refresh_base_branch(workflow)
-        qualifier = "Recovered an already merged" if recovered else "Merged"
         post_controller_comment(
             workflow,
             ticket,
-            "Agent control-plane transition (merge)",
+            "Agent control-plane transition (human merge)",
             (
-                f"{qualifier} PR #{pull_request.number} at exact head "
-                f"`{pull_request.head_oid}` after independent approval and "
-                f"{len(policy.required_ci_checks)} required checks passed. "
-                f"Merge commit: `{pull_request.merge_commit}`."
+                f"Observed the human-merged PR #{pull_request.number} at head "
+                f"`{pull_request.head_oid}`. Merge commit: "
+                f"`{pull_request.merge_commit}`. The controller did not approve "
+                "or merge this pull request."
             ),
         )
-        # Closing and replacing the state label happen in one API mutation. No
-        # later fallible operation may strand a merged issue in a partial state.
         complete_issue(workflow, ticket)
     except ControlError as error:
-        # The PR is already verified as merged. Never reinterpret a tracker or
-        # refresh failure during finalization as an unsafe merge verdict.
         raise TrackerError(
-            f"issue #{ticket.number}: merged PR finalization must be retried: {error}"
+            f"issue #{ticket.number}: human-merge bookkeeping must be retried: {error}"
         ) from error
     return {
         "issue": ticket.number,
@@ -2821,130 +2844,40 @@ def finalize_merged_ticket(
         "pull_request": pull_request.number,
         "head": pull_request.head_oid,
         "merge_commit": pull_request.merge_commit,
-        "recovered": recovered,
+        "merged_by": "human",
     }
 
 
-def _same_pull_request(left: PullRequest, right: PullRequest) -> bool:
-    return (
-        left.number == right.number
-        and left.state == right.state
-        and left.is_draft == right.is_draft
-        and left.base_ref == right.base_ref
-        and left.base_oid == right.base_oid
-        and left.head_ref == right.head_ref
-        and left.head_oid == right.head_oid
-        and left.mergeable == right.mergeable
-        and left.merge_state == right.merge_state
-        and left.review_decision == right.review_decision
-        and left.files == right.files
-    )
-
-
-def pull_request_merge_metadata_valid(
-    workflow: Workflow, pull_request: PullRequest
-) -> bool:
-    return (
-        pull_request.state == "OPEN"
-        and not pull_request.is_draft
-        and pull_request.base_ref == workflow.base_branch
-        and pull_request.review_decision != "CHANGES_REQUESTED"
-        and pull_request.mergeable == "MERGEABLE"
-        and pull_request.merge_state == "CLEAN"
-    )
-
-
-def merge_autopilot_pull_request(
+def mark_review_ready(
     workflow: Workflow,
     policy: AutopilotPolicy,
     ticket: Ticket,
-    artifact: dict[str, Any],
-    judge: dict[str, Any],
     pull_request: PullRequest,
+    records: Sequence[dict[str, str]],
 ) -> dict[str, Any]:
-    sections = parse_sections(ticket.body)
-    if autonomy_policy(
-        sections
-    ) != "software-auto-merge" or not has_valid_autopilot_marker(ticket, sections):
-        raise ControlError(
-            f"issue #{ticket.number}: missing controller merge authority"
-        )
-    if judge.get("verdict") != "approve":
-        raise ControlError(
-            f"issue #{ticket.number}: independent approval is not current"
-        )
-    if judge.get("commit") != artifact.get("commit") or judge.get(
-        "pull_request"
-    ) != artifact.get("pull_request"):
-        raise ControlError(
-            f"issue #{ticket.number}: independent approval is not bound to the PR head"
-        )
-    if artifact.get("commit") != pull_request.head_oid:
-        raise ControlError(
-            f"issue #{ticket.number}: PR head changed after artifact review"
-        )
-    if (
-        pull_request.state not in {"OPEN", "MERGED"}
-        or (pull_request.state == "OPEN" and pull_request.is_draft)
-        or pull_request.base_ref != workflow.base_branch
-        or pull_request.review_decision == "CHANGES_REQUESTED"
-    ):
-        raise ControlError(
-            f"issue #{ticket.number}: PR metadata blocks automatic merge"
-        )
-    surfaces = allowed_surfaces(sections["Allowed architectural surfaces"])
-    outside = paths_outside_surfaces(pull_request.files, surfaces)
-    forbidden = forbidden_auto_merge_paths(pull_request.files, policy)
-    if outside or forbidden:
-        detail = outside or forbidden
-        raise ControlError(
-            f"issue #{ticket.number}: auto-merge path policy rejected: "
-            + ", ".join(detail)
-        )
-    if requires_physical_proof(sections) and not has_current_physical_proof(artifact):
-        raise ControlError(
-            f"issue #{ticket.number}: current PR head lacks required physical proof"
-        )
-    ci_state, _ = required_check_summary(pull_request, policy)
-    if ci_state != "passed":
-        raise ControlError(f"issue #{ticket.number}: required CI is not green")
-    if pull_request.state == "MERGED":
-        return finalize_merged_ticket(
-            workflow, policy, ticket, pull_request, recovered=True
-        )
-    if not pull_request_merge_metadata_valid(workflow, pull_request):
-        raise ControlError(f"issue #{ticket.number}: PR is not cleanly mergeable")
-
-    refreshed = load_pull_request(workflow, pull_request.number)
-    refreshed_ci, _ = required_check_summary(refreshed, policy)
-    if (
-        not _same_pull_request(pull_request, refreshed)
-        or refreshed_ci != "passed"
-        or not pull_request_merge_metadata_valid(workflow, refreshed)
-    ):
-        raise ControlError(f"issue #{ticket.number}: PR changed during merge gate")
-    command = [
-        "gh",
-        "pr",
-        "merge",
-        str(pull_request.number),
-        "--repo",
-        workflow.repository,
-        f"--{policy.merge_method}",
-        "--match-head-commit",
-        pull_request.head_oid,
-    ]
-    merged = subprocess.run(
-        command, cwd=ROOT, check=False, capture_output=True, text=True
+    if policy.review_authority != "human":
+        raise ControlError("autopilot policy does not require human review")
+    post_controller_comment(
+        workflow,
+        ticket,
+        "Agent control-plane transition (review ready)",
+        (
+            f"PR #{pull_request.number} at exact head `{pull_request.head_oid}` "
+            f"passed {len(policy.required_ci_checks)} required checks and the "
+            "independent agent judge. It is waiting for human review. The "
+            "controller did not approve or merge it and may continue with "
+            "separate unblocked work."
+        ),
     )
-    if merged.returncode != 0:
-        raise ControlError(
-            merged.stderr.strip() or f"issue #{ticket.number}: exact-head merge failed"
-        )
-    verified = load_pull_request(workflow, pull_request.number)
-    if verified.state != "MERGED" or verified.head_oid != pull_request.head_oid:
-        raise ControlError(f"issue #{ticket.number}: merge could not be verified")
-    return finalize_merged_ticket(workflow, policy, ticket, verified, recovered=False)
+    transition(workflow, ticket, "agent:human-review")
+    return {
+        "issue": ticket.number,
+        "state": "agent:human-review",
+        "pull_request": pull_request.number,
+        "head": pull_request.head_oid,
+        "checks": list(records),
+        "review_authority": "human",
+    }
 
 
 def reconcile_ci_ticket(
@@ -3018,30 +2951,31 @@ def reconcile_ci_ticket(
             "state": "agent:ci-pending",
             "checks": records,
         }
-    try:
-        return merge_autopilot_pull_request(
-            workflow, policy, ticket, artifact, judge, pull_request
+    if pull_request.state == "MERGED":
+        return finalize_human_merged_ticket(workflow, ticket, pull_request)
+    sections = parse_sections(ticket.body)
+    surfaces = allowed_surfaces(sections["Allowed architectural surfaces"])
+    outside = paths_outside_surfaces(pull_request.files, surfaces)
+    protected = protected_autonomous_paths(pull_request.files, policy)
+    if outside or protected:
+        raise ControlError(
+            f"issue #{ticket.number}: autonomous PR path policy rejected: "
+            + ", ".join(outside or protected)
         )
-    except TrackerError:
-        raise
-    except ControlError as error:
-        if pull_request.merge_state in {"BEHIND", "DIRTY"}:
-            transition(workflow, ticket, "agent:rework")
-            post_controller_comment(
-                workflow,
-                ticket,
-                "Agent control-plane transition (merge)",
-                f"{error}; returning to rework against current main.",
-            )
-            return {"issue": ticket.number, "state": "agent:rework"}
-        transition(workflow, ticket, "agent:human-review")
+    if pull_request.merge_state in {"BEHIND", "DIRTY"} or pull_request.mergeable in {
+        "CONFLICTING",
+        "UNMERGEABLE",
+    }:
+        transition(workflow, ticket, "agent:rework")
         post_controller_comment(
             workflow,
             ticket,
-            "Agent control-plane transition (merge)",
-            f"Automatic merge failed closed: {error}",
+            "Agent control-plane transition (review readiness)",
+            "The pull request is behind or conflicting; returning it to the "
+            "worker before human review.",
         )
-        return {"issue": ticket.number, "state": "agent:human-review"}
+        return {"issue": ticket.number, "state": "agent:rework"}
+    return mark_review_ready(workflow, policy, ticket, pull_request, records)
 
 
 def reconcile_ci(
@@ -3070,6 +3004,90 @@ def reconcile_ci(
                 ticket,
                 "Agent control-plane transition (ci)",
                 f"CI reconciliation failed closed: {error}",
+            )
+            results.append(
+                {"issue": ticket.number, "state": "agent:blocked", "error": str(error)}
+            )
+    return results
+
+
+def reconcile_human_reviews(
+    workflow: Workflow,
+    tickets: Sequence[Ticket],
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for ticket in tickets:
+        if ticket.state != "OPEN" or ticket.agent_state != "agent:human-review":
+            continue
+        sections = parse_sections(ticket.body)
+        if not automated_delivery(sections):
+            continue
+        try:
+            validation = validate_ticket(ticket)
+            if not validation.valid:
+                raise ControlError(
+                    f"issue #{ticket.number}: invalid human-review ticket: "
+                    + "; ".join(validation.errors)
+                )
+            artifact = load_latest_artifact_handoff(workflow, ticket)
+            pull_request_number = artifact.get("pull_request")
+            if not isinstance(pull_request_number, int) or pull_request_number < 1:
+                raise ControlError(
+                    f"issue #{ticket.number}: human review has no pull request"
+                )
+            pull_request = load_pull_request(workflow, pull_request_number)
+            if pull_request.state == "MERGED":
+                results.append(
+                    finalize_human_merged_ticket(workflow, ticket, pull_request)
+                )
+                continue
+            if pull_request.state != "OPEN":
+                transition(workflow, ticket, "agent:blocked")
+                post_controller_comment(
+                    workflow,
+                    ticket,
+                    "Agent control-plane transition (human review)",
+                    f"PR #{pull_request.number} closed without merge.",
+                )
+                results.append({"issue": ticket.number, "state": "agent:blocked"})
+                continue
+            if pull_request.head_oid != artifact.get("commit"):
+                transition(workflow, ticket, "agent:rework")
+                post_controller_comment(
+                    workflow,
+                    ticket,
+                    "Agent control-plane transition (human review)",
+                    "The PR head changed after agent review; returning it through "
+                    "worker and independent-judge validation.",
+                )
+                results.append({"issue": ticket.number, "state": "agent:rework"})
+                continue
+            if pull_request.review_decision == "CHANGES_REQUESTED":
+                transition(workflow, ticket, "agent:rework")
+                post_controller_comment(
+                    workflow,
+                    ticket,
+                    "Agent control-plane transition (human review)",
+                    "Human review requested changes; returning the PR to the worker.",
+                )
+                results.append({"issue": ticket.number, "state": "agent:rework"})
+                continue
+            continue
+        except TrackerError as error:
+            results.append(
+                {
+                    "issue": ticket.number,
+                    "state": "agent:human-review",
+                    "retryable_error": str(error),
+                }
+            )
+        except ControlError as error:
+            transition(workflow, ticket, "agent:blocked")
+            post_controller_comment(
+                workflow,
+                ticket,
+                "Agent control-plane transition (human review)",
+                f"Human-review reconciliation failed closed: {error}",
             )
             results.append(
                 {"issue": ticket.number, "state": "agent:blocked", "error": str(error)}
@@ -3171,6 +3189,158 @@ def render_queue(
     }
 
 
+def _single_line(value: object, limit: int = 72) -> str:
+    rendered = " ".join(str(value).split())
+    return rendered if len(rendered) <= limit else rendered[: limit - 1] + "…"
+
+
+def _dashboard_event(payload: dict[str, Any]) -> str:
+    if payload.get("controller_error"):
+        return f"controller retry: {_single_line(payload['controller_error'])}"
+    if payload.get("dispatch_error"):
+        return f"dispatch retry: {_single_line(payload['dispatch_error'])}"
+    failures = payload.get("failures") or []
+    if failures:
+        return f"role failure: {_single_line(failures[0])}"
+    runs = payload.get("runs") or []
+    if runs:
+        run = runs[-1]
+        return (
+            f"#{run.get('issue', '?')} {run.get('role', 'role')} → "
+            f"{str(run.get('state', 'unknown')).removeprefix(STATE_PREFIX)}"
+        )
+    ci = payload.get("ci") or []
+    if ci:
+        result = ci[-1]
+        suffix = f" PR #{result['pull_request']}" if result.get("pull_request") else ""
+        return (
+            f"#{result.get('issue', '?')} → "
+            f"{str(result.get('state', 'unknown')).removeprefix(STATE_PREFIX)}{suffix}"
+        )
+    selector = payload.get("selector")
+    if isinstance(selector, dict):
+        state = selector.get("state", "unknown")
+        if state == "selected":
+            return (
+                f"selected #{selector.get('issue', '?')} "
+                f"{selector.get('work_package', '')}"
+            ).rstrip()
+        if state == "error":
+            return f"selector retry: {_single_line(selector.get('error', 'error'))}"
+        return f"selector {state}"
+    return "heartbeat"
+
+
+def render_dashboard(
+    workflow: Workflow,
+    tickets: Sequence[Ticket],
+    active_items: Sequence[TicketValidation],
+    eligible: Sequence[TicketValidation],
+    blockers: dict[int, list[str]],
+    payload: dict[str, Any],
+    *,
+    phase: str = "running",
+) -> str:
+    lines = [
+        "DOMES AUTOPILOT — HUMAN REVIEW AND MERGE REQUIRED",
+        f"Updated: {time.strftime('%Y-%m-%d %H:%M:%S %Z')}",
+        (
+            f"Controller: {phase.upper()} | agents {len(active_items)}/"
+            f"{workflow.max_concurrent_workers} | eligible {len(eligible)} | "
+            f"blocked {len(blockers)}"
+        ),
+        "",
+        "ACTIVE AGENTS",
+    ]
+    if active_items:
+        for item in sorted(active_items, key=lambda value: value.ticket.number):
+            pull_request = existing_pull_request(item.sections)
+            pr_text = f" | PR #{pull_request}" if pull_request else ""
+            lines.append(
+                f"  #{item.ticket.number} {role_for(item.ticket)}{pr_text} | "
+                f"{_single_line(item.ticket.title)}"
+            )
+    else:
+        lines.append("  none")
+
+    reviews = sorted(
+        (
+            ticket
+            for ticket in tickets
+            if ticket.state == "OPEN" and ticket.agent_state == "agent:human-review"
+        ),
+        key=lambda value: value.number,
+    )
+    lines.extend(("", "WAITING FOR YOUR REVIEW"))
+    if reviews:
+        for ticket in reviews:
+            sections = parse_sections(ticket.body)
+            pull_request = existing_pull_request(sections)
+            if pull_request:
+                pr_text = f"PR #{pull_request}"
+            elif automated_delivery(sections):
+                pr_text = "PR pending"
+            else:
+                pr_text = "manual review (no PR)"
+            lines.append(
+                f"  {pr_text} | issue #{ticket.number} | {_single_line(ticket.title)}"
+            )
+    else:
+        lines.append("  none")
+
+    lines.extend(("", "QUEUE"))
+    if eligible:
+        for item in eligible[:5]:
+            lines.append(
+                f"  ready #{item.ticket.number} {role_for(item.ticket)} | "
+                f"{_single_line(item.ticket.title)}"
+            )
+    else:
+        lines.append("  no dispatchable tickets")
+    if blockers:
+        for issue, reasons in sorted(blockers.items())[:5]:
+            lines.append(f"  blocked #{issue} | {_single_line('; '.join(reasons))}")
+
+    lines.extend(
+        (
+            "",
+            f"LAST EVENT  {_dashboard_event(payload)}",
+            f"Next refresh in at most {workflow.poll_interval_seconds}s",
+            "Raw role transcripts are intentionally not displayed.",
+        )
+    )
+    return "\n".join(lines)
+
+
+def emit_watch_status(
+    *,
+    dashboard: bool,
+    workflow: Workflow,
+    tickets: Sequence[Ticket],
+    active_items: Sequence[TicketValidation],
+    eligible: Sequence[TicketValidation],
+    blockers: dict[int, list[str]],
+    payload: dict[str, Any],
+    phase: str = "running",
+) -> None:
+    if dashboard:
+        print(
+            "\033[2J\033[H"
+            + render_dashboard(
+                workflow,
+                tickets,
+                active_items,
+                eligible,
+                blockers,
+                payload,
+                phase=phase,
+            ),
+            flush=True,
+        )
+        return
+    print(json.dumps(payload, indent=2), flush=True)
+
+
 def acquire_lock() -> Any:
     state_root = Path(
         os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")
@@ -3230,7 +3400,12 @@ def make_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--autopilot",
         action="store_true",
-        help="continuously select bounded work, reconcile CI, and merge policy-approved PRs",
+        help="select bounded work, repair CI, and prepare PRs for human review",
+    )
+    run.add_argument(
+        "--dashboard",
+        action="store_true",
+        help="show a live human-readable watch view instead of JSON snapshots",
     )
     return parser
 
@@ -3267,6 +3442,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ControlError("run is mutation-capable and requires --execute")
         if args.autopilot and not args.watch:
             raise ControlError("--autopilot requires --watch")
+        if args.dashboard and not args.watch:
+            raise ControlError("--dashboard requires --watch")
         enforce_scheduler_host(workflow)
         policy = load_autopilot_policy() if args.autopilot else None
         lock = acquire_lock()
@@ -3280,6 +3457,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 concurrent.futures.Future[dict[str, Any]], TicketValidation
             ] = {}
             next_selector_at = 0.0
+            last_tickets: Sequence[Ticket] = ()
+            last_eligible: Sequence[TicketValidation] = ()
+            last_blockers: dict[int, list[str]] = {}
             with concurrent.futures.ThreadPoolExecutor(max_workers=maximum) as executor:
                 while True:
                     try:
@@ -3289,24 +3469,32 @@ def main(argv: Sequence[str] | None = None) -> int:
                     except (ControlError, OSError, json.JSONDecodeError) as error:
                         if not args.watch:
                             raise
-                        print(
-                            json.dumps(
-                                {
-                                    "controller_error": str(error),
-                                    "retry_in_seconds": workflow.poll_interval_seconds,
-                                },
-                                indent=2,
-                            ),
-                            flush=True,
+                        payload = {
+                            "controller_error": str(error),
+                            "retry_in_seconds": workflow.poll_interval_seconds,
+                        }
+                        emit_watch_status(
+                            dashboard=args.dashboard,
+                            workflow=workflow,
+                            tickets=last_tickets,
+                            active_items=tuple(active.values()),
+                            eligible=last_eligible,
+                            blockers=last_blockers,
+                            payload=payload,
+                            phase="retrying",
                         )
                         time.sleep(workflow.poll_interval_seconds)
                         continue
                     ci_results: list[dict[str, Any]] = []
                     if policy is not None:
                         ci_results = reconcile_ci(workflow, policy, tickets)
+                        ci_results.extend(reconcile_human_reviews(workflow, tickets))
                         if ci_results:
                             tickets = load_live_tickets(workflow)
                     eligible, blockers = eligible_queue(tickets)
+                    last_tickets = tickets
+                    last_eligible = eligible
+                    last_blockers = blockers
                     active_numbers = {item.ticket.number for item in active.values()}
                     candidates = [
                         item
@@ -3322,19 +3510,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     selected = select_non_overlapping(
                         candidates, maximum - len(active), reserved
                     )
+                    dispatch_errors: list[str] = []
                     for item in selected:
                         try:
                             claimed = claim_for_dispatch(workflow, item)
                         except ControlError as error:
-                            print(
-                                json.dumps(
-                                    {
-                                        "issue": item.ticket.number,
-                                        "dispatch_error": str(error),
-                                    },
-                                    indent=2,
-                                ),
-                                flush=True,
+                            dispatch_errors.append(
+                                f"issue #{item.ticket.number}: {error}"
                             )
                             continue
                         future = executor.submit(
@@ -3363,16 +3545,46 @@ def main(argv: Sequence[str] | None = None) -> int:
                         selector_result: dict[str, Any] | None = None
                         if (
                             policy is not None
-                            and autopilot_queue_idle(tickets)
+                            and autopilot_queue_idle(tickets, eligible)
                             and time.monotonic() >= next_selector_at
                         ):
-                            try:
-                                selector_result = run_selector(
-                                    workflow,
-                                    policy,
-                                    tickets,
-                                    load_open_pull_request_snapshot(workflow),
+                            emit_watch_status(
+                                dashboard=args.dashboard,
+                                workflow=workflow,
+                                tickets=tickets,
+                                active_items=(),
+                                eligible=eligible,
+                                blockers=blockers,
+                                payload={"selector": {"state": "selecting"}},
+                                phase="selecting next milestone",
+                            )
+                            selector_future = executor.submit(
+                                run_selector,
+                                workflow,
+                                policy,
+                                tickets,
+                                load_open_pull_request_snapshot(workflow),
+                            )
+                            while True:
+                                done, _ = concurrent.futures.wait(
+                                    {selector_future},
+                                    timeout=workflow.poll_interval_seconds,
+                                    return_when=concurrent.futures.FIRST_COMPLETED,
                                 )
+                                if done:
+                                    break
+                                emit_watch_status(
+                                    dashboard=args.dashboard,
+                                    workflow=workflow,
+                                    tickets=tickets,
+                                    active_items=(),
+                                    eligible=eligible,
+                                    blockers=blockers,
+                                    payload={"selector": {"state": "selecting"}},
+                                    phase="selecting next milestone",
+                                )
+                            try:
+                                selector_result = selector_future.result()
                             except (
                                 ControlError,
                                 OSError,
@@ -3387,18 +3599,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 if selector_result.get("state") == "selected"
                                 else time.monotonic() + SELECTOR_COOLDOWN_SECONDS
                             )
-                        print(
-                            json.dumps(
-                                {
-                                    "runs": [],
-                                    "failures": [],
-                                    "ci": ci_results,
-                                    "selector": selector_result,
-                                    "blocked": blockers,
-                                },
-                                indent=2,
-                            ),
-                            flush=True,
+                        payload = {
+                            "runs": [],
+                            "failures": dispatch_errors,
+                            "ci": ci_results,
+                            "selector": selector_result,
+                            "blocked": blockers,
+                        }
+                        emit_watch_status(
+                            dashboard=args.dashboard,
+                            workflow=workflow,
+                            tickets=tickets,
+                            active_items=(),
+                            eligible=eligible,
+                            blockers=blockers,
+                            payload=payload,
+                            phase="idle",
                         )
                         if (
                             selector_result is not None
@@ -3413,20 +3629,38 @@ def main(argv: Sequence[str] | None = None) -> int:
                         return_when=concurrent.futures.FIRST_COMPLETED,
                     )
                     if not done:
+                        emit_watch_status(
+                            dashboard=args.dashboard,
+                            workflow=workflow,
+                            tickets=tickets,
+                            active_items=tuple(active.values()),
+                            eligible=eligible,
+                            blockers=blockers,
+                            payload={
+                                "runs": [],
+                                "failures": dispatch_errors,
+                                "ci": ci_results,
+                            },
+                            phase="working",
+                        )
                         continue
                     completed = {future: active.pop(future) for future in done}
                     results, failures = collect_results(completed, workflow)
-                    print(
-                        json.dumps(
-                            {
-                                "runs": results,
-                                "failures": failures,
-                                "ci": ci_results,
-                                "blocked": blockers,
-                            },
-                            indent=2,
-                        ),
-                        flush=True,
+                    payload = {
+                        "runs": results,
+                        "failures": [*dispatch_errors, *failures],
+                        "ci": ci_results,
+                        "blocked": blockers,
+                    }
+                    emit_watch_status(
+                        dashboard=args.dashboard,
+                        workflow=workflow,
+                        tickets=tickets,
+                        active_items=tuple(active.values()),
+                        eligible=eligible,
+                        blockers=blockers,
+                        payload=payload,
+                        phase="working" if active else "idle",
                     )
         finally:
             lock.close()
