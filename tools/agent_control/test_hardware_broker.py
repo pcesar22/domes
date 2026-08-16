@@ -279,6 +279,48 @@ class HardwareBrokerTest(unittest.TestCase):
             self.assertIn("CONFIG_DOMES_RUNTIME_PROFILE_PHYSICAL=y", acceptance)
             self.assertIn("# CONFIG_DOMES_RUNTIME_PROFILE_QEMU is not set", acceptance)
 
+    def test_incomplete_trusted_build_state_is_retryable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "evidence"
+            evidence.mkdir()
+            cap = broker.Capability(
+                1, "a", "b", root, evidence, ("flash",), (0,), "token"
+            )
+            source = evidence / "source-head-default"
+            build = evidence / "build-head-default"
+            sdkconfig = evidence / "sdkconfig-head-default"
+            defaults = evidence / "sdkconfig-defaults-head-default"
+            source.mkdir()
+            build.mkdir()
+            sdkconfig.write_text("partial", encoding="utf-8")
+            defaults.write_text("partial", encoding="utf-8")
+
+            broker._discard_incomplete_trusted_build(
+                cap, (source, build, sdkconfig, defaults)
+            )
+
+            self.assertFalse(source.exists())
+            self.assertFalse(build.exists())
+            self.assertFalse(sdkconfig.exists())
+            self.assertFalse(defaults.exists())
+
+    def test_compiler_temp_directory_is_reusable_between_profiles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "evidence"
+            evidence.mkdir()
+            cap = broker.Capability(
+                1, "a", "b", root, evidence, ("flash",), (0,), "token"
+            )
+
+            first = broker._compiler_temp_directory(cap)
+            second = broker._compiler_temp_directory(cap)
+
+            self.assertEqual(first, second)
+            self.assertTrue(first.is_dir())
+            self.assertEqual(0o700, first.stat().st_mode & 0o777)
+
     def test_flash_accepts_only_standard_domes_application_layout(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

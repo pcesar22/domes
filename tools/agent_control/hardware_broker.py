@@ -422,6 +422,26 @@ def _profile_build_matches(build: Path, build_profile: str) -> bool:
     )
 
 
+def _discard_incomplete_trusted_build(cap: Capability, paths: tuple[Path, ...]) -> None:
+    """Remove only broker-private partial build state so a retry can recover."""
+    for path in paths:
+        beneath(path, cap.evidence)
+        if path.is_symlink():
+            raise BrokerError("incomplete trusted build path is a symlink")
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
+
+
+def _compiler_temp_directory(cap: Capability) -> Path:
+    """Return the shared private compiler temp directory for this broker run."""
+    compiler_tmp = beneath(cap.evidence / "tmp", cap.evidence)
+    compiler_tmp.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(compiler_tmp, 0o700)
+    return compiler_tmp
+
+
 def _trusted_firmware_build(
     cap: Capability, artifact_head: str, build_profile: str = "default"
 ) -> tuple[Path, Path, dict[str, Any]]:
@@ -433,6 +453,7 @@ def _trusted_firmware_build(
     project = source / "firmware" / "domes"
     build = cap.evidence / f"build-{suffix}"
     sdkconfig = cap.evidence / f"sdkconfig-{suffix}"
+    defaults_path = cap.evidence / f"sdkconfig-defaults-{suffix}"
     provenance_path = cap.evidence / f"build-{suffix}.json"
     git = _trusted_path(cap, "git")
     idf_export = _trusted_path(cap, "idf-export")
@@ -494,8 +515,9 @@ def _trusted_firmware_build(
         ):
             raise BrokerError("cached trusted build source changed")
         return project, build, provenance
-    if source.exists() or build.exists():
-        raise BrokerError("trusted build directory already exists without provenance")
+    incomplete_paths = (source, build, sdkconfig, defaults_path)
+    if any(path.exists() or path.is_symlink() for path in incomplete_paths):
+        _discard_incomplete_trusted_build(cap, incomplete_paths)
     cloned = subprocess.run(
         [git, "clone", "--shared", "--no-checkout", str(cap.workspace), str(source)],
         check=False,
@@ -539,8 +561,7 @@ def _trusted_firmware_build(
     ):
         raise BrokerError("trusted firmware submodule state is not exact")
     defaults = _write_profile_defaults(cap, project, suffix, build_profile)
-    compiler_tmp = cap.evidence / "tmp"
-    compiler_tmp.mkdir(mode=0o700)
+    compiler_tmp = _compiler_temp_directory(cap)
     build_environment = dict(os.environ)
     build_environment["TMPDIR"] = str(compiler_tmp)
     script = (
