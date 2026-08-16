@@ -117,6 +117,7 @@ PLAN_TASK_MARKER_RE = re.compile(
     r"key=([^ ]+) uid=([0-9a-f]{64}) -->"
 )
 SELECTOR_COOLDOWN_SECONDS = 600
+MAX_RECURSIVE_PLANNER_DEPTH = 4
 AUTOMATED_REVIEW_POLICY = "software-review-required"
 LEGACY_AUTOMERGE_POLICY = "software-auto-merge"
 AUTOMATED_DELIVERY_POLICIES = frozenset(
@@ -158,6 +159,8 @@ HARDWARE_OPERATIONS = frozenset(
 HARDWARE_BOARD_ALIASES = frozenset({0, 1})
 _HARDWARE_RUNTIME_LOCK = threading.Lock()
 _HARDWARE_RUNTIMES: dict[int, dict[str, Any]] = {}
+_BASE_REFRESH_LOCK = threading.RLock()
+_SELECTOR_MATERIALIZATION_LOCK = threading.Lock()
 
 
 class ControlError(RuntimeError):
@@ -914,7 +917,8 @@ def load_open_pull_request_snapshot(workflow: Workflow) -> list[dict[str, Any]]:
             "--limit",
             "100",
             "--json",
-            "number,title,headRefName,baseRefName,isDraft,mergeStateStatus,url",
+            "number,title,headRefName,headRefOid,baseRefName,baseRefOid,"
+            "isDraft,mergeStateStatus,url",
         ]
     )
     return [
@@ -922,7 +926,9 @@ def load_open_pull_request_snapshot(workflow: Workflow) -> list[dict[str, Any]]:
             "number": int(document["number"]),
             "title": str(document.get("title", "")),
             "head": str(document.get("headRefName", "")),
+            "head_oid": str(document.get("headRefOid", "")),
             "base": str(document.get("baseRefName", "")),
+            "base_oid": str(document.get("baseRefOid", "")),
             "draft": bool(document.get("isDraft", False)),
             "merge_state": str(document.get("mergeStateStatus", "")),
             "url": str(document.get("url", "")),
@@ -1571,6 +1577,90 @@ def hardware_block_path(ticket_number: int) -> Path:
     )
 
 
+def role_retry_path(ticket_number: int) -> Path:
+    state_root = Path(
+        os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")
+    )
+    return (
+        state_root
+        / "domes-agent-control"
+        / f"issue-{ticket_number}"
+        / "role-retry.json"
+    )
+
+
+def planner_schema_sha256() -> str:
+    schema_path = ORCHESTRATION_DIR / "schemas" / SCHEMA_BY_ROLE["planner"]
+    return hashlib.sha256(schema_path.read_bytes()).hexdigest()
+
+
+def persist_planner_retry(
+    workflow: Workflow, item: TicketValidation, error: Exception
+) -> Path:
+    """Keep controller/planner failures retryable without calling them project blockers."""
+    path = role_retry_path(item.ticket.number)
+    schema_sha256 = planner_schema_sha256()
+    attempt = 1
+    try:
+        previous = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            previous.get("issue") == item.ticket.number
+            and previous.get("spec_revision") == item.sections["Specification revision"]
+            and previous.get("schema_sha256") == schema_sha256
+        ):
+            attempt = int(previous.get("attempt", 0)) + 1
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        pass
+    delay = min(
+        workflow.poll_interval_seconds * (2 ** min(attempt - 1, 4)),
+        workflow.max_retry_backoff_seconds,
+    )
+    record = {
+        "issue": item.ticket.number,
+        "spec_revision": item.sections["Specification revision"],
+        "role": "planner",
+        "resume_state": "agent:plan",
+        "schema_sha256": schema_sha256,
+        "attempt": attempt,
+        "retry_after": int(time.time()) + delay,
+        "error_class": type(error).__name__,
+        "error_sha256": hashlib.sha256(str(error).encode("utf-8")).hexdigest(),
+    }
+    write_handoff(path, record)
+    return path
+
+
+def deferred_role_retries(tickets: Sequence[Ticket]) -> dict[int, int]:
+    """Return seconds remaining for valid controller-owned retry journals."""
+    now = int(time.time())
+    schema_sha256 = planner_schema_sha256()
+    deferred: dict[int, int] = {}
+    for ticket in tickets:
+        if ticket.state != "OPEN" or ticket.agent_state != "agent:plan":
+            continue
+        sections = parse_sections(ticket.body)
+        path = role_retry_path(ticket.number)
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            record.get("issue") != ticket.number
+            or record.get("spec_revision") != sections.get("Specification revision")
+            or record.get("role") != "planner"
+            or record.get("resume_state") != "agent:plan"
+            or not isinstance(record.get("retry_after"), int)
+        ):
+            continue
+        if record.get("schema_sha256") != schema_sha256:
+            path.unlink(missing_ok=True)
+            continue
+        remaining = int(record["retry_after"]) - now
+        if remaining > 0:
+            deferred[ticket.number] = remaining
+    return deferred
+
+
 def persist_hardware_block(
     ticket: Ticket, sections: dict[str, str], pr_head: str, code: str
 ) -> Path:
@@ -1699,11 +1789,34 @@ def trusted_repository_url(workflow: Workflow) -> str:
 
 
 def refresh_base_branch(workflow: Workflow) -> None:
-    refreshed = _git("fetch", "--quiet", "origin", workflow.base_branch)
+    with _BASE_REFRESH_LOCK:
+        refreshed = _git("fetch", "--quiet", "origin", workflow.base_branch)
     if refreshed.returncode != 0:
         raise TrackerError(
             refreshed.stderr.strip() or f"cannot refresh origin/{workflow.base_branch}"
         )
+
+
+def load_selector_snapshot(
+    workflow: Workflow,
+) -> tuple[str, list[Ticket], list[dict[str, Any]], str]:
+    """Read one revision-stable tracker snapshot for selection and mutation."""
+    with _BASE_REFRESH_LOCK:
+        refresh_base_branch(workflow)
+        revision = origin_main_revision(workflow)
+        tickets = load_live_tickets(workflow)
+        pull_requests = load_open_pull_request_snapshot(workflow)
+        if origin_main_revision(workflow) != revision:
+            raise TrackerError(
+                f"origin/{workflow.base_branch} changed while reading selector state"
+            )
+        fingerprint = selector_snapshot_fingerprint(
+            workflow,
+            tickets,
+            pull_requests,
+            revision=revision,
+        )
+    return revision, tickets, pull_requests, fingerprint
 
 
 def _assert_clean_workspace(path: Path, *, issue: int) -> None:
@@ -2169,13 +2282,15 @@ def validate_selector_result(
     policy: AutopilotPolicy,
     tickets: Sequence[Ticket],
     pull_requests: Sequence[dict[str, Any]],
+    *,
+    expected_revision: str | None = None,
 ) -> None:
     state = result["state"]
     if state != "selected":
         if result["mode"] != "none" or result["autonomy_policy"] != "none":
             raise ControlError("idle or blocked selector result must use `none` policy")
         return
-    revision = origin_main_revision(workflow)
+    revision = expected_revision or origin_main_revision(workflow)
     if result["spec_revision"] != revision:
         raise ControlError("selector must pin the current origin/main revision")
     required_strings = (
@@ -2220,13 +2335,7 @@ def validate_selector_result(
             issue is None
             or issue.state != "OPEN"
             or terminal(issue)
-            or issue.agent_state
-            in {
-                "agent:blocked",
-                "agent:human-review",
-                "agent:needs-specification",
-                "agent:plan-review",
-            }
+            or issue.agent_state != "agent:needs-specification"
         ):
             raise ControlError("selector referenced an unavailable existing issue")
         issue_dependencies = validate_ticket(issue, check_revision=False).dependencies
@@ -2302,10 +2411,25 @@ def _ticket_from_selection(
 
 
 def apply_selector_result(
-    workflow: Workflow, result: dict[str, Any], tickets: Sequence[Ticket]
+    workflow: Workflow,
+    policy: AutopilotPolicy,
+    result: dict[str, Any],
+    expected_fingerprint: str,
 ) -> Ticket | None:
     if result["state"] != "selected":
         return None
+    with _SELECTOR_MATERIALIZATION_LOCK, _BASE_REFRESH_LOCK:
+        return _apply_selector_result_locked(
+            workflow, policy, result, expected_fingerprint
+        )
+
+
+def _apply_selector_result_locked(
+    workflow: Workflow,
+    policy: AutopilotPolicy,
+    result: dict[str, Any],
+    expected_fingerprint: str,
+) -> Ticket:
     contract = render_ticket_contract(
         spec_revision=result["spec_revision"],
         parent_objective=result["parent_objective"],
@@ -2322,10 +2446,24 @@ def apply_selector_result(
         pull_request=result["existing_pull_request"],
     )
     target_state = "agent:ready" if result["mode"] == "execute" else "agent:plan"
+    revision, tickets, pull_requests, actual_fingerprint = load_selector_snapshot(
+        workflow
+    )
+    if actual_fingerprint != expected_fingerprint:
+        raise ControlError("live tracker state changed before selector mutation")
+    validate_selector_result(
+        result,
+        workflow,
+        policy,
+        tickets,
+        pull_requests,
+        expected_revision=revision,
+    )
+
     existing_number = int(result["existing_issue"])
     if existing_number:
         ticket = next(ticket for ticket in tickets if ticket.number == existing_number)
-        body = with_autopilot_contract(ticket.body, contract)
+        body = with_autopilot_contract("", contract)
         validation_ticket = _ticket_from_selection(
             ticket.number, body, result, ticket.url
         )
@@ -2335,17 +2473,70 @@ def apply_selector_result(
                 f"selector produced invalid ticket #{ticket.number}: "
                 + "; ".join(validation.errors)
             )
-        update_issue_body(workflow, ticket, body)
-        set_issue_priority(workflow, ticket, result["priority"])
-        transition(workflow, ticket, target_state)
+        expected_match = AUTOPILOT_MARKER_RE.search(body)
+        assert expected_match is not None
+        expected_marker = expected_match.group(0)
+        current_match = AUTOPILOT_MARKER_RE.search(ticket.body)
+        if current_match is not None and current_match.group(0) != expected_marker:
+            raise ControlError(
+                f"selector refuses to overwrite issue #{ticket.number} contract"
+            )
+        labels = sorted(
+            {
+                *(
+                    label
+                    for label in ticket.labels
+                    if not label.startswith(STATE_PREFIX)
+                    and not re.fullmatch(r"priority:p[0-9]+", label)
+                ),
+                target_state,
+                f"priority:{result['priority']}",
+            }
+        )
+        payload: dict[str, Any] = {"labels": labels}
+        if current_match is None:
+            payload["body"] = body
+        updated = subprocess.run(
+            [
+                "gh",
+                "api",
+                "--method",
+                "PATCH",
+                f"repos/{workflow.repository}/issues/{ticket.number}",
+                "--input",
+                "-",
+                "--silent",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            input=json.dumps(payload),
+        )
+        if updated.returncode != 0:
+            refreshed = load_live_tickets(workflow)
+            reconciled = next(
+                (item for item in refreshed if item.number == ticket.number), None
+            )
+            if (
+                reconciled is None
+                or expected_marker not in reconciled.body
+                or set(reconciled.labels) != set(labels)
+            ):
+                raise ControlError(
+                    updated.stderr.strip()
+                    or f"failed to materialize selected issue #{ticket.number}"
+                )
         return validation_ticket
 
     body = with_autopilot_contract("", contract)
     digest = contract_digest(parse_sections(body))
     marker = f"domes-autopilot-contract:v1 digest={digest}"
-    for ticket in tickets:
-        if marker in ticket.body:
-            return ticket
+    matches = [ticket for ticket in tickets if marker in ticket.body]
+    if len(matches) > 1:
+        raise ControlError("multiple issues carry the selected contract marker")
+    if matches:
+        return matches[0]
     with tempfile.NamedTemporaryFile(
         mode="w", encoding="utf-8", prefix="issue-body-", suffix=".md"
     ) as stream:
@@ -2373,30 +2564,38 @@ def apply_selector_result(
             text=True,
         )
     if created.returncode != 0:
-        raise ControlError(created.stderr.strip() or "failed to create selected issue")
-    match = re.search(r"/issues/([1-9][0-9]*)", created.stdout)
-    if not match:
         refreshed = load_live_tickets(workflow)
         matches = [ticket for ticket in refreshed if marker in ticket.body]
-        if len(matches) != 1:
-            raise ControlError("cannot reconcile selected issue creation")
-        return matches[0]
-    return _ticket_from_selection(
-        int(match.group(1)), body, result, created.stdout.strip()
-    )
+        if len(matches) == 1:
+            return matches[0]
+        raise ControlError(created.stderr.strip() or "failed to create selected issue")
+    match = re.search(r"/issues/([1-9][0-9]*)", created.stdout)
+    refreshed = load_live_tickets(workflow)
+    matches = [ticket for ticket in refreshed if marker in ticket.body]
+    if len(matches) != 1:
+        raise ControlError("cannot reconcile selected issue creation")
+    if match and matches[0].number != int(match.group(1)):
+        raise ControlError("selected issue creation returned a conflicting identity")
+    return matches[0]
 
 
-def autopilot_queue_idle(
-    tickets: Sequence[Ticket],
-    runnable: Sequence[TicketValidation] | None = None,
+def available_role_slots(maximum: int, active_roles: int, selector_active: bool) -> int:
+    """Return controller capacity after reserving the singleton selector slot."""
+    if maximum < 1 or active_roles < 0 or active_roles > maximum:
+        raise ControlError("invalid controller capacity accounting")
+    available = maximum - active_roles - int(selector_active)
+    if available < 0:
+        raise ControlError("selector exceeds controller capacity")
+    return available
+
+
+def selector_capacity_available(
+    maximum: int, active_roles: int, selector_active: bool
 ) -> bool:
-    if runnable is None:
-        runnable, _ = eligible_queue(tickets, check_revision=False)
-    if runnable:
-        return False
-    return not any(
-        ticket.state == "OPEN" and ticket.agent_state == "agent:ci-pending"
-        for ticket in tickets
+    """Selectors fill a free role slot; CI and human review never consume one."""
+    return (
+        not selector_active
+        and available_role_slots(maximum, active_roles, selector_active) > 0
     )
 
 
@@ -2405,6 +2604,8 @@ def build_selector_prompt(
     policy: AutopilotPolicy,
     tickets: Sequence[Ticket],
     pull_requests: Sequence[dict[str, Any]],
+    *,
+    revision: str | None = None,
 ) -> str:
     role_prompt = (ORCHESTRATION_DIR / "prompts" / "selector.md").read_text(
         encoding="utf-8"
@@ -2424,7 +2625,7 @@ def build_selector_prompt(
         f"{role_prompt}\n\n"
         "# Immutable selector envelope\n\n"
         f"Repository: {workflow.repository}\n"
-        f"Current origin/main revision: {origin_main_revision(workflow)}\n"
+        f"Current origin/main revision: {revision or origin_main_revision(workflow)}\n"
         f"Autopilot policy: {policy.policy_name}\n"
         f"Allowed work classes: {', '.join(policy.allowed_work_classes)}\n\n"
         "# Live open issue summary\n\n"
@@ -2432,6 +2633,37 @@ def build_selector_prompt(
         "# Live open pull-request summary\n\n"
         f"```json\n{json.dumps(pull_requests, indent=2, sort_keys=True)}\n```\n"
     )
+
+
+def selector_snapshot_fingerprint(
+    workflow: Workflow,
+    tickets: Sequence[Ticket],
+    pull_requests: Sequence[dict[str, Any]],
+    *,
+    revision: str | None = None,
+) -> str:
+    """Bind a selector decision to the live authority snapshot it inspected."""
+    open_issues = [
+        {
+            "number": ticket.number,
+            "title": ticket.title,
+            "state": ticket.state,
+            "labels": sorted(ticket.labels),
+            "body_sha256": hashlib.sha256(ticket.body.encode("utf-8")).hexdigest(),
+        }
+        for ticket in tickets
+        if ticket.state == "OPEN"
+    ]
+    document = {
+        "revision": revision or origin_main_revision(workflow),
+        "issues": sorted(open_issues, key=lambda item: int(item["number"])),
+        "pull_requests": sorted(
+            (dict(item) for item in pull_requests),
+            key=lambda item: int(item["number"]),
+        ),
+    }
+    canonical = json.dumps(document, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def run_selector(
@@ -2475,9 +2707,34 @@ def run_selector(
         "-",
     ]
     failures: list[str] = []
+    accepted_fingerprint = ""
     result: dict[str, Any]
+    selected: Ticket | None = None
     for attempt in range(1, 4):
-        prompt = build_selector_prompt(workflow, policy, tickets, pull_requests)
+        try:
+            (
+                prompt_revision,
+                snapshot_tickets,
+                snapshot_pull_requests,
+                prompt_fingerprint,
+            ) = load_selector_snapshot(workflow)
+            prompt = build_selector_prompt(
+                workflow,
+                policy,
+                snapshot_tickets,
+                snapshot_pull_requests,
+                revision=prompt_revision,
+            )
+        except (ControlError, OSError, json.JSONDecodeError) as error:
+            failures.append(f"attempt {attempt} snapshot: {error}")
+            if attempt < 3:
+                time.sleep(
+                    min(
+                        10 * (2 ** (attempt - 1)),
+                        workflow.max_retry_backoff_seconds,
+                    )
+                )
+            continue
         if failures:
             prompt += (
                 "\n\n# Previous selector attempt was rejected\n\n"
@@ -2496,12 +2753,34 @@ def run_selector(
         else:
             try:
                 result = json.loads(result_path.read_text(encoding="utf-8"))
+                (
+                    fresh_revision,
+                    fresh_tickets,
+                    fresh_pull_requests,
+                    fresh_fingerprint,
+                ) = load_selector_snapshot(workflow)
+                if fresh_fingerprint != prompt_fingerprint:
+                    raise ControlError(
+                        "live issue, pull-request, or main state changed while selecting"
+                    )
                 validate_selector_result(
-                    result, workflow, policy, tickets, pull_requests
+                    result,
+                    workflow,
+                    policy,
+                    fresh_tickets,
+                    fresh_pull_requests,
+                    expected_revision=fresh_revision,
                 )
-            except (ControlError, json.JSONDecodeError) as error:
+                selected = apply_selector_result(
+                    workflow,
+                    policy,
+                    result,
+                    fresh_fingerprint,
+                )
+            except (ControlError, OSError, json.JSONDecodeError) as error:
                 failures.append(f"attempt {attempt} validation: {error}")
             else:
+                accepted_fingerprint = fresh_fingerprint
                 break
         if attempt < 3:
             time.sleep(
@@ -2512,7 +2791,6 @@ def run_selector(
             "autonomous selector failed after 3 attempts: " + "; ".join(failures)
         )
     write_handoff(run_root / "handoff-selector.json", result)
-    selected = apply_selector_result(workflow, result, tickets)
     return {
         "state": result["state"],
         "issue": selected.number if selected is not None else 0,
@@ -2520,6 +2798,7 @@ def run_selector(
         "result": str(result_path),
         "events": str(event_path),
         "stderr": str(stderr_path),
+        "snapshot": accepted_fingerprint,
     }
 
 
@@ -2643,6 +2922,17 @@ def validate_result_semantics(
             )
         if len(keys) != len(set(keys)):
             raise ControlError("planner result contains duplicate task keys")
+        duplicate_hardware_operations = [
+            task["key"]
+            for task in tasks
+            if len(task.get("hardware_operations", ()))
+            != len(set(task.get("hardware_operations", ())))
+        ]
+        if duplicate_hardware_operations:
+            raise ControlError(
+                "planner task hardware operations must be unique: "
+                + ", ".join(sorted(duplicate_hardware_operations))
+            )
         task_dependencies = {task["key"]: tuple(task["dependencies"]) for task in tasks}
         unknown = sorted(
             {
@@ -2758,6 +3048,7 @@ def normalized_plan(result: dict[str, Any]) -> list[dict[str, Any]]:
         normalized.append(
             {
                 "key": task["key"],
+                "mode": task["mode"],
                 "goal": task["goal"].strip(),
                 "non_goals": sorted(value.strip() for value in task["non_goals"]),
                 "required_behavior": task["required_behavior"].strip(),
@@ -2860,6 +3151,28 @@ def create_issue(
     )
 
 
+def planner_depth(parent: TicketValidation, tickets: Sequence[Ticket]) -> int:
+    """Return tracked recursive-plan depth and reject malformed ancestry."""
+    by_number = {ticket.number: ticket for ticket in tickets}
+    current = parent.ticket
+    visited: set[int] = set()
+    depth = 0
+    while True:
+        if current.number in visited:
+            raise ControlError("recursive planner ancestry contains a cycle")
+        visited.add(current.number)
+        marker = PLAN_TASK_MARKER_RE.search(current.body)
+        if marker is None:
+            return depth
+        parent_number = int(marker.group(1))
+        if parent_number not in by_number:
+            raise ControlError(
+                f"recursive planner ancestry is missing issue #{parent_number}"
+            )
+        current = by_number[parent_number]
+        depth += 1
+
+
 def materialize_plan(
     workflow: Workflow,
     parent: TicketValidation,
@@ -2894,6 +3207,12 @@ def materialize_plan(
 
     plan_hash = plan_digest(result)
     tickets = load_live_tickets(workflow)
+    depth = planner_depth(parent, tickets)
+    if any(task["mode"] == "plan" for task in result["tasks"]):
+        if depth >= MAX_RECURSIVE_PLANNER_DEPTH:
+            raise ControlError(
+                "planner result exceeds the tracked recursive planning depth limit"
+            )
     by_uid: dict[str, Ticket] = {}
     by_parent_key: dict[str, tuple[str, str, Ticket]] = {}
     for ticket in tickets:
@@ -2956,7 +3275,11 @@ def materialize_plan(
             body = marker + "\n\n" + with_autopilot_contract("", provisional_contract)
             child = create_issue(
                 workflow,
-                title=f"[Agent] {task['key']}: {task['goal']}",
+                title=(
+                    f"[Plan] {task['key']}: {task['goal']}"
+                    if task["mode"] == "plan"
+                    else f"[Agent] {task['key']}: {task['goal']}"
+                ),
                 body=body,
                 labels=("agent:needs-specification", priority_label),
             )
@@ -2996,8 +3319,13 @@ def materialize_plan(
         expected_body = (
             task_marker.group(0) + "\n\n" + with_autopilot_contract("", contract)
         )
+        target_state = "agent:plan" if task["mode"] == "plan" else "agent:ready"
         if child.body != expected_body:
-            if child.agent_state not in {"agent:needs-specification", "agent:ready"}:
+            if child.agent_state not in {
+                "agent:needs-specification",
+                "agent:plan",
+                "agent:ready",
+            }:
                 raise ControlError(
                     f"materialized task {task['key']} was externally modified"
                 )
@@ -3008,7 +3336,7 @@ def materialize_plan(
             expected_body,
             child.state,
             tuple(label for label in child.labels if not label.startswith(STATE_PREFIX))
-            + ("agent:ready",),
+            + (target_state,),
             child.url,
         )
         validation = validate_ticket(ready_ticket)
@@ -3017,8 +3345,8 @@ def materialize_plan(
                 f"materialized task {task['key']} is invalid: "
                 + "; ".join(validation.errors)
             )
-        if child.agent_state != "agent:ready":
-            transition(workflow, child, "agent:ready")
+        if child.agent_state != target_state:
+            transition(workflow, child, target_state)
     return [task_numbers[task["key"]] for task in topological_tasks(result["tasks"])]
 
 
@@ -3029,6 +3357,47 @@ def write_handoff(path: Path, result: dict[str, Any]) -> None:
         json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     temporary.replace(path)
+
+
+def persist_pending_plan(path: Path, result: dict[str, Any]) -> None:
+    write_handoff(
+        path,
+        {
+            "schema_sha256": planner_schema_sha256(),
+            "result": result,
+        },
+    )
+
+
+def load_pending_plan(
+    path: Path, *, issue: int, spec_revision: str
+) -> dict[str, Any] | None:
+    """Load only a planner journal produced under the current output contract."""
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        result = document["result"]
+        if document.get("schema_sha256") != planner_schema_sha256() or not isinstance(
+            result, dict
+        ):
+            raise ValueError("obsolete planner journal")
+        validate_result_semantics("planner", result)
+        if (
+            result.get("issue") != issue
+            or result.get("spec_revision") != spec_revision
+            or result.get("blockers")
+        ):
+            raise ValueError("planner journal does not match the active contract")
+    except (
+        OSError,
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+        ControlError,
+    ):
+        path.unlink(missing_ok=True)
+        return None
+    return result
 
 
 def attest_hardware_manifest(
@@ -3973,26 +4342,21 @@ def _execute_one(
             _HARDWARE_RUNTIMES[item.ticket.number]["broker_ready"] = True
     schema = ORCHESTRATION_DIR / "schemas" / SCHEMA_BY_ROLE[role]
     pending_plan_path = run_root / "pending-plan.json"
-    if (
-        role == "planner"
-        and autopilot
-        and automated_delivery(item.sections)
-        and pending_plan_path.is_file()
-    ):
-        pending_plan = json.loads(pending_plan_path.read_text(encoding="utf-8"))
+    pending_plan = (
+        load_pending_plan(
+            pending_plan_path,
+            issue=item.ticket.number,
+            spec_revision=item.sections["Specification revision"],
+        )
         if (
-            pending_plan.get("issue") != item.ticket.number
-            or pending_plan.get("spec_revision")
-            != item.sections["Specification revision"]
-        ):
-            raise ControlError(
-                f"issue #{item.ticket.number}: pending plan journal does not match"
-            )
-        validate_result_semantics("planner", pending_plan)
-        if pending_plan["blockers"]:
-            raise ControlError(
-                f"issue #{item.ticket.number}: pending plan unexpectedly has blockers"
-            )
+            role == "planner"
+            and autopilot
+            and automated_delivery(item.sections)
+            and pending_plan_path.is_file()
+        )
+        else None
+    )
+    if pending_plan is not None:
         materialized = materialize_plan(workflow, item, pending_plan)
         write_handoff(run_root / "handoff-planner.json", pending_plan)
         post_result(workflow, item.ticket, "planner", pending_plan)
@@ -4186,7 +4550,7 @@ def _execute_one(
         and automated_delivery(item.sections)
         and not result["blockers"]
     ):
-        write_handoff(pending_plan_path, result)
+        persist_pending_plan(pending_plan_path, result)
     write_handoff(run_root / f"handoff-{role}.json", result)
     post_result(workflow, item.ticket, role, result)
     next_state = result_state(
@@ -4952,6 +5316,19 @@ def reconcile_human_reviews(
                 )
                 results.append({"issue": ticket.number, "state": "agent:rework"})
                 continue
+            if pull_request.merge_state in {"BEHIND", "DIRTY"} or (
+                pull_request.mergeable in {"CONFLICTING", "UNMERGEABLE"}
+            ):
+                transition(workflow, ticket, "agent:rework")
+                post_controller_comment(
+                    workflow,
+                    ticket,
+                    "Agent control-plane transition (human review)",
+                    "The reviewed PR is now behind or conflicting with its base; "
+                    "returning it through worker and independent-judge validation.",
+                )
+                results.append({"issue": ticket.number, "state": "agent:rework"})
+                continue
             if pull_request.review_decision == "CHANGES_REQUESTED":
                 transition(workflow, ticket, "agent:rework")
                 post_controller_comment(
@@ -4989,6 +5366,11 @@ def output_schema_contract_errors(document: dict[str, Any]) -> list[str]:
     errors: list[str] = []
 
     def visit(schema: dict[str, Any], path: str) -> None:
+        for keyword in ("uniqueItems",):
+            if keyword in schema:
+                errors.append(
+                    f"{path} uses structured-output-unsupported keyword {keyword}"
+                )
         schema_type = schema.get("type")
         if schema_type == "object":
             properties = schema.get("properties")
@@ -5130,18 +5512,22 @@ def render_dashboard(
     payload: dict[str, Any],
     *,
     phase: str = "running",
+    selector_active: bool = False,
 ) -> str:
+    active_agent_count = len(active_items) + int(selector_active)
     lines = [
         "DOMES AUTOPILOT — HUMAN REVIEW AND MERGE REQUIRED",
         f"Updated: {time.strftime('%Y-%m-%d %H:%M:%S %Z')}",
         (
-            f"Controller: {phase.upper()} | agents {len(active_items)}/"
+            f"Controller: {phase.upper()} | agents {active_agent_count}/"
             f"{workflow.max_concurrent_workers} | eligible {len(eligible)} | "
             f"blocked {len(blockers)}"
         ),
         "",
         "ACTIVE AGENTS",
     ]
+    if selector_active:
+        lines.append("  milestone selector | reading project brain and live tracker")
     if active_items:
         for item in sorted(active_items, key=lambda value: value.ticket.number):
             pull_request = existing_pull_request(item.sections)
@@ -5150,7 +5536,7 @@ def render_dashboard(
                 f"  #{item.ticket.number} {role_for(item.ticket)}{pr_text} | "
                 f"{_single_line(item.ticket.title)}"
             )
-    else:
+    elif not selector_active:
         lines.append("  none")
 
     reviews = sorted(
@@ -5212,6 +5598,7 @@ def emit_watch_status(
     blockers: dict[int, list[str]],
     payload: dict[str, Any],
     phase: str = "running",
+    selector_active: bool = False,
 ) -> None:
     if dashboard:
         print(
@@ -5224,6 +5611,7 @@ def emit_watch_status(
                 blockers,
                 payload,
                 phase=phase,
+                selector_active=selector_active,
             ),
             flush=True,
         )
@@ -5351,16 +5739,45 @@ def main(argv: Sequence[str] | None = None) -> int:
             active: dict[
                 concurrent.futures.Future[dict[str, Any]], TicketValidation
             ] = {}
+            selector_future: concurrent.futures.Future[dict[str, Any]] | None = None
             next_selector_at = 0.0
+            blocked_selector_snapshot = ""
             last_tickets: Sequence[Ticket] = ()
             last_eligible: Sequence[TicketValidation] = ()
             last_blockers: dict[int, list[str]] = {}
             with concurrent.futures.ThreadPoolExecutor(max_workers=maximum) as executor:
                 while True:
+                    selector_result: dict[str, Any] | None = None
+                    if selector_future is not None and selector_future.done():
+                        try:
+                            selector_result = selector_future.result()
+                        except Exception as error:
+                            selector_result = {
+                                "state": "error",
+                                "error": str(error),
+                            }
+                        selector_future = None
+                        if selector_result.get("state") == "selected":
+                            next_selector_at = 0.0
+                            blocked_selector_snapshot = ""
+                        else:
+                            next_selector_at = (
+                                time.monotonic() + SELECTOR_COOLDOWN_SECONDS
+                            )
+                            blocked_selector_snapshot = str(
+                                selector_result.get("snapshot", "")
+                            )
                     try:
                         if policy is not None:
-                            refresh_base_branch(workflow)
-                        tickets = load_live_tickets(workflow)
+                            (
+                                _,
+                                tickets,
+                                pull_request_snapshot,
+                                current_selector_snapshot,
+                            ) = load_selector_snapshot(workflow)
+                        else:
+                            tickets = load_live_tickets(workflow)
+                            pull_request_snapshot = []
                     except (ControlError, OSError, json.JSONDecodeError) as error:
                         if not args.watch:
                             raise
@@ -5377,9 +5794,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                             blockers=last_blockers,
                             payload=payload,
                             phase="retrying",
+                            selector_active=selector_future is not None,
                         )
                         time.sleep(workflow.poll_interval_seconds)
                         continue
+                    if policy is not None and blocked_selector_snapshot:
+                        if current_selector_snapshot != blocked_selector_snapshot:
+                            next_selector_at = 0.0
+                            blocked_selector_snapshot = ""
                     ci_results: list[dict[str, Any]] = []
                     if policy is not None:
                         ci_results = reconcile_ci(workflow, policy, tickets)
@@ -5411,6 +5833,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                             if blocked_now:
                                 tickets = load_live_tickets(workflow)
                     eligible, blockers = eligible_queue(tickets)
+                    deferred_retries = deferred_role_retries(tickets)
+                    for issue, seconds in deferred_retries.items():
+                        blockers.setdefault(issue, []).append(
+                            f"controller planner retry scheduled in {seconds}s"
+                        )
                     for item in eligible:
                         if not requires_worker_hardware_access(item):
                             continue
@@ -5431,6 +5858,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         item
                         for item in eligible
                         if item.ticket.number not in active_numbers
+                        and item.ticket.number not in deferred_retries
                         and (
                             not requires_worker_hardware_access(item)
                             or hardware_capability is not None
@@ -5464,7 +5892,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         for item in active.values()
                     ]
                     selected = select_non_overlapping(
-                        candidates, maximum - len(active), reserved
+                        candidates,
+                        available_role_slots(
+                            maximum, len(active), selector_future is not None
+                        ),
+                        reserved,
                     )
                     dispatch_errors: list[str] = []
                     for item in selected:
@@ -5502,71 +5934,51 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                         return 1 if failures else 0
 
-                    if not active:
-                        selector_result: dict[str, Any] | None = None
-                        if (
-                            policy is not None
-                            and autopilot_queue_idle(tickets, eligible)
-                            and time.monotonic() >= next_selector_at
-                        ):
-                            emit_watch_status(
-                                dashboard=args.dashboard,
-                                workflow=workflow,
-                                tickets=tickets,
-                                active_items=(),
-                                eligible=eligible,
-                                blockers=blockers,
-                                payload={"selector": {"state": "selecting"}},
-                                phase="selecting next milestone",
-                            )
-                            selector_future = executor.submit(
-                                run_selector,
-                                workflow,
-                                policy,
-                                tickets,
-                                load_open_pull_request_snapshot(workflow),
-                            )
-                            while True:
-                                done, _ = concurrent.futures.wait(
-                                    {selector_future},
-                                    timeout=workflow.poll_interval_seconds,
-                                    return_when=concurrent.futures.FIRST_COMPLETED,
-                                )
-                                if done:
-                                    break
-                                emit_watch_status(
-                                    dashboard=args.dashboard,
-                                    workflow=workflow,
-                                    tickets=tickets,
-                                    active_items=(),
-                                    eligible=eligible,
-                                    blockers=blockers,
-                                    payload={"selector": {"state": "selecting"}},
-                                    phase="selecting next milestone",
-                                )
-                            try:
-                                selector_result = selector_future.result()
-                            except (
-                                ControlError,
-                                OSError,
-                                json.JSONDecodeError,
-                            ) as error:
-                                selector_result = {
-                                    "state": "error",
-                                    "error": str(error),
-                                }
-                            next_selector_at = (
-                                0.0
-                                if selector_result.get("state") == "selected"
-                                else time.monotonic() + SELECTOR_COOLDOWN_SECONDS
-                            )
-                        payload = {
-                            "runs": [],
-                            "failures": dispatch_errors,
-                            "ci": ci_results,
-                            "selector": selector_result,
-                            "blocked": blockers,
-                        }
+                    if (
+                        policy is not None
+                        and selector_capacity_available(
+                            maximum, len(active), selector_future is not None
+                        )
+                        and time.monotonic() >= next_selector_at
+                    ):
+                        selector_future = executor.submit(
+                            run_selector,
+                            workflow,
+                            policy,
+                            tickets,
+                            pull_request_snapshot,
+                        )
+
+                    selector_is_active = (
+                        selector_future is not None and not selector_future.done()
+                    )
+                    selector_payload = (
+                        {"state": "selecting"}
+                        if selector_is_active
+                        else selector_result
+                    )
+                    payload = {
+                        "runs": [],
+                        "failures": dispatch_errors,
+                        "ci": ci_results,
+                        "selector": selector_payload,
+                        "blocked": blockers,
+                    }
+                    phase = (
+                        "working and planning"
+                        if active and selector_is_active
+                        else (
+                            "selecting next milestone"
+                            if selector_is_active
+                            else "working" if active else "waiting for milestone change"
+                        )
+                    )
+                    watched: set[concurrent.futures.Future[dict[str, Any]]] = set(
+                        active
+                    )
+                    if selector_future is not None:
+                        watched.add(selector_future)
+                    if not watched:
                         emit_watch_status(
                             dashboard=args.dashboard,
                             workflow=workflow,
@@ -5575,17 +5987,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                             eligible=eligible,
                             blockers=blockers,
                             payload=payload,
-                            phase="idle",
+                            phase=phase,
                         )
-                        if (
-                            selector_result is not None
-                            and selector_result["state"] == "selected"
-                        ):
-                            continue
                         time.sleep(workflow.poll_interval_seconds)
                         continue
                     done, _ = concurrent.futures.wait(
-                        active,
+                        watched,
                         timeout=workflow.poll_interval_seconds,
                         return_when=concurrent.futures.FIRST_COMPLETED,
                     )
@@ -5601,11 +6008,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 "runs": [],
                                 "failures": dispatch_errors,
                                 "ci": ci_results,
+                                "selector": selector_payload,
+                                "blocked": blockers,
                             },
-                            phase="working",
+                            phase=phase,
+                            selector_active=selector_is_active,
                         )
                         continue
-                    completed = {future: active.pop(future) for future in done}
+                    completed = {
+                        future: active.pop(future)
+                        for future in done
+                        if future in active
+                    }
+                    if not completed:
+                        continue
                     results, failures = collect_results(completed, workflow)
                     payload = {
                         "runs": results,
@@ -5621,7 +6037,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                         eligible=eligible,
                         blockers=blockers,
                         payload=payload,
-                        phase="working" if active else "idle",
+                        phase=(
+                            "working and planning"
+                            if active and selector_is_active
+                            else (
+                                "selecting next milestone"
+                                if selector_is_active
+                                else (
+                                    "working"
+                                    if active
+                                    else "waiting for milestone change"
+                                )
+                            )
+                        ),
+                        selector_active=selector_is_active,
                     )
         finally:
             lock.close()
@@ -5640,6 +6069,7 @@ def collect_results(
         item = futures[future]
         try:
             results.append(future.result())
+            role_retry_path(item.ticket.number).unlink(missing_ok=True)
         except Exception as error:
             failures.append(f"issue #{item.ticket.number}: {error}")
             try:
@@ -5655,14 +6085,29 @@ def collect_results(
 def block_failed_run(
     workflow: Workflow, item: TicketValidation, error: Exception
 ) -> None:
-    transition(workflow, item.ticket, "agent:blocked")
     role = role_for(item.ticket)
-    body = (
-        f"Agent control-plane transition ({role})\n\n"
-        "The role failed after bounded retries and moved to `agent:blocked`. "
-        "Inspect the retained local run logs before retrying.\n\n"
-        f"Failure class: `{type(error).__name__}`. Raw output is intentionally excluded."
-    )
+    if role == "planner":
+        retry_path = persist_planner_retry(workflow, item, error)
+        transition(workflow, item.ticket, "agent:plan")
+        retry_record = json.loads(retry_path.read_text(encoding="utf-8"))
+        if int(retry_record["attempt"]) > 1:
+            return
+        body = (
+            "Agent control-plane transition (planner retry)\n\n"
+            "The planner process or controller contract failed after bounded in-run "
+            "retries. This is not an external project blocker: the issue remains "
+            "`agent:plan` and will retry with bounded backoff while the selector may "
+            "fill other capacity.\n\n"
+            f"Failure class: `{type(error).__name__}`. Raw output is intentionally excluded."
+        )
+    else:
+        transition(workflow, item.ticket, "agent:blocked")
+        body = (
+            f"Agent control-plane transition ({role})\n\n"
+            "The role failed after bounded retries and moved to `agent:blocked`. "
+            "Inspect the retained local run logs before retrying.\n\n"
+            f"Failure class: `{type(error).__name__}`. Raw output is intentionally excluded."
+        )
     posted = subprocess.run(
         [
             "gh",

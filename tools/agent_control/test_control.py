@@ -85,6 +85,7 @@ def pull_request(
     *,
     state: str = "OPEN",
     head: str = "c" * 40,
+    merge_state: str = "CLEAN",
     files: tuple[str, ...] = ("firmware/domes/main/app_main.cpp",),
     checks: tuple[dict[str, str], ...] | None = None,
 ) -> control.PullRequest:
@@ -102,7 +103,7 @@ def pull_request(
         head_ref="codex/feat/test",
         head_oid=head,
         mergeable="MERGEABLE",
-        merge_state="CLEAN",
+        merge_state=merge_state,
         review_decision="",
         files=files,
         checks=checks,
@@ -139,6 +140,17 @@ class WorkflowTest(unittest.TestCase):
         }
         self.assertEqual(
             ["$.properties.state must declare a type"],
+            control.output_schema_contract_errors(document),
+        )
+
+    def test_output_schema_rejects_unsupported_unique_items(self) -> None:
+        document = {
+            "type": "array",
+            "uniqueItems": True,
+            "items": {"type": "string"},
+        }
+        self.assertEqual(
+            ["$ uses structured-output-unsupported keyword uniqueItems"],
             control.output_schema_contract_errors(document),
         )
 
@@ -446,21 +458,22 @@ class TicketValidationTest(unittest.TestCase):
             control.surfaces_within(("tools/agent_control/**",), ("firmware/domes/**",))
         )
 
-    def test_autopilot_idle_ignores_human_and_blocked_but_not_ci(self) -> None:
-        human = make_ticket(20, self.revision, label="agent:human-review")
-        blocked = make_ticket(21, self.revision, label="agent:blocked")
-        self.assertTrue(control.autopilot_queue_idle((human, blocked)))
-        ci_pending = automated_ticket(22, self.revision)
-        self.assertFalse(control.autopilot_queue_idle((human, ci_pending)))
+    def test_selector_capacity_ignores_ci_and_human_review(self) -> None:
+        self.assertTrue(control.selector_capacity_available(3, 2, False))
+        self.assertFalse(control.selector_capacity_available(3, 3, False))
+        self.assertFalse(control.selector_capacity_available(3, 2, True))
+        with self.assertRaisesRegex(control.ControlError, "capacity accounting"):
+            control.selector_capacity_available(3, 4, False)
 
-    def test_dependency_blocked_ready_work_does_not_block_selector(self) -> None:
+    def test_dependency_blocked_ready_work_leaves_selector_capacity_free(self) -> None:
         dependency = make_ticket(23, self.revision, label="agent:blocked")
         waiting = make_ticket(24, self.revision, dependencies="#23")
-        self.assertTrue(control.autopilot_queue_idle((dependency, waiting)))
-        runnable = control.validate_ticket(
-            make_ticket(25, self.revision), check_revision=False
+        eligible, blockers = control.eligible_queue(
+            (dependency, waiting), check_revision=False
         )
-        self.assertFalse(control.autopilot_queue_idle((waiting,), (runnable,)))
+        self.assertEqual([], eligible)
+        self.assertEqual(["dependency #23 is not terminal"], blockers[24])
+        self.assertTrue(control.selector_capacity_available(3, 1, False))
 
 
 class CommandLineTest(unittest.TestCase):
@@ -633,6 +646,7 @@ class ResultSemanticsTest(unittest.TestCase):
             "tasks": [
                 {
                     "key": "implementation",
+                    "mode": "execute",
                     "goal": "Implement it.",
                     "non_goals": ["No release."],
                     "required_behavior": "Feature behaves deterministically.",
@@ -641,9 +655,11 @@ class ResultSemanticsTest(unittest.TestCase):
                     "dependencies": [],
                     "required_proof": ["Test log."],
                     "autonomy_policy": "software-review-required",
+                    "hardware_operations": [],
                 },
                 {
                     "key": "tests",
+                    "mode": "execute",
                     "goal": "Test it.",
                     "non_goals": ["No redesign."],
                     "required_behavior": "Tests cover the change.",
@@ -652,6 +668,7 @@ class ResultSemanticsTest(unittest.TestCase):
                     "dependencies": ["implementation"],
                     "required_proof": ["Test log."],
                     "autonomy_policy": "software-review-required",
+                    "hardware_operations": [],
                 },
             ],
         }
@@ -666,6 +683,18 @@ class ResultSemanticsTest(unittest.TestCase):
         }
         with self.assertRaisesRegex(control.ControlError, "unknown task dependencies"):
             control.validate_result_semantics("planner", invalid)
+
+        duplicate_operations = {
+            **first,
+            "tasks": [
+                {
+                    **first["tasks"][0],
+                    "hardware_operations": ["trace-status", "trace-status"],
+                }
+            ],
+        }
+        with self.assertRaisesRegex(control.ControlError, "operations must be unique"):
+            control.validate_result_semantics("planner", duplicate_operations)
 
 
 class AutopilotReviewTest(unittest.TestCase):
@@ -923,6 +952,29 @@ class AutopilotReviewTest(unittest.TestCase):
         transition.assert_not_called()
         comment.assert_not_called()
 
+    def test_human_review_behind_pull_request_returns_to_rework(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        ticket = automated_ticket(40, self.revision, label="agent:human-review")
+        pr = pull_request(policy, merge_state="BEHIND")
+        artifact = {"commit": pr.head_oid, "pull_request": pr.number}
+        validation = control.TicketValidation(
+            ticket, control.parse_sections(ticket.body), (), ()
+        )
+        with (
+            mock.patch.object(control, "validate_ticket", return_value=validation),
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=pr),
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            result = control.reconcile_human_reviews(workflow, (ticket,))
+        self.assertEqual([{"issue": 40, "state": "agent:rework"}], result)
+        transition.assert_called_once_with(workflow, ticket, "agent:rework")
+        comment.assert_called_once()
+
     def test_manual_human_review_without_pull_request_is_not_reconciled(self) -> None:
         workflow = control.load_workflow()
         ticket = make_ticket(41, self.revision, label="agent:human-review")
@@ -1002,6 +1054,104 @@ class SelectorAndPlanTest(unittest.TestCase):
             "blockers": [],
         }
 
+    def selector_body(self, result: dict[str, object]) -> str:
+        contract = control.render_ticket_contract(
+            spec_revision=str(result["spec_revision"]),
+            parent_objective=str(result["parent_objective"]),
+            goal=str(result["goal"]),
+            non_goals=result["non_goals"],
+            required_behavior=str(result["required_behavior"]),
+            acceptance_checks=result["acceptance_checks"],
+            allowed_surface_values=result["allowed_surfaces"],
+            dependencies=result["dependencies"],
+            required_proof=result["required_proof"],
+            work_package=str(result["work_package"]),
+            work_class=str(result["work_class"]),
+            selected_policy=str(result["autonomy_policy"]),
+            pull_request=int(result["existing_pull_request"]),
+        )
+        return control.with_autopilot_contract("", contract)
+
+    def test_watch_autopilot_reserves_one_spare_slot_for_selector(self) -> None:
+        """Exercise the production watch-loop submit path, not just capacity math."""
+        workflow = control.load_workflow()
+        ticket = automated_ticket(101, self.revision, label="agent:ready")
+        item = control.validate_ticket(ticket, check_revision=False)
+        submits: list[object] = []
+        capacity: list[tuple[int, int, int]] = []
+        emissions: list[dict[str, object]] = []
+        executor_limits: list[int] = []
+
+        class StopWatch(Exception):
+            pass
+
+        class PendingFuture:
+            def done(self) -> bool:
+                return False
+
+        class FakeExecutor:
+            def __init__(self, *, max_workers: int) -> None:
+                self.max_workers = max_workers
+                executor_limits.append(max_workers)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args) -> None:
+                return None
+
+            def submit(self, function, *_args, **_kwargs):
+                submits.append(function)
+                return PendingFuture()
+
+        def select(candidates, limit, reserved):
+            capacity.append((len(candidates), limit, len(reserved)))
+            return list(candidates)
+
+        def emit(**kwargs) -> None:
+            emissions.append(kwargs)
+            if len(emissions) == 2:
+                raise StopWatch()
+
+        lock = mock.Mock()
+        with (
+            mock.patch.object(control, "load_workflow", return_value=workflow),
+            mock.patch.object(control, "enforce_scheduler_host"),
+            mock.patch.object(control, "acquire_lock", return_value=lock),
+            mock.patch.object(control, "load_autopilot_policy"),
+            mock.patch.object(control, "refresh_base_branch"),
+            mock.patch.object(control, "load_live_tickets", return_value=[]),
+            mock.patch.object(
+                control, "load_open_pull_request_snapshot", return_value=[]
+            ),
+            mock.patch.object(control, "reconcile_ci", return_value=[]),
+            mock.patch.object(control, "reconcile_human_reviews", return_value=[]),
+            mock.patch.object(control, "eligible_queue", return_value=([item], {})),
+            mock.patch.object(control, "deferred_role_retries", return_value={}),
+            mock.patch.object(control, "select_non_overlapping", side_effect=select),
+            mock.patch.object(control, "claim_for_dispatch", return_value=item),
+            mock.patch.object(
+                control.concurrent.futures, "ThreadPoolExecutor", FakeExecutor
+            ),
+            mock.patch.object(
+                control.concurrent.futures, "wait", return_value=(set(), set())
+            ),
+            mock.patch.object(control, "emit_watch_status", side_effect=emit),
+            mock.patch.object(control.time, "monotonic", return_value=0),
+        ):
+            with self.assertRaises(StopWatch):
+                control.main(["run", "--execute", "--watch", "--autopilot"])
+
+        self.assertEqual([3], executor_limits)
+        self.assertEqual(1, submits.count(control.execute_one))
+        self.assertEqual(1, submits.count(control.run_selector))
+        self.assertEqual(2, len(submits))
+        self.assertEqual((1, 3, 0), capacity[0])
+        self.assertEqual((0, 1, 1), capacity[1])
+        self.assertTrue(emissions[0]["selector_active"])
+        self.assertLessEqual(len(submits), workflow.max_concurrent_workers)
+        lock.close.assert_called_once()
+
     def test_selector_pins_exact_main_revision_and_rejects_protected_surface(
         self,
     ) -> None:
@@ -1042,7 +1192,7 @@ class SelectorAndPlanTest(unittest.TestCase):
                     self.selector_result(existing_issue=7, existing_pull_request=77),
                     workflow,
                     policy,
-                    (make_ticket(7, self.revision),),
+                    (make_ticket(7, self.revision, label="agent:needs-specification"),),
                     (),
                 )
 
@@ -1050,7 +1200,12 @@ class SelectorAndPlanTest(unittest.TestCase):
         workflow = control.load_workflow()
         policy = control.load_autopilot_policy()
         dependency = make_ticket(6, self.revision, label="agent:blocked")
-        waiting = make_ticket(7, self.revision, dependencies="#6")
+        waiting = make_ticket(
+            7,
+            self.revision,
+            label="agent:needs-specification",
+            dependencies="#6",
+        )
         with mock.patch.object(
             control, "origin_main_revision", return_value=self.revision
         ):
@@ -1060,6 +1215,24 @@ class SelectorAndPlanTest(unittest.TestCase):
                     workflow,
                     policy,
                     (dependency, waiting),
+                    (),
+                )
+
+    def test_selector_existing_issue_must_be_awaiting_specification(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        active = make_ticket(7, self.revision, label="agent:plan")
+        with mock.patch.object(
+            control, "origin_main_revision", return_value=self.revision
+        ):
+            with self.assertRaisesRegex(
+                control.ControlError, "unavailable existing issue"
+            ):
+                control.validate_selector_result(
+                    self.selector_result(existing_issue=7),
+                    workflow,
+                    policy,
+                    (active,),
                     (),
                 )
 
@@ -1083,6 +1256,7 @@ class SelectorAndPlanTest(unittest.TestCase):
                 mock.patch.object(
                     control, "build_selector_prompt", return_value="prompt"
                 ),
+                mock.patch.object(control, "refresh_base_branch"),
                 mock.patch.object(
                     control, "run_codex_attempt", side_effect=run_attempt
                 ),
@@ -1091,6 +1265,13 @@ class SelectorAndPlanTest(unittest.TestCase):
                     "validate_selector_result",
                     side_effect=[control.ControlError("bad issue/PR pairing"), None],
                 ) as validate,
+                mock.patch.object(control, "load_live_tickets", return_value=[]),
+                mock.patch.object(
+                    control, "load_open_pull_request_snapshot", return_value=[]
+                ),
+                mock.patch.object(
+                    control, "selector_snapshot_fingerprint", return_value="same"
+                ),
                 mock.patch.object(control, "apply_selector_result", return_value=None),
                 mock.patch.object(control.time, "sleep") as sleep,
             ):
@@ -1100,6 +1281,263 @@ class SelectorAndPlanTest(unittest.TestCase):
         self.assertEqual(2, len(prompts))
         self.assertIn("bad issue/PR pairing", prompts[1])
         sleep.assert_called_once_with(10)
+
+    def test_selector_retries_when_live_snapshot_changes(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        prompts: list[str] = []
+
+        def run_attempt(command, prompt, *_args):
+            prompts.append(prompt)
+            result_path = Path(command[command.index("--output-last-message") + 1])
+            result_path.write_text(json.dumps(self.selector_result()), encoding="utf-8")
+            return 0, ""
+
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(
+                    control, "build_selector_prompt", return_value="prompt"
+                ),
+                mock.patch.object(control, "refresh_base_branch"),
+                mock.patch.object(
+                    control, "run_codex_attempt", side_effect=run_attempt
+                ),
+                mock.patch.object(control, "load_live_tickets", return_value=[]),
+                mock.patch.object(
+                    control, "load_open_pull_request_snapshot", return_value=[]
+                ),
+                mock.patch.object(
+                    control,
+                    "selector_snapshot_fingerprint",
+                    side_effect=["before", "changed", "fresh", "fresh"],
+                ),
+                mock.patch.object(control, "validate_selector_result") as validate,
+                mock.patch.object(control, "apply_selector_result", return_value=None),
+                mock.patch.object(control.time, "sleep") as sleep,
+            ):
+                result = control.run_selector(workflow, policy, (), ())
+        self.assertEqual("selected", result["state"])
+        self.assertEqual("fresh", result["snapshot"])
+        self.assertEqual(1, validate.call_count)
+        self.assertEqual(2, len(prompts))
+        sleep.assert_called_once_with(10)
+
+    def test_selector_fingerprint_tracks_pull_request_oids(self) -> None:
+        workflow = control.load_workflow()
+        base = {
+            "number": 77,
+            "title": "Test",
+            "head": "codex/test",
+            "head_oid": "b" * 40,
+            "base": "main",
+            "base_oid": "a" * 40,
+            "draft": False,
+            "merge_state": "CLEAN",
+            "url": "https://example.invalid/pull/77",
+        }
+        with mock.patch.object(
+            control, "origin_main_revision", return_value=self.revision
+        ):
+            original = control.selector_snapshot_fingerprint(workflow, (), (base,))
+            changed_head = control.selector_snapshot_fingerprint(
+                workflow, (), ({**base, "head_oid": "c" * 40},)
+            )
+            changed_base = control.selector_snapshot_fingerprint(
+                workflow, (), ({**base, "base_oid": "d" * 40},)
+            )
+        self.assertNotEqual(original, changed_head)
+        self.assertNotEqual(original, changed_base)
+
+    def test_selector_snapshot_rejects_a_torn_main_revision(self) -> None:
+        workflow = control.load_workflow()
+        with (
+            mock.patch.object(control, "refresh_base_branch"),
+            mock.patch.object(
+                control,
+                "origin_main_revision",
+                side_effect=[self.revision, "b" * 40],
+            ),
+            mock.patch.object(control, "load_live_tickets", return_value=[]),
+            mock.patch.object(
+                control, "load_open_pull_request_snapshot", return_value=[]
+            ),
+            mock.patch.object(control, "selector_snapshot_fingerprint") as fingerprint,
+        ):
+            with self.assertRaisesRegex(control.TrackerError, "changed while reading"):
+                control.load_selector_snapshot(workflow)
+        fingerprint.assert_not_called()
+
+    def test_apply_selector_revalidates_then_atomically_materializes_issue(
+        self,
+    ) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        ticket = make_ticket(
+            7,
+            self.revision,
+            label="agent:needs-specification",
+            extra_labels=("priority:p3", "component:firmware"),
+        )
+        result = self.selector_result(existing_issue=7)
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with (
+            mock.patch.object(
+                control,
+                "load_selector_snapshot",
+                return_value=(self.revision, [ticket], [], "snapshot"),
+            ),
+            mock.patch.object(control, "validate_selector_result") as validate,
+            mock.patch.object(control, "_git", return_value=completed),
+            mock.patch.object(control.subprocess, "run", return_value=completed) as run,
+        ):
+            selected = control.apply_selector_result(
+                workflow, policy, result, "snapshot"
+            )
+        self.assertEqual(7, selected.number)
+        validate.assert_called_once_with(
+            result,
+            workflow,
+            policy,
+            [ticket],
+            [],
+            expected_revision=self.revision,
+        )
+        payload = json.loads(run.call_args.kwargs["input"])
+        self.assertIn("domes-autopilot-contract:v1", payload["body"])
+        self.assertEqual(
+            {"agent:ready", "component:firmware", "priority:p1"},
+            set(payload["labels"]),
+        )
+        self.assertEqual("PATCH", run.call_args.args[0][3])
+
+    def test_apply_selector_snapshot_change_performs_no_mutation(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        ticket = make_ticket(7, self.revision, label="agent:needs-specification")
+        with (
+            mock.patch.object(
+                control,
+                "load_selector_snapshot",
+                return_value=(self.revision, [ticket], [], "changed"),
+            ),
+            mock.patch.object(control, "validate_selector_result") as validate,
+            mock.patch.object(control.subprocess, "run") as run,
+        ):
+            with self.assertRaisesRegex(
+                control.ControlError, "before selector mutation"
+            ):
+                control.apply_selector_result(
+                    workflow,
+                    policy,
+                    self.selector_result(existing_issue=7),
+                    "expected",
+                )
+        validate.assert_not_called()
+        run.assert_not_called()
+
+    def test_apply_selector_rejects_a_different_existing_contract(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        ticket = automated_ticket(7, self.revision, label="agent:needs-specification")
+        with (
+            mock.patch.object(
+                control,
+                "load_selector_snapshot",
+                return_value=(self.revision, [ticket], [], "snapshot"),
+            ),
+            mock.patch.object(control, "validate_selector_result"),
+            mock.patch.object(
+                control,
+                "validate_ticket",
+                side_effect=lambda item: control.TicketValidation(
+                    item, control.parse_sections(item.body), (), ()
+                ),
+            ),
+            mock.patch.object(control.subprocess, "run") as run,
+        ):
+            with self.assertRaisesRegex(control.ControlError, "refuses to overwrite"):
+                control.apply_selector_result(
+                    workflow,
+                    policy,
+                    self.selector_result(existing_issue=7),
+                    "snapshot",
+                )
+        run.assert_not_called()
+
+    def test_apply_selector_reconciles_ambiguous_atomic_patch(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        result = self.selector_result(existing_issue=7)
+        source = make_ticket(7, self.revision, label="agent:needs-specification")
+        reconciled = control.Ticket(
+            source.number,
+            source.title,
+            self.selector_body(result),
+            source.state,
+            ("agent:ready", "priority:p1"),
+            source.url,
+        )
+        failed = subprocess.CompletedProcess([], 1, "", "connection reset")
+        with (
+            mock.patch.object(
+                control,
+                "load_selector_snapshot",
+                return_value=(self.revision, [source], [], "snapshot"),
+            ),
+            mock.patch.object(control, "load_live_tickets", return_value=[reconciled]),
+            mock.patch.object(control, "validate_selector_result"),
+            mock.patch.object(
+                control,
+                "validate_ticket",
+                side_effect=lambda item: control.TicketValidation(
+                    item, control.parse_sections(item.body), (), ()
+                ),
+            ),
+            mock.patch.object(control.subprocess, "run", return_value=failed),
+        ):
+            selected = control.apply_selector_result(
+                workflow, policy, result, "snapshot"
+            )
+        self.assertEqual(source.number, selected.number)
+
+    def test_new_selector_issue_requires_one_post_create_marker_match(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        result = self.selector_result()
+        first = control.Ticket(
+            88,
+            str(result["title"]),
+            self.selector_body(result),
+            "OPEN",
+            ("agent:ready", "priority:p1"),
+        )
+        duplicate = control.Ticket(
+            89,
+            str(result["title"]),
+            first.body,
+            "OPEN",
+            first.labels,
+        )
+        created = subprocess.CompletedProcess(
+            [], 0, "https://example.invalid/issues/88\n", ""
+        )
+        with (
+            mock.patch.object(
+                control,
+                "load_selector_snapshot",
+                return_value=(self.revision, [], [], "snapshot"),
+            ),
+            mock.patch.object(control, "validate_selector_result"),
+            mock.patch.object(
+                control, "load_live_tickets", return_value=[first, duplicate]
+            ),
+            mock.patch.object(control.subprocess, "run", return_value=created),
+        ):
+            with self.assertRaisesRegex(
+                control.ControlError, "cannot reconcile selected issue creation"
+            ):
+                control.apply_selector_result(workflow, policy, result, "snapshot")
 
     def test_materialize_plan_reuses_matching_child_on_retry(self) -> None:
         workflow = control.load_workflow()
@@ -1112,6 +1550,7 @@ class SelectorAndPlanTest(unittest.TestCase):
         parent = control.validate_ticket(parent_ticket, check_revision=False)
         task = {
             "key": "implementation",
+            "mode": "execute",
             "goal": "Implement the bounded task.",
             "non_goals": ["No release."],
             "required_behavior": "The bounded behavior is deterministic.",
@@ -1120,6 +1559,7 @@ class SelectorAndPlanTest(unittest.TestCase):
             "dependencies": [],
             "required_proof": ["Focused test output."],
             "autonomy_policy": "software-review-required",
+            "hardware_operations": [],
         }
         result = {
             "issue": parent.ticket.number,
@@ -1165,6 +1605,133 @@ class SelectorAndPlanTest(unittest.TestCase):
         create_issue.assert_not_called()
         update_body.assert_not_called()
         transition.assert_not_called()
+
+    def test_materialize_plan_sets_execute_and_plan_child_states(self) -> None:
+        workflow = control.load_workflow()
+        parent = control.validate_ticket(
+            automated_ticket(41, self.revision, label="agent:plan"),
+            check_revision=False,
+        )
+        tasks = [
+            {
+                "key": "execute-child",
+                "mode": "execute",
+                "goal": "Implement one bounded behavior.",
+                "non_goals": ["No release."],
+                "required_behavior": "It is deterministic.",
+                "acceptance_checks": ["Run focused tests."],
+                "allowed_surfaces": ["firmware/domes/main/"],
+                "dependencies": [],
+                "required_proof": ["Focused output."],
+                "autonomy_policy": "software-review-required",
+                "hardware_operations": [],
+            },
+            {
+                "key": "recursive-plan",
+                "mode": "plan",
+                "goal": "Decompose a bounded follow-up.",
+                "non_goals": ["No release."],
+                "required_behavior": "The follow-up remains bounded.",
+                "acceptance_checks": ["Validate the child plan."],
+                "allowed_surfaces": ["firmware/domes/main/"],
+                "dependencies": ["execute-child"],
+                "required_proof": ["Plan evidence."],
+                "autonomy_policy": "software-review-required",
+                "hardware_operations": [],
+            },
+        ]
+        created: list[control.Ticket] = []
+
+        def create_issue(_workflow, *, title, body, labels):
+            ticket = control.Ticket(
+                80 + len(created), title, body, "OPEN", tuple(labels), ""
+            )
+            created.append(ticket)
+            return ticket
+
+        with (
+            mock.patch.object(control, "load_live_tickets", return_value=[]),
+            mock.patch.object(control, "create_issue", side_effect=create_issue),
+            mock.patch.object(
+                control,
+                "validate_ticket",
+                side_effect=lambda ticket, **_kwargs: control.TicketValidation(
+                    ticket, control.parse_sections(ticket.body), (), ()
+                ),
+            ),
+            mock.patch.object(control, "transition") as transition,
+        ):
+            self.assertEqual(
+                [80, 81],
+                control.materialize_plan(
+                    workflow,
+                    parent,
+                    {
+                        "issue": parent.ticket.number,
+                        "spec_revision": self.revision,
+                        "tasks": tasks,
+                        "blockers": [],
+                    },
+                ),
+            )
+        self.assertTrue(created[0].title.startswith("[Agent]"))
+        self.assertTrue(created[1].title.startswith("[Plan]"))
+        self.assertEqual(
+            [
+                mock.call(workflow, created[0], "agent:ready"),
+                mock.call(workflow, created[1], "agent:plan"),
+            ],
+            transition.call_args_list,
+        )
+
+    def test_recursive_planner_depth_is_bounded(self) -> None:
+        workflow = control.load_workflow()
+        root = automated_ticket(90, self.revision, label="agent:done")
+        tickets = [root]
+        parent_number = root.number
+        for number in range(91, 95):
+            ticket = automated_ticket(number, self.revision, label="agent:plan")
+            marker = (
+                "<!-- domes-autopilot-task:v1 "
+                f"parent={parent_number} plan={'a' * 64} key=plan-{number} "
+                f"uid={'b' * 64} -->"
+            )
+            ticket = control.Ticket(
+                ticket.number,
+                ticket.title,
+                marker + "\n\n" + ticket.body,
+                ticket.state,
+                ticket.labels,
+                ticket.url,
+            )
+            tickets.append(ticket)
+            parent_number = number
+        parent = control.validate_ticket(tickets[-1], check_revision=False)
+        task = {
+            "key": "too-deep",
+            "mode": "plan",
+            "goal": "Attempt another recursive planning layer.",
+            "non_goals": ["No implementation."],
+            "required_behavior": "Planning remains bounded.",
+            "acceptance_checks": ["Reject excess depth."],
+            "allowed_surfaces": ["firmware/domes/main/"],
+            "dependencies": [],
+            "required_proof": ["Controller rejection."],
+            "autonomy_policy": "software-review-required",
+            "hardware_operations": [],
+        }
+        with mock.patch.object(control, "load_live_tickets", return_value=tickets):
+            with self.assertRaisesRegex(control.ControlError, "depth limit"):
+                control.materialize_plan(
+                    workflow,
+                    parent,
+                    {
+                        "issue": parent.ticket.number,
+                        "spec_revision": self.revision,
+                        "tasks": [task],
+                        "blockers": [],
+                    },
+                )
 
 
 class ReviewFixRegressionTest(unittest.TestCase):
@@ -2269,6 +2836,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
             "tasks": [
                 {
                     "key": "recover",
+                    "mode": "execute",
                     "goal": "Recover the planned task.",
                     "non_goals": ["No release."],
                     "required_behavior": "Recovery is deterministic.",
@@ -2277,15 +2845,14 @@ class ReviewFixRegressionTest(unittest.TestCase):
                     "dependencies": [],
                     "required_proof": ["Focused log."],
                     "autonomy_policy": "software-review-required",
+                    "hardware_operations": [],
                 }
             ],
         }
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory) / "domes-agent-control" / "issue-63"
             run_root.mkdir(parents=True)
-            (run_root / "pending-plan.json").write_text(
-                json.dumps(plan), encoding="utf-8"
-            )
+            control.persist_pending_plan(run_root / "pending-plan.json", plan)
             with (
                 mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
                 mock.patch.object(
@@ -2309,6 +2876,76 @@ class ReviewFixRegressionTest(unittest.TestCase):
         materialize.assert_called_once_with(workflow, item, plan)
         transition.assert_called_once_with(workflow, ticket, "agent:done")
         close_issue.assert_called_once_with(workflow, ticket.number)
+
+    def test_legacy_pending_plan_is_deleted_and_replanned(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "pending-plan.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "issue": 63,
+                        "spec_revision": self.revision,
+                        "tasks": [{"key": "legacy-task"}],
+                        "blockers": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertIsNone(
+                control.load_pending_plan(path, issue=63, spec_revision=self.revision)
+            )
+            self.assertFalse(path.exists())
+
+    def test_planner_failure_stays_plan_and_defers_retry(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(67, self.revision, label="agent:plan")
+        item = control.validate_ticket(ticket, check_revision=False)
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(control.time, "time", return_value=100),
+                mock.patch.object(control, "transition") as transition,
+                mock.patch.object(
+                    control.subprocess,
+                    "run",
+                    return_value=subprocess.CompletedProcess([], 0, "", ""),
+                ) as comment,
+            ):
+                control.block_failed_run(
+                    workflow, item, control.ControlError("planner schema rejected")
+                )
+                self.assertEqual(
+                    {67: workflow.poll_interval_seconds},
+                    control.deferred_role_retries((ticket,)),
+                )
+                self.assertTrue(control.role_retry_path(67).is_file())
+        transition.assert_called_once_with(workflow, ticket, "agent:plan")
+        comment.assert_called_once()
+
+    def test_planner_schema_change_clears_obsolete_retry_delay(self) -> None:
+        ticket = automated_ticket(68, self.revision, label="agent:plan")
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(control.time, "time", return_value=100),
+                mock.patch.object(
+                    control, "planner_schema_sha256", return_value="new-schema"
+                ),
+            ):
+                path = control.role_retry_path(ticket.number)
+                control.write_handoff(
+                    path,
+                    {
+                        "issue": ticket.number,
+                        "spec_revision": self.revision,
+                        "role": "planner",
+                        "resume_state": "agent:plan",
+                        "schema_sha256": "old-schema",
+                        "retry_after": 200,
+                    },
+                )
+                self.assertEqual({}, control.deferred_role_retries((ticket,)))
+                self.assertFalse(path.exists())
 
     def test_dashboard_shows_active_work_and_human_review_without_raw_paths(
         self,
@@ -2342,6 +2979,23 @@ class ReviewFixRegressionTest(unittest.TestCase):
         self.assertIn("PR #77 | issue #65", rendered)
         self.assertIn("#63 judge → ci-pending", rendered)
         self.assertNotIn("raw-worker-events", rendered)
+
+    def test_dashboard_displays_active_selector(self) -> None:
+        workflow = control.load_workflow()
+        rendered = control.render_dashboard(
+            workflow,
+            (),
+            (),
+            (),
+            {},
+            {"selector": {"state": "selecting"}},
+            phase="working and planning",
+            selector_active=True,
+        )
+        self.assertIn("agents 1/3", rendered)
+        self.assertIn(
+            "milestone selector | reading project brain and live tracker", rendered
+        )
 
     def test_dashboard_identifies_manual_review_without_pull_request(self) -> None:
         workflow = control.load_workflow()
