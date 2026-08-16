@@ -1,8 +1,8 @@
 # Keep autonomous delivery capacity productive
 
-Status: active
-Current phase: final review and publication
-Repository state: `codex/fix/autopilot-no-idle` from `origin/main` at `0d7a3d4`; intended dirty files are the agent-control implementation, focused tests, orchestration contracts, and operator documentation
+Status: completed
+Current phase: merged and active
+Repository state: PR #118 was human-merged as `a1547b09bed63baf7a3de6f957fce81a4a49e8ae`
 Last updated: 2026-08-16; live diagnosis confirmed empty slots do not trigger selection and planner issues fail before execution
 
 ## Objective and observable outcome
@@ -42,7 +42,7 @@ blocker.
 - [x] Repair the planner contract and scheduler state machine.
 - [x] Add focused regression coverage and update workflow documentation.
 - [x] Run focused tests, control-plane validation, scoped repository verification, and diff review.
-- [ ] **Current:** Publish one human-review PR and monitor required CI.
+- [x] Publish one human-review PR and monitor required CI.
 
 ## Verification
 
@@ -52,7 +52,7 @@ blocker.
 | Automated | `python3 tools/agent_control/control.py validate` | passed |
 | Automated | `scripts/verify.sh --component tooling --component docs` | passed; retained JSON summary and logs under `/home/pncosta/.cache/domes-autopilot-verify.v00cl1/` |
 | Runtime dry check | controlled mocked watch-loop regression with active worker plus selector | passed in focused suite |
-| Production controller | reviewed change running in `domes-autopilot` | pending; must not bypass human review |
+| Production controller | merged change running in `domes-autopilot` | passed; foreground tmux loop, no service manager, no automated PR approval or merge |
 
 ## Decisions, discoveries, and deviations
 
@@ -65,5 +65,6 @@ blocker.
 
 ## Resume checkpoint
 
-Implementation and scoped verification are complete. The live controller remains untouched.
-Publish the branch for human review, monitor required GitHub CI, and do not merge automatically.
+PR #118 was human-merged after full GitHub CI passed. Its controller is active in the
+`domes-autopilot` tmux session and has already refilled a free slot with milestone selection and
+reworked PR #105 after `main` advanced. No automated approval or merge authority was added.
