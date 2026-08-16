@@ -86,9 +86,10 @@ For a live tmux/operator view instead of machine-readable JSON snapshots:
 python3 tools/agent_control/control.py run --execute --watch --autopilot --dashboard --allow-registered-hardware
 ```
 
-The dashboard refreshes every poll and shows active roles, CI state, review-ready PRs, blockers, and
-the selector's latest action. It never displays raw worker transcripts; detailed JSONL remains only
-in the runtime state directory.
+The dashboard refreshes every poll and shows workers, planners, an active milestone selector, CI
+state, review-ready PRs, blockers, and the selector's latest action. A selector occupies one of the
+configured agent slots and may run alongside unrelated workers whenever capacity remains. It never
+displays raw worker transcripts; detailed JSONL remains only in the runtime state directory.
 
 `run` is deliberately explicit because it creates worktrees, launches mutation-capable workers,
 and changes GitHub issue labels/comments. Mutation-capable runs are pinned to the reviewed
@@ -107,7 +108,10 @@ ticket branch/PR. This prevents worker configuration, hooks, filters, refs, or o
 becoming control-plane authority. Codex receives an explicit writable-directory grant for only the
 current clone's private `.git`.
 
-Each failed or timed-out role is restarted up to two times with bounded exponential backoff.
+Each failed or timed-out role is restarted up to two times within a run with bounded exponential
+backoff. A planner process or response-contract failure remains `agent:plan` with a persisted,
+bounded retry delay so the selector can fill other capacity; a valid planner-reported project
+blocker still enters `agent:blocked`.
 `--watch` is ordinary foreground process behavior; hosting it later is an operational choice and is
 not encoded into this repository.
 
@@ -141,9 +145,12 @@ priority:p3
 ```
 
 The issue form starts in `agent:needs-specification`. Outside explicit `--autopilot`, requirements
-stewardship and plan acceptance remain deliberate human/steward actions. Autopilot uses one fresh
-read-only selector to translate existing milestone authority into a bounded contract; the selector
-cannot edit the project brain or implement work.
+stewardship and plan acceptance remain deliberate human/steward actions. Autopilot uses at most one
+fresh read-only selector at a time to translate existing milestone authority into a bounded
+contract. It runs whenever a role slot would otherwise be unused, revalidates its decision against
+fresh tracker state, and cannot edit the project brain or implement work. A planner task explicitly
+marks each child `execute` or `plan`; recursive planning therefore creates another tracked,
+bounded `agent:plan` issue instead of an untracked conversation.
 
 ## Safety and authority
 

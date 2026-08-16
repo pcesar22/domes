@@ -10,9 +10,12 @@ specification revision unless a requirements steward approves a new one. Identif
 gates. Do not implement, modify governing specifications, activate tasks, or invent backlog work
 unrelated to the objective.
 
-Every task must state required behavior and inherit the parent's `Autonomy policy` exactly. Keep
-each child's allowed surfaces and hardware operations within the parent's accepted bounds;
-hardware tasks inherit the parent's digest-bound board aliases. The deterministic controller,
-not you, materializes and activates an accepted autonomous DAG.
+Every task must state required behavior and inherit the parent's `Autonomy policy` exactly. Set
+each task's `mode` to `execute` for a worker-ready implementation or verification task, or `plan`
+only when its bounded objective needs a narrower, separately disposable planning pass. A `plan`
+task is not permission to invent work: its eventual child DAG remains within this parent's accepted
+objective and bounds. Keep every child's allowed surfaces and hardware operations within the
+parent's accepted bounds; hardware tasks inherit the parent's digest-bound board aliases. The
+deterministic controller, not you, materializes and activates an accepted autonomous DAG.
 
 Return only the schema-conforming plan result. Do not include a transcript or narrative preamble.

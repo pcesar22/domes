@@ -36,9 +36,10 @@ is disposable, mechanically validated, and cannot modify the project brain.
 ### Planner
 
 Reads the pinned project brain and repository, then produces a bounded dependency DAG. It may
-propose tasks but cannot make them dispatchable or modify governing specifications. Planner
-contexts are disposable; recursive planning means a planner may propose narrower planning tickets,
-not spawn an untracked conversational hierarchy.
+propose tasks but cannot make them dispatchable or modify governing specifications. Every proposed
+task declares a mode: `execute` creates a worker-ready child, while `plan` creates a narrower
+planning child. Planner contexts are disposable; recursive planning is therefore an explicit,
+tracker-backed sequence of bounded planning tickets, not an untracked conversational hierarchy.
 
 ### Worker
 
@@ -88,7 +89,9 @@ Autonomous tickets also contain `Autonomy policy`, `Work package`, and controlle
 the pinned specification. `software-review-required` permits autonomous implementation, PR
 publication, independent agent judgment, and CI repair. It never permits GitHub approval or merge;
 those remain human actions. Planner children inherit that policy and remain blocked on their parent
-until the complete DAG has been materialized.
+until the complete DAG has been materialized. A planner child explicitly marked `plan` receives a
+fresh planner context; it may only decompose its inherited bounded objective and cannot expand the
+parent's accepted surfaces, hardware operations, or autonomy policy.
 
 Even with a non-empty hardware operation list, Codex remains workspace-write with no direct device
 access. Dispatch also requires explicit ticketed board aliases, the controller's
