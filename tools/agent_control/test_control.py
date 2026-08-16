@@ -540,6 +540,28 @@ class ResultSemanticsTest(unittest.TestCase):
         with self.assertRaisesRegex(control.ControlError, "every criterion met"):
             control.validate_result_semantics("judge", result)
 
+    def test_first_hardware_judge_can_defer_only_physical_criteria(self) -> None:
+        result = {
+            "verdict": "approve",
+            "criteria": [
+                {"criterion": "safe diff", "status": "met", "evidence": ["diff"]},
+                {
+                    "criterion": "physical proof",
+                    "status": "not_verifiable",
+                    "evidence": ["deferred to hardware worker"],
+                },
+            ],
+            "required_rework": [],
+        }
+        with self.assertRaisesRegex(control.ControlError, "every criterion met"):
+            control.validate_result_semantics("judge", result)
+        control.validate_result_semantics("judge", result, allow_deferred_hardware=True)
+        result["criteria"][0]["status"] = "not_met"
+        with self.assertRaisesRegex(control.ControlError, "every criterion met"):
+            control.validate_result_semantics(
+                "judge", result, allow_deferred_hardware=True
+            )
+
     def test_rejected_worker_returns_to_rework(self) -> None:
         result = {
             "verdict": "reject",

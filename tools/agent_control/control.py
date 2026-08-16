@@ -2621,7 +2621,12 @@ def concise_result(role: str, result: dict[str, Any]) -> str:
     )
 
 
-def validate_result_semantics(role: str, result: dict[str, Any]) -> None:
+def validate_result_semantics(
+    role: str,
+    result: dict[str, Any],
+    *,
+    allow_deferred_hardware: bool = False,
+) -> None:
     if role == "planner":
         tasks = result["tasks"]
         keys = [task["key"] for task in tasks]
@@ -2667,8 +2672,15 @@ def validate_result_semantics(role: str, result: dict[str, Any]) -> None:
             return
     elif role == "judge":
         statuses = {criterion["status"] for criterion in result["criteria"]}
+        approved_statuses = statuses == {"met"}
+        if allow_deferred_hardware:
+            approved_statuses = (
+                "met" in statuses
+                and "not_met" not in statuses
+                and statuses <= {"met", "not_verifiable"}
+            )
         if result["verdict"] == "approve" and (
-            statuses != {"met"} or result["required_rework"]
+            not approved_statuses or result["required_rework"]
         ):
             raise ControlError(
                 "judge approval requires every criterion met and no rework"
@@ -3685,7 +3697,15 @@ def required_prior_handoff(
     if result.get("issue") != ticket.number:
         raise ControlError("prior structured evidence belongs to another issue")
     assert matched_role is not None
-    validate_result_semantics(matched_role, result)
+    validate_result_semantics(
+        matched_role,
+        result,
+        allow_deferred_hardware=(
+            matched_role == "judge"
+            and role == "verification-worker"
+            and requires_registered_hardware(parse_sections(ticket.body))
+        ),
+    )
     return result
 
 
@@ -4091,7 +4111,13 @@ def _execute_one(
             str(result.get("commit", "")),
         )
         validate_hardware_verification_result(item, result, attestation)
-    validate_result_semantics(role, result)
+    validate_result_semantics(
+        role,
+        result,
+        allow_deferred_hardware=(
+            role == "judge" and hardware_required and controller_evidence is None
+        ),
+    )
     if role == "judge":
         if prior_handoff is None:
             raise ControlError(
