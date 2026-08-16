@@ -753,6 +753,8 @@ class HardwareBrokerTest(unittest.TestCase):
             self.assertIn("--ro-bind", argv)
             self.assertNotIn(str(root / "evidence"), argv)
             self.assertNotIn(str(Path.home()), argv)
+            self.assertEqual("0", argv[argv.index("CARGO_INCREMENTAL") + 1])
+            self.assertEqual("0", argv[argv.index("CARGO_PROFILE_DEV_DEBUG") + 1])
             self.assertEqual(
                 [str(cargo_path), "build", "--offline", "--locked"],
                 argv[argv.index("--") + 1 :],
