@@ -153,6 +153,79 @@ class WorkflowTest(unittest.TestCase):
                 control.load_workflow(path)
 
 
+class WorkspaceIsolationTest(unittest.TestCase):
+    @staticmethod
+    def git(repository: Path, *arguments: str) -> str:
+        result = subprocess.run(
+            ["git", *arguments],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip()
+
+    def test_agent_workspace_owns_git_metadata_and_can_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            self.git(source, "init", "-b", "main")
+            self.git(source, "config", "user.name", "DOMES Test")
+            self.git(source, "config", "user.email", "domes-test@example.invalid")
+            (source / "README.md").write_text("source\n", encoding="utf-8")
+            self.git(source, "add", "README.md")
+            self.git(source, "commit", "-m", "initial")
+            self.git(source, "remote", "add", "origin", str(source))
+            revision = self.git(source, "rev-parse", "HEAD")
+            workspace_root = root / "agent-workspaces"
+            workflow = control.Workflow(
+                repository="example/domes",
+                state_prefix="agent:",
+                scheduler_host="test-host",
+                max_concurrent_workers=1,
+                workspace_root=workspace_root,
+                base_branch="main",
+                poll_interval_seconds=1,
+                stall_timeout_seconds=30,
+                max_retry_backoff_seconds=1,
+            )
+            ticket = make_ticket(42, revision)
+            item = control.validate_ticket(ticket, check_revision=False)
+
+            with mock.patch.object(control, "ROOT", source):
+                workspace = control.ensure_workspace(workflow, item, "worker")
+
+            self.assertTrue((workspace / ".git").is_dir())
+            self.assertFalse((workspace / ".git/objects/info/alternates").exists())
+            self.assertEqual(
+                "codex/issue-42", self.git(workspace, "branch", "--show-current")
+            )
+            (workspace / "result.txt").write_text("committed\n", encoding="utf-8")
+            self.git(workspace, "add", "result.txt")
+            self.git(workspace, "commit", "-m", "test isolated commit")
+            self.assertEqual("", self.git(source, "status", "--porcelain"))
+
+    def test_linked_worktree_git_metadata_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            linked = root / "linked"
+            source.mkdir()
+            self.git(source, "init", "-b", "main")
+            self.git(source, "config", "user.name", "DOMES Test")
+            self.git(source, "config", "user.email", "domes-test@example.invalid")
+            (source / "README.md").write_text("source\n", encoding="utf-8")
+            self.git(source, "add", "README.md")
+            self.git(source, "commit", "-m", "initial")
+            self.git(source, "worktree", "add", "-b", "linked", str(linked))
+
+            with self.assertRaisesRegex(
+                control.ControlError, "must own private Git metadata"
+            ):
+                control._assert_clean_workspace(linked, issue=42)
+
+
 class TicketValidationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

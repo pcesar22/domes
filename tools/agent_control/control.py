@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -1364,35 +1365,214 @@ def refresh_base_branch(workflow: Workflow) -> None:
         )
 
 
-def registered_worktree_for_branch(branch: str) -> Path | None:
-    result = _git("worktree", "list", "--porcelain")
-    if result.returncode != 0:
-        raise ControlError("cannot inspect registered Git worktrees")
-    path: Path | None = None
-    for line in [*result.stdout.splitlines(), ""]:
-        if line.startswith("worktree "):
-            path = Path(line.removeprefix("worktree "))
-        elif line == f"branch refs/heads/{branch}" and path is not None:
-            return path
-        elif not line:
-            path = None
-    return None
-
-
-def _assert_clean_worktree(path: Path, *, issue: int) -> None:
+def _assert_clean_workspace(path: Path, *, issue: int) -> None:
     check = _git("rev-parse", "--is-inside-work-tree", cwd=path)
     if check.returncode != 0 or check.stdout.strip() != "true":
-        raise ControlError(f"issue #{issue}: refusing non-worktree workspace: {path}")
+        raise ControlError(f"issue #{issue}: refusing non-Git workspace: {path}")
+    top_level = _git("rev-parse", "--show-toplevel", cwd=path)
+    git_dir = _git("rev-parse", "--path-format=absolute", "--git-dir", cwd=path)
+    try:
+        resolved_workspace = path.resolve(strict=True)
+        resolved_top_level = Path(top_level.stdout.strip()).resolve(strict=True)
+        resolved_git_dir = Path(git_dir.stdout.strip()).resolve(strict=True)
+        resolved_git_dir.relative_to(resolved_workspace)
+    except (OSError, ValueError) as error:
+        raise ControlError(
+            f"issue #{issue}: workspace must own private Git metadata"
+        ) from error
+    if (
+        top_level.returncode != 0
+        or git_dir.returncode != 0
+        or resolved_top_level != resolved_workspace
+        or not resolved_git_dir.is_dir()
+        or (resolved_git_dir / "objects" / "info" / "alternates").is_file()
+    ):
+        raise ControlError(f"issue #{issue}: workspace must own private Git metadata")
     dirty = _git("status", "--porcelain", "--untracked-files=all", cwd=path)
     if dirty.returncode != 0 or dirty.stdout.strip():
         raise ControlError(
-            f"issue #{issue}: existing pull-request worktree has uncommitted changes"
+            f"issue #{issue}: existing agent workspace has uncommitted changes"
         )
+
+
+def _clone_agent_workspace(workspace: Path, *, issue: int) -> None:
+    """Create an isolated clone whose writable Git metadata stays in the sandbox."""
+    remote = _git("remote", "get-url", "origin", cwd=ROOT)
+    if remote.returncode != 0 or not remote.stdout.strip():
+        raise ControlError(f"issue #{issue}: cannot resolve origin URL")
+    workspace.parent.mkdir(parents=True, exist_ok=True)
+    staging_root = Path(
+        tempfile.mkdtemp(prefix=f".issue-{issue}-clone-", dir=workspace.parent)
+    )
+    staged_workspace = staging_root / "repository"
+    try:
+        cloned = _git(
+            "clone",
+            "--no-local",
+            "--no-checkout",
+            str(ROOT),
+            str(staged_workspace),
+            cwd=ROOT,
+        )
+        if cloned.returncode != 0:
+            raise ControlError(
+                cloned.stderr.strip()
+                or f"issue #{issue}: cannot create isolated agent clone"
+            )
+        configured = _git(
+            "remote",
+            "set-url",
+            "origin",
+            remote.stdout.strip(),
+            cwd=staged_workspace,
+        )
+        if configured.returncode != 0:
+            raise ControlError(
+                configured.stderr.strip()
+                or f"issue #{issue}: cannot configure agent clone origin"
+            )
+        staged_workspace.replace(workspace)
+        staging_root.rmdir()
+    except Exception:
+        shutil.rmtree(staging_root, ignore_errors=True)
+        raise
+
+
+def _prepare_agent_workspace(
+    workflow: Workflow,
+    workspace: Path,
+    item: TicketValidation,
+    role: str,
+    pull_request: PullRequest | None,
+) -> None:
+    refreshed = _git("fetch", "--quiet", "--prune", "origin", cwd=workspace)
+    if refreshed.returncode != 0:
+        raise ControlError(
+            refreshed.stderr.strip()
+            or f"issue #{item.ticket.number}: cannot refresh agent clone"
+        )
+    required_remote_refs = [f"refs/remotes/origin/{workflow.base_branch}"]
+    if pull_request is not None:
+        required_remote_refs.append(f"refs/remotes/origin/{pull_request.head_ref}")
+    for remote_ref in required_remote_refs:
+        resolved = _git("show-ref", "--verify", "--quiet", remote_ref, cwd=workspace)
+        if resolved.returncode != 0:
+            raise ControlError(
+                f"issue #{item.ticket.number}: agent clone is missing {remote_ref}"
+            )
+
+    if pull_request is not None:
+        branch = pull_request.head_ref
+        remote_ref = f"refs/remotes/origin/{branch}"
+        exists = _git(
+            "show-ref", "--verify", "--quiet", f"refs/heads/{branch}", cwd=workspace
+        )
+        if exists.returncode == 0:
+            switched = _git("checkout", "--quiet", branch, cwd=workspace)
+            if switched.returncode == 0:
+                switched = _git(
+                    "merge", "--quiet", "--ff-only", remote_ref, cwd=workspace
+                )
+        else:
+            switched = _git(
+                "checkout",
+                "--quiet",
+                "-b",
+                branch,
+                "--track",
+                remote_ref,
+                cwd=workspace,
+            )
+        if switched.returncode != 0:
+            raise ControlError(
+                switched.stderr.strip()
+                or f"issue #{item.ticket.number}: cannot check out PR branch {branch}"
+            )
+        head = _git("rev-parse", "HEAD", cwd=workspace)
+        if head.returncode != 0 or head.stdout.strip() != pull_request.head_oid:
+            raise ControlError(
+                f"issue #{item.ticket.number}: agent clone does not match PR head"
+            )
+    elif role in {"worker", "verification-worker"}:
+        branch = f"codex/issue-{item.ticket.number}"
+        local_ref = f"refs/heads/{branch}"
+        remote_ref = f"refs/remotes/origin/{branch}"
+        local_exists = _git("show-ref", "--verify", "--quiet", local_ref, cwd=workspace)
+        remote_exists = _git(
+            "show-ref", "--verify", "--quiet", remote_ref, cwd=workspace
+        )
+        if local_exists.returncode == 0:
+            switched = _git("checkout", "--quiet", branch, cwd=workspace)
+            if switched.returncode == 0 and remote_exists.returncode == 0:
+                switched = _git(
+                    "merge", "--quiet", "--ff-only", remote_ref, cwd=workspace
+                )
+        elif remote_exists.returncode == 0:
+            switched = _git(
+                "checkout",
+                "--quiet",
+                "-b",
+                branch,
+                "--track",
+                remote_ref,
+                cwd=workspace,
+            )
+        else:
+            switched = _git(
+                "checkout",
+                "--quiet",
+                "-b",
+                branch,
+                f"origin/{workflow.base_branch}",
+                cwd=workspace,
+            )
+        if switched.returncode != 0:
+            raise ControlError(
+                switched.stderr.strip()
+                or f"issue #{item.ticket.number}: cannot prepare branch {branch}"
+            )
+    else:
+        detached = _git(
+            "checkout",
+            "--quiet",
+            "--detach",
+            item.sections["Specification revision"],
+            cwd=workspace,
+        )
+        if detached.returncode != 0:
+            raise ControlError(
+                detached.stderr.strip()
+                or f"issue #{item.ticket.number}: cannot check out specification"
+            )
+
+    authority_modules = ROOT / ".gitmodules"
+    candidate_modules = workspace / ".gitmodules"
+    if authority_modules.is_file():
+        if (
+            not candidate_modules.is_file()
+            or hashlib.sha256(candidate_modules.read_bytes()).digest()
+            != hashlib.sha256(authority_modules.read_bytes()).digest()
+        ):
+            raise ControlError(
+                f"issue #{item.ticket.number}: untrusted submodule configuration"
+            )
+        submodules = _git("submodule", "update", "--init", "--recursive", cwd=workspace)
+        if submodules.returncode != 0:
+            raise ControlError(
+                submodules.stderr.strip()
+                or f"issue #{item.ticket.number}: cannot initialize submodules"
+            )
+    elif candidate_modules.exists():
+        raise ControlError(
+            f"issue #{item.ticket.number}: untrusted submodule configuration"
+        )
+    _assert_clean_workspace(workspace, issue=item.ticket.number)
 
 
 def ensure_workspace(workflow: Workflow, item: TicketValidation, role: str) -> Path:
     workspace = workflow.workspace_root / f"issue-{item.ticket.number}"
     pull_request_number = existing_pull_request(item.sections)
+    pull_request: PullRequest | None = None
     if pull_request_number:
         pull_request = load_pull_request(workflow, pull_request_number)
         if (
@@ -1403,72 +1583,17 @@ def ensure_workspace(workflow: Workflow, item: TicketValidation, role: str) -> P
                 f"issue #{item.ticket.number}: existing PR must be open against "
                 f"{workflow.base_branch}"
             )
-        registered = registered_worktree_for_branch(pull_request.head_ref)
-        if registered is not None:
-            _assert_clean_worktree(registered, issue=item.ticket.number)
-            return registered
-        branch_exists = _git(
-            "show-ref", "--verify", "--quiet", f"refs/heads/{pull_request.head_ref}"
-        )
-        workflow.workspace_root.mkdir(parents=True, exist_ok=True)
-        if branch_exists.returncode == 0:
-            command = ["worktree", "add", str(workspace), pull_request.head_ref]
-        else:
-            fetch = _git("fetch", "origin", pull_request.head_ref)
-            if fetch.returncode != 0:
-                raise ControlError(
-                    f"issue #{item.ticket.number}: cannot fetch existing PR branch"
-                )
-            command = [
-                "worktree",
-                "add",
-                "-b",
-                pull_request.head_ref,
-                str(workspace),
-                f"origin/{pull_request.head_ref}",
-            ]
-        created = _git(*command)
-        if created.returncode != 0:
-            raise ControlError(
-                created.stderr.strip() or f"failed to create {workspace}"
-            )
-        return workspace
     if workspace.exists():
-        _assert_clean_worktree(workspace, issue=item.ticket.number)
-        if role in {"worker", "verification-worker"}:
-            branch = _git("branch", "--show-current", cwd=workspace)
-            expected = f"codex/issue-{item.ticket.number}"
-            if branch.returncode != 0 or branch.stdout.strip() != expected:
-                raise ControlError(
-                    f"issue #{item.ticket.number}: expected workspace branch {expected}"
-                )
-        return workspace
-    workflow.workspace_root.mkdir(parents=True, exist_ok=True)
-    if role in {"worker", "verification-worker"}:
-        branch = f"codex/issue-{item.ticket.number}"
-        branch_exists = _git("show-ref", "--verify", "--quiet", f"refs/heads/{branch}")
-        if branch_exists.returncode == 0:
-            command = ["worktree", "add", str(workspace), branch]
-        else:
-            command = [
-                "worktree",
-                "add",
-                "-b",
-                branch,
-                str(workspace),
-                f"origin/{workflow.base_branch}",
-            ]
+        _assert_clean_workspace(workspace, issue=item.ticket.number)
     else:
-        command = [
-            "worktree",
-            "add",
-            "--detach",
-            str(workspace),
-            item.sections["Specification revision"],
-        ]
-    created = _git(*command)
-    if created.returncode != 0:
-        raise ControlError(created.stderr.strip() or f"failed to create {workspace}")
+        _clone_agent_workspace(workspace, issue=item.ticket.number)
+    _prepare_agent_workspace(
+        workflow,
+        workspace,
+        item,
+        role,
+        pull_request,
+    )
     return workspace
 
 

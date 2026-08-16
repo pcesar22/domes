@@ -42,9 +42,11 @@ not spawn an untracked conversational hierarchy.
 
 ### Worker
 
-Owns one accepted ticket and isolated worktree. It implements only allowed surfaces, runs required
-checks, publishes the scoped change when authorized by the ticket, and returns structured evidence.
-It cannot change the governing specification, approve its own work, or activate follow-up tasks.
+Owns one accepted ticket and isolated controller-owned Git workspace. It implements only allowed
+surfaces, runs required checks, publishes the scoped change when authorized by the ticket, and
+returns structured evidence. Its private Git metadata is inside its sandbox; it cannot write another
+workspace's Git state. It cannot change the governing specification, approve its own work, or
+activate follow-up tasks.
 
 ### Judge
 

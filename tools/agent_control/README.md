@@ -2,9 +2,9 @@
 
 This standard-library Python tool implements the repository-facing portion of OpenAI Symphony's
 [language-agnostic contract](https://github.com/openai/symphony/blob/main/SPEC.md) for DOMES. It
-reads GitHub issues, validates the task DAG, creates isolated worktrees, invokes fresh Codex roles
-with JSON-schema outputs, and performs explicit state transitions. It does not require or install a
-service manager.
+reads GitHub issues, validates the task DAG, creates isolated controller-owned Git workspaces,
+invokes fresh Codex roles with JSON-schema outputs, and performs explicit state transitions. It does
+not require or install a service manager.
 
 Validate the checked-in contracts:
 
@@ -77,6 +77,11 @@ a restarted scheduler terminates any matching orphan before dispatch. Runtime JS
 final result files live under
 `${XDG_STATE_HOME:-~/.local/state}/domes-agent-control/`; they are diagnostic state and are never
 fed to another role.
+
+Agent workspaces are standalone clones below the configured workspace root, with private `.git`
+metadata inside the sandbox. The controller never grants a worker write access to the source
+repository's shared Git administration directory or reuses an operator worktree. This lets workers
+commit and push their own branch without weakening workspace isolation.
 
 Each failed or timed-out role is restarted up to two times with bounded exponential backoff.
 `--watch` is ordinary foreground process behavior; hosting it later is an operational choice and is

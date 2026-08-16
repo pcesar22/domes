@@ -59,7 +59,7 @@ The scheduler performs only these actions:
 2. Validate the ticket contract and pinned specification revision.
 3. Reject issues with unresolved dependencies or overlapping active workspaces.
 4. Sort eligible issues by numeric priority and then issue number.
-5. Reserve up to three slots and create one isolated worktree per issue.
+5. Reserve up to three slots and create one controller-owned standalone Git workspace per issue.
 6. Move a newly accepted implementation task to `agent:running` and launch a fresh role-specific
    run with the matching output schema; rejected work retains `agent:rework` so its judge handoff is
    never lost across a restart.
@@ -85,6 +85,10 @@ compiled by the broker from a private clean clone with pinned ESP-IDF v5.4.4, re
 standard DOMES application layout, and cannot write NVS, PHY, or OTA-data partitions. OTA likewise
 uses the broker-built application image. It cannot consume a worker build directory or execute
 worker-supplied argv.
+
+Each agent workspace is a standalone clone with private Git metadata inside the workspace-write
+sandbox. The scheduler does not reuse operator worktrees and never grants workers write access to
+the source repository's shared `.git` directory.
 
 If preflight is unavailable, only that hardware ticket enters `agent:blocked`. Automatic recovery
 requires a new successful preflight and a typed blocker bound to the same issue, specification, and
