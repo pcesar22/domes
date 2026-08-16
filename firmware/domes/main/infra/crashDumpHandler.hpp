@@ -60,6 +60,18 @@ public:
     static esp_err_t init(uint32_t bootCount);
 
     /**
+     * @brief Set the reason retained by the next clean restart
+     *
+     * The reason is copied into fixed storage and must fit in the existing
+     * restart-snapshot field. Call from normal task context before a clean
+     * restart; the default remains "shutdown/restart".
+     *
+     * @param reason Null-terminated reason string
+     * @return ESP_OK on success or ESP_ERR_INVALID_ARG when it is empty or too long
+     */
+    static esp_err_t setRestartReason(const char* reason);
+
+    /**
      * @brief Check if a restart snapshot exists in NVS
      */
     static bool hasDump();
@@ -90,6 +102,7 @@ private:
 
     static bool initialized_;
     static uint32_t bootCount_;
+    static char restartReason_[kRestartReasonCapacity];
 };
 
 }  // namespace domes::infra

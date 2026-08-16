@@ -16,6 +16,9 @@ namespace domes::infra {
 /// Maximum backtrace depth stored in a restart snapshot.
 constexpr size_t kMaxBacktraceDepth = 16;
 
+/// Capacity of the retained clean-restart reason, including its null terminator.
+constexpr size_t kRestartReasonCapacity = 64;
+
 /// Current integrity-checked restart-snapshot format.
 constexpr uint8_t kRestartSnapshotFormatVersion = 2;
 
@@ -24,7 +27,7 @@ constexpr uint8_t kRestartSnapshotFormatVersion = 2;
  */
 struct CrashDumpData {
     bool valid = false;
-    char reason[64] = {};
+    char reason[kRestartReasonCapacity] = {};
     char taskName[16] = {};
     uint32_t uptimeS = 0;
     uint32_t freeHeap = 0;

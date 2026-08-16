@@ -106,6 +106,27 @@ reconciliation commit must repeat any invalidated exact-final-head evidence befo
 target-runtime and framed-command evidence, not physical actuation, radio, hardware-equivalence, or
 predictive evidence.
 
+#### Guarded Firmware Update Reliability Repair
+
+**Objective:** Ensure a valid supported firmware update reaches a confirmed healthy runtime without
+lowering the existing 30 KiB internal-memory safety floor or weakening rollback protection.
+
+Issue [106](https://github.com/pcesar22/domes/issues/106) and its
+[execution plan](docs/plans/ota-boot-verification.md) record the repair. The implementation waits
+until `app_main` releases its temporary stack, runs the complete check on the existing LED task that
+owns the output channel, retries only a transient memory-floor failure within a fixed bound, and
+retains the exact failed stage before deliberate rollback. It adds no task or task stack.
+
+The clean ESP-IDF v5.4.4 image `v0.1.0-27-g434d11f` has binary SHA-256
+`862efe38c9bdb92f436587c619732c78f2bba3669012fa7687fe529db1ac24da`. Pod 2 accepted that exact
+serial image, booted `ota_1` as boot 36 with 31,575 bytes free and 10/10 initialization checks, then
+survived a separate CP2102N hardware reset as boot 37 on the same version and slot with 31,587 bytes
+free and 10/10 checks. This proves update control and confirmation; it does not claim observed light,
+touch, motion, vibration, or sound, nor the separately forced-failure rollback path. That candidate
+is historical evidence only. The review artifact now descends from controller base `d58c1a2` and
+requires fresh exact-head software CI, independent review, and separately brokered registered-pod
+verification.
+
 ### Latest Completed Execution Delivery
 
 #### FS-WP-002D: Simulation Composition And Platform Inputs
@@ -357,6 +378,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | Deterministic replay foundation | [PR 97](https://github.com/pcesar22/domes/pull/97), merged 2026-08-04 | Accepted | FS-WP-002A only: explicit host time, deterministic faults, delivery identity, and exact delivery replay; no trace-normalization, target-scheduler, or predictive claim |
 | ESP32-S3 QEMU simulation delivery | [PR 100](https://github.com/pcesar22/domes/pull/100), [Software CI run 31039047667](https://github.com/pcesar22/domes/actions/runs/31039047667) | `B` is `Viable`; `D` is `Complete` / `Green`; exact-checkout CI rebuilt runtime implementation head `f36447f931f9216b7733ff4685ffc5ccaab895ce`, executed 100 identical fresh production-runtime QEMU processes, and passed aggregate `CI Gate`; manual 100/100 campaigns, linked closure, source-equivalent two-board regression, current host tooling, and independent review also passed; every later PR head remains gated before merge | Target execution and declared production/adapted/modeled/disabled runtime profile only; successful results stay in CI logs and failure diagnostics are uploaded outside Git; no scheduler-trace, radio/RF, peripheral-actuation, cycle-accuracy, hardware-equivalence, or predictive claim |
 | Scheduler and causality trace implementation | Merged [PR 102](https://github.com/pcesar22/domes/pull/102), issue [101](https://github.com/pcesar22/domes/issues/101) reopened for physical closure, reviewed PR 105 candidate `2772f633`, and [Software CI run 31918252989](https://github.com/pcesar22/domes/actions/runs/31918252989) | Candidate `2772f633` passed all eight software checks and 100/100 accepted QEMU runs. Its device-bound pod-2 trace has 74 events, zero drops/discontinuities, complete causality, 153/239 us overhead, raw SHA-256 `df0334af...fc2f`, ELF SHA-256 `ab499b0d...1b5b`, running-image SHA-256 `8d549e70...9116`, candidate-file SHA-256 `a089546c...d084`, and stable board/serial identity. Two restored-default boots pass health and 10/10 self-test and leave trace disabled/empty | Physical target-runtime/framed-command evidence and required software CI pass on `2772f633`; the authority reconciliation must repeat invalidated exact-final-head evidence before review. No physical actuation, radio, hardware-equivalence, predictive, or successful-OTA claim |
+| Guarded firmware update repair | Issue [106](https://github.com/pcesar22/domes/issues/106) on controller-required PR 105 base `d58c1a2` | Verification moves beyond the temporary startup stack onto the existing LED-owner task, retries only the unchanged 30 KiB internal-heap check within a fixed bound, and retains the exact failed stage before rollback | Exact-head software checks, independent review, required CI, and separate registered-pod verification remain; historical candidate commands are not exact-head or physical evidence |
 | Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains and CI behavior |
 | Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
 
