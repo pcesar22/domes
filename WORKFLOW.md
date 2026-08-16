@@ -46,8 +46,10 @@ agent:needs-specification
 work out of `agent:needs-specification`. Only an accepted plan may enter `agent:ready`. Only an
 independent judge verdict may move implementation from `agent:agent-review` to
 `agent:ci-pending`. CI failure may enter `agent:verification`; every repair returns through a fresh
-judge. Versioned `software-auto-merge` policy authorizes the controller—not an agent—to merge only
-after exact-head CI and the fail-closed path policy pass. Release remains outside this workflow.
+judge. Versioned `software-review-required` policy authorizes autonomous implementation and CI
+repair only. Every pull request stops at `agent:human-review`; only a human may approve or merge it.
+After observing a human merge, the controller performs issue bookkeeping and unlocks dependencies.
+Release remains outside this workflow.
 
 ## Dispatch policy
 
@@ -66,9 +68,9 @@ The scheduler performs only these actions:
 9. In explicit autopilot mode, invoke one disposable requirements steward only when no role is
    runnable, adopt one milestone-authorized execution contract, and materialize accepted planner
    DAGs idempotently.
-10. Poll required CI without spending an agent slot and merge an exact head only when the ticket,
-    independent verdict, PR metadata, checks, and changed paths all satisfy the versioned autopilot
-    policy.
+10. Poll required CI without spending an agent slot, repair failures through a fresh worker and
+    judge cycle, then place the exact passing head in `agent:human-review` without approving or
+    merging it.
 
 It never changes product intent, weakens acceptance checks, reads raw transcripts into another
 role's prompt, or treats a successful process exit as acceptance. The disposable selector may only
@@ -84,6 +86,7 @@ validation contract; its output is schema- and policy-validated before any track
 | `agent:agent-review` | judge | approve to CI or reject against the original contract |
 | `agent:ci-pending` | controller | exact-head required-check reconciliation |
 | `agent:verification` | verification worker | bounded repair of failed CI |
+| `agent:human-review` | human | review and merge, while the controller continues separate work |
 
 Interactive requirements stewardship remains the only authority for changing product intent. In
 explicit autopilot mode a fresh selector may choose from already-authorized milestones when the
@@ -105,11 +108,11 @@ narrative. Runtime logs exist only for operator diagnosis.
 
 ## Completion
 
-An agent's final message has no lifecycle authority. Completion requires a valid structured result,
-the corresponding tracker transition, required CI, and the applicable merge boundary. A ticket
-carrying the controller-issued `software-auto-merge` contract can reach `agent:done` only after an
-exact-head merge is verified. All other tickets stop at `agent:human-review`. Physical-device claims
-still require the evidence defined by `docs/TESTING.md`.
+An agent's final message has no lifecycle authority. Review readiness requires a valid structured
+result, independent agent judgment, the corresponding tracker transition, and required exact-head
+CI. Every automated ticket stops at `agent:human-review`; only an observed human merge moves it to
+`agent:done`. The independent judge never submits a GitHub approval. Physical-device claims still
+require the evidence defined by `docs/TESTING.md`.
 
 ## Autonomous authority boundary
 

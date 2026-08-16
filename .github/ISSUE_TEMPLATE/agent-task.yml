@@ -73,9 +73,9 @@ body:
     id: autonomy_policy
     attributes:
       label: Autonomy policy
-      description: Only controller-issued contracts may use software auto-merge.
+      description: Automated delivery creates and repairs a PR, then waits for human review and merge.
       options:
         - review-only
-        - software-auto-merge
+        - software-review-required
     validations:
       required: true

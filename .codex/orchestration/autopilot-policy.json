@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "policy_name": "domes-software-autopilot-v1",
+  "policy_name": "domes-human-review-autopilot-v2",
   "allowed_work_classes": [
     "software",
     "executed-validation"
@@ -15,7 +15,7 @@
     "Flutter / Build iOS App",
     "CI Gate"
   ],
-  "forbidden_auto_merge_paths": [
+  "protected_autonomous_paths": [
     ".github/**",
     ".codex/**",
     "AGENTS.md",
@@ -50,5 +50,5 @@
     ".release/**"
   ],
   "max_ci_repair_cycles": 3,
-  "merge_method": "merge"
+  "review_authority": "human"
 }

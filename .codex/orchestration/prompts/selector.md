@@ -15,10 +15,10 @@ software delivery and retain that blocker in the result.
 
 Prefer an existing issue and pull request. Use `mode: execute` when the issue is already a bounded
 implementation contract; use `mode: plan` only when a milestone must be decomposed. Pin the
-selection to the supplied current `origin/main` commit. `software-auto-merge` is permitted only for
-work whose actual diff can avoid every path forbidden by
+selection to the supplied current `origin/main` commit. Use `software-review-required` only for
+work whose actual diff can avoid every protected autonomous path in
 `.codex/orchestration/autopilot-policy.json`; otherwise use `review-only` or select another eligible
-package.
+package. Every pull request requires human review and merge.
 
 Inspect repository authorities and GitHub read-only. Make no repository or tracker mutation.
 Return only the schema-conforming selection; do not include a transcript.

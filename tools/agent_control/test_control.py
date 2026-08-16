@@ -45,7 +45,7 @@ def make_ticket(
     )
 
 
-def auto_merge_ticket(
+def automated_ticket(
     number: int,
     revision: str,
     *,
@@ -65,7 +65,7 @@ def auto_merge_ticket(
         required_proof=list(proof),
         work_package="FS-WP-TEST",
         work_class="software",
-        selected_policy="software-auto-merge",
+        selected_policy="software-review-required",
         pull_request=77,
     )
     body = control.with_autopilot_contract("", contract)
@@ -122,7 +122,8 @@ class WorkflowTest(unittest.TestCase):
 
     def test_checked_in_autopilot_policy_loads(self) -> None:
         policy = control.load_autopilot_policy()
-        self.assertEqual("domes-software-autopilot-v1", policy.policy_name)
+        self.assertEqual("domes-human-review-autopilot-v2", policy.policy_name)
+        self.assertEqual("human", policy.review_authority)
         self.assertEqual(
             ("software", "executed-validation"), policy.allowed_work_classes
         )
@@ -262,7 +263,7 @@ class TicketValidationTest(unittest.TestCase):
         self.assertIn('"role": "worker"', rendered)
 
     def test_autopilot_contract_marker_detects_tampering(self) -> None:
-        ticket = auto_merge_ticket(11, self.revision)
+        ticket = automated_ticket(11, self.revision)
         sections = control.parse_sections(ticket.body)
         self.assertTrue(control.has_valid_autopilot_marker(ticket, sections))
         self.assertTrue(
@@ -278,7 +279,7 @@ class TicketValidationTest(unittest.TestCase):
         )
         validation = control.validate_ticket(tampered, check_revision=False)
         self.assertIn(
-            "software-auto-merge requires a valid controller contract marker",
+            "software-review-required requires a valid controller contract marker",
             validation.errors,
         )
 
@@ -286,7 +287,7 @@ class TicketValidationTest(unittest.TestCase):
         policy = control.load_autopilot_policy()
         self.assertEqual(
             [".github/workflows/ci.yml", "tools/agent_control/control.py"],
-            control.forbidden_auto_merge_paths(
+            control.protected_autonomous_paths(
                 (
                     "firmware/domes/main/app_main.cpp",
                     ".github/workflows/ci.yml",
@@ -297,7 +298,7 @@ class TicketValidationTest(unittest.TestCase):
         )
         self.assertEqual(
             [".github/**", "firmware/domes/**"],
-            control.forbidden_auto_merge_surfaces(
+            control.protected_autonomous_surfaces(
                 (".github/**", "firmware/domes/**"), policy
             ),
         )
@@ -312,7 +313,7 @@ class TicketValidationTest(unittest.TestCase):
         human = make_ticket(20, self.revision, label="agent:human-review")
         blocked = make_ticket(21, self.revision, label="agent:blocked")
         self.assertTrue(control.autopilot_queue_idle((human, blocked)))
-        ci_pending = auto_merge_ticket(22, self.revision)
+        ci_pending = automated_ticket(22, self.revision)
         self.assertFalse(control.autopilot_queue_idle((human, ci_pending)))
 
 
@@ -342,6 +343,9 @@ class CommandLineTest(unittest.TestCase):
 
     def test_autopilot_requires_watch(self) -> None:
         self.assertEqual(2, control.main(["run", "--execute", "--autopilot"]))
+
+    def test_dashboard_requires_watch(self) -> None:
+        self.assertEqual(2, control.main(["run", "--execute", "--dashboard"]))
 
     def test_only_new_work_is_claimed_as_running(self) -> None:
         revision = "b" * 40
@@ -405,7 +409,7 @@ class ResultSemanticsTest(unittest.TestCase):
                     "allowed_surfaces": ["firmware/domes/main/**"],
                     "dependencies": [],
                     "required_proof": ["Test log."],
-                    "autonomy_policy": "software-auto-merge",
+                    "autonomy_policy": "software-review-required",
                 },
                 {
                     "key": "tests",
@@ -416,7 +420,7 @@ class ResultSemanticsTest(unittest.TestCase):
                     "allowed_surfaces": ["firmware/domes/tests/**"],
                     "dependencies": ["implementation"],
                     "required_proof": ["Test log."],
-                    "autonomy_policy": "software-auto-merge",
+                    "autonomy_policy": "software-review-required",
                 },
             ],
         }
@@ -433,7 +437,7 @@ class ResultSemanticsTest(unittest.TestCase):
             control.validate_result_semantics("planner", invalid)
 
 
-class AutopilotMergeTest(unittest.TestCase):
+class AutopilotReviewTest(unittest.TestCase):
     revision = "a" * 40
 
     def test_required_ci_reports_green_pending_failed_and_missing(self) -> None:
@@ -468,7 +472,7 @@ class AutopilotMergeTest(unittest.TestCase):
         self.assertEqual("pending", control.required_check_summary(missing, policy)[0])
 
     def test_physical_proof_helpers_require_current_passed_artifact(self) -> None:
-        ticket = auto_merge_ticket(
+        ticket = automated_ticket(
             31, self.revision, proof=("Physical hardware verification artifact.",)
         )
         self.assertTrue(
@@ -485,30 +489,10 @@ class AutopilotMergeTest(unittest.TestCase):
             )
         )
 
-    def test_merge_requires_judge_approval_bound_to_exact_artifact(self) -> None:
+    def test_passing_ci_stops_at_human_review_without_pr_mutation(self) -> None:
         workflow = control.load_workflow()
         policy = control.load_autopilot_policy()
-        ticket = auto_merge_ticket(32, self.revision)
-        pr = pull_request(policy)
-        artifact = {
-            "commit": pr.head_oid,
-            "pull_request": pr.number,
-            "verification": [],
-        }
-        with self.assertRaisesRegex(control.ControlError, "not bound to the PR head"):
-            control.merge_autopilot_pull_request(
-                workflow,
-                policy,
-                ticket,
-                artifact,
-                {"verdict": "approve", "commit": "b" * 40, "pull_request": pr.number},
-                pr,
-            )
-
-    def test_exact_head_merge_rechecks_before_mutating(self) -> None:
-        workflow = control.load_workflow()
-        policy = control.load_autopilot_policy()
-        ticket = auto_merge_ticket(33, self.revision)
+        ticket = automated_ticket(32, self.revision, label="agent:ci-pending")
         pr = pull_request(policy)
         artifact = {
             "commit": pr.head_oid,
@@ -516,29 +500,31 @@ class AutopilotMergeTest(unittest.TestCase):
             "verification": [],
         }
         judge = {"verdict": "approve", "commit": pr.head_oid, "pull_request": pr.number}
-        merged_pr = pull_request(policy, state="MERGED", head=pr.head_oid)
-        completed = subprocess.CompletedProcess([], 0, "", "")
+        validation = control.TicketValidation(
+            ticket, control.parse_sections(ticket.body), (), ()
+        )
         with (
+            mock.patch.object(control, "validate_ticket", return_value=validation),
             mock.patch.object(
-                control, "load_pull_request", side_effect=(pr, merged_pr)
+                control, "load_latest_artifact_handoff", return_value=artifact
             ),
-            mock.patch.object(control.subprocess, "run", return_value=completed) as run,
-            mock.patch.object(control, "complete_issue") as complete_issue,
-            mock.patch.object(control, "post_controller_comment"),
-            mock.patch.object(control, "_git", return_value=completed),
+            mock.patch.object(control, "load_exact_role_handoff", return_value=judge),
+            mock.patch.object(control, "load_pull_request", return_value=pr),
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+            mock.patch.object(control.subprocess, "run") as run,
         ):
-            result = control.merge_autopilot_pull_request(
-                workflow, policy, ticket, artifact, judge, pr
-            )
+            result = control.reconcile_ci_ticket(workflow, policy, ticket)
         self.assertEqual(pr.number, result["pull_request"])
-        complete_issue.assert_called_once_with(workflow, ticket)
-        command = run.call_args.args[0]
-        self.assertIn("--match-head-commit", command)
-        self.assertIn(pr.head_oid, command)
+        self.assertEqual("agent:human-review", result["state"])
+        self.assertEqual("human", result["review_authority"])
+        comment.assert_called_once()
+        transition.assert_called_once_with(workflow, ticket, "agent:human-review")
+        run.assert_not_called()
 
     def test_complete_issue_closes_and_sets_done_in_one_request(self) -> None:
         workflow = control.load_workflow()
-        ticket = auto_merge_ticket(36, self.revision)
+        ticket = automated_ticket(36, self.revision)
         completed = subprocess.CompletedProcess([], 0, "", "")
         with mock.patch.object(
             control.subprocess, "run", return_value=completed
@@ -555,7 +541,7 @@ class AutopilotMergeTest(unittest.TestCase):
     def test_ci_tracker_failure_retries_without_changing_ticket_state(self) -> None:
         workflow = control.load_workflow()
         policy = control.load_autopilot_policy()
-        ticket = auto_merge_ticket(34, self.revision)
+        ticket = automated_ticket(34, self.revision)
         with (
             mock.patch.object(
                 control,
@@ -571,10 +557,10 @@ class AutopilotMergeTest(unittest.TestCase):
         transition.assert_not_called()
         comment.assert_not_called()
 
-    def test_post_merge_refresh_failure_precedes_ticket_finalization(self) -> None:
+    def test_human_merge_refresh_failure_precedes_issue_completion(self) -> None:
         workflow = control.load_workflow()
         policy = control.load_autopilot_policy()
-        ticket = auto_merge_ticket(35, self.revision)
+        ticket = automated_ticket(35, self.revision, label="agent:human-review")
         merged = pull_request(policy, state="MERGED")
         failed = subprocess.CompletedProcess([], 1, "", "temporary fetch failure")
         with (
@@ -583,18 +569,16 @@ class AutopilotMergeTest(unittest.TestCase):
             mock.patch.object(control, "post_controller_comment") as comment,
         ):
             with self.assertRaisesRegex(
-                control.TrackerError, "merged PR finalization must be retried"
+                control.TrackerError, "human-merge bookkeeping must be retried"
             ):
-                control.finalize_merged_ticket(
-                    workflow, policy, ticket, merged, recovered=True
-                )
+                control.finalize_human_merged_ticket(workflow, ticket, merged)
         complete_issue.assert_not_called()
         comment.assert_not_called()
 
-    def test_post_merge_completion_failure_remains_retryable(self) -> None:
+    def test_human_merge_completion_failure_remains_retryable(self) -> None:
         workflow = control.load_workflow()
         policy = control.load_autopilot_policy()
-        ticket = auto_merge_ticket(37, self.revision)
+        ticket = automated_ticket(37, self.revision, label="agent:human-review")
         merged = pull_request(policy, state="MERGED")
         completed = subprocess.CompletedProcess([], 0, "", "")
         with (
@@ -607,11 +591,59 @@ class AutopilotMergeTest(unittest.TestCase):
             ) as complete_issue,
         ):
             with self.assertRaisesRegex(
-                control.TrackerError, "merged PR finalization must be retried"
+                control.TrackerError, "human-merge bookkeeping must be retried"
             ):
-                control.finalize_merged_ticket(
-                    workflow, policy, ticket, merged, recovered=True
-                )
+                control.finalize_human_merged_ticket(workflow, ticket, merged)
+        comment.assert_called_once()
+        complete_issue.assert_called_once_with(workflow, ticket)
+
+    def test_open_human_review_does_not_block_or_mutate(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        ticket = automated_ticket(38, self.revision, label="agent:human-review")
+        pr = pull_request(policy)
+        artifact = {"commit": pr.head_oid, "pull_request": pr.number}
+        validation = control.TicketValidation(
+            ticket, control.parse_sections(ticket.body), (), ()
+        )
+        with (
+            mock.patch.object(control, "validate_ticket", return_value=validation),
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=pr),
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            result = control.reconcile_human_reviews(workflow, (ticket,))
+        self.assertEqual("agent:human-review", result[0]["state"])
+        self.assertEqual("human", result[0]["review_authority"])
+        transition.assert_not_called()
+        comment.assert_not_called()
+
+    def test_observed_human_merge_completes_issue_bookkeeping(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        ticket = automated_ticket(39, self.revision, label="agent:human-review")
+        merged = pull_request(policy, state="MERGED")
+        artifact = {"commit": merged.head_oid, "pull_request": merged.number}
+        validation = control.TicketValidation(
+            ticket, control.parse_sections(ticket.body), (), ()
+        )
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with (
+            mock.patch.object(control, "validate_ticket", return_value=validation),
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=merged),
+            mock.patch.object(control, "_git", return_value=completed),
+            mock.patch.object(control, "complete_issue") as complete_issue,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            result = control.reconcile_human_reviews(workflow, (ticket,))
+        self.assertEqual("agent:done", result[0]["state"])
+        self.assertEqual("human", result[0]["merged_by"])
         comment.assert_called_once()
         complete_issue.assert_called_once_with(workflow, ticket)
 
@@ -645,12 +677,12 @@ class SelectorAndPlanTest(unittest.TestCase):
             "dependencies": [],
             "required_proof": ["Test log."],
             "priority": "p1",
-            "autonomy_policy": "software-auto-merge",
+            "autonomy_policy": "software-review-required",
             "rationale": "Current milestone names this package.",
             "blockers": [],
         }
 
-    def test_selector_pins_exact_main_revision_and_rejects_forbidden_surface(
+    def test_selector_pins_exact_main_revision_and_rejects_protected_surface(
         self,
     ) -> None:
         workflow = control.load_workflow()
@@ -662,7 +694,7 @@ class SelectorAndPlanTest(unittest.TestCase):
                 control.validate_selector_result(
                     self.selector_result(revision="b" * 40), workflow, policy, (), ()
                 )
-            with self.assertRaisesRegex(control.ControlError, "forbidden surfaces"):
+            with self.assertRaisesRegex(control.ControlError, "protected surfaces"):
                 control.validate_selector_result(
                     self.selector_result(surfaces=[".github/**"]),
                     workflow,
@@ -696,7 +728,7 @@ class SelectorAndPlanTest(unittest.TestCase):
 
     def test_materialize_plan_reuses_matching_child_on_retry(self) -> None:
         workflow = control.load_workflow()
-        parent_ticket = auto_merge_ticket(
+        parent_ticket = automated_ticket(
             40,
             self.revision,
             label="agent:plan",
@@ -712,7 +744,7 @@ class SelectorAndPlanTest(unittest.TestCase):
             "allowed_surfaces": ["firmware/domes/main/trace/**"],
             "dependencies": [],
             "required_proof": ["Focused test output."],
-            "autonomy_policy": "software-auto-merge",
+            "autonomy_policy": "software-review-required",
         }
         result = {
             "issue": parent.ticket.number,
@@ -738,7 +770,7 @@ class SelectorAndPlanTest(unittest.TestCase):
             required_proof=task["required_proof"],
             work_package="FS-WP-TEST",
             work_class="software",
-            selected_policy="software-auto-merge",
+            selected_policy="software-review-required",
         )
         body = marker + "\n\n" + control.with_autopilot_contract("", contract)
         child = control.Ticket(
@@ -878,7 +910,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
 
     def test_pending_planner_journal_recovers_without_starting_codex(self) -> None:
         workflow = control.load_workflow()
-        ticket = auto_merge_ticket(63, self.revision, label="agent:plan")
+        ticket = automated_ticket(63, self.revision, label="agent:plan")
         item = control.validate_ticket(ticket, check_revision=False)
         plan = {
             "issue": 63,
@@ -894,7 +926,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
                     "allowed_surfaces": ["firmware/domes/main/trace/**"],
                     "dependencies": [],
                     "required_proof": ["Focused log."],
-                    "autonomy_policy": "software-auto-merge",
+                    "autonomy_policy": "software-review-required",
                 }
             ],
         }
@@ -928,30 +960,38 @@ class ReviewFixRegressionTest(unittest.TestCase):
         transition.assert_called_once_with(workflow, ticket, "agent:done")
         close_issue.assert_called_once_with(workflow, ticket.number)
 
-    def test_refreshed_draft_or_changes_requested_blocks_before_merge(self) -> None:
+    def test_dashboard_shows_active_work_and_human_review_without_raw_paths(
+        self,
+    ) -> None:
         workflow = control.load_workflow()
-        policy = control.load_autopilot_policy()
-        ticket = auto_merge_ticket(64, self.revision)
-        initial = pull_request(policy)
-        artifact = {"commit": initial.head_oid, "pull_request": 77, "verification": []}
-        judge = {"verdict": "approve", "commit": initial.head_oid, "pull_request": 77}
-        for refreshed in (
-            control.PullRequest(**{**initial.__dict__, "is_draft": True}),
-            control.PullRequest(
-                **{**initial.__dict__, "review_decision": "CHANGES_REQUESTED"}
-            ),
-        ):
-            with (
-                mock.patch.object(control, "load_pull_request", return_value=refreshed),
-                mock.patch.object(control.subprocess, "run") as run,
-            ):
-                with self.assertRaisesRegex(
-                    control.ControlError, "PR changed during merge gate"
-                ):
-                    control.merge_autopilot_pull_request(
-                        workflow, policy, ticket, artifact, judge, initial
-                    )
-            run.assert_not_called()
+        active_ticket = automated_ticket(64, self.revision, label="agent:running")
+        review_ticket = automated_ticket(65, self.revision, label="agent:human-review")
+        active = control.TicketValidation(
+            active_ticket, control.parse_sections(active_ticket.body), (), ()
+        )
+        rendered = control.render_dashboard(
+            workflow,
+            (active_ticket, review_ticket),
+            (active,),
+            (),
+            {},
+            {
+                "runs": [
+                    {
+                        "issue": 63,
+                        "role": "judge",
+                        "state": "agent:ci-pending",
+                        "events": "/private/raw-worker-events.jsonl",
+                    }
+                ]
+            },
+            phase="working",
+        )
+        self.assertIn("HUMAN REVIEW AND MERGE REQUIRED", rendered)
+        self.assertIn("#64 worker | PR #77", rendered)
+        self.assertIn("PR #77 | issue #65", rendered)
+        self.assertIn("#63 judge → ci-pending", rendered)
+        self.assertNotIn("raw-worker-events", rendered)
 
     def test_pull_request_loader_rejects_incomplete_paginated_file_list(self) -> None:
         workflow = control.load_workflow()
