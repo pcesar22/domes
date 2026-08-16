@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import subprocess
@@ -152,6 +153,127 @@ class WorkflowTest(unittest.TestCase):
                 control.load_workflow(path)
 
 
+class WorkspaceIsolationTest(unittest.TestCase):
+    @staticmethod
+    def git(repository: Path, *arguments: str) -> str:
+        result = subprocess.run(
+            ["git", *arguments],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip()
+
+    def test_agent_workspace_owns_git_metadata_and_can_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            self.git(source, "init", "-b", "main")
+            self.git(source, "config", "user.name", "DOMES Test")
+            self.git(source, "config", "user.email", "domes-test@example.invalid")
+            (source / "README.md").write_text("source\n", encoding="utf-8")
+            self.git(source, "add", "README.md")
+            self.git(source, "commit", "-m", "initial")
+            self.git(source, "remote", "add", "origin", str(source))
+            revision = self.git(source, "rev-parse", "HEAD")
+            workspace_root = root / "agent-workspaces"
+            workflow = control.Workflow(
+                repository="example/domes",
+                state_prefix="agent:",
+                scheduler_host="test-host",
+                max_concurrent_workers=1,
+                workspace_root=workspace_root,
+                base_branch="main",
+                poll_interval_seconds=1,
+                stall_timeout_seconds=30,
+                max_retry_backoff_seconds=1,
+            )
+            ticket = make_ticket(42, revision)
+            item = control.validate_ticket(ticket, check_revision=False)
+
+            with mock.patch.object(control, "ROOT", source):
+                workspace = control.ensure_workspace(workflow, item, "worker")
+
+            self.assertTrue((workspace / ".git").is_dir())
+            self.assertFalse((workspace / ".git/objects/info/alternates").exists())
+            self.assertEqual(
+                "codex/issue-42", self.git(workspace, "branch", "--show-current")
+            )
+            (workspace / "result.txt").write_text("committed\n", encoding="utf-8")
+            self.git(workspace, "add", "result.txt")
+            self.git(workspace, "commit", "-m", "test isolated commit")
+            self.assertEqual("", self.git(source, "status", "--porcelain"))
+
+    def test_linked_worktree_git_metadata_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            linked = root / "linked"
+            source.mkdir()
+            self.git(source, "init", "-b", "main")
+            self.git(source, "config", "user.name", "DOMES Test")
+            self.git(source, "config", "user.email", "domes-test@example.invalid")
+            (source / "README.md").write_text("source\n", encoding="utf-8")
+            self.git(source, "add", "README.md")
+            self.git(source, "commit", "-m", "initial")
+            self.git(source, "worktree", "add", "-b", "linked", str(linked))
+
+            with self.assertRaisesRegex(
+                control.ControlError, "must own private Git metadata"
+            ):
+                control._assert_clean_workspace(linked, issue=42)
+
+    def test_each_role_discards_worker_owned_git_metadata_without_executing_it(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            self.git(source, "init", "-b", "main")
+            self.git(source, "config", "user.name", "DOMES Test")
+            self.git(source, "config", "user.email", "domes-test@example.invalid")
+            (source / "README.md").write_text("source\n", encoding="utf-8")
+            self.git(source, "add", "README.md")
+            self.git(source, "commit", "-m", "initial")
+            self.git(source, "remote", "add", "origin", str(source))
+            revision = self.git(source, "rev-parse", "HEAD")
+            workflow = control.Workflow(
+                repository="example/domes",
+                state_prefix="agent:",
+                scheduler_host="test-host",
+                max_concurrent_workers=1,
+                workspace_root=root / "agent-workspaces",
+                base_branch="main",
+                poll_interval_seconds=1,
+                stall_timeout_seconds=30,
+                max_retry_backoff_seconds=1,
+            )
+            item = control.validate_ticket(
+                make_ticket(43, revision), check_revision=False
+            )
+            with mock.patch.object(control, "ROOT", source):
+                workspace = control.ensure_workspace(workflow, item, "worker")
+                marker = workspace / "worker-owned.txt"
+                marker.write_text("discard me\n", encoding="utf-8")
+                executed = root / "fsmonitor-executed"
+                hook = root / "malicious-fsmonitor"
+                hook.write_text(
+                    f"#!/bin/sh\ntouch {executed}\nexit 0\n", encoding="utf-8"
+                )
+                hook.chmod(0o700)
+                self.git(workspace, "config", "core.fsmonitor", str(hook))
+                replacement = control.ensure_workspace(workflow, item, "worker")
+            self.assertEqual(workspace, replacement)
+            self.assertFalse(marker.exists())
+            self.assertFalse(executed.exists())
+            self.assertFalse(
+                "core.fsmonitor" in self.git(replacement, "config", "--local", "--list")
+            )
+
+
 class TicketValidationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -282,6 +404,21 @@ class TicketValidationTest(unittest.TestCase):
             "software-review-required requires a valid controller contract marker",
             validation.errors,
         )
+        hardware_tampered = control.Ticket(
+            ticket.number,
+            ticket.title,
+            ticket.body.replace(
+                "## Work package", "## Hardware operations\n\nflash\n\n## Work package"
+            ),
+            ticket.state,
+            ticket.labels,
+            ticket.url,
+        )
+        self.assertFalse(
+            control.has_valid_autopilot_marker(
+                hardware_tampered, control.parse_sections(hardware_tampered.body)
+            )
+        )
 
     def test_forbidden_paths_and_surface_narrowing(self) -> None:
         policy = control.load_autopilot_policy()
@@ -403,6 +540,28 @@ class ResultSemanticsTest(unittest.TestCase):
         with self.assertRaisesRegex(control.ControlError, "every criterion met"):
             control.validate_result_semantics("judge", result)
 
+    def test_first_hardware_judge_can_defer_only_physical_criteria(self) -> None:
+        result = {
+            "verdict": "approve",
+            "criteria": [
+                {"criterion": "safe diff", "status": "met", "evidence": ["diff"]},
+                {
+                    "criterion": "physical proof",
+                    "status": "not_verifiable",
+                    "evidence": ["deferred to hardware worker"],
+                },
+            ],
+            "required_rework": [],
+        }
+        with self.assertRaisesRegex(control.ControlError, "every criterion met"):
+            control.validate_result_semantics("judge", result)
+        control.validate_result_semantics("judge", result, allow_deferred_hardware=True)
+        result["criteria"][0]["status"] = "not_met"
+        with self.assertRaisesRegex(control.ControlError, "every criterion met"):
+            control.validate_result_semantics(
+                "judge", result, allow_deferred_hardware=True
+            )
+
     def test_rejected_worker_returns_to_rework(self) -> None:
         result = {
             "verdict": "reject",
@@ -415,6 +574,56 @@ class ResultSemanticsTest(unittest.TestCase):
     def test_worker_blocker_never_advances_to_review(self) -> None:
         result = {"state": "agent_review", "blockers": ["external input"]}
         self.assertEqual("agent:blocked", control.result_state("worker", result))
+
+    def test_hardware_approval_routes_through_verification_then_final_judge(
+        self,
+    ) -> None:
+        ticket = automated_ticket(701, "a" * 40)
+        sections = control.parse_sections(
+            ticket.body.replace(
+                "## Hardware operations\n\nNone",
+                "## Hardware operations\n\ninfo, health",
+            ).replace("## Hardware boards\n\nNone", "## Hardware boards\n\n0")
+        )
+        result = {"verdict": "approve"}
+        self.assertEqual(
+            "agent:verification",
+            control.result_state(
+                "judge",
+                result,
+                autopilot=True,
+                ticket_sections=sections,
+                hardware_attested=False,
+            ),
+        )
+        self.assertEqual(
+            "agent:ci-pending",
+            control.result_state(
+                "judge",
+                result,
+                autopilot=True,
+                ticket_sections=sections,
+                hardware_attested=True,
+            ),
+        )
+
+    def test_public_handoff_redacts_host_and_device_identity_without_touching_commit(
+        self,
+    ) -> None:
+        commit = "a" * 40
+        sanitized = control.sanitize_public_handoff(
+            {
+                "commit": commit,
+                "artifact": "/home/pncosta/private/evidence.json",
+                "device": "/dev/ttyUSB0 uid=020000000001",
+            },
+            Path("/work/issue"),
+            Path("/state/issue"),
+        )
+        self.assertEqual(commit, sanitized["commit"])
+        self.assertNotIn("/home/", sanitized["artifact"])
+        self.assertNotIn("/dev/tty", sanitized["device"])
+        self.assertNotIn("020000000001", sanitized["device"])
 
     def test_planner_requires_contract_and_digest_is_order_independent(self) -> None:
         first = {
@@ -461,6 +670,78 @@ class ResultSemanticsTest(unittest.TestCase):
 
 class AutopilotReviewTest(unittest.TestCase):
     revision = "a" * 40
+
+    def test_worker_prompt_pins_base_and_defers_hardware(self) -> None:
+        ticket = automated_ticket(30, self.revision, label="agent:rework")
+        item = control.validate_ticket(ticket, check_revision=False)
+        prompt = control.build_prompt(
+            item,
+            "worker",
+            required_base_head="b" * 40,
+        )
+        self.assertIn(f"Current required base revision: `{'b' * 40}`", prompt)
+        self.assertIn("reconciliation-only commit is valid", prompt)
+        self.assertIn("never an\nimplementation-worker blocker", prompt)
+
+    def test_hardware_implementation_blocker_routes_to_independent_judge(self) -> None:
+        ticket = automated_ticket(33, self.revision, label="agent:rework")
+        sections = control.parse_sections(ticket.body)
+        sections["Hardware operations"] = "info"
+        sections["Hardware boards"] = "0"
+        result = {"blockers": ["No hardware capability was supplied."]}
+        self.assertEqual(
+            "agent:agent-review",
+            control.result_state(
+                "worker",
+                result,
+                autopilot=True,
+                ticket_sections=sections,
+            ),
+        )
+
+    def test_worker_artifact_must_descend_from_controller_base(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(40, self.revision, label="agent:rework")
+        item = control.validate_ticket(ticket, check_revision=False)
+        pr = pull_request(control.load_autopilot_policy(), head="c" * 40)
+        result = {"commit": pr.head_oid, "pull_request": pr.number}
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        behind = subprocess.CompletedProcess([], 1, "", "")
+        with (
+            mock.patch.object(control, "load_pull_request", return_value=pr),
+            mock.patch.object(control, "_git", side_effect=(completed, behind)) as git,
+            self.assertRaisesRegex(control.ControlError, "must descend from current"),
+        ):
+            control.verify_worker_artifact(
+                workflow,
+                Path("/unused"),
+                item,
+                result,
+                required_base_head="b" * 40,
+            )
+        self.assertEqual(
+            ("merge-base", "--is-ancestor", "b" * 40, "c" * 40),
+            git.call_args_list[-1].args,
+        )
+
+    def test_worker_artifact_accepts_descendant_of_controller_base(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(42, self.revision, label="agent:rework")
+        item = control.validate_ticket(ticket, check_revision=False)
+        pr = pull_request(control.load_autopilot_policy(), head="c" * 40)
+        result = {"commit": pr.head_oid, "pull_request": pr.number}
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with (
+            mock.patch.object(control, "load_pull_request", return_value=pr),
+            mock.patch.object(control, "_git", return_value=completed),
+        ):
+            control.verify_worker_artifact(
+                workflow,
+                Path("/unused"),
+                item,
+                result,
+                required_base_head="b" * 40,
+            )
 
     def test_required_ci_reports_green_pending_failed_and_missing(self) -> None:
         policy = control.load_autopilot_policy()
@@ -887,7 +1168,982 @@ class SelectorAndPlanTest(unittest.TestCase):
 
 
 class ReviewFixRegressionTest(unittest.TestCase):
+    def test_trusted_tool_record_preserves_multicall_invocation_alias(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "multicall"
+            alias = root / "cargo"
+            target.write_bytes(b"trusted executable")
+            alias.symlink_to(target)
+
+            record = control._trusted_tool_record(alias)
+
+            self.assertEqual(str(alias), record["path"])
+            self.assertEqual(
+                hashlib.sha256(target.read_bytes()).hexdigest(), record["sha256"]
+            )
+
     revision = "a" * 40
+
+    def complete_build_provenance(
+        self, provenance: dict[str, object]
+    ) -> dict[str, dict[str, str]]:
+        values = {
+            "prlimit_sha256": "b" * 64,
+            "xtensa_compiler_sha256": "c" * 64,
+            "ulp_tool_sha256": "d" * 64,
+            "rom_elf_sha256": "e" * 64,
+            "idf_python_sha256": "f" * 64,
+            "dependencies_lock_sha256": "0" * 64,
+        }
+        provenance.update(values)
+        component = {
+            "destination": "espressif__led_strip",
+            "version": "2.5.5",
+            "component_hash": "1" * 64,
+            "source_tree_sha256": "2" * 64,
+            "staged_tree_sha256": "3" * 64,
+        }
+        provenance["managed_components"] = [component]
+        return {
+            "idf-export": {"sha256": str(provenance["idf_export_sha256"])},
+            "idf.py": {"sha256": str(provenance["idf_py_sha256"])},
+            "bwrap": {"sha256": str(provenance["bwrap_sha256"])},
+            "cargo": {"sha256": "3" * 64},
+            "cc": {"sha256": "5" * 64},
+            "rustc": {"sha256": "4" * 64},
+            "prlimit": {"sha256": values["prlimit_sha256"]},
+            "xtensa-esp32s3-elf-gcc": {"sha256": values["xtensa_compiler_sha256"]},
+            "esp32ulp-elf-as": {"sha256": values["ulp_tool_sha256"]},
+            "esp-rom-elf": {"sha256": values["rom_elf_sha256"]},
+            "idf-python": {"sha256": values["idf_python_sha256"]},
+            "dependencies.lock": {"sha256": values["dependencies_lock_sha256"]},
+            "python3": {"sha256": "4" * 64},
+            "managed-component-0": {
+                "destination": component["destination"],
+                "version": component["version"],
+                "component_hash": component["component_hash"],
+                "sha256": component["source_tree_sha256"],
+            },
+        }
+
+    def hardware_ticket(
+        self, number: int, *, label: str = "agent:ready"
+    ) -> control.Ticket:
+        ticket = make_ticket(number, self.revision, label=label)
+        body = ticket.body.replace(
+            "Command, exit status, and retained result.",
+            "Capture registered NFF CP2102N physical device proof.",
+        ) + (
+            "\n\n### Existing pull request\n\n#77"
+            "\n\n### Hardware operations\n\ninfo, health, self-test, trace-status"
+            "\n\n### Hardware boards\n\n0"
+        )
+        return control.Ticket(
+            ticket.number, ticket.title, body, ticket.state, ticket.labels, ticket.url
+        )
+
+    def test_registered_hardware_preflight_accepts_doctor_json_despite_exit_code(
+        self,
+    ) -> None:
+        records = []
+        for serial in sorted(control.REGISTERED_NFF_CP2102N_SERIALS):
+            records.append(
+                {
+                    "path": f"/dev/serial/by-id/usb-Silicon_Labs_CP2102N_{serial}-if00-port0",
+                    "target": f"/dev/ttyUSB{len(records)}",
+                    "kind": "character",
+                    "readable": True,
+                    "writable": True,
+                    "status": "available",
+                }
+            )
+        completed = subprocess.CompletedProcess(
+            ["doctor"],
+            1,
+            json.dumps({"devices": {"cp2102n": records}}),
+            "unrelated tools missing",
+        )
+        with mock.patch.object(control.subprocess, "run", return_value=completed):
+            envelope = control.registered_hardware_preflight()
+        self.assertEqual(1, envelope["doctor_exit_code"])
+        self.assertEqual(
+            sorted(control.REGISTERED_NFF_CP2102N_SERIALS),
+            envelope["registered_serials"],
+        )
+
+    def test_registered_hardware_preflight_rejects_unregistered_or_unwritable_board(
+        self,
+    ) -> None:
+        record = {
+            "path": "/dev/serial/by-id/usb-Silicon_Labs_CP2102N_unknown-if00-port0",
+            "target": "/dev/ttyUSB0",
+            "kind": "character",
+            "readable": True,
+            "writable": True,
+            "status": "available",
+        }
+        completed = subprocess.CompletedProcess(
+            ["doctor"], 0, json.dumps({"devices": {"cp2102n": [record]}}), ""
+        )
+        with mock.patch.object(control.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(control.ControlError, "exactly the two"):
+                control.registered_hardware_preflight()
+
+    def test_hardware_prose_without_explicit_enum_does_not_escalate(self) -> None:
+        ticket = make_ticket(600, self.revision)
+        body = ticket.body.replace(
+            "Command, exit status, and retained result.",
+            "Use registered NFF CP2102N hardware.",
+        )
+        sections = control.parse_sections(body)
+        self.assertFalse(control.requires_registered_hardware(sections))
+        self.assertEqual((), control.hardware_operations(sections))
+
+    def test_hardware_boards_are_explicit_and_contract_bound(self) -> None:
+        ticket = self.hardware_ticket(605)
+        sections = control.parse_sections(ticket.body)
+        self.assertEqual((0,), control.hardware_boards(sections))
+        missing = dict(sections)
+        missing.pop("Hardware boards")
+        with self.assertRaisesRegex(control.ControlError, "explicitly list"):
+            control.hardware_boards(missing)
+        expanded = dict(sections)
+        expanded["Hardware boards"] = "0, 1"
+        self.assertNotEqual(
+            control.contract_digest(sections), control.contract_digest(expanded)
+        )
+
+    def test_hardware_checkpoint_rejects_pr_advanced_after_judge(self) -> None:
+        workflow = control.load_workflow()
+        ticket = self.hardware_ticket(608, label="agent:verification")
+        item = control.validate_ticket(ticket, check_revision=False)
+        judge = {
+            "issue": ticket.number,
+            "spec_revision": self.revision,
+            "commit": "b" * 40,
+            "pull_request": 77,
+            "verdict": "approve",
+        }
+        live_pull_request = pull_request(
+            control.load_autopilot_policy(),
+            head="c" * 40,
+            files=("tools/agent_control/control.py",),
+        )
+        with self.assertRaisesRegex(
+            control.ControlError, "not the judge-approved hardware checkpoint"
+        ):
+            control.validate_hardware_judge_checkpoint(
+                workflow, item, judge, live_pull_request
+            )
+
+    def test_hardware_success_cannot_skip_final_judge(self) -> None:
+        ticket = self.hardware_ticket(609, label="agent:verification")
+        item = control.validate_ticket(ticket, check_revision=False)
+        result = {
+            "state": "human_review",
+            "checks": [{"name": "physical", "status": "passed", "url": None}],
+            "blockers": [],
+        }
+        with self.assertRaisesRegex(control.ControlError, "final independent judge"):
+            control.validate_hardware_verification_result(
+                item,
+                result,
+                {"successful_event_count": 1, "failed_event_count": 0},
+            )
+
+        result["state"] = "agent_review"
+        control.validate_hardware_verification_result(
+            item,
+            result,
+            {"successful_event_count": 1, "failed_event_count": 0},
+        )
+
+    def test_hardware_repair_attests_manifest_to_judged_checkpoint(self) -> None:
+        ticket = self.hardware_ticket(610, label="agent:verification")
+        item = control.validate_ticket(ticket, check_revision=False)
+        checkpoint = "b" * 40
+        result = {
+            "state": "agent_review",
+            "commit": "c" * 40,
+            "repairs": ["Replace a rejected read-only identity API."],
+        }
+        self.assertEqual(
+            checkpoint,
+            control.hardware_attestation_artifact_head(item, result, checkpoint),
+        )
+        result["repairs"] = []
+        with self.assertRaisesRegex(control.ControlError, "must be a repair"):
+            control.hardware_attestation_artifact_head(item, result, checkpoint)
+
+    def test_hardware_first_pass_judge_handoff_can_drive_rework_worker(self) -> None:
+        workflow = control.load_workflow()
+        ticket = self.hardware_ticket(612, label="agent:rework")
+        result = {
+            "issue": ticket.number,
+            "spec_revision": self.revision,
+            "commit": "b" * 40,
+            "pull_request": 77,
+            "verdict": "approve",
+            "criteria": [
+                {"criterion": "safe diff", "status": "met", "evidence": ["diff"]},
+                {
+                    "criterion": "physical proof",
+                    "status": "not_verifiable",
+                    "evidence": ["deferred"],
+                },
+            ],
+            "required_rework": [],
+            "claim_boundary": "Hardware remains deferred.",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory)
+            (run_root / "handoff-judge.json").write_text(
+                json.dumps(result), encoding="utf-8"
+            )
+            self.assertEqual(
+                result,
+                control.required_prior_handoff(
+                    workflow,
+                    ticket,
+                    run_root,
+                    "worker",
+                    "agent:rework",
+                ),
+            )
+
+    def test_unchanged_hardware_result_attests_exact_returned_head(self) -> None:
+        ticket = self.hardware_ticket(611, label="agent:verification")
+        item = control.validate_ticket(ticket, check_revision=False)
+        checkpoint = "b" * 40
+        result = {"state": "agent_review", "commit": checkpoint, "repairs": []}
+        self.assertEqual(
+            checkpoint,
+            control.hardware_attestation_artifact_head(item, result, checkpoint),
+        )
+
+    def test_trace_acceptance_operation_requires_default_restore_capability(
+        self,
+    ) -> None:
+        ticket = self.hardware_ticket(606)
+        sections = control.parse_sections(ticket.body)
+        sections["Hardware operations"] += ", flash-trace-acceptance"
+        with self.assertRaisesRegex(control.ControlError, "ordinary `flash`"):
+            control.hardware_operations(sections)
+        sections["Hardware operations"] += ", flash"
+        self.assertIn("flash-trace-acceptance", control.hardware_operations(sections))
+
+    def test_stale_typed_hardware_reason_is_not_recoverable(self) -> None:
+        ticket = self.hardware_ticket(604, label="agent:blocked")
+        reason = control.hardware_block_reason(
+            ticket,
+            control.parse_sections(ticket.body),
+            "a" * 40,
+            "preflight-unavailable",
+        )
+        self.assertFalse(
+            control.recoverable_hardware_blockers(
+                reason, ticket, control.parse_sections(ticket.body), "b" * 40
+            )
+        )
+
+    def test_hardware_worker_requires_envelope_and_stays_workspace_write(self) -> None:
+        workflow = control.load_workflow()
+        ticket = self.hardware_ticket(601, label="agent:verification")
+        item = control.validate_ticket(ticket, check_revision=False)
+        with self.assertRaisesRegex(control.ControlError, "requires --allow"):
+            control.execute_one(workflow, item)
+        result = {
+            "issue": ticket.number,
+            "state": "agent_review",
+            "spec_revision": self.revision,
+            "commit": "b" * 40,
+            "pull_request": 77,
+            "checks": [{"name": "hardware", "status": "passed", "url": None}],
+            "repairs": [],
+            "blockers": [],
+        }
+        judge = {
+            "issue": ticket.number,
+            "spec_revision": self.revision,
+            "commit": "b" * 40,
+            "pull_request": 77,
+            "verdict": "approve",
+            "criteria": [],
+            "required_rework": [],
+            "claim_boundary": "Safety review only.",
+        }
+        envelope = {
+            "ports": [
+                "/dev/serial/by-id/usb-Silicon_Labs_CP2102N_5edf3f45576def11a245cea7c169b110-if00-port0"
+            ],
+            "restrictions": "no erase",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(
+                    control, "ensure_workspace", return_value=Path(directory)
+                ),
+                mock.patch.object(
+                    control, "run_codex_attempt", side_effect=self._run_result(result)
+                ) as run,
+                mock.patch.object(
+                    control, "required_prior_handoff", return_value=judge
+                ),
+                mock.patch.object(
+                    control,
+                    "load_pull_request",
+                    return_value=pull_request(
+                        control.load_autopilot_policy(),
+                        head="b" * 40,
+                        files=("tools/agent_control/control.py",),
+                    ),
+                ),
+                mock.patch.object(control, "post_result"),
+                mock.patch.object(control, "transition"),
+                mock.patch.object(
+                    control,
+                    "_git",
+                    return_value=subprocess.CompletedProcess(
+                        [], 0, stdout="d" * 40 + "\n", stderr=""
+                    ),
+                ),
+                mock.patch.object(control, "trusted_hardware_tools", return_value={}),
+                mock.patch.object(
+                    control,
+                    "attest_hardware_manifest",
+                    return_value={
+                        "manifest": "/controller/evidence/manifest.jsonl",
+                        "manifest_sha256": "c" * 64,
+                    },
+                ),
+                mock.patch(
+                    "hardware_broker.snapshot_port",
+                    return_value={
+                        "link": envelope["ports"][0],
+                        "target": "/dev/ttyUSB0",
+                        "rdev": 1,
+                        "vendor": "10c4",
+                        "model": "ea60",
+                        "serial": "5edf3f45576def11a245cea7c169b110",
+                    },
+                ),
+            ):
+                control.execute_one(workflow, item, hardware_capability=envelope)
+        command, prompt = run.call_args.args[:2]
+        self.assertEqual("workspace-write", command[command.index("--sandbox") + 1])
+        self.assertEqual(
+            str(Path(directory) / ".git"), command[command.index("--add-dir") + 1]
+        )
+        self.assertIn("Registered hardware capability envelope", prompt)
+        self.assertIn("capability directory", prompt)
+
+    def test_hardware_contract_judge_stays_read_only_without_envelope(self) -> None:
+        workflow = control.load_workflow()
+        ticket = self.hardware_ticket(603, label="agent:agent-review")
+        item = control.validate_ticket(ticket, check_revision=False)
+        worker = {
+            "issue": ticket.number,
+            "spec_revision": self.revision,
+            "commit": "b" * 40,
+            "pull_request": 77,
+        }
+        result = {
+            "issue": ticket.number,
+            "spec_revision": self.revision,
+            "verdict": "approve",
+            "criteria": [
+                {"criterion": "proof", "status": "met", "evidence": ["artifact"]}
+            ],
+            "required_rework": [],
+            "commit": "b" * 40,
+            "pull_request": 77,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(
+                    control, "ensure_workspace", return_value=Path(directory)
+                ),
+                mock.patch.object(
+                    control, "required_prior_handoff", return_value=worker
+                ),
+                mock.patch.object(
+                    control, "run_codex_attempt", side_effect=self._run_result(result)
+                ) as run,
+                mock.patch.object(control, "post_result"),
+                mock.patch.object(control, "transition"),
+            ):
+                control.execute_one(workflow, item)
+        command, prompt = run.call_args.args[:2]
+        self.assertEqual("read-only", command[command.index("--sandbox") + 1])
+        self.assertNotIn("--add-dir", command)
+        self.assertNotIn("Registered hardware capability envelope", prompt)
+
+    def test_recovery_requeues_only_the_known_hardware_blocker_pair(self) -> None:
+        workflow = control.load_workflow()
+        ticket = self.hardware_ticket(602, label="agent:blocked")
+        reason = control.hardware_block_reason(
+            ticket,
+            control.parse_sections(ticket.body),
+            self.revision,
+            "preflight-unavailable",
+        )
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(
+                control,
+                "load_pull_request",
+                return_value=pull_request(
+                    control.load_autopilot_policy(),
+                    head=self.revision,
+                    files=("tools/agent_control/control.py",),
+                ),
+            ),
+        ):
+            path = control.hardware_block_path(ticket.number)
+            control.write_handoff(path, reason)
+            recovered = control.recover_hardware_blocked_tickets(
+                workflow, [ticket], {"ports": []}
+            )
+            self.assertFalse(path.exists())
+        self.assertEqual([ticket.number], recovered)
+        transition.assert_called_once_with(workflow, ticket, "agent:rework")
+        reason["issue"] = 999
+        self.assertFalse(
+            control.recoverable_hardware_blockers(
+                reason, ticket, control.parse_sections(ticket.body), self.revision
+            )
+        )
+
+    def test_preflight_block_is_a_dedicated_controller_record(self) -> None:
+        workflow = control.load_workflow()
+        ticket = self.hardware_ticket(606, label="agent:verification")
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+            mock.patch.object(control, "transition") as transition,
+        ):
+            blocked = control.block_hardware_preflight_tickets(
+                workflow, [ticket], "not attached"
+            )
+            record = json.loads(
+                control.hardware_block_path(ticket.number).read_text(encoding="utf-8")
+            )
+            self.assertEqual([ticket.number], blocked)
+            self.assertTrue(control.recoverable_hardware_blockers(record))
+            self.assertFalse(
+                (
+                    Path(directory)
+                    / "domes-agent-control"
+                    / f"issue-{ticket.number}"
+                    / "handoff-worker.json"
+                ).exists()
+            )
+        transition.assert_called_once_with(workflow, ticket, "agent:blocked")
+
+    def test_lease_failure_uses_recoverable_hardware_block(self) -> None:
+        workflow = control.load_workflow()
+        ticket = self.hardware_ticket(607, label="agent:verification")
+        item = control.validate_ticket(ticket, check_revision=False)
+        envelope = {"ports": ["/dev/by-id/registered"]}
+        judge = {
+            "issue": ticket.number,
+            "spec_revision": self.revision,
+            "commit": "b" * 40,
+            "pull_request": 77,
+            "verdict": "approve",
+            "criteria": [],
+            "required_rework": [],
+            "claim_boundary": "Safety review only.",
+        }
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+            mock.patch.object(
+                control, "ensure_workspace", return_value=Path(directory)
+            ),
+            mock.patch.object(
+                control,
+                "_git",
+                return_value=subprocess.CompletedProcess(
+                    [], 0, stdout="d" * 40 + "\n", stderr=""
+                ),
+            ),
+            mock.patch.object(control, "required_prior_handoff", return_value=judge),
+            mock.patch.object(
+                control,
+                "load_pull_request",
+                return_value=pull_request(
+                    control.load_autopilot_policy(),
+                    head="b" * 40,
+                    files=("tools/agent_control/control.py",),
+                ),
+            ),
+            mock.patch.object(control, "trusted_hardware_tools", return_value={}),
+            mock.patch.object(
+                control.DeviceLease,
+                "__enter__",
+                side_effect=control.BrokerError("registered hardware lease is held"),
+            ),
+            mock.patch.object(control, "transition") as transition,
+        ):
+            result = control.execute_one(workflow, item, hardware_capability=envelope)
+            record = json.loads(
+                control.hardware_block_path(ticket.number).read_text(encoding="utf-8")
+            )
+        self.assertEqual("agent:blocked", result["state"])
+        self.assertEqual("lease-held", record["code"])
+        transition.assert_called_once_with(workflow, ticket, "agent:blocked")
+
+    def test_hardware_manifest_attestation_binds_final_commit_and_chain(self) -> None:
+        ticket = self.hardware_ticket(608)
+        item = control.validate_ticket(ticket, check_revision=False)
+        final_head = "b" * 40
+        checkpoint_head = "c" * 40
+        event = {
+            "issue": ticket.number,
+            "spec_revision": self.revision,
+            "pr_head": checkpoint_head,
+            "artifact_head": final_head,
+            "operation": "info",
+            "board": 0,
+            "returncode": 0,
+            "error": None,
+            "previous_event_sha256": "",
+        }
+        event["event_sha256"] = hashlib.sha256(
+            json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "hardware-evidence" / "run-1" / "broker-manifest.jsonl"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            attestation = control.attest_hardware_manifest(
+                item, root, manifest, checkpoint_head, final_head, {}
+            )
+            self.assertEqual(1, attestation["event_count"])
+            self.assertEqual(1, attestation["successful_event_count"])
+            self.assertEqual(0, attestation["failed_event_count"])
+            self.assertEqual(checkpoint_head, attestation["checkpoint_head"])
+            self.assertEqual(final_head, attestation["artifact_head"])
+            event["artifact_head"] = "c" * 40
+            manifest.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(control.ControlError, "hash chain"):
+                control.attest_hardware_manifest(
+                    item, root, manifest, checkpoint_head, final_head, {}
+                )
+
+    def test_hardware_manifest_retains_failed_attempt_before_success(self) -> None:
+        ticket = self.hardware_ticket(610)
+        ticket = control.Ticket(
+            ticket.number,
+            ticket.title,
+            ticket.body.replace("trace-status", "trace-status, artifact-hash"),
+            ticket.state,
+            ticket.labels,
+            ticket.url,
+        )
+        item = control.validate_ticket(ticket, check_revision=False)
+        checkpoint_head = "b" * 40
+        artifact_head = "c" * 40
+        events = [
+            {
+                "issue": ticket.number,
+                "spec_revision": self.revision,
+                "pr_head": checkpoint_head,
+                "artifact_head": artifact_head,
+                "operation": "artifact-hash",
+                "board": None,
+                "returncode": 1,
+                "error": "artifact-hash requires an evidence file",
+                "previous_event_sha256": "",
+            },
+            {
+                "issue": ticket.number,
+                "spec_revision": self.revision,
+                "pr_head": checkpoint_head,
+                "artifact_head": artifact_head,
+                "operation": "info",
+                "board": 0,
+                "returncode": 0,
+                "error": None,
+                "previous_event_sha256": "",
+            },
+        ]
+        previous = ""
+        for event in events:
+            event["previous_event_sha256"] = previous
+            event["event_sha256"] = hashlib.sha256(
+                json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            previous = event["event_sha256"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "hardware-evidence" / "run-1" / "broker-manifest.jsonl"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(
+                "".join(json.dumps(event) + "\n" for event in events),
+                encoding="utf-8",
+            )
+            attestation = control.attest_hardware_manifest(
+                item, root, manifest, checkpoint_head, artifact_head, {}
+            )
+        self.assertEqual(2, attestation["event_count"])
+        self.assertEqual(1, attestation["successful_event_count"])
+        self.assertEqual(1, attestation["failed_event_count"])
+
+    def test_flash_manifest_requires_clean_clone_build_and_exact_input_hashes(
+        self,
+    ) -> None:
+        ticket = self.hardware_ticket(609)
+        ticket = control.Ticket(
+            ticket.number,
+            ticket.title,
+            ticket.body.replace(
+                "trace-status", "trace-status, flash, flash-trace-acceptance"
+            ),
+            ticket.state,
+            ticket.labels,
+            ticket.url,
+        )
+        item = control.validate_ticket(ticket, check_revision=False)
+        checkpoint_head = "b" * 40
+        artifact_head = "c" * 40
+        provenance = {
+            "kind": "controller-bwrap-clean-clone-idf-build",
+            "source_head": artifact_head,
+            "build_profile": "default",
+            "idf_version": "v5.4.4",
+            "idf_revision": "d" * 40,
+            "idf_export_sha256": "1" * 64,
+            "idf_py_sha256": "2" * 64,
+            "bwrap_sha256": "0" * 64,
+            "submodules_sha256": "3" * 64,
+            "sdkconfig_defaults_sha256": "4" * 64,
+            "sdkconfig_sha256": "5" * 64,
+            "stdout_sha256": "9" * 64,
+            "stderr_sha256": "a" * 64,
+        }
+        trusted_tools = self.complete_build_provenance(provenance)
+        inputs = [
+            {"offset": offset, "artifact": artifact, "sha256": digit * 64}
+            for offset, artifact, digit in (
+                ("0x0", "bootloader/bootloader.bin", "6"),
+                ("0x8000", "partition_table/partition-table.bin", "7"),
+                ("0x20000", "domes.bin", "8"),
+            )
+        ]
+        event = {
+            "issue": ticket.number,
+            "spec_revision": self.revision,
+            "pr_head": checkpoint_head,
+            "artifact_head": artifact_head,
+            "operation": "flash",
+            "board": 0,
+            "returncode": 0,
+            "error": None,
+            "build_provenance": provenance,
+            "inputs": inputs,
+            "previous_event_sha256": "",
+        }
+
+        def seal(value: dict[str, object]) -> None:
+            value.pop("event_sha256", None)
+            value["event_sha256"] = hashlib.sha256(
+                json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+
+        seal(event)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "hardware-evidence" / "run-1" / "broker-manifest.jsonl"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            attestation = control.attest_hardware_manifest(
+                item, root, manifest, checkpoint_head, artifact_head, trusted_tools
+            )
+            self.assertEqual(artifact_head, attestation["artifact_head"])
+            event["operation"] = "flash-trace-acceptance"
+            seal(event)
+            manifest.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(control.ControlError, "provenance"):
+                control.attest_hardware_manifest(
+                    item, root, manifest, checkpoint_head, artifact_head, trusted_tools
+                )
+            provenance["build_profile"] = "trace-acceptance"
+            seal(event)
+            manifest.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(control.ControlError, "not restored"):
+                control.attest_hardware_manifest(
+                    item, root, manifest, checkpoint_head, artifact_head, trusted_tools
+                )
+            trace_line = json.dumps(event)
+            restore = json.loads(trace_line)
+            restore["operation"] = "flash"
+            restore["build_provenance"]["build_profile"] = "default"
+            restore["previous_event_sha256"] = event["event_sha256"]
+            seal(restore)
+            manifest.write_text(
+                trace_line + "\n" + json.dumps(restore) + "\n", encoding="utf-8"
+            )
+            restored = control.attest_hardware_manifest(
+                item, root, manifest, checkpoint_head, artifact_head, trusted_tools
+            )
+            self.assertEqual(2, restored["successful_event_count"])
+            restore["build_provenance"].pop("submodules_sha256")
+            seal(restore)
+            manifest.write_text(
+                trace_line + "\n" + json.dumps(restore) + "\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(control.ControlError, "provenance"):
+                control.attest_hardware_manifest(
+                    item, root, manifest, checkpoint_head, artifact_head, trusted_tools
+                )
+
+    def test_trace_dump_requires_latest_board_flash_and_candidate_cli_binding(
+        self,
+    ) -> None:
+        ticket = self.hardware_ticket(611)
+        ticket = control.Ticket(
+            ticket.number,
+            ticket.title,
+            ticket.body.replace("trace-status", "trace-status, flash, trace-dump"),
+            ticket.state,
+            ticket.labels,
+            ticket.url,
+        )
+        item = control.validate_ticket(ticket, check_revision=False)
+        checkpoint_head = "b" * 40
+        artifact_head = "c" * 40
+        provenance = {
+            "kind": "controller-bwrap-clean-clone-idf-build",
+            "source_head": artifact_head,
+            "build_profile": "default",
+            "idf_version": "v5.4.4",
+            "idf_revision": "d" * 40,
+            "idf_export_sha256": "1" * 64,
+            "idf_py_sha256": "2" * 64,
+            "bwrap_sha256": "0" * 64,
+            "submodules_sha256": "3" * 64,
+            "sdkconfig_defaults_sha256": "4" * 64,
+            "sdkconfig_sha256": "5" * 64,
+            "stdout_sha256": "6" * 64,
+            "stderr_sha256": "7" * 64,
+        }
+        trusted_tools = self.complete_build_provenance(provenance)
+        flash = {
+            "issue": ticket.number,
+            "spec_revision": self.revision,
+            "pr_head": checkpoint_head,
+            "artifact_head": artifact_head,
+            "operation": "flash",
+            "board": 0,
+            "returncode": 0,
+            "error": None,
+            "build_provenance": provenance,
+            "inputs": [
+                {
+                    "offset": "0x0",
+                    "artifact": "bootloader/bootloader.bin",
+                    "sha256": "8" * 64,
+                },
+                {
+                    "offset": "0x8000",
+                    "artifact": "partition_table/partition-table.bin",
+                    "sha256": "9" * 64,
+                },
+                {
+                    "offset": "0x20000",
+                    "artifact": "domes.bin",
+                    "sha256": "a" * 64,
+                },
+            ],
+            "previous_event_sha256": "",
+        }
+        trace_sha256 = "b" * 64
+        trace = {
+            "issue": ticket.number,
+            "spec_revision": self.revision,
+            "pr_head": checkpoint_head,
+            "artifact_head": artifact_head,
+            "operation": "trace-dump",
+            "board": 0,
+            "returncode": 0,
+            "error": None,
+            "build_provenance": provenance,
+            "inputs": [
+                {"artifact": "domes.bin", "sha256": "a" * 64},
+                {"artifact": "trace_names.json", "sha256": "c" * 64},
+            ],
+            "selected_flash": {
+                "artifact_head": artifact_head,
+                "build_profile": "default",
+                "domes_bin_sha256": "a" * 64,
+            },
+            "trace_hashes": {
+                "trace_sha256": trace_sha256,
+                "raw_sha256": "d" * 64,
+                "session_sha256": "e" * 64,
+            },
+            "candidate_cli_provenance": {
+                "source_head": artifact_head,
+                "cargo_lock_sha256": "f" * 64,
+                "candidate_cli_sha256": "1" * 64,
+                "bwrap_sha256": trusted_tools["bwrap"]["sha256"],
+                "cargo_sha256": "3" * 64,
+                "cc_sha256": "5" * 64,
+                "prlimit_sha256": trusted_tools["prlimit"]["sha256"],
+                "pty_compat_source_sha256": "6" * 64,
+                "pty_compat_binary_sha256": "7" * 64,
+                "rustc_sha256": "4" * 64,
+                "cargo_version": "cargo 1.92.0",
+                "rustc_version": "rustc 1.92.0",
+                "cc_version": "cc (GCC) 15.2.1",
+            },
+            "trace_relay": {
+                "kind": "broker-pty-frame-filter-v1",
+                "transcript_sha256": "5" * 64,
+                "tx_frame_count": 1,
+                "rx_frame_count": 3,
+                "data_frame_count": 1,
+                "raw_bytes": 16,
+                "event_count": 1,
+            },
+            "artifact_id": f"trace-{trace_sha256[:16]}",
+            "artifact_sha256": trace_sha256,
+            "previous_event_sha256": "",
+        }
+
+        def seal(value: dict[str, object], previous: str = "") -> str:
+            value.pop("event_sha256", None)
+            value["previous_event_sha256"] = previous
+            value["event_sha256"] = hashlib.sha256(
+                json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            return str(value["event_sha256"])
+
+        flash_digest = seal(flash)
+        seal(trace, flash_digest)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "hardware-evidence" / "run-1" / "broker-manifest.jsonl"
+            manifest.parent.mkdir(parents=True)
+            trace_output = manifest.parent / "trace-output-611"
+            trace_output.mkdir()
+            private_inputs = {
+                "trace.json": b"[]\n",
+                "trace.json.raw": b"raw-trace-bytes",
+                "trace.json.raw.session.json": b"{}\n",
+            }
+            for name, data in private_inputs.items():
+                (trace_output / name).write_bytes(data)
+            normalized = manifest.parent / "normalized-trace-611"
+            normalized.mkdir()
+            replay_data = b'{"artifact_kind":"replay-normalized-trace"}\n'
+            semantic_data = b'{"artifact_kind":"cross-target-semantic-projection"}\n'
+            (normalized / "trace.replay.json").write_bytes(replay_data)
+            (normalized / "trace.semantic.json").write_bytes(semantic_data)
+            trace["trace_hashes"] = {
+                "trace_sha256": hashlib.sha256(
+                    private_inputs["trace.json"]
+                ).hexdigest(),
+                "raw_sha256": hashlib.sha256(
+                    private_inputs["trace.json.raw"]
+                ).hexdigest(),
+                "session_sha256": hashlib.sha256(
+                    private_inputs["trace.json.raw.session.json"]
+                ).hexdigest(),
+            }
+            trace["artifact_sha256"] = trace["trace_hashes"]["trace_sha256"]
+            trace["artifact_id"] = f"trace-{trace['trace_hashes']['trace_sha256'][:16]}"
+            trace["normalization"] = {
+                "kind": "controller-bwrap-trace-normalizer-v1",
+                "source_head": artifact_head,
+                "normalizer_sha256": "1" * 64,
+                "trace_proto_sha256": "2" * 64,
+                "python_sha256": trusted_tools["python3"]["sha256"],
+                "python_version": "Python 3.14.3",
+                "bwrap_sha256": trusted_tools["bwrap"]["sha256"],
+                "prlimit_sha256": trusted_tools["prlimit"]["sha256"],
+                "raw_sha256": trace["trace_hashes"]["raw_sha256"],
+                "session_sha256": trace["trace_hashes"]["session_sha256"],
+                "replay_sha256": hashlib.sha256(replay_data).hexdigest(),
+                "semantic_sha256": hashlib.sha256(semantic_data).hexdigest(),
+                "summary": {
+                    "event_count": 1,
+                    "causal_positions": [1],
+                    "overhead_us": {"disabled_32_records": 4, "enabled_32_records": 20},
+                    "normalized_sha256": "3" * 64,
+                },
+            }
+            trace["trace_identity"] = {
+                "firmware_version": "test",
+                "app_elf_sha256": "4" * 64,
+                "app_image_sha256": "a" * 64,
+                "candidate_file_sha256": "a" * 64,
+                "registered_device_match": True,
+                "device_identity_run_sha256": "5" * 64,
+            }
+            seal(trace, flash_digest)
+            manifest.write_text(
+                json.dumps(flash) + "\n" + json.dumps(trace) + "\n",
+                encoding="utf-8",
+            )
+            attestation = control.attest_hardware_manifest(
+                item, root, manifest, checkpoint_head, artifact_head, trusted_tools
+            )
+            self.assertEqual(2, attestation["successful_event_count"])
+
+            trace["selected_flash"]["domes_bin_sha256"] = "0" * 64
+            seal(trace, flash_digest)
+            manifest.write_text(
+                json.dumps(flash) + "\n" + json.dumps(trace) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(control.ControlError, "trace dump"):
+                control.attest_hardware_manifest(
+                    item, root, manifest, checkpoint_head, artifact_head, trusted_tools
+                )
+
+            trace["selected_flash"]["domes_bin_sha256"] = "a" * 64
+            failed_flash = {
+                "issue": ticket.number,
+                "spec_revision": self.revision,
+                "pr_head": checkpoint_head,
+                "artifact_head": artifact_head,
+                "operation": "flash",
+                "board": 0,
+                "returncode": 1,
+                "error": "interrupted",
+                "previous_event_sha256": flash_digest,
+            }
+            failed_digest = seal(failed_flash, flash_digest)
+            seal(trace, failed_digest)
+            manifest.write_text(
+                json.dumps(flash)
+                + "\n"
+                + json.dumps(failed_flash)
+                + "\n"
+                + json.dumps(trace)
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(control.ControlError, "trace dump"):
+                control.attest_hardware_manifest(
+                    item, root, manifest, checkpoint_head, artifact_head, trusted_tools
+                )
+
+            seal(trace)
+            manifest.write_text(json.dumps(trace) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(control.ControlError, "trace dump"):
+                control.attest_hardware_manifest(
+                    item, root, manifest, checkpoint_head, artifact_head, trusted_tools
+                )
 
     def test_exact_handoff_loads_local_evidence_and_checks_specification(self) -> None:
         workflow = control.load_workflow()
@@ -1127,6 +2383,137 @@ class ReviewFixRegressionTest(unittest.TestCase):
 
 
 class ProcessLifecycleTest(unittest.TestCase):
+    def test_cleanup_restores_trace_acceptance_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence, public = root / "evidence", root / "public"
+            evidence.mkdir()
+            public.mkdir()
+            manifest = evidence / "broker-manifest.jsonl"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "operation": "flash-trace-acceptance",
+                        "board": 0,
+                        "returncode": 0,
+                        "error": None,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            process = mock.Mock(spec=subprocess.Popen)
+            process.poll.return_value = None
+            runtime = {
+                "process": process,
+                "public": public,
+                "evidence": evidence,
+                "operations": ("flash", "flash-trace-acceptance"),
+                "boards": (0,),
+            }
+            with mock.patch.object(
+                control,
+                "hardware_request",
+                return_value={"returncode": 0, "error": None},
+            ) as request:
+                control._restore_default_hardware_profile(runtime)
+            request.assert_called_once_with(
+                public, {"operation": "flash", "board": 0}, 1800.0
+            )
+
+    def test_cleanup_skips_already_restored_default_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence, public = root / "evidence", root / "public"
+            evidence.mkdir()
+            public.mkdir()
+            events = (
+                {
+                    "operation": "flash-trace-acceptance",
+                    "board": 0,
+                    "returncode": 0,
+                    "error": None,
+                },
+                {
+                    "operation": "flash",
+                    "board": 0,
+                    "returncode": 0,
+                    "error": None,
+                    "build_provenance": {"build_profile": "default"},
+                },
+            )
+            (evidence / "broker-manifest.jsonl").write_text(
+                "".join(json.dumps(event) + "\n" for event in events),
+                encoding="utf-8",
+            )
+            process = mock.Mock(spec=subprocess.Popen)
+            process.poll.return_value = None
+            runtime = {
+                "process": process,
+                "public": public,
+                "evidence": evidence,
+                "operations": ("flash", "flash-trace-acceptance"),
+                "boards": (0,),
+            }
+            with mock.patch.object(control, "hardware_request") as request:
+                control._restore_default_hardware_profile(runtime)
+            request.assert_not_called()
+
+    def test_cleanup_missing_ready_manifest_restores_every_authorized_board(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence, public = root / "evidence", root / "public"
+            evidence.mkdir()
+            public.mkdir()
+            process = mock.Mock(spec=subprocess.Popen)
+            process.poll.return_value = None
+            runtime = {
+                "process": process,
+                "public": public,
+                "evidence": evidence,
+                "operations": ("flash", "flash-trace-acceptance"),
+                "boards": (0, 1),
+                "broker_ready": True,
+            }
+            with mock.patch.object(
+                control,
+                "hardware_request",
+                return_value={"returncode": 0, "error": None},
+            ) as request:
+                control._restore_default_hardware_profile(runtime)
+            self.assertEqual(
+                [
+                    mock.call(public, {"operation": "flash", "board": 0}, 1800.0),
+                    mock.call(public, {"operation": "flash", "board": 1}, 1800.0),
+                ],
+                request.call_args_list,
+            )
+
+    def test_hardware_runtime_is_removed_when_dispatch_raises(self) -> None:
+        ticket = make_ticket(199, "agent:ready")
+        item = control.validate_ticket(ticket, check_revision=False)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            public, private = root / "public", root / "private"
+            public.mkdir()
+            private.mkdir()
+            with control._HARDWARE_RUNTIME_LOCK:
+                control._HARDWARE_RUNTIMES[ticket.number] = {
+                    "process": None,
+                    "lease": None,
+                    "public": public,
+                    "private": private,
+                }
+            with mock.patch.object(
+                control, "_execute_one", side_effect=control.ControlError("boom")
+            ):
+                with self.assertRaisesRegex(control.ControlError, "boom"):
+                    control.execute_one(control.load_workflow(), item)
+            self.assertFalse(public.exists())
+            self.assertFalse(private.exists())
+
     def test_inactive_agent_attempt_is_terminated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
