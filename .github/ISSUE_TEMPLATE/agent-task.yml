@@ -69,3 +69,13 @@ body:
       label: Required proof
     validations:
       required: true
+  - type: dropdown
+    id: autonomy_policy
+    attributes:
+      label: Autonomy policy
+      description: Only controller-issued contracts may use software auto-merge.
+      options:
+        - review-only
+        - software-auto-merge
+    validations:
+      required: true

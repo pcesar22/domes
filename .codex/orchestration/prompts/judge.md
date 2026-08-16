@@ -5,6 +5,9 @@ diff and commits, current repository authorities where relevant, and retained te
 artifacts. The control plane supplies the worker's schema-validated evidence handoff. Do not read
 the worker transcript or accept the implementer's summary as evidence.
 
+Copy the exact reviewed `commit` and `pull_request` from that handoff into the verdict. A verdict
+for any other artifact is invalid.
+
 Assess every acceptance criterion. Reject scope drift, weakened tests, unsupported claims, missing
 generated consumers, and evidence that does not reach the required level. Software or command
 acceptance never establishes physical behavior. Return `blocked` only for an external condition

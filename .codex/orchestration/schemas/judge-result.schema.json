@@ -3,10 +3,12 @@
   "title": "DOMES independent judge result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["issue", "spec_revision", "verdict", "criteria", "required_rework", "claim_boundary"],
+  "required": ["issue", "spec_revision", "commit", "pull_request", "verdict", "criteria", "required_rework", "claim_boundary"],
   "properties": {
     "issue": {"type": "integer", "minimum": 1},
     "spec_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "pull_request": {"type": ["integer", "null"], "minimum": 1},
     "verdict": {"type": "string", "enum": ["approve", "reject", "blocked"]},
     "criteria": {
       "type": "array",
