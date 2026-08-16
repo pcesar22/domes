@@ -368,7 +368,7 @@ void EspNowService::sendBeacon() {
     TRACE_SCOPE(TRACE_ID("EspNow.SendBeacon"), trace::Category::kEspNow);
 
     espnow::MsgHeader msg = {};
-    fillHeader(msg, espnow::MsgType::kBeacon);
+    fillHeader(msg, espnow::kBeacon);
     sendMsg(reinterpret_cast<const uint8_t*>(&msg), sizeof(msg));
 }
 
@@ -376,7 +376,7 @@ void EspNowService::sendPing(const uint8_t* peerMac) {
     TRACE_SCOPE(TRACE_ID("EspNow.SendPing"), trace::Category::kEspNow);
 
     espnow::MsgHeader msg = {};
-    fillHeader(msg, espnow::MsgType::kPing);
+    fillHeader(msg, espnow::kPing);
 
     auto* peer = findOrAddPeer(peerMac);
     if (!peer) {
@@ -442,7 +442,7 @@ void EspNowService::handlePing(const espnow::MsgHeader* hdr) {
     }
 
     espnow::MsgHeader pong = {};
-    fillHeader(pong, espnow::MsgType::kPong);
+    fillHeader(pong, espnow::kPong);
     pong.timestampUs = hdr->timestampUs;  // Echo original timestamp
 
     // Unicast PONG back to the sender (gets MAC-level ACK)
@@ -582,7 +582,7 @@ void EspNowService::runMaster() {
 
     // Send JOIN_GAME as unicast to peer (reliable — unicast gets ACK, broadcast doesn't)
     espnow::JoinGameMsg joinMsg = {};
-    fillHeader(joinMsg.header, espnow::MsgType::kJoinGame);
+    fillHeader(joinMsg.header, espnow::kJoinGame);
     ESP_LOGI(kTag, "Sending JOIN_GAME to peer");
     TRACE_INSTANT(TRACE_ID("EspNow.SendJoinGame"), trace::Category::kEspNow);
     sendMsgTo(peerMac_, reinterpret_cast<const uint8_t*>(&joinMsg), sizeof(joinMsg));
@@ -690,7 +690,7 @@ void EspNowService::runMaster() {
 
             // Send SetColor green to peer
             espnow::SetColorMsg colorMsg = {};
-            fillHeader(colorMsg.header, espnow::MsgType::kSetColor);
+            fillHeader(colorMsg.header, espnow::kSetColor);
             colorMsg.r = 0;
             colorMsg.g = 255;
             colorMsg.b = 0;
@@ -699,7 +699,7 @@ void EspNowService::runMaster() {
             // Send ArmTouch to peer
             const uint32_t roundToken = allocateRoundToken();
             espnow::ArmTouchMsg armMsg = {};
-            fillHeader(armMsg.header, espnow::MsgType::kArmTouch);
+            fillHeader(armMsg.header, espnow::kArmTouch);
             armMsg.roundToken = roundToken;
             armMsg.timeoutMs = kArmTimeoutMs;
             armMsg.feedbackMode = 0x03;
@@ -717,7 +717,7 @@ void EspNowService::runMaster() {
                 if (delayMs > 0) {
                     vTaskDelay(pdMS_TO_TICKS(delayMs));
                     espnow::SimulateTouchMsg simMsg = {};
-                    fillHeader(simMsg.header, espnow::MsgType::kSimulateTouch);
+                    fillHeader(simMsg.header, espnow::kSimulateTouch);
                     simMsg.roundToken = roundToken;
                     simMsg.padIndex = pad;
                     sendMsgTo(peerMac_, reinterpret_cast<const uint8_t*>(&simMsg), sizeof(simMsg));
@@ -776,7 +776,7 @@ void EspNowService::runMaster() {
 
     // Send StopAll
     espnow::StopAllMsg stopMsg = {};
-    fillHeader(stopMsg.header, espnow::MsgType::kStopAll);
+    fillHeader(stopMsg.header, espnow::kStopAll);
     sendMsgTo(peerMac_, reinterpret_cast<const uint8_t*>(&stopMsg), sizeof(stopMsg));
 
     // Log summary
@@ -844,7 +844,7 @@ void EspNowService::runSlave() {
                          slavePadIndex_, static_cast<unsigned long>(slaveReactionTimeUs_));
 
                 espnow::TouchEventMsg touchMsg = {};
-                fillHeader(touchMsg.header, espnow::MsgType::kTouchEvent);
+                fillHeader(touchMsg.header, espnow::kTouchEvent);
                 touchMsg.roundToken = roundToken;
                 touchMsg.reactionTimeUs = slaveReactionTimeUs_;
                 touchMsg.padIndex = slavePadIndex_;
@@ -854,7 +854,7 @@ void EspNowService::runSlave() {
                 ESP_LOGI(kTag, "Timeout, sending TIMEOUT_EVENT");
 
                 espnow::TimeoutEventMsg timeoutMsg = {};
-                fillHeader(timeoutMsg.header, espnow::MsgType::kTimeoutEvent);
+                fillHeader(timeoutMsg.header, espnow::kTimeoutEvent);
                 timeoutMsg.roundToken = roundToken;
                 sendMsgTo(peerMac_, reinterpret_cast<const uint8_t*>(&timeoutMsg),
                           sizeof(timeoutMsg));
@@ -1137,7 +1137,7 @@ void EspNowService::runBenchmark() {
     for (uint32_t i = 0; i < benchmarkRounds_ && shouldContinue(); ++i) {
         // Send ping
         espnow::MsgHeader ping = {};
-        fillHeader(ping, espnow::MsgType::kPing);
+        fillHeader(ping, espnow::kPing);
 
         auto& peer = peers_[0];
         peer.pingSent = true;
@@ -1167,8 +1167,7 @@ void EspNowService::runBenchmark() {
                 if (validateReceivedSource(*hdr, sourceMac)) {
                     const auto type = static_cast<espnow::MsgType>(hdr->type);
                     const bool correlatedPong =
-                        type == espnow::MsgType::kPong &&
-                        rxLen == espnow::expectedMessageSize(type) &&
+                        type == espnow::kPong && rxLen == espnow::expectedMessageSize(type) &&
                         std::memcmp(sourceMac, peerMac_, ESP_NOW_ETH_ALEN) == 0 && peer.pingSent &&
                         hdr->timestampUs == peer.pendingPingTimestampUs;
                     if (correlatedPong) {
@@ -1281,13 +1280,13 @@ bool EspNowService::receiveAndDispatchBenchmarkTraffic(uint32_t timeoutMs) {
     }
 
     const auto type = static_cast<espnow::MsgType>(hdr->type);
-    if ((type != espnow::MsgType::kPing && type != espnow::MsgType::kPong) ||
+    if ((type != espnow::kPing && type != espnow::kPong) ||
         rxLen != espnow::expectedMessageSize(type)) {
         ESP_LOGW(kTag, "Ignoring %s during master settle window", espnow::msgTypeName(type));
         return false;
     }
 
-    if (type == espnow::MsgType::kPing) {
+    if (type == espnow::kPing) {
         handlePing(hdr);
     } else {
         handlePong(hdr);
@@ -1322,21 +1321,46 @@ bool EspNowService::handleValidatedReceived(const uint8_t* data, size_t len,
         return false;
     }
 
-    const auto type = static_cast<espnow::MsgType>(hdr->type);
-    const size_t expectedSize = espnow::expectedMessageSize(type);
-    if (expectedSize == 0) {
-        ESP_LOGW(kTag, "Unknown ESP-NOW msg type: 0x%02X", hdr->type);
+    espnow::Message message = domes_peer_PeerMessage_init_zero;
+    if (!espnow::decodeLegacyMessage(data, len, message)) {
+        ESP_LOGW(kTag, "Rejecting malformed ESP-NOW message type 0x%02X (%zu bytes)", hdr->type,
+                 len);
         return false;
     }
-    if (len != expectedSize) {
-        ESP_LOGW(kTag, "Rejecting %s with invalid size: %zu != %zu", espnow::msgTypeName(type), len,
-                 expectedSize);
+    const auto type = espnow::messageType(message);
+    message.header.sender_role = (type == espnow::kTouchEvent || type == espnow::kTimeoutEvent)
+                                     ? espnow::kRoleSlave
+                                     : espnow::kRoleMaster;
+    if (espnow::isDiscoveryMessage(type))
+        message.header.sender_role = espnow::kRoleUnspecified;
+    if (!espnow::hasValidRole(message))
+        return false;
+
+    const bool controlMessage = type == espnow::kArmTouch || type == espnow::kSetColor ||
+                                type == espnow::kStopAll || type == espnow::kSimulateTouch;
+    const bool eventMessage = type == espnow::kTouchEvent || type == espnow::kTimeoutEvent;
+    if ((controlMessage && isMaster_.load(std::memory_order_relaxed)) ||
+        (eventMessage && !isMaster_.load(std::memory_order_relaxed))) {
+        ESP_LOGW(kTag, "Rejecting role-invalid %s", espnow::msgTypeName(type));
+        return false;
+    }
+
+    const bool receiverIsMaster = isMaster_.load(std::memory_order_relaxed);
+    const auto receiverRole = receiverIsMaster ? espnow::kRoleMaster : espnow::kRoleSlave;
+    auto lifecycleState = domes_peer_PeerLifecycleState_PEER_LIFECYCLE_STATE_DISCOVERY;
+    if (gameLoopActive_.load(std::memory_order_acquire)) {
+        lifecycleState = !receiverIsMaster && activeSlaveRoundToken_ != 0
+                             ? domes_peer_PeerLifecycleState_PEER_LIFECYCLE_STATE_ARMED
+                             : domes_peer_PeerLifecycleState_PEER_LIFECYCLE_STATE_READY;
+    }
+    if (!espnow::allowedInState(message, receiverRole, lifecycleState)) {
+        ESP_LOGW(kTag, "Rejecting state-invalid %s", espnow::msgTypeName(type));
         return false;
     }
 
     if (!espnow::isDiscoveryMessage(type)) {
         const bool maySelectPeer =
-            type == espnow::MsgType::kJoinGame && !peerFound_.load(std::memory_order_acquire);
+            type == espnow::kJoinGame && !peerFound_.load(std::memory_order_acquire);
         if (!maySelectPeer && !isSelectedPeer(sourceMac)) {
             ESP_LOGW(kTag, "Ignoring %s from non-selected peer", espnow::msgTypeName(type));
             return false;
@@ -1345,38 +1369,38 @@ bool EspNowService::handleValidatedReceived(const uint8_t* data, size_t len,
 
     switch (type) {
         // Discovery messages
-        case espnow::MsgType::kBeacon:
+        case espnow::kBeacon:
             handleBeacon(hdr);
             break;
-        case espnow::MsgType::kPing:
+        case espnow::kPing:
             handlePing(hdr);
             break;
-        case espnow::MsgType::kPong:
+        case espnow::kPong:
             handlePong(hdr);
             break;
 
         // Game control (slave receives)
-        case espnow::MsgType::kJoinGame:
+        case espnow::kJoinGame:
             handleJoinGame(hdr);
             break;
-        case espnow::MsgType::kArmTouch:
+        case espnow::kArmTouch:
             handleArmTouch(data, len);
             break;
-        case espnow::MsgType::kSetColor:
+        case espnow::kSetColor:
             handleSetColor(data, len);
             break;
-        case espnow::MsgType::kStopAll:
+        case espnow::kStopAll:
             handleStopAll(hdr);
             break;
-        case espnow::MsgType::kSimulateTouch:
+        case espnow::kSimulateTouch:
             handleSimulateTouch(data, len);
             break;
 
         // Game events (master receives)
-        case espnow::MsgType::kTouchEvent:
+        case espnow::kTouchEvent:
             handleTouchEvent(data, len);
             break;
-        case espnow::MsgType::kTimeoutEvent:
+        case espnow::kTimeoutEvent:
             handleTimeoutEvent(data, len);
             break;
 

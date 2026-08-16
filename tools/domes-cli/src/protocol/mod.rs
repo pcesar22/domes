@@ -20,6 +20,9 @@ use crate::proto::config::{
 use prost::Message;
 use thiserror::Error;
 
+#[allow(dead_code)]
+pub mod peer_contract;
+
 // Re-export config MsgType with clearer name for use in commands
 pub use crate::proto::config::MsgType as ConfigMsgType;
 

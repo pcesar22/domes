@@ -1,141 +1,83 @@
 #pragma once
 
-#include "interfaces/iLedDriver.hpp"
+#include "pb_encode.h"
+#include "peer_drill.pb.h"
+#include "services/espNowProtocol.hpp"
 
+#include <array>
 #include <cstdint>
-#include <string>
-#include <type_traits>
-#include <variant>
 #include <vector>
 
 namespace sim {
 
-enum class SimMessageType : uint8_t {
-    kSetColor = 0x02,
-    kArmTouch = 0x03,
-    kPlaySound = 0x04,
-    kStopAll = 0x06,
-    kTouchEvent = 0x10,
-    kTimeoutEvent = 0x11,
-    kJoinGame = 0xE0,
-};
+using SimMessage = domes_peer_PeerMessage;
+using SimMessageHeader = domes_peer_PeerHeader;
+using SimMessageType = domes_peer_PeerMessageType;
 
-struct SimMessageHeader {
-    uint16_t srcPodId = 0;
-    uint16_t dstPodId = 0;  // 0xFFFF = broadcast
-    SimMessageType type = SimMessageType::kSetColor;
-    uint64_t timestampUs = 0;
-    uint32_t sequence = 0;
-};
+inline constexpr uint32_t kBroadcastPodId = 0xFFFF;
 
-struct SetColorCommand {
-    SimMessageHeader header;
-    uint8_t r = 0, g = 0, b = 0;
-};
-
-struct ArmTouchCommand {
-    SimMessageHeader header;
-    uint32_t timeoutMs = 3000;
-    uint8_t feedbackMode = 0x03;
-    uint64_t roundToken = 0;
-};
-
-struct PlaySoundCommand {
-    SimMessageHeader header;
-    std::string soundName;
-};
-
-struct StopAllCommand {
-    SimMessageHeader header;
-};
-
-struct TouchEventMsg {
-    SimMessageHeader header;
-    uint32_t reactionTimeUs = 0;
-    uint8_t padIndex = 0;
-    uint64_t roundToken = 0;
-};
-
-struct TimeoutEventMsg {
-    SimMessageHeader header;
-    uint64_t roundToken = 0;
-};
-
-struct JoinGameCommand {
-    SimMessageHeader header;
-};
-
-using SimMessage = std::variant<SetColorCommand, ArmTouchCommand, PlaySoundCommand, StopAllCommand,
-                                TouchEventMsg, TimeoutEventMsg, JoinGameCommand>;
-
-// Helper to get header from any message variant
-inline const SimMessageHeader& getHeader(const SimMessage& msg) {
-    return std::visit([](const auto& m) -> const SimMessageHeader& { return m.header; }, msg);
+inline SimMessage makeMessage(SimMessageType type, uint32_t srcPodId, uint32_t dstPodId) {
+    SimMessage message = domes_peer_PeerMessage_init_zero;
+    domes::espnow::initializeMessage(message, type);
+    message.header.src_pod_id = srcPodId;
+    message.header.dst_pod_id = dstPodId;
+    message.header.sender_role =
+        domes::espnow::isDiscoveryMessage(type)
+            ? domes::espnow::kRoleUnspecified
+            : ((type == domes::espnow::kTouchEvent || type == domes::espnow::kTimeoutEvent)
+                   ? domes::espnow::kRoleSlave
+                   : domes::espnow::kRoleMaster);
+    if (type == domes::espnow::kJoinGame)
+        message.payload.join_game.assigned_role = domes::espnow::kRoleSlave;
+    return message;
 }
 
-// Helper to get mutable header from any message variant
-inline SimMessageHeader& getMutableHeader(SimMessage& msg) {
-    return std::visit([](auto& m) -> SimMessageHeader& { return m.header; }, msg);
+inline SimMessage makeSetColor(uint32_t src, uint32_t dst, uint8_t r, uint8_t g, uint8_t b) {
+    auto message = makeMessage(domes::espnow::kSetColor, src, dst);
+    message.payload.set_color = {r, g, b};
+    return message;
 }
 
-inline std::vector<uint8_t> canonicalPayload(const SimMessage& msg) {
-    std::vector<uint8_t> payload = {static_cast<uint8_t>(msg.index())};
-    auto appendU32 = [&payload](uint32_t value) {
-        for (size_t i = 0; i < sizeof(value); i++) {
-            payload.push_back(static_cast<uint8_t>(value >> (i * 8)));
-        }
-    };
-    auto appendU64 = [&payload](uint64_t value) {
-        for (size_t i = 0; i < sizeof(value); i++) {
-            payload.push_back(static_cast<uint8_t>(value >> (i * 8)));
-        }
-    };
-
-    std::visit(
-        [&payload, &appendU32, &appendU64](const auto& message) {
-            using Message = std::decay_t<decltype(message)>;
-            if constexpr (std::is_same_v<Message, SetColorCommand>) {
-                payload.insert(payload.end(), {message.r, message.g, message.b});
-            } else if constexpr (std::is_same_v<Message, ArmTouchCommand>) {
-                appendU32(message.timeoutMs);
-                payload.push_back(message.feedbackMode);
-                appendU64(message.roundToken);
-            } else if constexpr (std::is_same_v<Message, PlaySoundCommand>) {
-                payload.insert(payload.end(), message.soundName.begin(), message.soundName.end());
-            } else if constexpr (std::is_same_v<Message, TouchEventMsg>) {
-                appendU32(message.reactionTimeUs);
-                payload.push_back(message.padIndex);
-                appendU64(message.roundToken);
-            } else if constexpr (std::is_same_v<Message, TimeoutEventMsg>) {
-                appendU64(message.roundToken);
-            }
-        },
-        msg);
-    return payload;
+inline SimMessage makeArmTouch(uint32_t src, uint32_t dst, uint32_t timeoutMs, uint8_t feedbackMode,
+                               uint32_t roundToken) {
+    auto message = makeMessage(domes::espnow::kArmTouch, src, dst);
+    message.payload.arm_touch = {roundToken, timeoutMs, feedbackMode};
+    return message;
 }
 
-// Helper to get message type name for logging
+inline SimMessage makeTouchEvent(uint32_t src, uint32_t dst, uint32_t reactionTimeUs,
+                                 uint8_t padIndex, uint32_t roundToken) {
+    auto message = makeMessage(domes::espnow::kTouchEvent, src, dst);
+    message.payload.touch_event = {roundToken, reactionTimeUs, padIndex};
+    return message;
+}
+
+inline SimMessage makeTimeoutEvent(uint32_t src, uint32_t dst, uint32_t roundToken) {
+    auto message = makeMessage(domes::espnow::kTimeoutEvent, src, dst);
+    message.payload.timeout_event = {roundToken};
+    return message;
+}
+
+inline const SimMessageHeader& getHeader(const SimMessage& message) {
+    return message.header;
+}
+inline SimMessageHeader& getMutableHeader(SimMessage& message) {
+    return message.header;
+}
+inline SimMessageType messageType(const SimMessage& message) {
+    return domes::espnow::messageType(message);
+}
+
+inline std::vector<uint8_t> canonicalPayload(const SimMessage& message) {
+    std::array<uint8_t, domes_peer_PeerMessage_size> encoded{};
+    pb_ostream_t stream = pb_ostream_from_buffer(encoded.data(), encoded.size());
+    if (!pb_encode(&stream, domes_peer_PeerMessage_fields, &message))
+        return {};
+    return {encoded.begin(), encoded.begin() + static_cast<std::ptrdiff_t>(stream.bytes_written)};
+}
+
 inline const char* messageTypeName(SimMessageType type) {
-    switch (type) {
-        case SimMessageType::kSetColor:
-            return "SET_COLOR";
-        case SimMessageType::kArmTouch:
-            return "ARM_TOUCH";
-        case SimMessageType::kPlaySound:
-            return "PLAY_SOUND";
-        case SimMessageType::kStopAll:
-            return "STOP_ALL";
-        case SimMessageType::kTouchEvent:
-            return "TOUCH_EVENT";
-        case SimMessageType::kTimeoutEvent:
-            return "TIMEOUT_EVENT";
-        case SimMessageType::kJoinGame:
-            return "JOIN_GAME";
-        default:
-            return "UNKNOWN";
-    }
+    return domes::espnow::msgTypeName(type);
 }
-
-constexpr uint16_t kBroadcastPodId = 0xFFFF;
 
 }  // namespace sim

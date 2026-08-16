@@ -1,8 +1,8 @@
 # Protocol Schemas And Generated Bindings
 
-`config.proto` and `trace.proto` are the source of truth for config and trace messages. Nanopb C
-bindings and Flutter Dart bindings are committed; Rust prost bindings are generated in Cargo's build
-directory.
+`config.proto`, `peer_drill.proto`, and `trace.proto` are the source of truth for config, portable
+peer/drill, and trace messages. Nanopb C bindings and Flutter Dart bindings are committed; Rust
+prost bindings are generated in Cargo's build directory.
 
 ## Generate All Committed Bindings
 
@@ -13,8 +13,8 @@ dart pub global activate protoc_plugin 25.0.0
 tools/generate_protocols.sh
 ```
 
-The script uses the checked-in nanopb generator, generates both `config` and `trace` C bindings, and
-generates the Flutter app's `config` bindings. Use its check mode in local verification and CI:
+The script uses the checked-in nanopb generator and generates all committed nanopb and Flutter
+bindings. Use its check mode in local verification and CI:
 
 ```bash
 tools/generate_protocols.sh --check
@@ -63,5 +63,6 @@ contain the protobuf directly. The firmware sender and each host decoder must ag
 for that message. The status byte is an established config-protocol wrapper, not a protobuf field
 and not a precedent for new manually defined message families.
 
-OTA transfer frames and the internal ESP-NOW peer protocol are bounded fixed-binary exceptions.
-They are not defined in this directory and must not be used as a precedent for new host protocols.
+OTA transfer frames remain a bounded fixed-binary exception. The version-1 ESP-NOW peer transport
+retains its deployed fixed-binary compatibility encoding, but its semantics are owned by
+`peer_drill.proto`. Neither encoding is a precedent for a new protocol family.
