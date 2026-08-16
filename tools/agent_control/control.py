@@ -171,6 +171,10 @@ class TrackerError(ControlError):
     """A read-side tracker failure that is safe to retry without state mutation."""
 
 
+class StackInvalidated(ControlError):
+    """A stacked parent changed; child must rework rather than become blocked."""
+
+
 @dataclass(frozen=True)
 class Workflow:
     repository: str
@@ -182,6 +186,7 @@ class Workflow:
     poll_interval_seconds: int
     stall_timeout_seconds: int
     max_retry_backoff_seconds: int
+    tracker_actor: str = ""
 
 
 @dataclass(frozen=True)
@@ -267,6 +272,16 @@ class TicketValidation:
         return not self.errors
 
 
+@dataclass(frozen=True)
+class StackContext:
+    """Controller-derived, one-deep PR-stack binding; never worker-authored."""
+
+    parent_issue: int
+    parent_pr: int
+    base_ref: str
+    base_head: str
+
+
 def _scalar(value: str) -> Any:
     value = value.strip()
     if value.isdigit():
@@ -301,6 +316,7 @@ def load_workflow(path: Path = WORKFLOW_PATH) -> Workflow:
         "schema_version",
         "tracker_kind",
         "repository",
+        "tracker_actor",
         "state_prefix",
         "scheduler_host",
         "max_concurrent_workers",
@@ -315,6 +331,11 @@ def load_workflow(path: Path = WORKFLOW_PATH) -> Workflow:
         raise ControlError(f"{path}: missing workflow keys: {', '.join(missing)}")
     if config["schema_version"] != 1 or config["tracker_kind"] != "github":
         raise ControlError(f"{path}: unsupported schema or tracker")
+    tracker_actor = str(config["tracker_actor"])
+    if not re.fullmatch(
+        r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", tracker_actor
+    ):
+        raise ControlError(f"{path}: tracker_actor must be one GitHub login")
     maximum = config["max_concurrent_workers"]
     if not isinstance(maximum, int) or not 1 <= maximum <= 16:
         raise ControlError(f"{path}: max_concurrent_workers must be between 1 and 16")
@@ -335,6 +356,7 @@ def load_workflow(path: Path = WORKFLOW_PATH) -> Workflow:
         poll_interval_seconds=config["poll_interval_seconds"],
         stall_timeout_seconds=config["stall_timeout_seconds"],
         max_retry_backoff_seconds=config["max_retry_backoff_seconds"],
+        tracker_actor=tracker_actor,
     )
 
 
@@ -747,6 +769,143 @@ def terminal(ticket: Ticket) -> bool:
     return ticket.state == "CLOSED" or ticket.agent_state == "agent:done"
 
 
+def _stack_parent(
+    item: TicketValidation, tickets: Sequence[Ticket]
+) -> tuple[Ticket | None, str | None]:
+    """Return the sole permitted nonterminal dependency, without tracker I/O."""
+    by_number = {ticket.number: ticket for ticket in tickets}
+    nonterminal = [
+        by_number[number]
+        for number in item.dependencies
+        if number in by_number and not terminal(by_number[number])
+    ]
+    if not nonterminal:
+        return None, None
+    if len(nonterminal) != 1:
+        return None, "stacked work permits exactly one nonterminal dependency"
+    parent = nonterminal[0]
+    parent_sections = parse_sections(parent.body)
+    if (
+        parent.state != "OPEN"
+        or parent.agent_state != "agent:human-review"
+        or not automated_delivery(item.sections)
+        or not automated_delivery(parent_sections)
+        or item.sections.get("Work class", "").strip() != "software"
+        or parent_sections.get("Work class", "").strip() != "software"
+        or hardware_operations(item.sections)
+    ):
+        return (
+            None,
+            "nonterminal dependency is not an eligible software human-review parent",
+        )
+    parent_validation = validate_ticket(parent, check_revision=False)
+    if not parent_validation.valid:
+        return None, "stack parent ticket contract is invalid"
+    parent_dependencies = parent_validation.dependencies
+    if any(
+        dependency in by_number and not terminal(by_number[dependency])
+        for dependency in parent_dependencies
+    ):
+        return (
+            None,
+            "dependency is not terminal; nested stacked pull requests are not supported",
+        )
+    return parent, None
+
+
+def stack_dependency_status(
+    workflow: Workflow | None, item: TicketValidation, tickets: Sequence[Ticket]
+) -> tuple[bool, str | None]:
+    """Whether dependencies are terminal or form the narrow stacked-PR exception."""
+    del workflow
+    by_number = {ticket.number: ticket for ticket in tickets}
+    missing = [number for number in item.dependencies if number not in by_number]
+    if missing:
+        return False, f"dependency #{missing[0]} was not returned by the tracker"
+    parent, error = _stack_parent(item, tickets)
+    if error:
+        nonterminal = [
+            number for number in item.dependencies if not terminal(by_number[number])
+        ]
+        if (
+            len(nonterminal) == 1
+            and by_number[nonterminal[0]].agent_state == "agent:human-review"
+        ):
+            return False, error
+        if len(nonterminal) == 1:
+            return False, f"dependency #{nonterminal[0]} is not terminal"
+        return False, error
+    if parent is not None:
+        return True, None
+    blocked = [
+        number for number in item.dependencies if not terminal(by_number[number])
+    ]
+    return (
+        not blocked,
+        None if not blocked else f"dependency #{blocked[0]} is not terminal",
+    )
+
+
+def stack_context(
+    workflow: Workflow, item: TicketValidation, tickets: Sequence[Ticket]
+) -> StackContext | None:
+    """Resolve and validate the exact parent PR head immediately before use."""
+    parent, error = _stack_parent(item, tickets)
+    if error:
+        raise StackInvalidated(error)
+    if parent is None:
+        return None
+    parent_sections = parse_sections(parent.body)
+    try:
+        artifact = load_latest_artifact_handoff(workflow, parent)
+    except ControlError as error:
+        raise StackInvalidated(str(error)) from error
+    parent_pr = artifact.get("pull_request")
+    parent_head = artifact.get("commit")
+    if (
+        not isinstance(parent_pr, int)
+        or not FULL_SHA.fullmatch(str(parent_head))
+        or artifact.get("spec_revision")
+        != parent_sections.get("Specification revision")
+        or existing_pull_request(parent_sections) != parent_pr
+        or artifact_stack_binding(artifact) is not None
+    ):
+        raise StackInvalidated(f"stack parent #{parent.number} has no exact artifact")
+    pull_request = load_pull_request(workflow, parent_pr)
+    if (
+        pull_request.state != "OPEN"
+        or pull_request.is_draft
+        or pull_request.base_ref != workflow.base_branch
+        or pull_request.head_oid != parent_head
+        or pull_request.merge_state in {"BEHIND", "DIRTY"}
+        or pull_request.mergeable in {"CONFLICTING", "UNMERGEABLE"}
+        or pull_request.review_decision == "CHANGES_REQUESTED"
+    ):
+        raise StackInvalidated(
+            f"stack parent #{parent.number} is no longer a stable review artifact"
+        )
+    try:
+        judge = load_exact_role_handoff(workflow, parent, "judge")
+    except ControlError as error:
+        raise StackInvalidated(str(error)) from error
+    if (
+        judge.get("verdict") != "approve"
+        or judge.get("commit") != parent_head
+        or judge.get("pull_request") != parent_pr
+    ):
+        raise StackInvalidated(
+            f"stack parent #{parent.number} lacks exact-head independent approval"
+        )
+    ci_state, _ = required_check_summary(pull_request, load_autopilot_policy())
+    if ci_state != "passed":
+        raise StackInvalidated(
+            f"stack parent #{parent.number} lacks exact-head required CI"
+        )
+    return StackContext(
+        parent.number, parent_pr, pull_request.head_ref, pull_request.head_oid
+    )
+
+
 def eligible_queue(
     tickets: Sequence[Ticket], *, check_revision: bool = True
 ) -> tuple[list[TicketValidation], dict[int, list[str]]]:
@@ -768,14 +927,9 @@ def eligible_queue(
             continue
         if ticket.number in cycle_nodes:
             reasons.append("dependency cycle")
-        for dependency in item.dependencies:
-            target = by_number.get(dependency)
-            if target is None:
-                reasons.append(
-                    f"dependency #{dependency} was not returned by the tracker"
-                )
-            elif not terminal(target):
-                reasons.append(f"dependency #{dependency} is not terminal")
+        dependencies_ok, dependency_error = stack_dependency_status(None, item, tickets)
+        if not dependencies_ok and dependency_error:
+            reasons.append(dependency_error)
         if reasons:
             blockers[ticket.number] = reasons
         else:
@@ -1084,6 +1238,7 @@ def build_prompt(
     hardware_capability: dict[str, Any] | None = None,
     controller_evidence: dict[str, Any] | None = None,
     required_base_head: str | None = None,
+    required_base_ref: str | None = None,
 ) -> str:
     role_prompt = (ORCHESTRATION_DIR / "prompts" / f"{role}.md").read_text(
         encoding="utf-8"
@@ -1106,6 +1261,11 @@ def build_prompt(
             f"Current required base revision: `{required_base_head}`\n"
             "The pushed pull-request head must descend from this exact revision.\n"
         )
+        if required_base_ref is not None:
+            prompt += (
+                f"Required pull-request base branch: `{required_base_ref}`\n"
+                "Create or retarget the pull request to this exact branch.\n"
+            )
     if prior_handoff is not None:
         prompt += (
             "\n# Prior schema-validated handoff\n\n"
@@ -1898,6 +2058,7 @@ def _prepare_agent_workspace(
     item: TicketValidation,
     role: str,
     pull_request: PullRequest | None,
+    stack: StackContext | None = None,
 ) -> None:
     refreshed = _git("fetch", "--quiet", "--prune", "origin", cwd=workspace)
     if refreshed.returncode != 0:
@@ -1906,6 +2067,8 @@ def _prepare_agent_workspace(
             or f"issue #{item.ticket.number}: cannot refresh agent clone"
         )
     required_remote_refs = [f"refs/remotes/origin/{workflow.base_branch}"]
+    if stack is not None:
+        required_remote_refs.append(f"refs/remotes/origin/{stack.base_ref}")
     if pull_request is not None:
         required_remote_refs.append(f"refs/remotes/origin/{pull_request.head_ref}")
     for remote_ref in required_remote_refs:
@@ -1913,6 +2076,12 @@ def _prepare_agent_workspace(
         if resolved.returncode != 0:
             raise ControlError(
                 f"issue #{item.ticket.number}: agent clone is missing {remote_ref}"
+            )
+    if stack is not None:
+        stack_ref = _git("rev-parse", f"origin/{stack.base_ref}", cwd=workspace)
+        if stack_ref.returncode != 0 or stack_ref.stdout.strip() != stack.base_head:
+            raise ControlError(
+                f"issue #{item.ticket.number}: stack parent branch moved before workspace preparation"
             )
 
     if pull_request is not None:
@@ -1972,12 +2141,17 @@ def _prepare_agent_workspace(
                 cwd=workspace,
             )
         else:
+            base = (
+                stack.base_head
+                if stack is not None
+                else f"origin/{workflow.base_branch}"
+            )
             switched = _git(
                 "checkout",
                 "--quiet",
                 "-b",
                 branch,
-                f"origin/{workflow.base_branch}",
+                base,
                 cwd=workspace,
             )
         if switched.returncode != 0:
@@ -2023,15 +2197,38 @@ def _prepare_agent_workspace(
     _assert_clean_workspace(workspace, issue=item.ticket.number)
 
 
-def ensure_workspace(workflow: Workflow, item: TicketValidation, role: str) -> Path:
+def ensure_workspace(
+    workflow: Workflow,
+    item: TicketValidation,
+    role: str,
+    stack: StackContext | None = None,
+) -> Path:
     workspace = workflow.workspace_root / f"issue-{item.ticket.number}"
     pull_request_number = existing_pull_request(item.sections)
     pull_request: PullRequest | None = None
     if pull_request_number:
         pull_request = load_pull_request(workflow, pull_request_number)
+        expected_base = stack.base_ref if stack is not None else workflow.base_branch
+        rebasing_stacked_child = (
+            stack is None
+            and role == "worker"
+            and (item.source_state or item.ticket.agent_state) == "agent:rework"
+            and automated_delivery(item.sections)
+            and item.sections.get("Work class", "").strip() == "software"
+            and not hardware_operations(item.sections)
+            and pull_request.base_ref.startswith("codex/issue-")
+        )
         if (
-            pull_request.state != "OPEN"
-            or pull_request.base_ref != workflow.base_branch
+            stack is None
+            and role in {"judge", "verification-worker"}
+            and pull_request.base_ref != workflow.base_branch
+        ):
+            raise StackInvalidated(
+                f"issue #{item.ticket.number}: stacked base is no longer active; "
+                "returning the child to main-based rework"
+            )
+        if pull_request.state != "OPEN" or (
+            pull_request.base_ref != expected_base and not rebasing_stacked_child
         ):
             raise ControlError(
                 f"issue #{item.ticket.number}: existing PR must be open against "
@@ -2057,6 +2254,7 @@ def ensure_workspace(workflow: Workflow, item: TicketValidation, role: str) -> P
         item,
         role,
         pull_request,
+        stack,
     )
     return workspace
 
@@ -2137,6 +2335,22 @@ def bind_ticket_pull_request(
             f"issue #{item.ticket.number}: cannot refresh PR contract marker"
         )
     update_issue_body(workflow, item.ticket, body)
+
+
+def block_invalid_human_merged_stack(
+    workflow: Workflow,
+    ticket: Ticket,
+    reason: str,
+) -> dict[str, Any]:
+    """Fail closed after a human merge loses its only accepted integration path."""
+    transition(workflow, ticket, "agent:blocked")
+    post_controller_comment(
+        workflow,
+        ticket,
+        "Agent control-plane transition (stacked pull request)",
+        reason,
+    )
+    return {"issue": ticket.number, "state": "agent:blocked"}
 
 
 def set_issue_priority(workflow: Workflow, ticket: Ticket, priority: str) -> None:
@@ -2338,11 +2552,11 @@ def validate_selector_result(
             or issue.agent_state != "agent:needs-specification"
         ):
             raise ControlError("selector referenced an unavailable existing issue")
-        issue_dependencies = validate_ticket(issue, check_revision=False).dependencies
-        if any(
-            dependency not in by_number or not terminal(by_number[dependency])
-            for dependency in issue_dependencies
-        ):
+        issue_validation = validate_ticket(issue, check_revision=False)
+        dependencies_ok, _ = stack_dependency_status(
+            workflow, issue_validation, tickets
+        )
+        if not dependencies_ok:
             raise ControlError(
                 "selector referenced a dependency-blocked existing issue"
             )
@@ -3846,6 +4060,17 @@ def attest_hardware_manifest(
     return attestation
 
 
+def controller_authored_comment(workflow: Workflow, comment: Any) -> bool:
+    """Accept durable handoff comments only from the pinned controller principal."""
+    if not workflow.tracker_actor or not isinstance(comment, dict):
+        return False
+    author = comment.get("author")
+    return (
+        isinstance(author, dict)
+        and str(author.get("login", "")).casefold() == workflow.tracker_actor.casefold()
+    )
+
+
 def load_exact_role_handoff(
     workflow: Workflow,
     ticket: Ticket,
@@ -3879,6 +4104,8 @@ def load_exact_role_handoff(
         )
         marker = f"Agent control-plane transition ({role})"
         for comment in reversed(document.get("comments", [])):
+            if not controller_authored_comment(workflow, comment):
+                continue
             body = str(comment.get("body", ""))
             if marker not in body:
                 continue
@@ -3917,6 +4144,8 @@ def load_latest_worker_handoff(workflow: Workflow, ticket: Ticket) -> dict[str, 
     )
     marker = "Agent control-plane transition (worker)"
     for comment in reversed(document.get("comments", [])):
+        if not controller_authored_comment(workflow, comment):
+            continue
         body = str(comment.get("body", ""))
         if marker not in body:
             continue
@@ -3952,7 +4181,8 @@ def count_role_comments(workflow: Workflow, ticket: Ticket, role: str) -> int:
     )
     marker = f"Agent control-plane transition ({role})"
     return sum(
-        marker in str(comment.get("body", ""))
+        controller_authored_comment(workflow, comment)
+        and marker in str(comment.get("body", ""))
         for comment in document.get("comments", [])
     )
 
@@ -3988,6 +4218,8 @@ def load_latest_artifact_handoff(workflow: Workflow, ticket: Ticket) -> dict[str
         ]
     )
     for comment in reversed(document.get("comments", [])):
+        if not controller_authored_comment(workflow, comment):
+            continue
         body = str(comment.get("body", ""))
         role = next(
             (
@@ -4060,6 +4292,8 @@ def required_prior_handoff(
             ]
         )
         for comment in reversed(document.get("comments", [])):
+            if not controller_authored_comment(workflow, comment):
+                continue
             body = str(comment.get("body", ""))
             matched_role = next(
                 (
@@ -4195,10 +4429,24 @@ def _execute_one(
     hardware_required = requires_registered_hardware(item.sections)
     hardware_worker = role == "verification-worker"
     hardware_access = hardware_required and hardware_worker
-    required_base_head = (
-        origin_main_revision(workflow)
-        if role in {"worker", "verification-worker"}
+    stack = (
+        stack_context(workflow, item, load_live_tickets(workflow))
+        if role in {"worker", "verification-worker", "judge"}
         and automated_delivery(item.sections)
+        else None
+    )
+    pins_implementation_base = role in {
+        "worker",
+        "verification-worker",
+    } and automated_delivery(item.sections)
+    required_base_head = (
+        (stack.base_head if stack is not None else origin_main_revision(workflow))
+        if pins_implementation_base
+        else None
+    )
+    required_base_ref = (
+        (stack.base_ref if stack is not None else workflow.base_branch)
+        if pins_implementation_base
         else None
     )
     if hardware_access and hardware_capability is None:
@@ -4212,7 +4460,7 @@ def _execute_one(
     run_root.mkdir(parents=True, exist_ok=True)
     lease_path = run_root / "active-process.json"
     terminate_recorded_process_group(lease_path)
-    workspace = ensure_workspace(workflow, item, role)
+    workspace = ensure_workspace(workflow, item, role, stack)
     prior_handoff = required_prior_handoff(
         workflow,
         item.ticket,
@@ -4459,6 +4707,7 @@ def _execute_one(
                 broker_capability if hardware_access else None,
                 controller_evidence,
                 required_base_head,
+                required_base_ref,
             ),
             event_path,
             stderr_path,
@@ -4540,9 +4789,17 @@ def _execute_one(
             item,
             result,
             required_base_head=required_base_head,
+            stack=stack,
         )
         if role == "worker" and not existing_pull_request(item.sections):
             bind_ticket_pull_request(workflow, item, int(result["pull_request"]))
+    if stack is not None and role in {"worker", "verification-worker"}:
+        result["controller_stack"] = {
+            "parent_issue": stack.parent_issue,
+            "parent_pr": stack.parent_pr,
+            "base_ref": stack.base_ref,
+            "base_head": stack.base_head,
+        }
     result = sanitize_public_handoff(result, workspace, run_root)
     if (
         role == "planner"
@@ -4905,6 +5162,7 @@ def verify_worker_artifact(
     result: dict[str, Any],
     *,
     required_base_head: str | None = None,
+    stack: StackContext | None = None,
 ) -> None:
     commit = result.get("commit", "")
     if not FULL_SHA.fullmatch(commit):
@@ -4937,10 +5195,11 @@ def verify_worker_artifact(
             f"issue #{item.ticket.number}: worker changed the existing pull request"
         )
     pull_request = load_pull_request(workflow, pull_request_number)
+    expected_base = stack.base_ref if stack is not None else workflow.base_branch
     if (
         pull_request.state != "OPEN"
         or pull_request.is_draft
-        or pull_request.base_ref != workflow.base_branch
+        or pull_request.base_ref != expected_base
         or pull_request.head_oid != commit
     ):
         raise ControlError(
@@ -4957,6 +5216,8 @@ def verify_worker_artifact(
             f"issue #{item.ticket.number}: autonomous worker is missing the "
             "controller-pinned base revision"
         )
+    if stack is not None:
+        validate_stack_binding(workflow, item, pull_request, stack)
     fetched = _git(
         "fetch",
         "--quiet",
@@ -4980,6 +5241,206 @@ def verify_worker_artifact(
             ancestry.stderr.strip()
             or f"issue #{item.ticket.number}: cannot verify PR base ancestry"
         )
+
+
+def validate_stack_binding(
+    workflow: Workflow,
+    item: TicketValidation,
+    pull_request: PullRequest,
+    binding: StackContext,
+) -> None:
+    """Require a child artifact to remain on the exact reviewed parent head."""
+    if (
+        pull_request.base_ref != binding.base_ref
+        or pull_request.base_oid != binding.base_head
+    ):
+        raise StackInvalidated(
+            f"issue #{item.ticket.number}: stacked PR no longer binds parent "
+            f"#{binding.parent_issue} at {binding.base_head}"
+        )
+    tickets = load_live_tickets(workflow)
+    live = stack_context(workflow, item, tickets)
+    if live is None or live != binding:
+        raise StackInvalidated(
+            f"issue #{item.ticket.number}: stack parent changed after dispatch"
+        )
+
+
+def artifact_stack_binding(artifact: dict[str, Any]) -> StackContext | None:
+    value = artifact.get("controller_stack")
+    if not isinstance(value, dict):
+        return None
+    try:
+        binding = StackContext(
+            int(value["parent_issue"]),
+            int(value["parent_pr"]),
+            str(value["base_ref"]),
+            str(value["base_head"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        raise ControlError("artifact has malformed controller stack binding") from None
+    if (
+        binding.parent_issue < 1
+        or binding.parent_pr < 1
+        or not binding.base_ref
+        or not FULL_SHA.fullmatch(binding.base_head)
+    ):
+        raise ControlError("artifact has malformed controller stack binding")
+    return binding
+
+
+def _remote_commit_is_ancestor(
+    workflow: Workflow, ancestor: str, descendant: str
+) -> bool:
+    if not FULL_SHA.fullmatch(ancestor) or not FULL_SHA.fullmatch(descendant):
+        raise ControlError("stack integration requires exact commit identities")
+    fetched = _git(
+        "fetch",
+        "--quiet",
+        "--no-write-fetch-head",
+        trusted_repository_url(workflow),
+        ancestor,
+        descendant,
+    )
+    if fetched.returncode != 0:
+        raise TrackerError(
+            fetched.stderr.strip() or "cannot fetch stacked integration commits"
+        )
+    ancestry = _git("merge-base", "--is-ancestor", ancestor, descendant)
+    if ancestry.returncode not in {0, 1}:
+        raise ControlError(
+            ancestry.stderr.strip() or "cannot verify stacked integration ancestry"
+        )
+    return ancestry.returncode == 0
+
+
+def reconcile_stacked_human_merge(
+    workflow: Workflow,
+    ticket: Ticket,
+    pull_request: PullRequest,
+    binding: StackContext,
+) -> dict[str, Any]:
+    """Keep a child nonterminal until its human-merged stack commit reaches main."""
+    if (
+        pull_request.state != "MERGED"
+        or pull_request.base_ref != binding.base_ref
+        or not FULL_SHA.fullmatch(pull_request.merge_commit)
+    ):
+        raise ControlError(
+            f"issue #{ticket.number}: stacked merge artifact is malformed"
+        )
+    parent = load_pull_request(workflow, binding.parent_pr)
+    if parent.base_ref != workflow.base_branch:
+        return block_invalid_human_merged_stack(
+            workflow,
+            ticket,
+            "The stack parent no longer targets the main branch; the merged child "
+            "has no accepted path to main and requires a new steward-approved delivery.",
+        )
+    if parent.state == "OPEN":
+        if _remote_commit_is_ancestor(
+            workflow, pull_request.merge_commit, parent.head_oid
+        ):
+            return {
+                "issue": ticket.number,
+                "state": "agent:human-review",
+                "stack_merge": "waiting_for_parent_main",
+                "parent_pull_request": parent.number,
+            }
+        return block_invalid_human_merged_stack(
+            workflow,
+            ticket,
+            "The open parent no longer contains the human-merged child integration; "
+            "a new steward-approved delivery is required.",
+        )
+    if parent.state != "MERGED":
+        return block_invalid_human_merged_stack(
+            workflow,
+            ticket,
+            "The stack parent closed without reaching main; the child must be "
+            "replanned into a new accepted delivery.",
+        )
+    refresh_base_branch(workflow)
+    main_head = origin_main_revision(workflow)
+    if not _remote_commit_is_ancestor(workflow, pull_request.merge_commit, main_head):
+        return block_invalid_human_merged_stack(
+            workflow,
+            ticket,
+            "The parent merged, but the child's integration commit is not present on "
+            "main; a new steward-approved delivery is required.",
+        )
+    return finalize_human_merged_ticket(workflow, ticket, pull_request)
+
+
+def reconcile_stacked_children(
+    workflow: Workflow,
+    tickets: Sequence[Ticket],
+    active_numbers: Sequence[int] = (),
+) -> list[dict[str, Any]]:
+    """Return stale stacked children to rework without touching active workers."""
+    active = set(active_numbers)
+    results: list[dict[str, Any]] = []
+    for ticket in tickets:
+        if (
+            ticket.number in active
+            or ticket.state != "OPEN"
+            or ticket.agent_state
+            not in {
+                "agent:agent-review",
+                "agent:ci-pending",
+                "agent:verification",
+                "agent:human-review",
+            }
+        ):
+            continue
+        try:
+            artifact = load_latest_artifact_handoff(workflow, ticket)
+            binding = artifact_stack_binding(artifact)
+            if binding is None:
+                continue
+            item = validate_ticket(ticket)
+            if not item.valid:
+                continue
+            pull_request_number = artifact.get("pull_request")
+            if not isinstance(pull_request_number, int):
+                raise StackInvalidated("stacked artifact has no pull request")
+            pull_request = load_pull_request(workflow, pull_request_number)
+            if pull_request.state == "MERGED":
+                if ticket.agent_state == "agent:human-review":
+                    # The owning reconciler retains the child until the parent
+                    # integration is observed on main.
+                    continue
+                results.append(
+                    block_invalid_human_merged_stack(
+                        workflow,
+                        ticket,
+                        "The stacked child was merged before reaching the human-review "
+                        "boundary; a new steward-approved delivery is required.",
+                    )
+                )
+                continue
+            validate_stack_binding(workflow, item, pull_request, binding)
+        except StackInvalidated as error:
+            if ticket.agent_state not in {
+                "agent:rework",
+                "agent:blocked",
+                "agent:done",
+            }:
+                transition(workflow, ticket, "agent:rework")
+                post_controller_comment(
+                    workflow,
+                    ticket,
+                    "Agent control-plane transition (stacked pull request)",
+                    f"Parent changed, conflicted, or merged; rework is required: {error}",
+                )
+                results.append({"issue": ticket.number, "state": "agent:rework"})
+        except TrackerError:
+            continue
+        except ControlError:
+            # The owning state reconciler handles missing or malformed artifacts
+            # without turning one ticket into a controller-wide failure.
+            continue
+    return results
 
 
 def required_check_summary(
@@ -5153,6 +5614,7 @@ def reconcile_ci_ticket(
     if not isinstance(pull_request_number, int) or pull_request_number < 1:
         raise ControlError(f"issue #{ticket.number}: CI state has no pull request")
     pull_request = load_pull_request(workflow, pull_request_number)
+    binding = artifact_stack_binding(artifact)
     if pull_request.head_oid != artifact.get("commit"):
         transition(workflow, ticket, "agent:rework")
         post_controller_comment(
@@ -5162,7 +5624,27 @@ def reconcile_ci_ticket(
             "Pull-request head changed after the reviewed artifact; returning to rework.",
         )
         return {"issue": ticket.number, "state": "agent:rework"}
-    if pull_request.base_ref != workflow.base_branch or pull_request.is_draft:
+    if pull_request.state == "MERGED" and binding is not None:
+        return block_invalid_human_merged_stack(
+            workflow,
+            ticket,
+            "The stacked child was merged before exact-head CI reached the human-review "
+            "boundary; a new steward-approved delivery is required.",
+        )
+    try:
+        if binding is not None:
+            validate_stack_binding(workflow, validation, pull_request, binding)
+    except StackInvalidated as error:
+        transition(workflow, ticket, "agent:rework")
+        post_controller_comment(
+            workflow,
+            ticket,
+            "Agent control-plane transition (stacked pull request)",
+            str(error),
+        )
+        return {"issue": ticket.number, "state": "agent:rework"}
+    expected_base = binding.base_ref if binding is not None else workflow.base_branch
+    if pull_request.base_ref != expected_base or pull_request.is_draft:
         transition(workflow, ticket, "agent:blocked")
         return {"issue": ticket.number, "state": "agent:blocked"}
     ci_state, records = required_check_summary(pull_request, policy)
@@ -5290,21 +5772,7 @@ def reconcile_human_reviews(
                     f"issue #{ticket.number}: human review has no pull request"
                 )
             pull_request = load_pull_request(workflow, pull_request_number)
-            if pull_request.state == "MERGED":
-                results.append(
-                    finalize_human_merged_ticket(workflow, ticket, pull_request)
-                )
-                continue
-            if pull_request.state != "OPEN":
-                transition(workflow, ticket, "agent:blocked")
-                post_controller_comment(
-                    workflow,
-                    ticket,
-                    "Agent control-plane transition (human review)",
-                    f"PR #{pull_request.number} closed without merge.",
-                )
-                results.append({"issue": ticket.number, "state": "agent:blocked"})
-                continue
+            binding = artifact_stack_binding(artifact)
             if pull_request.head_oid != artifact.get("commit"):
                 transition(workflow, ticket, "agent:rework")
                 post_controller_comment(
@@ -5316,6 +5784,41 @@ def reconcile_human_reviews(
                 )
                 results.append({"issue": ticket.number, "state": "agent:rework"})
                 continue
+            if pull_request.state == "MERGED":
+                if binding is not None:
+                    results.append(
+                        reconcile_stacked_human_merge(
+                            workflow, ticket, pull_request, binding
+                        )
+                    )
+                else:
+                    results.append(
+                        finalize_human_merged_ticket(workflow, ticket, pull_request)
+                    )
+                continue
+            if pull_request.state != "OPEN":
+                transition(workflow, ticket, "agent:blocked")
+                post_controller_comment(
+                    workflow,
+                    ticket,
+                    "Agent control-plane transition (human review)",
+                    f"PR #{pull_request.number} closed without merge.",
+                )
+                results.append({"issue": ticket.number, "state": "agent:blocked"})
+                continue
+            if binding is not None:
+                try:
+                    validate_stack_binding(workflow, validation, pull_request, binding)
+                except StackInvalidated as error:
+                    transition(workflow, ticket, "agent:rework")
+                    post_controller_comment(
+                        workflow,
+                        ticket,
+                        "Agent control-plane transition (stacked pull request)",
+                        str(error),
+                    )
+                    results.append({"issue": ticket.number, "state": "agent:rework"})
+                    continue
             if pull_request.merge_state in {"BEHIND", "DIRTY"} or (
                 pull_request.mergeable in {"CONFLICTING", "UNMERGEABLE"}
             ):
@@ -5804,7 +6307,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                             blocked_selector_snapshot = ""
                     ci_results: list[dict[str, Any]] = []
                     if policy is not None:
-                        ci_results = reconcile_ci(workflow, policy, tickets)
+                        stack_results = reconcile_stacked_children(
+                            workflow,
+                            tickets,
+                            tuple(item.ticket.number for item in active.values()),
+                        )
+                        if stack_results:
+                            tickets = load_live_tickets(workflow)
+                        ci_results.extend(stack_results)
+                        ci_results.extend(reconcile_ci(workflow, policy, tickets))
                         ci_results.extend(reconcile_human_reviews(workflow, tickets))
                         if ci_results:
                             tickets = load_live_tickets(workflow)
@@ -6086,6 +6597,16 @@ def block_failed_run(
     workflow: Workflow, item: TicketValidation, error: Exception
 ) -> None:
     role = role_for(item.ticket)
+    if isinstance(error, StackInvalidated):
+        transition(workflow, item.ticket, "agent:rework")
+        post_controller_comment(
+            workflow,
+            item.ticket,
+            "Agent control-plane transition (stacked pull request)",
+            "The reviewed parent changed, conflicted, or merged; returning the child "
+            f"to rework: {error}",
+        )
+        return
     if role == "planner":
         retry_path = persist_planner_retry(workflow, item, error)
         transition(workflow, item.ticket, "agent:plan")

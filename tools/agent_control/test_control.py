@@ -53,6 +53,11 @@ def automated_ticket(
     label: str = "agent:ci-pending",
     surfaces: tuple[str, ...] = ("firmware/domes/main/",),
     proof: tuple[str, ...] = ("Focused software verification output.",),
+    dependencies: tuple[int, ...] = (),
+    pull_request: int = 77,
+    work_class: str = "software",
+    hardware_operations: tuple[str, ...] = (),
+    hardware_boards: tuple[int, ...] = (),
 ) -> control.Ticket:
     contract = control.render_ticket_contract(
         spec_revision=revision,
@@ -62,12 +67,14 @@ def automated_ticket(
         required_behavior="The observable behavior is deterministic.",
         acceptance_checks=["Run the focused automated tests."],
         allowed_surface_values=list(surfaces),
-        dependencies=(),
+        dependencies=dependencies,
         required_proof=list(proof),
         work_package="FS-WP-TEST",
-        work_class="software",
+        work_class=work_class,
         selected_policy="software-review-required",
-        pull_request=77,
+        pull_request=pull_request,
+        hardware_operations=hardware_operations,
+        hardware_boards=hardware_boards,
     )
     body = control.with_autopilot_contract("", contract)
     return control.Ticket(
@@ -83,9 +90,14 @@ def automated_ticket(
 def pull_request(
     policy: control.AutopilotPolicy,
     *,
+    number: int = 77,
     state: str = "OPEN",
     head: str = "c" * 40,
+    base_ref: str = "main",
+    base_oid: str = "a" * 40,
+    head_ref: str = "codex/feat/test",
     merge_state: str = "CLEAN",
+    review_decision: str = "",
     files: tuple[str, ...] = ("firmware/domes/main/app_main.cpp",),
     checks: tuple[dict[str, str], ...] | None = None,
 ) -> control.PullRequest:
@@ -95,16 +107,16 @@ def pull_request(
             for name in policy.required_ci_checks
         )
     return control.PullRequest(
-        number=77,
+        number=number,
         state=state,
         is_draft=False,
-        base_ref="main",
-        base_oid="a" * 40,
-        head_ref="codex/feat/test",
+        base_ref=base_ref,
+        base_oid=base_oid,
+        head_ref=head_ref,
         head_oid=head,
         mergeable="MERGEABLE",
         merge_state=merge_state,
-        review_decision="",
+        review_decision=review_decision,
         files=files,
         checks=checks,
         merge_commit="d" * 40 if state == "MERGED" else "",
@@ -115,6 +127,7 @@ class WorkflowTest(unittest.TestCase):
     def test_checked_in_workflow_loads(self) -> None:
         workflow = control.load_workflow()
         self.assertEqual("pcesar22/domes", workflow.repository)
+        self.assertEqual("pcesar22", workflow.tracker_actor)
         self.assertEqual("ministrom", workflow.scheduler_host)
         self.assertEqual(3, workflow.max_concurrent_workers)
         self.assertEqual("main", workflow.base_branch)
@@ -217,6 +230,54 @@ class WorkspaceIsolationTest(unittest.TestCase):
             self.git(workspace, "add", "result.txt")
             self.git(workspace, "commit", "-m", "test isolated commit")
             self.assertEqual("", self.git(source, "status", "--porcelain"))
+
+    def test_stacked_workspace_starts_at_exact_parent_head(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            self.git(source, "init", "-b", "main")
+            self.git(source, "config", "user.name", "DOMES Test")
+            self.git(source, "config", "user.email", "domes-test@example.invalid")
+            (source / "README.md").write_text("main\n", encoding="utf-8")
+            self.git(source, "add", "README.md")
+            self.git(source, "commit", "-m", "initial")
+            self.git(source, "checkout", "-b", "codex/issue-50")
+            (source / "parent.txt").write_text("parent\n", encoding="utf-8")
+            self.git(source, "add", "parent.txt")
+            self.git(source, "commit", "-m", "parent")
+            parent_head = self.git(source, "rev-parse", "HEAD")
+            self.git(source, "checkout", "main")
+            self.git(source, "remote", "add", "origin", str(source))
+            workflow = control.Workflow(
+                repository="example/domes",
+                state_prefix="agent:",
+                scheduler_host="test-host",
+                max_concurrent_workers=1,
+                workspace_root=root / "agent-workspaces",
+                base_branch="main",
+                poll_interval_seconds=1,
+                stall_timeout_seconds=30,
+                max_retry_backoff_seconds=1,
+            )
+            item = control.validate_ticket(
+                automated_ticket(
+                    51,
+                    parent_head,
+                    label="agent:ready",
+                    dependencies=(50,),
+                    pull_request=0,
+                ),
+                check_revision=False,
+            )
+            stack = control.StackContext(50, 91, "codex/issue-50", parent_head)
+            with mock.patch.object(control, "ROOT", source):
+                workspace = control.ensure_workspace(workflow, item, "worker", stack)
+            self.assertEqual(
+                "codex/issue-51", self.git(workspace, "branch", "--show-current")
+            )
+            self.assertEqual(parent_head, self.git(workspace, "rev-parse", "HEAD"))
+            self.assertTrue((workspace / "parent.txt").is_file())
 
     def test_linked_worktree_git_metadata_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -697,6 +758,689 @@ class ResultSemanticsTest(unittest.TestCase):
             control.validate_result_semantics("planner", duplicate_operations)
 
 
+class StackedPullRequestTest(unittest.TestCase):
+    revision = "a" * 40
+
+    def parent_and_child(
+        self,
+        *,
+        child_hardware: bool = False,
+        parent_historical_hardware: bool = False,
+    ) -> tuple[control.Ticket, control.Ticket, control.PullRequest]:
+        policy = control.load_autopilot_policy()
+        parent = (
+            automated_ticket(
+                50,
+                self.revision,
+                label="agent:human-review",
+                pull_request=91,
+                hardware_operations=("trace-status",),
+                hardware_boards=(0,),
+            )
+            if parent_historical_hardware
+            else automated_ticket(
+                50, self.revision, label="agent:human-review", pull_request=91
+            )
+        )
+        child = automated_ticket(
+            51,
+            self.revision,
+            label="agent:ready",
+            dependencies=(parent.number,),
+            pull_request=0,
+            hardware_operations=("info",) if child_hardware else (),
+            hardware_boards=(0,) if child_hardware else (),
+        )
+        parent_pr = pull_request(
+            policy,
+            number=91,
+            head="b" * 40,
+            head_ref="codex/issue-50",
+        )
+        return parent, child, parent_pr
+
+    def test_only_one_healthy_human_review_parent_opens_stack_exception(self) -> None:
+        workflow = control.load_workflow()
+        parent, child, parent_pr = self.parent_and_child(
+            parent_historical_hardware=True
+        )
+        item = control.validate_ticket(child, check_revision=False)
+        self.assertEqual(
+            (True, None),
+            control.stack_dependency_status(workflow, item, (parent, child)),
+        )
+        with (
+            mock.patch.object(
+                control,
+                "load_latest_artifact_handoff",
+                return_value={
+                    "issue": parent.number,
+                    "spec_revision": self.revision,
+                    "pull_request": parent_pr.number,
+                    "commit": parent_pr.head_oid,
+                },
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=parent_pr),
+            mock.patch.object(
+                control,
+                "load_exact_role_handoff",
+                return_value={
+                    "verdict": "approve",
+                    "pull_request": parent_pr.number,
+                    "commit": parent_pr.head_oid,
+                },
+            ),
+        ):
+            stack = control.stack_context(workflow, item, (parent, child))
+        self.assertEqual(
+            control.StackContext(
+                parent.number, parent_pr.number, parent_pr.head_ref, parent_pr.head_oid
+            ),
+            stack,
+        )
+
+    def test_terminal_parent_keeps_main_based_default(self) -> None:
+        workflow = control.load_workflow()
+        parent, child, _ = self.parent_and_child()
+        parent = control.Ticket(
+            parent.number,
+            parent.title,
+            parent.body,
+            "CLOSED",
+            ("agent:done",),
+            parent.url,
+        )
+        item = control.validate_ticket(child, check_revision=False)
+        self.assertEqual(
+            (True, None),
+            control.stack_dependency_status(workflow, item, (parent, child)),
+        )
+        self.assertIsNone(control.stack_context(workflow, item, (parent, child)))
+
+    def test_stack_rejects_fan_in_nested_child_hardware_and_parent_changes_requested(
+        self,
+    ) -> None:
+        workflow = control.load_workflow()
+        parent, child, parent_pr = self.parent_and_child()
+        second = automated_ticket(52, self.revision, label="agent:human-review")
+        fan_in = automated_ticket(
+            53,
+            self.revision,
+            label="agent:ready",
+            dependencies=(parent.number, second.number),
+            pull_request=0,
+        )
+        nested_parent = automated_ticket(
+            54,
+            self.revision,
+            label="agent:human-review",
+            dependencies=(parent.number,),
+        )
+        nested_child = automated_ticket(
+            55,
+            self.revision,
+            label="agent:ready",
+            dependencies=(nested_parent.number,),
+            pull_request=0,
+        )
+        hardware_parent, hardware_child, _ = self.parent_and_child(child_hardware=True)
+        for candidate, tickets, pattern in (
+            (fan_in, (parent, second, fan_in), "exactly one"),
+            (
+                nested_child,
+                (parent, nested_parent, nested_child),
+                "nested|not terminal",
+            ),
+            (hardware_child, (hardware_parent, hardware_child), "eligible software"),
+        ):
+            ok, error = control.stack_dependency_status(
+                workflow,
+                control.validate_ticket(candidate, check_revision=False),
+                tickets,
+            )
+            self.assertFalse(ok)
+            self.assertRegex(error or "", pattern)
+        changed = pull_request(
+            control.load_autopilot_policy(),
+            number=parent_pr.number,
+            head=parent_pr.head_oid,
+            head_ref=parent_pr.head_ref,
+            review_decision="CHANGES_REQUESTED",
+        )
+        with (
+            mock.patch.object(
+                control,
+                "load_latest_artifact_handoff",
+                return_value={
+                    "issue": parent.number,
+                    "spec_revision": self.revision,
+                    "pull_request": parent_pr.number,
+                    "commit": parent_pr.head_oid,
+                },
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=changed),
+            mock.patch.object(
+                control,
+                "load_exact_role_handoff",
+                return_value={
+                    "verdict": "approve",
+                    "pull_request": parent_pr.number,
+                    "commit": parent_pr.head_oid,
+                },
+            ),
+            self.assertRaisesRegex(control.StackInvalidated, "stable review artifact"),
+        ):
+            control.stack_context(
+                workflow,
+                control.validate_ticket(child, check_revision=False),
+                (parent, child),
+            )
+
+    def test_stack_context_invalidates_moved_or_merged_parent(self) -> None:
+        workflow = control.load_workflow()
+        parent, child, parent_pr = self.parent_and_child()
+        item = control.validate_ticket(child, check_revision=False)
+        for replacement in (
+            pull_request(
+                control.load_autopilot_policy(),
+                number=parent_pr.number,
+                head="d" * 40,
+                head_ref=parent_pr.head_ref,
+            ),
+            pull_request(
+                control.load_autopilot_policy(),
+                number=parent_pr.number,
+                state="MERGED",
+                head=parent_pr.head_oid,
+                head_ref=parent_pr.head_ref,
+            ),
+        ):
+            with (
+                mock.patch.object(
+                    control,
+                    "load_latest_artifact_handoff",
+                    return_value={
+                        "issue": parent.number,
+                        "spec_revision": self.revision,
+                        "pull_request": parent_pr.number,
+                        "commit": parent_pr.head_oid,
+                    },
+                ),
+                mock.patch.object(
+                    control, "load_pull_request", return_value=replacement
+                ),
+                mock.patch.object(
+                    control,
+                    "load_exact_role_handoff",
+                    return_value={
+                        "verdict": "approve",
+                        "pull_request": parent_pr.number,
+                        "commit": parent_pr.head_oid,
+                    },
+                ),
+                self.assertRaisesRegex(
+                    control.StackInvalidated, "stable review artifact"
+                ),
+            ):
+                control.stack_context(workflow, item, (parent, child))
+
+    def test_stack_context_requires_exact_judge_and_required_ci(self) -> None:
+        workflow = control.load_workflow()
+        parent, child, parent_pr = self.parent_and_child()
+        item = control.validate_ticket(child, check_revision=False)
+        artifact = {
+            "issue": parent.number,
+            "spec_revision": self.revision,
+            "pull_request": parent_pr.number,
+            "commit": parent_pr.head_oid,
+        }
+        rejected = {
+            "verdict": "reject",
+            "pull_request": parent_pr.number,
+            "commit": parent_pr.head_oid,
+        }
+        with (
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=parent_pr),
+            mock.patch.object(
+                control, "load_exact_role_handoff", return_value=rejected
+            ),
+            self.assertRaisesRegex(control.StackInvalidated, "independent approval"),
+        ):
+            control.stack_context(workflow, item, (parent, child))
+
+        policy = control.load_autopilot_policy()
+        pending_pr = pull_request(
+            policy,
+            number=parent_pr.number,
+            head=parent_pr.head_oid,
+            head_ref=parent_pr.head_ref,
+            checks=tuple(
+                {
+                    "name": name,
+                    "state": "PENDING" if index == 0 else "SUCCESS",
+                    "url": "",
+                }
+                for index, name in enumerate(policy.required_ci_checks)
+            ),
+        )
+        approved = {**rejected, "verdict": "approve"}
+        with (
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=pending_pr),
+            mock.patch.object(
+                control, "load_exact_role_handoff", return_value=approved
+            ),
+            self.assertRaisesRegex(control.StackInvalidated, "required CI"),
+        ):
+            control.stack_context(workflow, item, (parent, child))
+
+    def test_stack_reconciler_ignores_tickets_without_artifacts(self) -> None:
+        workflow = control.load_workflow()
+        _, ready, _ = self.parent_and_child()
+        plan = automated_ticket(56, self.revision, label="agent:plan")
+        with mock.patch.object(
+            control,
+            "load_latest_artifact_handoff",
+            side_effect=AssertionError("pre-artifact state must not be inspected"),
+        ) as load_artifact:
+            self.assertEqual(
+                [], control.reconcile_stacked_children(workflow, (ready, plan))
+            )
+        load_artifact.assert_not_called()
+
+    def test_parent_merge_rework_allows_old_stack_base_for_retarget(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(
+            57,
+            self.revision,
+            label="agent:rework",
+            dependencies=(50,),
+            pull_request=92,
+        )
+        item = control.validate_ticket(ticket, check_revision=False)
+        old_stack_pr = pull_request(
+            control.load_autopilot_policy(),
+            number=92,
+            base_ref="codex/issue-50",
+            base_oid="b" * 40,
+            head_ref="codex/issue-57",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = control.Workflow(
+                repository=workflow.repository,
+                state_prefix=workflow.state_prefix,
+                scheduler_host=workflow.scheduler_host,
+                max_concurrent_workers=workflow.max_concurrent_workers,
+                workspace_root=Path(directory),
+                base_branch=workflow.base_branch,
+                poll_interval_seconds=workflow.poll_interval_seconds,
+                stall_timeout_seconds=workflow.stall_timeout_seconds,
+                max_retry_backoff_seconds=workflow.max_retry_backoff_seconds,
+            )
+            with (
+                mock.patch.object(
+                    control, "load_pull_request", return_value=old_stack_pr
+                ),
+                mock.patch.object(control, "_clone_agent_workspace") as clone,
+                mock.patch.object(control, "_prepare_agent_workspace") as prepare,
+            ):
+                workspace = control.ensure_workspace(workflow, item, "worker")
+        clone.assert_called_once()
+        prepare.assert_called_once_with(
+            workflow, workspace, item, "worker", old_stack_pr, None
+        )
+
+    def test_parent_merge_race_returns_judge_to_rework_not_blocked(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(
+            58,
+            self.revision,
+            label="agent:agent-review",
+            dependencies=(50,),
+            pull_request=92,
+        )
+        item = control.validate_ticket(ticket, check_revision=False)
+        old_stack_pr = pull_request(
+            control.load_autopilot_policy(),
+            number=92,
+            base_ref="codex/issue-50",
+            base_oid="b" * 40,
+            head_ref="codex/issue-58",
+        )
+        with (
+            mock.patch.object(control, "load_pull_request", return_value=old_stack_pr),
+            self.assertRaisesRegex(control.StackInvalidated, "main-based rework"),
+        ):
+            control.ensure_workspace(workflow, item, "judge")
+
+    def test_human_merged_stack_waits_until_integration_reaches_main(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(
+            59,
+            self.revision,
+            label="agent:human-review",
+            dependencies=(50,),
+            pull_request=92,
+        )
+        binding = control.StackContext(50, 91, "codex/issue-50", "b" * 40)
+        child_pr = pull_request(
+            control.load_autopilot_policy(),
+            number=92,
+            state="MERGED",
+            base_ref=binding.base_ref,
+            base_oid=binding.base_head,
+            head_ref="codex/issue-59",
+        )
+        parent_open = pull_request(
+            control.load_autopilot_policy(),
+            number=binding.parent_pr,
+            head="e" * 40,
+            head_ref=binding.base_ref,
+        )
+        with (
+            mock.patch.object(control, "load_pull_request", return_value=parent_open),
+            mock.patch.object(
+                control, "_remote_commit_is_ancestor", return_value=True
+            ) as ancestry,
+            mock.patch.object(control, "finalize_human_merged_ticket") as finalize,
+        ):
+            waiting = control.reconcile_stacked_human_merge(
+                workflow, ticket, child_pr, binding
+            )
+        self.assertEqual("waiting_for_parent_main", waiting["stack_merge"])
+        self.assertEqual("agent:human-review", waiting["state"])
+        ancestry.assert_called_once_with(
+            workflow, child_pr.merge_commit, parent_open.head_oid
+        )
+        finalize.assert_not_called()
+
+        parent_merged = pull_request(
+            control.load_autopilot_policy(),
+            number=binding.parent_pr,
+            state="MERGED",
+            head="e" * 40,
+            head_ref=binding.base_ref,
+        )
+        expected = {"issue": ticket.number, "state": "agent:done"}
+        with (
+            mock.patch.object(control, "load_pull_request", return_value=parent_merged),
+            mock.patch.object(control, "refresh_base_branch"),
+            mock.patch.object(control, "origin_main_revision", return_value="f" * 40),
+            mock.patch.object(
+                control, "_remote_commit_is_ancestor", return_value=True
+            ) as ancestry,
+            mock.patch.object(
+                control, "finalize_human_merged_ticket", return_value=expected
+            ) as finalize,
+        ):
+            landed = control.reconcile_stacked_human_merge(
+                workflow, ticket, child_pr, binding
+            )
+        self.assertEqual(expected, landed)
+        ancestry.assert_called_once_with(workflow, child_pr.merge_commit, "f" * 40)
+        finalize.assert_called_once_with(workflow, ticket, child_pr)
+
+    def test_dropped_human_merged_child_blocks_without_rewriting_contract(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(
+            60,
+            self.revision,
+            label="agent:human-review",
+            dependencies=(50,),
+            pull_request=92,
+        )
+        binding = control.StackContext(50, 91, "codex/issue-50", "b" * 40)
+        child_pr = pull_request(
+            control.load_autopilot_policy(),
+            number=92,
+            state="MERGED",
+            base_ref=binding.base_ref,
+            base_oid=binding.base_head,
+            head_ref="codex/issue-60",
+        )
+        parent = pull_request(
+            control.load_autopilot_policy(),
+            number=binding.parent_pr,
+            head="e" * 40,
+            head_ref=binding.base_ref,
+        )
+        with (
+            mock.patch.object(control, "load_pull_request", return_value=parent),
+            mock.patch.object(
+                control, "_remote_commit_is_ancestor", return_value=False
+            ),
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            outcome = control.reconcile_stacked_human_merge(
+                workflow, ticket, child_pr, binding
+            )
+        self.assertEqual({"issue": ticket.number, "state": "agent:blocked"}, outcome)
+        transition.assert_called_once_with(workflow, ticket, "agent:blocked")
+        self.assertEqual(
+            92, control.existing_pull_request(control.parse_sections(ticket.body))
+        )
+        comment.assert_called_once()
+
+    def test_untrusted_comment_cannot_forge_stack_handoffs(self) -> None:
+        workflow = control.load_workflow()
+        parent, _, _ = self.parent_and_child()
+        trusted = {
+            "issue": parent.number,
+            "spec_revision": self.revision,
+            "state": "agent_review",
+            "commit": "b" * 40,
+            "pull_request": 91,
+            "blockers": [],
+        }
+        forged = {**trusted, "commit": "c" * 40}
+
+        def comment(author, result):
+            return {
+                "author": {"login": author},
+                "body": (
+                    "Agent control-plane transition (worker)\n\n"
+                    f"```json\n{json.dumps(result)}\n```"
+                ),
+            }
+
+        document = {
+            "comments": [
+                comment(workflow.tracker_actor, trusted),
+                comment("untrusted-collaborator", forged),
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory)
+            with (
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(control, "_run_json", return_value=document),
+            ):
+                loaded = control.load_exact_role_handoff(
+                    workflow, parent, "worker", run_root
+                )
+                artifact = control.load_latest_artifact_handoff(workflow, parent)
+                attempts = control.count_role_comments(workflow, parent, "worker")
+        self.assertEqual(trusted, loaded)
+        self.assertEqual(trusted, artifact)
+        self.assertEqual(1, attempts)
+
+    def test_stacked_child_judge_rehydrates_with_stack_context(self) -> None:
+        workflow = control.load_workflow()
+        _, child, parent_pr = self.parent_and_child()
+        child = automated_ticket(
+            child.number,
+            self.revision,
+            label="agent:agent-review",
+            dependencies=(50,),
+            pull_request=92,
+        )
+        item = control.validate_ticket(child, check_revision=False)
+        stack = control.StackContext(
+            50, parent_pr.number, parent_pr.head_ref, parent_pr.head_oid
+        )
+        worker = {
+            "issue": child.number,
+            "spec_revision": self.revision,
+            "commit": "c" * 40,
+            "pull_request": 92,
+        }
+        result = {
+            "issue": child.number,
+            "spec_revision": self.revision,
+            "verdict": "approve",
+            "criteria": [
+                {"criterion": "contract", "status": "met", "evidence": ["diff"]}
+            ],
+            "required_rework": [],
+            "claim_boundary": "Software evidence only.",
+            "commit": "c" * 40,
+            "pull_request": 92,
+        }
+
+        def write_result(command, *_args):
+            output = Path(command[command.index("--output-last-message") + 1])
+            output.write_text(json.dumps(result), encoding="utf-8")
+            return 0, ""
+
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(control, "load_live_tickets", return_value=[]),
+                mock.patch.object(control, "stack_context", return_value=stack),
+                mock.patch.object(
+                    control, "ensure_workspace", return_value=Path(directory)
+                ) as ensure,
+                mock.patch.object(
+                    control, "required_prior_handoff", return_value=worker
+                ),
+                mock.patch.object(
+                    control, "run_codex_attempt", side_effect=write_result
+                ),
+                mock.patch.object(control, "post_result"),
+                mock.patch.object(control, "transition"),
+            ):
+                outcome = control.execute_one(workflow, item, autopilot=True)
+        self.assertEqual("agent:ci-pending", outcome["state"])
+        ensure.assert_called_once_with(workflow, item, "judge", stack)
+
+    def test_parent_movement_reworks_inactive_stacked_child_but_not_active_worker(
+        self,
+    ) -> None:
+        workflow = control.load_workflow()
+        _, child, parent_pr = self.parent_and_child()
+        child = automated_ticket(
+            child.number,
+            self.revision,
+            label="agent:human-review",
+            dependencies=(50,),
+            pull_request=92,
+        )
+        child_pr = pull_request(
+            control.load_autopilot_policy(),
+            number=92,
+            head="c" * 40,
+            base_ref=parent_pr.head_ref,
+            base_oid=parent_pr.head_oid,
+        )
+        artifact = {
+            "pull_request": child_pr.number,
+            "commit": child_pr.head_oid,
+            "controller_stack": {
+                "parent_issue": 50,
+                "parent_pr": parent_pr.number,
+                "base_ref": parent_pr.head_ref,
+                "base_head": parent_pr.head_oid,
+            },
+        }
+        item = control.validate_ticket(child, check_revision=False)
+        with (
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "validate_ticket", return_value=item),
+            mock.patch.object(control, "load_pull_request", return_value=child_pr),
+            mock.patch.object(
+                control,
+                "validate_stack_binding",
+                side_effect=control.StackInvalidated("parent merged"),
+            ),
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            self.assertEqual(
+                [{"issue": child.number, "state": "agent:rework"}],
+                control.reconcile_stacked_children(workflow, (child,)),
+            )
+            self.assertEqual(
+                [],
+                control.reconcile_stacked_children(
+                    workflow, (child,), active_numbers=(child.number,)
+                ),
+            )
+        transition.assert_called_once_with(workflow, child, "agent:rework")
+        comment.assert_called_once()
+
+    def test_stack_prompt_and_artifact_bind_exact_parent_ref_and_head(self) -> None:
+        workflow = control.load_workflow()
+        _, child, parent_pr = self.parent_and_child()
+        item = control.validate_ticket(child, check_revision=False)
+        stack = control.StackContext(
+            50, parent_pr.number, parent_pr.head_ref, parent_pr.head_oid
+        )
+        prompt = control.build_prompt(
+            item,
+            "worker",
+            required_base_head=stack.base_head,
+            required_base_ref=stack.base_ref,
+        )
+        self.assertIn(stack.base_head, prompt)
+        self.assertIn(stack.base_ref, prompt)
+        child_pr = pull_request(
+            control.load_autopilot_policy(),
+            number=92,
+            head="c" * 40,
+            base_ref=stack.base_ref,
+            base_oid=stack.base_head,
+            head_ref="codex/issue-51",
+        )
+        result = {"commit": child_pr.head_oid, "pull_request": child_pr.number}
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with (
+            mock.patch.object(control, "load_pull_request", return_value=child_pr),
+            mock.patch.object(control, "validate_stack_binding") as binding,
+            mock.patch.object(control, "_git", return_value=completed) as git,
+        ):
+            control.verify_worker_artifact(
+                workflow,
+                Path("/unused"),
+                item,
+                result,
+                required_base_head=stack.base_head,
+                stack=stack,
+            )
+        binding.assert_called_once_with(workflow, item, child_pr, stack)
+        self.assertEqual(
+            ("merge-base", "--is-ancestor", stack.base_head, child_pr.head_oid),
+            git.call_args_list[-1].args,
+        )
+        moved = pull_request(
+            control.load_autopilot_policy(),
+            number=child_pr.number,
+            head=child_pr.head_oid,
+            base_ref=stack.base_ref,
+            base_oid="d" * 40,
+            head_ref=child_pr.head_ref,
+        )
+        with self.assertRaisesRegex(control.StackInvalidated, "no longer binds"):
+            control.validate_stack_binding(workflow, item, moved, stack)
+
+
 class AutopilotReviewTest(unittest.TestCase):
     revision = "a" * 40
 
@@ -707,8 +1451,10 @@ class AutopilotReviewTest(unittest.TestCase):
             item,
             "worker",
             required_base_head="b" * 40,
+            required_base_ref="main",
         )
         self.assertIn(f"Current required base revision: `{'b' * 40}`", prompt)
+        self.assertIn("Required pull-request base branch: `main`", prompt)
         self.assertIn("reconciliation-only commit is valid", prompt)
         self.assertIn("never an\nimplementation-worker blocker", prompt)
 

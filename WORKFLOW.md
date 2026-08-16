@@ -2,6 +2,7 @@
 schema_version: 1
 tracker_kind: github
 repository: pcesar22/domes
+tracker_actor: pcesar22
 state_prefix: agent:
 scheduler_host: ministrom
 max_concurrent_workers: 3
@@ -48,8 +49,10 @@ independent judge verdict may move implementation from `agent:agent-review` to
 `agent:ci-pending`. CI failure may enter `agent:verification`; every repair returns through a fresh
 judge. Versioned `software-review-required` policy authorizes autonomous implementation and CI
 repair only. Every pull request stops at `agent:human-review`; only a human may approve or merge it.
-After observing a human merge, the controller performs issue bookkeeping and unlocks dependencies.
-Release remains outside this workflow.
+After observing a human merge, the controller performs issue bookkeeping and unlocks ordinary
+dependencies. A narrowly bounded software child may start earlier as a one-level stacked pull
+request when its sole nonterminal parent is already an exact-head, independently judged,
+CI-passing `agent:human-review` artifact. Release remains outside this workflow.
 
 ## Dispatch policy
 
@@ -57,7 +60,9 @@ The scheduler performs only these actions:
 
 1. Read active issues and their state labels.
 2. Validate the ticket contract and pinned specification revision.
-3. Reject issues with unresolved dependencies or overlapping active workspaces.
+3. Reject issues with unresolved dependencies or overlapping active workspaces. The only
+   nonterminal-dependency exception is one automated software child, with no hardware operations,
+   stacked on one stable `agent:human-review` parent. Fan-in and nested stacks fail closed.
 4. Sort eligible issues by numeric priority and then issue number.
 5. Reserve up to three slots and create one controller-owned standalone Git workspace per issue.
 6. Move a newly accepted implementation task to `agent:running` and launch a fresh role-specific
@@ -72,6 +77,18 @@ The scheduler performs only these actions:
 10. Poll required CI without spending an agent slot, repair failures through a fresh worker and
     judge cycle, then place the exact passing head in `agent:human-review` without approving or
     merging it.
+
+For the one-level stack exception, the controller—not a worker narrative—binds the child to the
+parent issue, pull request, branch, and exact reviewed head. It creates the child branch from that
+head and requires the child pull request to target the parent branch. Parent head movement,
+requested changes, conflict, closure, rework, or merge invalidates the binding and sends the child
+through a fresh worker, judge, and CI cycle. After the parent is merged, the child is rebuilt and
+retargeted to `main`; no earlier child approval survives the base transition. Hardware-executing
+children remain `main`-only. If a human explicitly merges an already review-ready child into its
+exact parent branch first, the child remains nonterminal until the controller proves that merge's
+integration commit reached `main` through the parent. If the parent drops or fails to land that
+commit, that human-merged artifact is blocked without rewriting its acceptance contract; a fresh
+steward-approved delivery is required while the selector continues other work.
 
 Every worker and verification-worker Codex process remains workspace-write and has no direct device
 access. Hardware execution requires all four of: an explicit finite `Hardware operations` enum and
@@ -131,7 +148,9 @@ multi-host high availability.
 Planners and judges receive the governing revision, ticket contract, repository state, diff, and
 schema-validated evidence appropriate to their role. They do not receive worker JSONL,
 chain-of-thought, idle notifications, acknowledgements, or an implementer's persuasive completion
-narrative. Runtime logs exist only for operator diagnosis.
+narrative. Runtime logs exist only for operator diagnosis. Durable handoffs recovered from GitHub
+comments are accepted only when GitHub attributes the comment to the version-pinned
+`tracker_actor`; lookalike role markers from any other commenter are inert.
 
 ## Completion
 
