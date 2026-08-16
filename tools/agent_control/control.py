@@ -3719,7 +3719,7 @@ def required_prior_handoff(
         result,
         allow_deferred_hardware=(
             matched_role == "judge"
-            and role == "verification-worker"
+            and role in {"worker", "verification-worker"}
             and requires_registered_hardware(parse_sections(ticket.body))
         ),
     )

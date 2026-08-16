@@ -1361,6 +1361,42 @@ class ReviewFixRegressionTest(unittest.TestCase):
         with self.assertRaisesRegex(control.ControlError, "must be a repair"):
             control.hardware_attestation_artifact_head(item, result, checkpoint)
 
+    def test_hardware_first_pass_judge_handoff_can_drive_rework_worker(self) -> None:
+        workflow = control.load_workflow()
+        ticket = self.hardware_ticket(612, label="agent:rework")
+        result = {
+            "issue": ticket.number,
+            "spec_revision": self.revision,
+            "commit": "b" * 40,
+            "pull_request": 77,
+            "verdict": "approve",
+            "criteria": [
+                {"criterion": "safe diff", "status": "met", "evidence": ["diff"]},
+                {
+                    "criterion": "physical proof",
+                    "status": "not_verifiable",
+                    "evidence": ["deferred"],
+                },
+            ],
+            "required_rework": [],
+            "claim_boundary": "Hardware remains deferred.",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory)
+            (run_root / "handoff-judge.json").write_text(
+                json.dumps(result), encoding="utf-8"
+            )
+            self.assertEqual(
+                result,
+                control.required_prior_handoff(
+                    workflow,
+                    ticket,
+                    run_root,
+                    "worker",
+                    "agent:rework",
+                ),
+            )
+
     def test_unchanged_hardware_result_attests_exact_returned_head(self) -> None:
         ticket = self.hardware_ticket(611, label="agent:verification")
         item = control.validate_ticket(ticket, check_revision=False)
