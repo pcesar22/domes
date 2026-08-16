@@ -29,6 +29,10 @@ decisions, and authorization of planning tickets. It may edit governing document
 implement tickets, supervise sessions, read raw worker transcripts, resolve routine conflicts, or
 rewrite requirements to fit an implementation.
 
+In explicit autopilot mode, a fresh read-only selector performs the narrower steward function of
+choosing one already-authorized software or executed-validation milestone. Its structured contract
+is disposable, mechanically validated, and cannot modify the project brain.
+
 ### Planner
 
 Reads the pinned project brain and repository, then produces a bounded dependency DAG. It may
@@ -72,6 +76,11 @@ Every dispatchable ticket contains these headings with non-empty values:
 
 Workers may add proposed follow-ups to their result. Those remain inert until a planner or
 requirements steward accepts and creates or transitions a ticket.
+
+Autonomous tickets also contain `Autonomy policy`, `Work package`, and controller markers bound to
+the pinned specification. `software-auto-merge` permits only the deterministic controller to merge;
+it gives no role permission to merge or broaden scope. Planner children inherit that policy and
+remain blocked on their parent until the complete DAG has been materialized.
 
 ## Context hygiene
 

@@ -3,11 +3,13 @@
   "title": "DOMES verification worker result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["issue", "spec_revision", "state", "checks", "repairs", "blockers"],
+  "required": ["issue", "spec_revision", "state", "commit", "pull_request", "checks", "repairs", "blockers"],
   "properties": {
     "issue": {"type": "integer", "minimum": 1},
     "spec_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "state": {"type": "string", "enum": ["human_review", "agent_review", "blocked"]},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "pull_request": {"type": ["integer", "null"], "minimum": 1},
     "checks": {
       "type": "array",
       "minItems": 1,
