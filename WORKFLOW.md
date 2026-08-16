@@ -65,9 +65,10 @@ The scheduler performs only these actions:
    never lost across a restart.
 7. Validate the final structured result and translate it into an explicit tracker transition.
 8. Retry transient process failures with bounded exponential backoff.
-9. In explicit autopilot mode, invoke one disposable requirements steward only when no role is
-   runnable, adopt one milestone-authorized execution contract, and materialize accepted planner
-   DAGs idempotently.
+9. In explicit autopilot mode, reserve any otherwise-free slot for one disposable requirements
+   steward even while other roles, CI, or human review are active. Repeated selections fill free
+   capacity with milestone-authorized contracts, and accepted planner DAGs materialize
+   idempotently. Only one selector may run at once.
 10. Poll required CI without spending an agent slot, repair failures through a fresh worker and
     judge cycle, then place the exact passing head in `agent:human-review` without approving or
     merging it.
@@ -98,13 +99,14 @@ PR head; prose or an old worker summary can never trigger requeue.
 It never changes product intent, weakens acceptance checks, reads raw transcripts into another
 role's prompt, or treats a successful process exit as acceptance. The disposable selector may only
 translate existing milestones and live execution state into one bounded software or executed-
-validation contract; its output is schema- and policy-validated before any tracker mutation.
+validation contract; its output is revalidated against fresh main, issue, and pull-request state
+before any tracker mutation.
 
 ## Role routing
 
 | Ticket state | Role | Successful handoff |
 | --- | --- | --- |
-| `agent:plan` | planner | materialized accepted DAG or blocked parent |
+| `agent:plan` | planner | materialized execute/recursive-plan DAG or explicit project blocker |
 | `agent:ready` | worker | commit, PR, evidence, and proposed follow-ups for agent review |
 | `agent:agent-review` | judge | approve to CI or reject against the original contract |
 | `agent:ci-pending` | controller | exact-head required-check reconciliation |
@@ -112,8 +114,10 @@ validation contract; its output is schema- and policy-validated before any track
 | `agent:human-review` | human | review and merge, while the controller continues separate work |
 
 Interactive requirements stewardship remains the only authority for changing product intent. In
-explicit autopilot mode a fresh selector may choose from already-authorized milestones when the
-execution queue is empty; it cannot edit governing documents or perform implementation.
+explicit autopilot mode a fresh selector continuously fills otherwise-free capacity from
+already-authorized milestones; it cannot edit governing documents or perform implementation.
+Planner process/schema failures remain retryable controller failures with bounded backoff rather
+than being mislabeled as external project blockers.
 
 Exactly one scheduler host is supported. `scheduler_host` pins mutation-capable runs to the reviewed
 machine, and the local advisory lock permits only one scheduler process there. Changing hosts is a
