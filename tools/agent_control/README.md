@@ -54,6 +54,14 @@ commit. Flash and OTA images are built by the host broker from a private clean c
 v5.4.4; worker-supplied build artifacts are rejected. It retains device evidence under the
 ticket's controller state.
 
+`flash-trace-acceptance` is distinct from ordinary `flash` and must appear explicitly in the
+ticket's finite `Hardware operations` list. The broker generates its private Kconfig defaults from
+the checked-in physical defaults plus only `CONFIG_DOMES_TRACE_ACCEPTANCE_PROBE=y`, verifies the
+resulting profile, and hashes the defaults and final SDKCONFIG into provenance. Ordinary `flash`
+always rebuilds the trace-disabled default profile for restoration. Failed attempts remain in the
+hash-chained audit manifest and are disclosed to the independent judge; they are not silently
+dropped or converted into passing evidence.
+
 A failed preflight blocks only that ticket. It is automatically requeued only when a later
 preflight succeeds and the saved typed blocker still matches the same issue, specification, and PR
 head. Old comments and prose are not recovery authority.

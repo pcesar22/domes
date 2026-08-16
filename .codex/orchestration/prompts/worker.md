@@ -24,7 +24,10 @@ The broker capability is ticket- and specification-bound; its private manifest b
 to the committed worktree HEAD for independent review. It never permits `hw-test`,
 erase, NVS/factory reset, eFuse, secure boot, encryption, key, release, or arbitrary command
 execution. For `flash` and `ota`, do not pass a path: the broker builds the committed source in a
-private clean clone with pinned ESP-IDF. Record broker results and retained artifact paths in your schema result. If a required
+private clean clone with pinned ESP-IDF. `flash-trace-acceptance` is a distinct ticket-allowlisted
+operation that builds the committed head with the finite physical trace-acceptance profile; use
+ordinary `flash` afterward when the ticket requires restoration of the trace-disabled default
+image. Record broker results and retained artifact paths in your schema result. If a required
 request fails, report that exact blocker; do not substitute simulation or command acceptance for
 device evidence.
 

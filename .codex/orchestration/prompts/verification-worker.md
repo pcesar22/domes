@@ -18,6 +18,8 @@ retains device evidence. Never invoke a device path or hardware tool directly.
 
 The broker cannot perform `hw-test`, erase, NVS/factory reset, eFuse, secure boot, encryption, key,
 release, or arbitrary command execution. For `flash` and `ota`, pass no path; the broker builds the
-committed source in its private clean clone. Preserve broker results and retained artifact paths in the
+committed source in its private clean clone. `flash-trace-acceptance` is a separate finite profile
+and may be used only when it appears in the ticket capability; restore the default image with
+ordinary `flash` when required. Preserve broker results and retained artifact paths in the
 verification result. If a required request fails, report that exact blocker without treating CI,
 simulation, or an accepted command as device proof.

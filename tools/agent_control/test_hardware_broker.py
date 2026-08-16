@@ -1,3 +1,4 @@
+import json
 import tempfile
 import threading
 import time
@@ -86,6 +87,23 @@ class HardwareBrokerTest(unittest.TestCase):
                     self.request(flash_cap, operation="flash", path="build"),
                 )
 
+    def test_trace_acceptance_flash_is_a_distinct_ticket_operation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cap = self.capability(Path(directory), ["flash", "flash-trace-acceptance"])
+            self.assertEqual(
+                ("flash-trace-acceptance", None),
+                broker.validate_request(
+                    cap,
+                    self.request(cap, operation="flash-trace-acceptance", board=0),
+                ),
+            )
+            ordinary = self.capability(Path(directory) / "ordinary", ["flash"])
+            with self.assertRaisesRegex(broker.BrokerError, "allowlisted"):
+                broker.validate_request(
+                    ordinary,
+                    self.request(ordinary, operation="flash-trace-acceptance", board=0),
+                )
+
     def test_path_escape_and_wrong_ticket_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             cap = self.capability(Path(directory), ["artifact-hash"])
@@ -135,6 +153,48 @@ class HardwareBrokerTest(unittest.TestCase):
                 hardware_client.request(
                     root / "cap", {"operation": "info", "board": 0}, 0.01
                 )
+
+    def test_failed_bound_request_retains_operation_and_artifact_head(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cap = self.capability(root, ["artifact-hash"])
+            hardware_client.submit(root / "cap", {"operation": "artifact-hash"})
+            with mock.patch.object(broker, "_workspace_head", return_value="f" * 40):
+                broker.serve_queue(
+                    root / "cap",
+                    broker.load_private_capability(cap.private_document()),
+                    once=True,
+                )
+            event = json.loads(
+                (root / "evidence" / "broker-manifest.jsonl").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual("artifact-hash", event["operation"])
+            self.assertEqual("f" * 40, event["artifact_head"])
+            self.assertEqual(1, event["returncode"])
+            self.assertIn("requires an evidence file", event["error"])
+
+    def test_malformed_request_is_retained_as_invalid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cap = self.capability(root)
+            queued = root / "cap" / "requests" / "request-malformed.json"
+            queued.write_text("[]\n", encoding="utf-8")
+            with mock.patch.object(broker, "_workspace_head", return_value="f" * 40):
+                broker.serve_queue(
+                    root / "cap",
+                    broker.load_private_capability(cap.private_document()),
+                    once=True,
+                )
+            event = json.loads(
+                (root / "evidence" / "broker-manifest.jsonl").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual("invalid", event["operation"])
+            self.assertEqual("f" * 40, event["artifact_head"])
+            self.assertEqual(1, event["returncode"])
 
     def test_ota_version_comes_from_image_info_not_a_literal(self):
         with mock.patch.object(
@@ -190,6 +250,34 @@ class HardwareBrokerTest(unittest.TestCase):
             source.write_bytes(b"changed")
             self.assertEqual(b"first", staged.read_bytes())
             self.assertEqual(__import__("hashlib").sha256(b"first").hexdigest(), digest)
+
+    def test_controller_owned_trace_acceptance_defaults_are_finite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "firmware" / "domes"
+            project.mkdir(parents=True)
+            (project / "sdkconfig.defaults").write_text(
+                'CONFIG_IDF_TARGET="esp32s3"\n'
+                "CONFIG_DOMES_TRACE_ACCEPTANCE_PROBE=y\n",
+                encoding="utf-8",
+            )
+            cap = broker.Capability(
+                1, "a", "b", root, root / "evidence", ("flash",), (0,), "token"
+            )
+            cap.evidence.mkdir()
+            default = broker._write_profile_defaults(
+                cap, project, "head-default", "default"
+            ).read_text(encoding="utf-8")
+            acceptance = broker._write_profile_defaults(
+                cap, project, "head-probe", "trace-acceptance"
+            ).read_text(encoding="utf-8")
+            self.assertIn("# CONFIG_DOMES_TRACE_ACCEPTANCE_PROBE is not set", default)
+            self.assertNotIn("CONFIG_DOMES_TRACE_ACCEPTANCE_PROBE=y", default)
+            self.assertEqual(
+                1, acceptance.count("CONFIG_DOMES_TRACE_ACCEPTANCE_PROBE=y")
+            )
+            self.assertIn("CONFIG_DOMES_RUNTIME_PROFILE_PHYSICAL=y", acceptance)
+            self.assertIn("# CONFIG_DOMES_RUNTIME_PROFILE_QEMU is not set", acceptance)
 
     def test_flash_accepts_only_standard_domes_application_layout(self):
         with tempfile.TemporaryDirectory() as directory:

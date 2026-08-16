@@ -1064,6 +1064,17 @@ class ReviewFixRegressionTest(unittest.TestCase):
             control.contract_digest(sections), control.contract_digest(expanded)
         )
 
+    def test_trace_acceptance_operation_requires_default_restore_capability(
+        self,
+    ) -> None:
+        ticket = self.hardware_ticket(606)
+        sections = control.parse_sections(ticket.body)
+        sections["Hardware operations"] += ", flash-trace-acceptance"
+        with self.assertRaisesRegex(control.ControlError, "ordinary `flash`"):
+            control.hardware_operations(sections)
+        sections["Hardware operations"] += ", flash"
+        self.assertIn("flash-trace-acceptance", control.hardware_operations(sections))
+
     def test_stale_typed_hardware_reason_is_not_recoverable(self) -> None:
         ticket = self.hardware_ticket(604, label="agent:blocked")
         reason = control.hardware_block_reason(
@@ -1295,6 +1306,8 @@ class ReviewFixRegressionTest(unittest.TestCase):
                 item, root, manifest, checkpoint_head, final_head
             )
             self.assertEqual(1, attestation["event_count"])
+            self.assertEqual(1, attestation["successful_event_count"])
+            self.assertEqual(0, attestation["failed_event_count"])
             self.assertEqual(checkpoint_head, attestation["checkpoint_head"])
             self.assertEqual(final_head, attestation["artifact_head"])
             event["artifact_head"] = "c" * 40
@@ -1304,6 +1317,65 @@ class ReviewFixRegressionTest(unittest.TestCase):
                     item, root, manifest, checkpoint_head, final_head
                 )
 
+    def test_hardware_manifest_retains_failed_attempt_before_success(self) -> None:
+        ticket = self.hardware_ticket(610)
+        ticket = control.Ticket(
+            ticket.number,
+            ticket.title,
+            ticket.body.replace("trace-status", "trace-status, artifact-hash"),
+            ticket.state,
+            ticket.labels,
+            ticket.url,
+        )
+        item = control.validate_ticket(ticket, check_revision=False)
+        checkpoint_head = "b" * 40
+        artifact_head = "c" * 40
+        events = [
+            {
+                "issue": ticket.number,
+                "spec_revision": self.revision,
+                "pr_head": checkpoint_head,
+                "artifact_head": artifact_head,
+                "operation": "artifact-hash",
+                "board": None,
+                "returncode": 1,
+                "error": "artifact-hash requires an evidence file",
+                "previous_event_sha256": "",
+            },
+            {
+                "issue": ticket.number,
+                "spec_revision": self.revision,
+                "pr_head": checkpoint_head,
+                "artifact_head": artifact_head,
+                "operation": "info",
+                "board": 0,
+                "returncode": 0,
+                "error": None,
+                "previous_event_sha256": "",
+            },
+        ]
+        previous = ""
+        for event in events:
+            event["previous_event_sha256"] = previous
+            event["event_sha256"] = hashlib.sha256(
+                json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            previous = event["event_sha256"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "hardware-evidence" / "run-1" / "broker-manifest.jsonl"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(
+                "".join(json.dumps(event) + "\n" for event in events),
+                encoding="utf-8",
+            )
+            attestation = control.attest_hardware_manifest(
+                item, root, manifest, checkpoint_head, artifact_head
+            )
+        self.assertEqual(2, attestation["event_count"])
+        self.assertEqual(1, attestation["successful_event_count"])
+        self.assertEqual(1, attestation["failed_event_count"])
+
     def test_flash_manifest_requires_clean_clone_build_and_exact_input_hashes(
         self,
     ) -> None:
@@ -1311,7 +1383,9 @@ class ReviewFixRegressionTest(unittest.TestCase):
         ticket = control.Ticket(
             ticket.number,
             ticket.title,
-            ticket.body.replace("trace-status", "trace-status, flash"),
+            ticket.body.replace(
+                "trace-status", "trace-status, flash, flash-trace-acceptance"
+            ),
             ticket.state,
             ticket.labels,
             ticket.url,
@@ -1322,13 +1396,16 @@ class ReviewFixRegressionTest(unittest.TestCase):
         provenance = {
             "kind": "controller-clean-clone-idf-build",
             "source_head": artifact_head,
+            "build_profile": "default",
             "idf_version": "v5.4.4",
             "idf_revision": "d" * 40,
             "idf_export_sha256": "1" * 64,
             "idf_py_sha256": "2" * 64,
             "submodules_sha256": "3" * 64,
-            "stdout_sha256": "4" * 64,
-            "stderr_sha256": "5" * 64,
+            "sdkconfig_defaults_sha256": "4" * 64,
+            "sdkconfig_sha256": "5" * 64,
+            "stdout_sha256": "9" * 64,
+            "stderr_sha256": "a" * 64,
         }
         inputs = [
             {"offset": offset, "artifact": artifact, "sha256": digit * 64}
@@ -1368,9 +1445,38 @@ class ReviewFixRegressionTest(unittest.TestCase):
                 item, root, manifest, checkpoint_head, artifact_head
             )
             self.assertEqual(artifact_head, attestation["artifact_head"])
-            provenance.pop("submodules_sha256")
+            event["operation"] = "flash-trace-acceptance"
             seal(event)
             manifest.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(control.ControlError, "provenance"):
+                control.attest_hardware_manifest(
+                    item, root, manifest, checkpoint_head, artifact_head
+                )
+            provenance["build_profile"] = "trace-acceptance"
+            seal(event)
+            manifest.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(control.ControlError, "not restored"):
+                control.attest_hardware_manifest(
+                    item, root, manifest, checkpoint_head, artifact_head
+                )
+            trace_line = json.dumps(event)
+            restore = json.loads(trace_line)
+            restore["operation"] = "flash"
+            restore["build_provenance"]["build_profile"] = "default"
+            restore["previous_event_sha256"] = event["event_sha256"]
+            seal(restore)
+            manifest.write_text(
+                trace_line + "\n" + json.dumps(restore) + "\n", encoding="utf-8"
+            )
+            restored = control.attest_hardware_manifest(
+                item, root, manifest, checkpoint_head, artifact_head
+            )
+            self.assertEqual(2, restored["successful_event_count"])
+            restore["build_provenance"].pop("submodules_sha256")
+            seal(restore)
+            manifest.write_text(
+                trace_line + "\n" + json.dumps(restore) + "\n", encoding="utf-8"
+            )
             with self.assertRaisesRegex(control.ControlError, "provenance"):
                 control.attest_hardware_manifest(
                     item, root, manifest, checkpoint_head, artifact_head
@@ -1614,6 +1720,114 @@ class ReviewFixRegressionTest(unittest.TestCase):
 
 
 class ProcessLifecycleTest(unittest.TestCase):
+    def test_cleanup_restores_trace_acceptance_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence, public = root / "evidence", root / "public"
+            evidence.mkdir()
+            public.mkdir()
+            manifest = evidence / "broker-manifest.jsonl"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "operation": "flash-trace-acceptance",
+                        "board": 0,
+                        "returncode": 0,
+                        "error": None,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            process = mock.Mock(spec=subprocess.Popen)
+            process.poll.return_value = None
+            runtime = {
+                "process": process,
+                "public": public,
+                "evidence": evidence,
+                "operations": ("flash", "flash-trace-acceptance"),
+                "boards": (0,),
+            }
+            with mock.patch.object(
+                control,
+                "hardware_request",
+                return_value={"returncode": 0, "error": None},
+            ) as request:
+                control._restore_default_hardware_profile(runtime)
+            request.assert_called_once_with(
+                public, {"operation": "flash", "board": 0}, 1800.0
+            )
+
+    def test_cleanup_skips_already_restored_default_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence, public = root / "evidence", root / "public"
+            evidence.mkdir()
+            public.mkdir()
+            events = (
+                {
+                    "operation": "flash-trace-acceptance",
+                    "board": 0,
+                    "returncode": 0,
+                    "error": None,
+                },
+                {
+                    "operation": "flash",
+                    "board": 0,
+                    "returncode": 0,
+                    "error": None,
+                    "build_provenance": {"build_profile": "default"},
+                },
+            )
+            (evidence / "broker-manifest.jsonl").write_text(
+                "".join(json.dumps(event) + "\n" for event in events),
+                encoding="utf-8",
+            )
+            process = mock.Mock(spec=subprocess.Popen)
+            process.poll.return_value = None
+            runtime = {
+                "process": process,
+                "public": public,
+                "evidence": evidence,
+                "operations": ("flash", "flash-trace-acceptance"),
+                "boards": (0,),
+            }
+            with mock.patch.object(control, "hardware_request") as request:
+                control._restore_default_hardware_profile(runtime)
+            request.assert_not_called()
+
+    def test_cleanup_missing_ready_manifest_restores_every_authorized_board(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence, public = root / "evidence", root / "public"
+            evidence.mkdir()
+            public.mkdir()
+            process = mock.Mock(spec=subprocess.Popen)
+            process.poll.return_value = None
+            runtime = {
+                "process": process,
+                "public": public,
+                "evidence": evidence,
+                "operations": ("flash", "flash-trace-acceptance"),
+                "boards": (0, 1),
+                "broker_ready": True,
+            }
+            with mock.patch.object(
+                control,
+                "hardware_request",
+                return_value={"returncode": 0, "error": None},
+            ) as request:
+                control._restore_default_hardware_profile(runtime)
+            self.assertEqual(
+                [
+                    mock.call(public, {"operation": "flash", "board": 0}, 1800.0),
+                    mock.call(public, {"operation": "flash", "board": 1}, 1800.0),
+                ],
+                request.call_args_list,
+            )
+
     def test_hardware_runtime_is_removed_when_dispatch_raises(self) -> None:
         ticket = make_ticket(199, "agent:ready")
         item = control.validate_ticket(ticket, check_revision=False)

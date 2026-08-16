@@ -37,6 +37,7 @@ OPERATIONS = frozenset(
         "trace-status",
         "trace-dump",
         "flash",
+        "flash-trace-acceptance",
         "ota",
         "reset",
         "run",
@@ -369,14 +370,70 @@ def _ota_version(image: Path, esptool: str) -> str:
     raise BrokerError("cannot derive parser-valid embedded OTA version")
 
 
+def _write_profile_defaults(
+    cap: Capability, project: Path, suffix: str, build_profile: str
+) -> Path:
+    """Create a controller-owned, finite physical-profile Kconfig fragment."""
+    if build_profile not in {"default", "trace-acceptance"}:
+        raise BrokerError("firmware build profile is not allowlisted")
+    checked_in = project / "sdkconfig.defaults"
+    if not checked_in.is_file():
+        raise BrokerError("checked-in physical sdkconfig defaults are unavailable")
+    profile_keys = (
+        "CONFIG_DOMES_RUNTIME_PROFILE_PHYSICAL",
+        "CONFIG_DOMES_RUNTIME_PROFILE_QEMU",
+        "CONFIG_DOMES_TRACE_ACCEPTANCE_PROBE",
+    )
+    lines = [
+        line
+        for line in checked_in.read_text(encoding="utf-8").splitlines()
+        if not any(key in line for key in profile_keys)
+    ]
+    lines.extend(
+        (
+            "",
+            "# Controller-owned finite hardware build profile.",
+            "CONFIG_DOMES_RUNTIME_PROFILE_PHYSICAL=y",
+            "# CONFIG_DOMES_RUNTIME_PROFILE_QEMU is not set",
+            (
+                "CONFIG_DOMES_TRACE_ACCEPTANCE_PROBE=y"
+                if build_profile == "trace-acceptance"
+                else "# CONFIG_DOMES_TRACE_ACCEPTANCE_PROBE is not set"
+            ),
+        )
+    )
+    target = cap.evidence / f"sdkconfig-defaults-{suffix}"
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.chmod(target, 0o600)
+    return target
+
+
+def _profile_build_matches(build: Path, build_profile: str) -> bool:
+    config_path = build / "config" / "sdkconfig.json"
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return (
+        config.get("DOMES_RUNTIME_PROFILE_PHYSICAL") is True
+        and config.get("DOMES_RUNTIME_PROFILE_QEMU") is not True
+        and (config.get("DOMES_TRACE_ACCEPTANCE_PROBE") is True)
+        == (build_profile == "trace-acceptance")
+    )
+
+
 def _trusted_firmware_build(
-    cap: Capability, artifact_head: str
+    cap: Capability, artifact_head: str, build_profile: str = "default"
 ) -> tuple[Path, Path, dict[str, Any]]:
     """Build the committed candidate in a private clean clone with pinned ESP-IDF."""
-    source = cap.evidence / f"source-{artifact_head[:16]}"
+    if build_profile not in {"default", "trace-acceptance"}:
+        raise BrokerError("firmware build profile is not allowlisted")
+    suffix = f"{artifact_head[:16]}-{build_profile}"
+    source = cap.evidence / f"source-{suffix}"
     project = source / "firmware" / "domes"
-    build = cap.evidence / f"build-{artifact_head[:16]}"
-    provenance_path = cap.evidence / f"build-{artifact_head[:16]}.json"
+    build = cap.evidence / f"build-{suffix}"
+    sdkconfig = cap.evidence / f"sdkconfig-{suffix}"
+    provenance_path = cap.evidence / f"build-{suffix}.json"
     git = _trusted_path(cap, "git")
     idf_export = _trusted_path(cap, "idf-export")
     idf_py = _trusted_path(cap, "idf.py")
@@ -406,6 +463,7 @@ def _trusted_firmware_build(
         raise BrokerError("trusted ESP-IDF version changed after preflight")
     if provenance_path.is_file():
         provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        defaults = _write_profile_defaults(cap, project, suffix, build_profile)
         resolved = subprocess.run(
             [git, "-C", str(source), "rev-parse", "HEAD"],
             check=False,
@@ -424,8 +482,15 @@ def _trusted_firmware_build(
             resolved.returncode
             or resolved.stdout.strip() != artifact_head
             or submodule_status.returncode
+            or provenance.get("build_profile") != build_profile
             or hashlib.sha256(submodule_status.stdout.encode()).hexdigest()
             != provenance.get("submodules_sha256")
+            or not sdkconfig.is_file()
+            or hashlib.sha256(defaults.read_bytes()).hexdigest()
+            != provenance.get("sdkconfig_defaults_sha256")
+            or hashlib.sha256(sdkconfig.read_bytes()).hexdigest()
+            != provenance.get("sdkconfig_sha256")
+            or not _profile_build_matches(build, build_profile)
         ):
             raise BrokerError("cached trusted build source changed")
         return project, build, provenance
@@ -473,14 +538,15 @@ def _trusted_firmware_build(
         for line in submodule_status.stdout.splitlines()
     ):
         raise BrokerError("trusted firmware submodule state is not exact")
-    sdkconfig = cap.evidence / f"sdkconfig-{artifact_head[:16]}"
+    defaults = _write_profile_defaults(cap, project, suffix, build_profile)
     compiler_tmp = cap.evidence / "tmp"
     compiler_tmp.mkdir(mode=0o700)
     build_environment = dict(os.environ)
     build_environment["TMPDIR"] = str(compiler_tmp)
     script = (
         'set -euo pipefail; source "$1" >/dev/null; '
-        'exec "$2" -B "$3" -DSDKCONFIG="$4" -DCCACHE_ENABLE=0 build'
+        'exec "$2" -B "$3" -DSDKCONFIG="$4" -DSDKCONFIG_DEFAULTS="$5" '
+        "-DCCACHE_ENABLE=0 build"
     )
     completed = subprocess.run(
         [
@@ -492,6 +558,7 @@ def _trusted_firmware_build(
             idf_py,
             str(build),
             str(sdkconfig),
+            str(defaults),
         ],
         cwd=project,
         check=False,
@@ -507,6 +574,8 @@ def _trusted_firmware_build(
     (cap.evidence / "trusted-build.stderr.log").write_text(stderr, encoding="utf-8")
     if completed.returncode:
         raise BrokerError("controller-owned ESP-IDF v5.4.4 firmware build failed")
+    if not _profile_build_matches(build, build_profile):
+        raise BrokerError("controller-owned firmware build profile is inconsistent")
     resolved = subprocess.run(
         [git, "-C", str(source), "rev-parse", "HEAD"],
         check=False,
@@ -530,6 +599,7 @@ def _trusted_firmware_build(
     provenance = {
         "kind": "controller-clean-clone-idf-build",
         "source_head": artifact_head,
+        "build_profile": build_profile,
         "idf_version": "v5.4.4",
         "idf_revision": str(idf_record["revision"]),
         "idf_export_sha256": (cap.tools or {})["idf-export"]["sha256"],
@@ -537,6 +607,8 @@ def _trusted_firmware_build(
         "submodules_sha256": hashlib.sha256(
             submodule_status.stdout.encode()
         ).hexdigest(),
+        "sdkconfig_defaults_sha256": hashlib.sha256(defaults.read_bytes()).hexdigest(),
+        "sdkconfig_sha256": hashlib.sha256(sdkconfig.read_bytes()).hexdigest(),
         "stdout_sha256": hashlib.sha256(stdout.encode()).hexdigest(),
         "stderr_sha256": hashlib.sha256(stderr.encode()).hexdigest(),
     }
@@ -632,11 +704,18 @@ def execute(cap: Capability, request: dict[str, Any]) -> dict[str, Any]:
     )  # identity is checked immediately before action
     build_provenance: dict[str, Any] | None = None
     inputs: list[dict[str, str]] = []
-    if operation == "flash":
-        project, build, build_provenance = _trusted_firmware_build(cap, artifact_head)
+    if operation in {"flash", "flash-trace-acceptance"}:
+        build_profile = (
+            "trace-acceptance" if operation == "flash-trace-acceptance" else "default"
+        )
+        project, build, build_provenance = _trusted_firmware_build(
+            cap, artifact_head, build_profile
+        )
         argv, inputs = _flash_argv(cap, project, build, port)
     elif operation == "ota":
-        _project, build, build_provenance = _trusted_firmware_build(cap, artifact_head)
+        _project, build, build_provenance = _trusted_firmware_build(
+            cap, artifact_head, "default"
+        )
         image = beneath(build / "domes.bin", build)
         staged, digest = _stage_input(cap, image)
         inputs = [{"artifact": "domes.bin", "sha256": digest}]
@@ -780,13 +859,17 @@ def serve_queue(directory: Path, cap: Capability, *, once: bool = False) -> None
             except FileNotFoundError:
                 continue
             request_id = claimed.stem.removeprefix("request-")
+            request: dict[str, Any] = {"operation": "invalid"}
             try:
                 processed += 1
                 if processed > MAX_REQUESTS:
                     raise BrokerError("hardware request quota exceeded")
                 if claimed.stat().st_size > MAX_REQUEST_BYTES:
                     raise BrokerError("hardware request exceeds size limit")
-                request = json.loads(claimed.read_text(encoding="utf-8"))
+                loaded = json.loads(claimed.read_text(encoding="utf-8"))
+                if not isinstance(loaded, dict):
+                    raise TypeError("hardware request must be an object")
+                request = loaded
                 result = execute(cap, request)
             except (
                 BrokerError,
@@ -795,8 +878,24 @@ def serve_queue(directory: Path, cap: Capability, *, once: bool = False) -> None
                 TypeError,
                 ValueError,
             ) as error:
-                request = {"operation": "invalid"}
-                result = {"error": str(error), "returncode": 1}
+                operation = request.get("operation")
+                request = (
+                    {
+                        "operation": operation,
+                        "board": request.get("board"),
+                    }
+                    if operation in OPERATIONS
+                    else {"operation": "invalid"}
+                )
+                try:
+                    failed_head = _workspace_head(cap)
+                except BrokerError:
+                    failed_head = None
+                result = {
+                    "error": str(error),
+                    "returncode": 1,
+                    "artifact_head": failed_head,
+                }
             _append_manifest(cap, request, result)
             _json_write_atomic(results / f"result-{request_id}.json", result)
             claimed.unlink(missing_ok=True)

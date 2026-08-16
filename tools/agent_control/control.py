@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from hardware_broker import BrokerError, DeviceLease, create_capability
+from hardware_client import request as hardware_request
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = ROOT / "WORKFLOW.md"
@@ -147,6 +148,7 @@ HARDWARE_OPERATIONS = frozenset(
         "trace-status",
         "trace-dump",
         "flash",
+        "flash-trace-acceptance",
         "ota",
         "reset",
         "run",
@@ -956,6 +958,11 @@ def hardware_operations(sections: dict[str, str]) -> tuple[str, ...]:
     ):
         raise ControlError(
             "Hardware operations must be `None` or unique allowlisted enum values"
+        )
+    if "flash-trace-acceptance" in operations and "flash" not in operations:
+        raise ControlError(
+            "Hardware operations with `flash-trace-acceptance` must also allow "
+            "ordinary `flash` restoration"
         )
     return tuple(sorted(operations))
 
@@ -2621,6 +2628,10 @@ def attest_hardware_manifest(
             f"issue #{item.ticket.number}: hardware broker manifest is empty"
         )
     previous = ""
+    successful_events = 0
+    failed_events = 0
+    trace_profile_boards: set[int] = set()
+    final_successful_flash: dict[int, str] = {}
     allowed_operations = set(hardware_operations(item.sections))
     allowed_boards = set(hardware_boards(item.sections))
     for index, line in enumerate(lines, start=1):
@@ -2647,34 +2658,46 @@ def attest_hardware_manifest(
             raise ControlError(
                 f"issue #{item.ticket.number}: hardware manifest hash chain is invalid"
             )
+        failed = event.get("returncode") != 0 or event.get("error") is not None
+        operation = event.get("operation")
         if (
             event.get("issue") != item.ticket.number
             or event.get("spec_revision") != item.sections["Specification revision"]
             or event.get("pr_head") != checkpoint_head
             or event.get("artifact_head") != artifact_head
-            or event.get("operation") not in allowed_operations
+            or (
+                operation not in allowed_operations
+                and not (failed and operation == "invalid")
+            )
         ):
             raise ControlError(
                 f"issue #{item.ticket.number}: hardware manifest artifact binding is invalid"
             )
-        if event.get("returncode") != 0 or event.get("error") is not None:
-            raise ControlError(
-                f"issue #{item.ticket.number}: hardware manifest contains a failed operation"
-            )
         if (
-            event.get("operation") != "artifact-hash"
+            operation not in {"artifact-hash", "invalid"}
             and event.get("board") not in allowed_boards
         ):
             raise ControlError(
                 f"issue #{item.ticket.number}: hardware manifest board binding is invalid"
             )
-        if event.get("operation") in {"flash", "ota"}:
+        if failed:
+            failed_events += 1
+            previous = str(event_digest)
+            continue
+        successful_events += 1
+        if operation in {"flash", "flash-trace-acceptance", "ota"}:
             provenance = event.get("build_provenance")
             inputs = event.get("inputs")
+            expected_profile = (
+                "trace-acceptance"
+                if operation == "flash-trace-acceptance"
+                else "default"
+            )
             if (
                 not isinstance(provenance, dict)
                 or provenance.get("kind") != "controller-clean-clone-idf-build"
                 or provenance.get("source_head") != artifact_head
+                or provenance.get("build_profile") != expected_profile
                 or provenance.get("idf_version") != "v5.4.4"
                 or not FULL_SHA.fullmatch(str(provenance.get("idf_revision", "")))
                 or any(
@@ -2683,6 +2706,8 @@ def attest_hardware_manifest(
                         "idf_export_sha256",
                         "idf_py_sha256",
                         "submodules_sha256",
+                        "sdkconfig_defaults_sha256",
+                        "sdkconfig_sha256",
                         "stdout_sha256",
                         "stderr_sha256",
                     )
@@ -2698,7 +2723,7 @@ def attest_hardware_manifest(
                     ("0x8000", "partition_table/partition-table.bin"),
                     ("0x20000", "domes.bin"),
                 }
-                if event["operation"] == "flash"
+                if operation in {"flash", "flash-trace-acceptance"}
                 else {(None, "domes.bin")}
             )
             actual_inputs = {
@@ -2711,7 +2736,22 @@ def attest_hardware_manifest(
                 raise ControlError(
                     f"issue #{item.ticket.number}: trusted firmware input hashes are invalid"
                 )
+            if operation in {"flash", "flash-trace-acceptance"}:
+                board = int(event["board"])
+                final_successful_flash[board] = str(operation)
+                if operation == "flash-trace-acceptance":
+                    trace_profile_boards.add(board)
         previous = str(event_digest)
+    unrestored = sorted(
+        board
+        for board in trace_profile_boards
+        if final_successful_flash.get(board) != "flash"
+    )
+    if unrestored:
+        raise ControlError(
+            f"issue #{item.ticket.number}: trace-acceptance profile was not restored "
+            f"to the default image on board alias(es) {unrestored}"
+        )
     attestation = {
         "schema_version": 1,
         "kind": "controller-hardware-attestation",
@@ -2722,6 +2762,8 @@ def attest_hardware_manifest(
         "manifest": str(path),
         "manifest_sha256": hashlib.sha256(raw).hexdigest(),
         "event_count": len(lines),
+        "successful_event_count": successful_events,
+        "failed_event_count": failed_events,
         "last_event_sha256": previous,
     }
     write_handoff(run_root / "hardware-attestation.json", attestation)
@@ -3090,6 +3132,10 @@ def _execute_one(
                 "lease": hardware_lease,
                 "public": capability_directory,
                 "private": None,
+                "evidence": evidence,
+                "operations": tuple(hardware_operations(item.sections)),
+                "boards": tuple(hardware_boards(item.sections)),
+                "broker_ready": False,
             }
         # Snapshotting happens only while the global lease is held.  If this or any
         # following setup step fails, execute_one's outer finally removes both dirs.
@@ -3140,6 +3186,8 @@ def _execute_one(
             time.sleep(0.05)
         if not ready.is_file():
             raise ControlError("hardware broker readiness timed out")
+        with _HARDWARE_RUNTIME_LOCK:
+            _HARDWARE_RUNTIMES[item.ticket.number]["broker_ready"] = True
     schema = ORCHESTRATION_DIR / "schemas" / SCHEMA_BY_ROLE[role]
     prior_handoff = required_prior_handoff(
         workflow,
@@ -3308,7 +3356,11 @@ def _execute_one(
                 {
                     "level": "accepted_command",
                     "command_or_observation": (
-                        "controller-validated registered-hardware broker manifest"
+                        "controller-validated registered-hardware broker audit "
+                        f"manifest: {attestation.get('successful_event_count', 0)} "
+                        "successful event(s), "
+                        f"{attestation.get('failed_event_count', 0)} failed attempt(s) "
+                        "retained; operation outcomes remain subject to independent review"
                     ),
                     "status": "passed",
                     "artifact": (
@@ -3386,6 +3438,73 @@ def _execute_one(
     }
 
 
+def _restore_default_hardware_profile(runtime: dict[str, Any]) -> None:
+    """Best-effort safety restoration before a ticket-bound broker is torn down."""
+    operations = set(runtime.get("operations", ()))
+    if "flash-trace-acceptance" not in operations:
+        return
+    evidence = runtime.get("evidence")
+    boards = set(runtime.get("boards", ()))
+    if not isinstance(evidence, Path) or not boards:
+        return
+    manifest = evidence / "broker-manifest.jsonl"
+    needs_restore: set[int] = set()
+    if not manifest.is_file():
+        # A broker can die after a trace flash but before the append. With no
+        # audit record, fail safe toward the authorized default image.
+        if not runtime.get("broker_ready"):
+            return
+        needs_restore.update(boards)
+    try:
+        lines = (
+            manifest.read_text(encoding="utf-8").splitlines()
+            if manifest.is_file()
+            else []
+        )
+        for line in lines:
+            event = json.loads(line)
+            if not isinstance(event, dict):
+                raise ValueError("manifest event is not an object")
+            operation = event.get("operation")
+            board = event.get("board")
+            if operation == "flash-trace-acceptance":
+                if board in boards:
+                    needs_restore.add(int(board))
+                else:
+                    needs_restore.update(boards)
+            elif (
+                operation == "flash"
+                and board in boards
+                and event.get("returncode") == 0
+                and event.get("error") is None
+                and isinstance(event.get("build_provenance"), dict)
+                and event["build_provenance"].get("build_profile") == "default"
+            ):
+                needs_restore.discard(int(board))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        # The controller-owned audit becoming unreadable after any profile-capable
+        # run is itself unsafe; restore every ticket-authorized board.
+        needs_restore.update(boards)
+    if not needs_restore:
+        return
+    process = runtime.get("process")
+    public = runtime.get("public")
+    if (
+        not isinstance(process, subprocess.Popen)
+        or process.poll() is not None
+        or not isinstance(public, Path)
+    ):
+        raise ControlError("hardware broker unavailable for default-image restoration")
+    for board in sorted(needs_restore):
+        result = hardware_request(
+            public, {"operation": "flash", "board": board}, 1800.0
+        )
+        if result.get("returncode") != 0 or result.get("error") is not None:
+            raise ControlError(
+                f"registered board alias {board} default-image restoration failed"
+            )
+
+
 def _cleanup_hardware_broker(
     process: subprocess.Popen[str] | None,
     lease: DeviceLease | None,
@@ -3418,9 +3537,15 @@ def _cleanup_registered_hardware_runtime(issue: int) -> None:
     with _HARDWARE_RUNTIME_LOCK:
         runtime = _HARDWARE_RUNTIMES.pop(issue, None)
     if runtime is not None:
-        _cleanup_hardware_broker(
-            runtime["process"], runtime["lease"], runtime["public"], runtime["private"]
-        )
+        try:
+            _restore_default_hardware_profile(runtime)
+        finally:
+            _cleanup_hardware_broker(
+                runtime["process"],
+                runtime["lease"],
+                runtime["public"],
+                runtime["private"],
+            )
 
 
 def process_identity(pid: int) -> tuple[str, int, int] | None:

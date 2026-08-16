@@ -65,7 +65,11 @@ def main(argv: list[str] | None = None) -> int:
     timeout = (
         args.timeout
         if args.timeout is not None
-        else (1800.0 if args.operation in {"flash", "ota"} else 60.0)
+        else (
+            1800.0
+            if args.operation in {"flash", "flash-trace-acceptance", "ota"}
+            else 60.0
+        )
     )
     try:
         answer = request(args.capability_dir, payload, timeout)
