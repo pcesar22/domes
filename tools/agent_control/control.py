@@ -3241,13 +3241,22 @@ def _execute_one(
         "workspace-write" if role in {"worker", "verification-worker"} else "read-only",
         "--cd",
         str(workspace),
-        "--output-schema",
-        str(schema),
-        "--output-last-message",
-        str(result_path),
-        "--json",
-        "-",
     ]
+    if role in {"worker", "verification-worker"}:
+        # Codex protects Git metadata even when it is below the workspace root.
+        # This is safe only because ensure_workspace rejects linked worktrees,
+        # alternates, and every git-dir outside this controller-owned clone.
+        command.extend(("--add-dir", str(workspace / ".git")))
+    command.extend(
+        (
+            "--output-schema",
+            str(schema),
+            "--output-last-message",
+            str(result_path),
+            "--json",
+            "-",
+        )
+    )
     failures: list[str] = []
     for attempt in range(1, 4):
         returncode, failure = run_codex_attempt(

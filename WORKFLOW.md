@@ -88,7 +88,8 @@ worker-supplied argv.
 
 Each agent workspace is a standalone clone with private Git metadata inside the workspace-write
 sandbox. The scheduler does not reuse operator worktrees and never grants workers write access to
-the source repository's shared `.git` directory.
+the source repository's shared `.git` directory. The worker command explicitly grants write access
+only to its clone-local `.git`, which Codex otherwise protects even below a writable root.
 
 If preflight is unavailable, only that hardware ticket enters `agent:blocked`. Automatic recovery
 requires a new successful preflight and a typed blocker bound to the same issue, specification, and

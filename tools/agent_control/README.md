@@ -81,7 +81,9 @@ fed to another role.
 Agent workspaces are standalone clones below the configured workspace root, with private `.git`
 metadata inside the sandbox. The controller never grants a worker write access to the source
 repository's shared Git administration directory or reuses an operator worktree. This lets workers
-commit and push their own branch without weakening workspace isolation.
+commit and push their own branch without weakening workspace isolation. Codex receives an explicit
+writable-directory grant for only that private `.git`, because its normal workspace sandbox protects
+Git metadata even when it is inside the workspace.
 
 Each failed or timed-out role is restarted up to two times with bounded exponential backoff.
 `--watch` is ordinary foreground process behavior; hosting it later is an operational choice and is

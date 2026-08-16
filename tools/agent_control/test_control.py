@@ -1137,6 +1137,9 @@ class ReviewFixRegressionTest(unittest.TestCase):
                 control.execute_one(workflow, item, hardware_capability=envelope)
         command, prompt = run.call_args.args[:2]
         self.assertEqual("workspace-write", command[command.index("--sandbox") + 1])
+        self.assertEqual(
+            str(Path(directory) / ".git"), command[command.index("--add-dir") + 1]
+        )
         self.assertIn("Registered hardware capability envelope", prompt)
         self.assertIn("capability directory", prompt)
 
@@ -1179,6 +1182,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
                 control.execute_one(workflow, item)
         command, prompt = run.call_args.args[:2]
         self.assertEqual("read-only", command[command.index("--sandbox") + 1])
+        self.assertNotIn("--add-dir", command)
         self.assertNotIn("Registered hardware capability envelope", prompt)
 
     def test_recovery_requeues_only_the_known_hardware_blocker_pair(self) -> None:
