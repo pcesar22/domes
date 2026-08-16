@@ -190,3 +190,9 @@ pub mod trace {
         }
     }
 }
+
+/// Portable peer/drill contract generated from peer_drill.proto.
+#[allow(dead_code, clippy::enum_variant_names)]
+pub mod peer {
+    include!(concat!(env!("OUT_DIR"), "/domes.peer.rs"));
+}

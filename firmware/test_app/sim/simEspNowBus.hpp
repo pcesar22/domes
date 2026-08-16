@@ -86,16 +86,17 @@ public:
 
     void send(SimMessage msg) {
         auto& hdr = getMutableHeader(msg);
-        hdr.timestampUs = clock_.nowUs();
+        hdr.timestamp_us = clock_.nowUs();
         hdr.sequence = nextSequence_++;
 
         std::ostringstream oss;
-        oss << "espnow.send " << messageTypeName(hdr.type) << " pod" << hdr.srcPodId << "->";
-        if (hdr.dstPodId == kBroadcastPodId)
+        oss << "espnow.send " << messageTypeName(messageType(msg)) << " pod" << hdr.src_pod_id
+            << "->";
+        if (hdr.dst_pod_id == kBroadcastPodId)
             oss << "ALL";
         else
-            oss << "pod" << hdr.dstPodId;
-        log_.log(hdr.srcPodId, "espnow", oss.str());
+            oss << "pod" << hdr.dst_pod_id;
+        log_.log(hdr.src_pod_id, "espnow", oss.str());
 
         pending_.push_back(std::move(msg));
     }
@@ -123,8 +124,9 @@ public:
                 continue;
 
             const auto& header = getHeader(delivery.message);
-            flowEvents_.push_back(
-                {clock_.nowUs(), header.srcPodId, delivery.dstPod, header.type, header.sequence});
+            flowEvents_.push_back({clock_.nowUs(), static_cast<uint16_t>(header.src_pod_id),
+                                   delivery.dstPod, messageType(delivery.message),
+                                   header.sequence});
             handler->second(delivery.message);
         }
         scheduled_ = std::move(waiting);
@@ -170,23 +172,27 @@ private:
 
         for (const auto& message : messages) {
             const auto& header = getHeader(message);
-            if (header.dstPodId == kBroadcastPodId) {
+            if (header.dst_pod_id == kBroadcastPodId) {
                 for (const auto& [podId, handler] : handlers_) {
                     (void)handler;
-                    if (podId != header.srcPodId)
+                    if (podId != header.src_pod_id)
                         resolveDelivery(message, podId);
                 }
-            } else if (handlers_.contains(header.dstPodId)) {
-                resolveDelivery(message, header.dstPodId);
+            } else if (handlers_.contains(header.dst_pod_id)) {
+                resolveDelivery(message, static_cast<uint16_t>(header.dst_pod_id));
             }
         }
     }
 
     void resolveDelivery(const SimMessage& message, uint16_t dstPod) {
         const auto& header = getHeader(message);
-        DeliveryContext context{
-            header.timestampUs, header.srcPodId, header.dstPodId,          dstPod,
-            header.type,        header.sequence, canonicalPayload(message)};
+        DeliveryContext context{header.timestamp_us,
+                                static_cast<uint16_t>(header.src_pod_id),
+                                static_cast<uint16_t>(header.dst_pod_id),
+                                dstPod,
+                                messageType(message),
+                                header.sequence,
+                                canonicalPayload(message)};
         auto directive = chooseDirective(context);
         if (!directive)
             return;

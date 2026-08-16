@@ -11,6 +11,7 @@
 set(COMMON_SRCS
     protocol/otaProtocol.cpp
     proto/config.pb.c
+    proto/peer_drill.pb.c
     proto/trace.pb.c
 )
 

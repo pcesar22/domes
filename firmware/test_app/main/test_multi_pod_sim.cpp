@@ -277,21 +277,16 @@ TEST_F(MultiPodSimTest, Bus_UnicastDelivery) {
     std::vector<SimMessageType> pod1Received;
     std::vector<SimMessageType> pod2Received;
 
-    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(getHeader(msg).type); });
-    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(getHeader(msg).type); });
+    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(messageType(msg)); });
+    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(messageType(msg)); });
 
     // Send unicast from pod 0 to pod 1
-    SetColorCommand cmd;
-    cmd.header.srcPodId = 0;
-    cmd.header.dstPodId = 1;
-    cmd.header.type = SimMessageType::kSetColor;
-    cmd.r = 255;
-    bus.send(cmd);
+    bus.send(makeSetColor(0, 1, 255, 0, 0));
     bus.deliverPending();
 
     // Only pod 1 should receive
     ASSERT_EQ(pod1Received.size(), 1u);
-    EXPECT_EQ(pod1Received[0], SimMessageType::kSetColor);
+    EXPECT_EQ(pod1Received[0], domes::espnow::kSetColor);
     EXPECT_EQ(pod2Received.size(), 0u);
 
     // Verify flow event recorded
@@ -309,24 +304,20 @@ TEST_F(MultiPodSimTest, Bus_BroadcastDelivery) {
     std::vector<SimMessageType> pod1Received;
     std::vector<SimMessageType> pod2Received;
 
-    bus.registerPod(0, [&](const SimMessage& msg) { pod0Received.push_back(getHeader(msg).type); });
-    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(getHeader(msg).type); });
-    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(getHeader(msg).type); });
+    bus.registerPod(0, [&](const SimMessage& msg) { pod0Received.push_back(messageType(msg)); });
+    bus.registerPod(1, [&](const SimMessage& msg) { pod1Received.push_back(messageType(msg)); });
+    bus.registerPod(2, [&](const SimMessage& msg) { pod2Received.push_back(messageType(msg)); });
 
     // Broadcast from pod 0
-    JoinGameCommand cmd;
-    cmd.header.srcPodId = 0;
-    cmd.header.dstPodId = kBroadcastPodId;
-    cmd.header.type = SimMessageType::kJoinGame;
-    bus.send(cmd);
+    bus.send(makeMessage(domes::espnow::kJoinGame, 0, kBroadcastPodId));
     bus.deliverPending();
 
     // Pod 0 (sender) should NOT receive; pods 1 and 2 should
     EXPECT_EQ(pod0Received.size(), 0u);
     ASSERT_EQ(pod1Received.size(), 1u);
-    EXPECT_EQ(pod1Received[0], SimMessageType::kJoinGame);
+    EXPECT_EQ(pod1Received[0], domes::espnow::kJoinGame);
     ASSERT_EQ(pod2Received.size(), 1u);
-    EXPECT_EQ(pod2Received[0], SimMessageType::kJoinGame);
+    EXPECT_EQ(pod2Received[0], domes::espnow::kJoinGame);
 
     // Two flow events (one per receiver)
     EXPECT_EQ(bus.flowEvents().size(), 2u);
@@ -344,11 +335,7 @@ TEST_F(MultiPodSimTest, Bus_DelaysDeliveryUntilVirtualDeadline) {
         return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 5'000};
     });
 
-    SetColorCommand command;
-    command.header.srcPodId = 0;
-    command.header.dstPodId = 1;
-    command.header.type = SimMessageType::kSetColor;
-    bus.send(command);
+    bus.send(makeSetColor(0, 1, 1, 2, 3));
 
     clock.advanceUs(4'000);
     bus.deliverPending();
@@ -385,11 +372,7 @@ TEST_F(MultiPodSimTest, Bus_AppliesDropAndDuplicateDeterministically) {
         return DeliveryDirective{.action = DeliveryAction::kDuplicate};
     });
 
-    JoinGameCommand command;
-    command.header.srcPodId = 0;
-    command.header.dstPodId = kBroadcastPodId;
-    command.header.type = SimMessageType::kJoinGame;
-    bus.send(command);
+    bus.send(makeMessage(domes::espnow::kJoinGame, 0, kBroadcastPodId));
     bus.deliverPending();
 
     EXPECT_EQ(pod1Received, 0u);
@@ -416,11 +399,7 @@ TEST_F(MultiPodSimTest, Bus_ReplaysCapturedDeliveryRecordExactly) {
         return DeliveryDirective{.action = DeliveryAction::kDuplicate};
     });
 
-    JoinGameCommand firstCommand;
-    firstCommand.header.srcPodId = 0;
-    firstCommand.header.dstPodId = kBroadcastPodId;
-    firstCommand.header.type = SimMessageType::kJoinGame;
-    firstBus.send(firstCommand);
+    firstBus.send(makeMessage(domes::espnow::kJoinGame, 0, kBroadcastPodId));
     firstBus.deliverPending();
     firstClock.advanceUs(250);
     firstBus.deliverPending();
@@ -437,11 +416,7 @@ TEST_F(MultiPodSimTest, Bus_ReplaysCapturedDeliveryRecordExactly) {
     replayBus.registerPod(2, [&](const SimMessage&) { replayReceived.push_back(2); });
     replayBus.setReplayRecord(capturedRecord);
 
-    JoinGameCommand replayCommand;
-    replayCommand.header.srcPodId = 0;
-    replayCommand.header.dstPodId = kBroadcastPodId;
-    replayCommand.header.type = SimMessageType::kJoinGame;
-    replayBus.send(replayCommand);
+    replayBus.send(makeMessage(domes::espnow::kJoinGame, 0, kBroadcastPodId));
     replayBus.deliverPending();
     EXPECT_FALSE(replayBus.replayComplete());
     replayClock.advanceUs(250);
@@ -460,11 +435,7 @@ TEST_F(MultiPodSimTest, Bus_PayloadMismatchFailsClosed) {
     SimEspNowBus sourceBus(sourceLog, sourceClock);
     sourceBus.registerPod(1, [](const SimMessage&) {});
 
-    SetColorCommand sourceCommand;
-    sourceCommand.header.srcPodId = 0;
-    sourceCommand.header.dstPodId = 1;
-    sourceCommand.header.type = SimMessageType::kSetColor;
-    sourceCommand.r = 10;
+    auto sourceCommand = makeSetColor(0, 1, 10, 0, 0);
     sourceBus.send(sourceCommand);
     sourceBus.deliverPending();
     ASSERT_EQ(sourceBus.deliveryRecord().size(), 1u);
@@ -476,8 +447,8 @@ TEST_F(MultiPodSimTest, Bus_PayloadMismatchFailsClosed) {
     replayBus.registerPod(1, [&](const SimMessage&) { received++; });
     replayBus.setReplayRecord(sourceBus.deliveryRecord());
 
-    SetColorCommand changedCommand = sourceCommand;
-    changedCommand.r = 11;
+    auto changedCommand = sourceCommand;
+    changedCommand.payload.set_color.r = 11;
     replayBus.send(changedCommand);
     replayBus.deliverPending();
 
@@ -497,11 +468,7 @@ TEST_F(MultiPodSimTest, Bus_EmptyReplayRejectsUnexpectedDelivery) {
 
     EXPECT_TRUE(bus.replayComplete());
 
-    StopAllCommand command;
-    command.header.srcPodId = 0;
-    command.header.dstPodId = 1;
-    command.header.type = SimMessageType::kStopAll;
-    bus.send(command);
+    bus.send(makeMessage(domes::espnow::kStopAll, 0, 1));
     EXPECT_FALSE(bus.replayComplete());
     bus.deliverPending();
 
@@ -513,14 +480,20 @@ TEST_F(MultiPodSimTest, Bus_EmptyReplayRejectsUnexpectedDelivery) {
 
 TEST_F(MultiPodSimTest, CanonicalPayloadPreservesEveryMessageVariant) {
     std::vector<SimMessage> messages = {
-        SetColorCommand{}, ArmTouchCommand{}, PlaySoundCommand{}, StopAllCommand{},
-        TouchEventMsg{},   TimeoutEventMsg{}, JoinGameCommand{},
+        makeMessage(domes::espnow::kBeacon, 0, kBroadcastPodId),
+        makeMessage(domes::espnow::kPing, 0, 1),
+        makeMessage(domes::espnow::kPong, 1, 0),
+        makeMessage(domes::espnow::kJoinGame, 0, 1),
+        makeArmTouch(0, 1, 3000, 3, 1),
+        makeSetColor(0, 1, 1, 2, 3),
+        makeMessage(domes::espnow::kStopAll, 0, 1),
+        makeTouchEvent(1, 0, 100, 0, 1),
+        makeTimeoutEvent(1, 0, 1),
     };
 
     for (size_t i = 0; i < messages.size(); i++) {
         auto payload = canonicalPayload(messages[i]);
         ASSERT_FALSE(payload.empty());
-        EXPECT_EQ(payload[0], i);
         for (size_t j = i + 1; j < messages.size(); j++) {
             EXPECT_NE(payload, canonicalPayload(messages[j]));
         }
@@ -528,10 +501,9 @@ TEST_F(MultiPodSimTest, CanonicalPayloadPreservesEveryMessageVariant) {
 }
 
 TEST_F(MultiPodSimTest, CanonicalPayloadIncludesRoundToken) {
-    ArmTouchCommand first;
-    first.roundToken = 41;
-    ArmTouchCommand second = first;
-    second.roundToken = 42;
+    auto first = makeArmTouch(0, 1, 3000, 3, 41);
+    auto second = first;
+    second.payload.arm_touch.round_token = 42;
 
     EXPECT_NE(canonicalPayload(first), canonicalPayload(second));
 }
@@ -551,11 +523,7 @@ TEST_F(MultiPodSimTest, PodCommandHandler_JoinGame) {
     EXPECT_EQ(pod.mode().currentMode(), SystemMode::kBooting);
 
     // Send JoinGame command
-    JoinGameCommand cmd;
-    cmd.header.srcPodId = 0;
-    cmd.header.dstPodId = 1;
-    cmd.header.type = SimMessageType::kJoinGame;
-    handler.onMessage(cmd);
+    handler.onMessage(makeMessage(domes::espnow::kJoinGame, 0, 1));
 
     // Should have transitioned through IDLE->CONNECTED->GAME
     EXPECT_EQ(pod.mode().currentMode(), SystemMode::kGame);
@@ -578,14 +546,7 @@ TEST_F(MultiPodSimTest, PodCommandHandler_SetColor) {
     PodCommandHandler handler(pod, bus, orch.log());
 
     // Send SetColor green
-    SetColorCommand cmd;
-    cmd.header.srcPodId = 0;
-    cmd.header.dstPodId = 1;
-    cmd.header.type = SimMessageType::kSetColor;
-    cmd.r = 0;
-    cmd.g = 255;
-    cmd.b = 0;
-    handler.onMessage(cmd);
+    handler.onMessage(makeSetColor(0, 1, 0, 255, 0));
 
     // Verify LED was set to green
     domes::Color expected = domes::Color::rgb(0, 255, 0);
@@ -610,14 +571,7 @@ TEST_F(MultiPodSimTest, PodCommandHandler_ArmAndTouch) {
     bus.registerPod(0, [&](const SimMessage& msg) { masterReceived.push_back(msg); });
 
     // Master (pod 0) sends ArmTouch to pod 1
-    ArmTouchCommand cmd;
-    cmd.header.srcPodId = 0;
-    cmd.header.dstPodId = 1;
-    cmd.header.type = SimMessageType::kArmTouch;
-    cmd.timeoutMs = 3000;
-    cmd.feedbackMode = 0x03;
-    cmd.roundToken = 17;
-    handler.onMessage(cmd);
+    handler.onMessage(makeArmTouch(0, 1, 3000, 0x03, 17));
 
     // Pod 1 should now be armed
     EXPECT_EQ(pod.engine().currentState(), GameState::kArmed);
@@ -636,13 +590,13 @@ TEST_F(MultiPodSimTest, PodCommandHandler_ArmAndTouch) {
 
     // Master (pod 0) should have received a TouchEvent
     ASSERT_EQ(masterReceived.size(), 1u);
-    auto* touchEvent = std::get_if<TouchEventMsg>(&masterReceived[0]);
-    ASSERT_NE(touchEvent, nullptr);
-    EXPECT_EQ(touchEvent->header.srcPodId, 1);  // From pod 1
-    EXPECT_EQ(touchEvent->header.dstPodId, 0);  // To master pod 0
-    EXPECT_EQ(touchEvent->reactionTimeUs, 150'000u);
-    EXPECT_EQ(touchEvent->padIndex, 0);
-    EXPECT_EQ(touchEvent->roundToken, 17u);
+    const auto& touchEvent = masterReceived[0];
+    ASSERT_EQ(touchEvent.which_payload, domes_peer_PeerMessage_touch_event_tag);
+    EXPECT_EQ(touchEvent.header.src_pod_id, 1u);
+    EXPECT_EQ(touchEvent.header.dst_pod_id, 0u);
+    EXPECT_EQ(touchEvent.payload.touch_event.reaction_time_us, 150'000u);
+    EXPECT_EQ(touchEvent.payload.touch_event.pad_index, 0u);
+    EXPECT_EQ(touchEvent.payload.touch_event.round_token, 17u);
 }
 
 TEST_F(MultiPodSimTest, PodCommandHandler_RejectedRearmKeepsActiveRoundCallback) {
@@ -655,16 +609,12 @@ TEST_F(MultiPodSimTest, PodCommandHandler_RejectedRearmKeepsActiveRoundCallback)
     std::vector<SimMessage> masterReceived;
     bus.registerPod(0, [&](const SimMessage& msg) { masterReceived.push_back(msg); });
 
-    ArmTouchCommand first;
-    first.header.srcPodId = 0;
-    first.header.dstPodId = 1;
-    first.header.type = SimMessageType::kArmTouch;
-    first.roundToken = 7;
+    auto first = makeArmTouch(0, 1, 3000, 3, 7);
     handler.onMessage(first);
     ASSERT_EQ(pod.engine().currentState(), GameState::kArmed);
 
-    ArmTouchCommand rejected = first;
-    rejected.roundToken = 8;
+    auto rejected = first;
+    rejected.payload.arm_touch.round_token = 8;
     handler.onMessage(rejected);
 
     orch.advanceTimeMs(100);
@@ -674,7 +624,6 @@ TEST_F(MultiPodSimTest, PodCommandHandler_RejectedRearmKeepsActiveRoundCallback)
     bus.deliverPending();
 
     ASSERT_EQ(masterReceived.size(), 1u);
-    auto* touchEvent = std::get_if<TouchEventMsg>(&masterReceived[0]);
-    ASSERT_NE(touchEvent, nullptr);
-    EXPECT_EQ(touchEvent->roundToken, 7u);
+    ASSERT_EQ(masterReceived[0].which_payload, domes_peer_PeerMessage_touch_event_tag);
+    EXPECT_EQ(masterReceived[0].payload.touch_event.round_token, 7u);
 }

@@ -54,13 +54,14 @@ generate_nanopb() {
 
     (
         cd "$proto_dir"
-        python3 "$nanopb_generator" -I . -D "$output_dir" config.proto trace.proto
+        python3 "$nanopb_generator" -I . -D "$output_dir" \
+            config.proto peer_drill.proto trace.proto
     )
 
     # nanopb appends a schema-dependent number of blank lines. Normalize the
     # committed artifacts so protocol changes do not create trailing-whitespace
     # churn or fail `git diff --check`.
-    for generated in config.pb.c config.pb.h trace.pb.c trace.pb.h; do
+    for generated in config.pb.c config.pb.h peer_drill.pb.c peer_drill.pb.h trace.pb.c trace.pb.h; do
         python3 - "$output_dir/$generated" <<'PY'
 from pathlib import Path
 import sys
@@ -71,7 +72,7 @@ PY
     done
 
     if $check; then
-        for generated in config.pb.c config.pb.h trace.pb.c trace.pb.h; do
+        for generated in config.pb.c config.pb.h peer_drill.pb.c peer_drill.pb.h trace.pb.c trace.pb.h; do
             diff -u "$proto_dir/$generated" "$output_dir/$generated"
         done
     fi
@@ -101,7 +102,7 @@ generate_dart() {
         --plugin="protoc-gen-dart=$plugin" \
         --proto_path="$proto_dir" \
         --dart_out="$output_dir" \
-        "$proto_dir/config.proto"
+        "$proto_dir/config.proto" "$proto_dir/peer_drill.proto"
 
     if $check; then
         diff -ru "$dart_dir" "$output_dir"

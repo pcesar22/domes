@@ -167,10 +167,10 @@ TEST_F(SimDrillTest, ThreePod_MasterAsTarget) {
 TEST_F(SimDrillTest, DelayedArmIsAppliedBeforeTouch) {
     DrillEnv env(2);
     env.bus->setDeliveryPolicy([](const DeliveryContext& context) {
-        if (context.type == SimMessageType::kArmTouch) {
+        if (context.type == domes::espnow::kArmTouch) {
             return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 50'000};
         }
-        if (context.type == SimMessageType::kTouchEvent) {
+        if (context.type == domes::espnow::kTouchEvent) {
             return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 25'000};
         }
         return DeliveryDirective{};
@@ -188,7 +188,7 @@ TEST_F(SimDrillTest, DelayedArmIsAppliedBeforeTouch) {
     EXPECT_EQ(result.rounds[0].reactionTimeUs, 50'000u);
     auto touchFlow = std::find_if(
         env.bus->flowEvents().begin(), env.bus->flowEvents().end(),
-        [](const FlowEvent& event) { return event.type == SimMessageType::kTouchEvent; });
+        [](const FlowEvent& event) { return event.type == domes::espnow::kTouchEvent; });
     ASSERT_NE(touchFlow, env.bus->flowEvents().end());
     EXPECT_EQ(touchFlow->timestampUs, 125'000u);
 }
@@ -196,7 +196,7 @@ TEST_F(SimDrillTest, DelayedArmIsAppliedBeforeTouch) {
 TEST_F(SimDrillTest, DelayedArmTimeoutStartsAtDelivery) {
     DrillEnv env(2);
     env.bus->setDeliveryPolicy([](const DeliveryContext& context) {
-        if (context.type == SimMessageType::kArmTouch) {
+        if (context.type == domes::espnow::kArmTouch) {
             return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 50'000};
         }
         return DeliveryDirective{};
@@ -213,7 +213,7 @@ TEST_F(SimDrillTest, DelayedArmTimeoutStartsAtDelivery) {
     EXPECT_FALSE(result.rounds[0].hit);
     auto timeoutFlow = std::find_if(
         env.bus->flowEvents().begin(), env.bus->flowEvents().end(),
-        [](const FlowEvent& event) { return event.type == SimMessageType::kTimeoutEvent; });
+        [](const FlowEvent& event) { return event.type == domes::espnow::kTimeoutEvent; });
     ASSERT_NE(timeoutFlow, env.bus->flowEvents().end());
     EXPECT_EQ(timeoutFlow->timestampUs, 151'000u);
 }
@@ -221,10 +221,10 @@ TEST_F(SimDrillTest, DelayedArmTimeoutStartsAtDelivery) {
 TEST_F(SimDrillTest, StaleDelayedTimeoutDoesNotMaskNextTouchResponse) {
     DrillEnv env(2);
     env.bus->setDeliveryPolicy([](const DeliveryContext& context) {
-        if (context.type == SimMessageType::kTimeoutEvent) {
+        if (context.type == domes::espnow::kTimeoutEvent) {
             return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 300'000};
         }
-        if (context.type == SimMessageType::kTouchEvent) {
+        if (context.type == domes::espnow::kTouchEvent) {
             return DeliveryDirective{.action = DeliveryAction::kDeliver, .delayUs = 25'000};
         }
         return DeliveryDirective{};
@@ -247,12 +247,12 @@ TEST_F(SimDrillTest, StaleDelayedTimeoutDoesNotMaskNextTouchResponse) {
     EXPECT_EQ(result.rounds[1].reactionTimeUs, 100'000u);
     auto timeoutFlow = std::find_if(
         env.bus->flowEvents().begin(), env.bus->flowEvents().end(),
-        [](const FlowEvent& event) { return event.type == SimMessageType::kTimeoutEvent; });
+        [](const FlowEvent& event) { return event.type == domes::espnow::kTimeoutEvent; });
     ASSERT_NE(timeoutFlow, env.bus->flowEvents().end());
     EXPECT_EQ(timeoutFlow->timestampUs, 401'000u);
     auto touchFlow = std::find_if(
         env.bus->flowEvents().begin(), env.bus->flowEvents().end(),
-        [](const FlowEvent& event) { return event.type == SimMessageType::kTouchEvent; });
+        [](const FlowEvent& event) { return event.type == domes::espnow::kTouchEvent; });
     ASSERT_NE(touchFlow, env.bus->flowEvents().end());
     EXPECT_EQ(touchFlow->timestampUs, 427'000u);
 }
@@ -261,7 +261,7 @@ TEST_F(SimDrillTest, DelayedOldArmCannotClaimNextRoundTouch) {
     DrillEnv env(2);
     size_t armCount = 0;
     env.bus->setDeliveryPolicy([&armCount](const DeliveryContext& context) {
-        if (context.type != SimMessageType::kArmTouch) {
+        if (context.type != domes::espnow::kArmTouch) {
             return DeliveryDirective{};
         }
         armCount++;
@@ -287,7 +287,7 @@ TEST_F(SimDrillTest, DelayedOldArmCannotClaimNextRoundTouch) {
     EXPECT_FALSE(result.rounds[1].hit);
     auto touchFlow = std::find_if(
         env.bus->flowEvents().begin(), env.bus->flowEvents().end(),
-        [](const FlowEvent& event) { return event.type == SimMessageType::kTouchEvent; });
+        [](const FlowEvent& event) { return event.type == domes::espnow::kTouchEvent; });
     EXPECT_NE(touchFlow, env.bus->flowEvents().end());
 }
 

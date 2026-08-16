@@ -1,0 +1,104 @@
+// Portable peer discovery and drill runtime contract.
+//
+// The generated messages are the semantic source of truth. ESP-NOW firmware
+// currently maps them to the version-1 fixed binary layout so deployed peers
+// remain wire compatible while host peers use the protobuf representation.
+syntax = "proto3";
+package domes.peer;
+
+enum ContractVersion {
+    CONTRACT_VERSION_UNSPECIFIED = 0;
+    CONTRACT_VERSION_1 = 1;
+}
+
+enum PeerRole {
+    PEER_ROLE_UNSPECIFIED = 0;
+    PEER_ROLE_MASTER = 1;
+    PEER_ROLE_SLAVE = 2;
+}
+
+enum PeerLifecycleState {
+    PEER_LIFECYCLE_STATE_UNSPECIFIED = 0;
+    PEER_LIFECYCLE_STATE_DISCOVERY = 1;
+    PEER_LIFECYCLE_STATE_READY = 2;
+    PEER_LIFECYCLE_STATE_ARMED = 3;
+    PEER_LIFECYCLE_STATE_STOPPED = 4;
+}
+
+// Values deliberately match the deployed ESP-NOW type byte.
+enum PeerMessageType {
+    PEER_MESSAGE_TYPE_UNKNOWN = 0;
+    PEER_MESSAGE_TYPE_BEACON = 0x01;
+    PEER_MESSAGE_TYPE_PING = 0x02;
+    PEER_MESSAGE_TYPE_PONG = 0x03;
+    PEER_MESSAGE_TYPE_JOIN_GAME = 0x10;
+    PEER_MESSAGE_TYPE_ARM_TOUCH = 0x11;
+    PEER_MESSAGE_TYPE_SET_COLOR = 0x12;
+    PEER_MESSAGE_TYPE_STOP_ALL = 0x13;
+    PEER_MESSAGE_TYPE_SIMULATE_TOUCH = 0x14;
+    PEER_MESSAGE_TYPE_TOUCH_EVENT = 0x20;
+    PEER_MESSAGE_TYPE_TIMEOUT_EVENT = 0x21;
+}
+
+message PeerHeader {
+    ContractVersion version = 1;
+    uint32 src_pod_id = 2;
+    uint32 dst_pod_id = 3; // 65535 means broadcast.
+    PeerRole sender_role = 4;
+    uint64 timestamp_us = 5;
+    uint32 sequence = 6;
+    bytes sender_mac = 7; // Exactly six bytes when carried by ESP-NOW.
+}
+
+message Beacon {}
+message Ping {}
+message Pong {}
+
+message JoinGame {
+    PeerRole assigned_role = 1;
+}
+
+message ArmTouch {
+    uint32 round_token = 1;
+    uint32 timeout_ms = 2;
+    uint32 feedback_mode = 3;
+}
+
+message SetColor {
+    uint32 r = 1;
+    uint32 g = 2;
+    uint32 b = 3;
+}
+
+message StopAll {}
+
+message SimulateTouch {
+    uint32 round_token = 1;
+    uint32 pad_index = 2;
+}
+
+message TouchEvent {
+    uint32 round_token = 1;
+    uint32 reaction_time_us = 2;
+    uint32 pad_index = 3;
+}
+
+message TimeoutEvent {
+    uint32 round_token = 1;
+}
+
+message PeerMessage {
+    PeerHeader header = 1;
+    oneof payload {
+        Beacon beacon = 16;
+        Ping ping = 17;
+        Pong pong = 18;
+        JoinGame join_game = 19;
+        ArmTouch arm_touch = 20;
+        SetColor set_color = 21;
+        StopAll stop_all = 22;
+        SimulateTouch simulate_touch = 23;
+        TouchEvent touch_event = 24;
+        TimeoutEvent timeout_event = 25;
+    }
+}
