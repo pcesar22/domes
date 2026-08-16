@@ -11,14 +11,15 @@ belong in [`research/PRODUCT_DEFINITION.md`](research/PRODUCT_DEFINITION.md), ta
 [`research/SOFTWARE_ARCHITECTURE.md`](research/SOFTWARE_ARCHITECTURE.md), and verification procedures
 in [`docs/TESTING.md`](docs/TESTING.md).
 
-**As of:** 2026-08-05, FS-WP-002C scheduler and causality observability remains `Active` / `Amber`
-until its closure change passes review and required CI. Exact candidate `ce159ba` closed the physical
-evidence gaps on registered pod 2: the retained 74-event trace is bound to the pod, firmware version,
-executable hash, running-image hash, candidate file, and stable serial endpoint, with zero lost or
-discontinuous events. Removing the redundant merge scratch increased live internal memory from
-about 15 KiB to about 31 KiB; the restored normal image passed health and all 10 self-tests on two
-boots with tracing disabled and empty. A separate guarded serial-update attempt rolled back before
-commands became available even though the same image passed after direct app-slot restoration; that
+**As of:** 2026-08-15, FS-WP-002C scheduler and causality observability remains `Active` / `Amber`
+until PR 105 passes review and merge. Reviewed candidate `2772f633b57663f731bbf30856802ac51862ae42`
+closed the physical evidence gaps on registered pod 2: the retained 74-event trace is bound to the
+pod, firmware version, executable hash, running-image hash, candidate file, and stable serial
+endpoint, with zero lost or discontinuous events. The restored normal image passed health and all
+10 self-tests on two boots with tracing disabled and empty. All eight required software jobs passed
+on that exact candidate in Software CI run 31918252989. A separate guarded serial-update attempt
+rolled back before commands became available even though the same image passed after direct app-slot
+restoration; that
 OTA-path defect is not claimed as solved by this package.
 FS-WP-002B and FS-WP-002D
 remain consolidated in [PR 100](https://github.com/pcesar22/domes/pull/100) against `main`.
@@ -42,11 +43,11 @@ head, including status-only changes, remains subject to the same required checks
 | Gate baseline / forecast | 2026-09-15 / 2026-09-15 |
 | Forecast confidence | `Low` until HW owner, NFF characterization, and requirements inputs are established |
 | Latest completed execution package | `FS-WP-002D`, `Complete` / `Green`; [PR 100](https://github.com/pcesar22/domes/pull/100), issue [99](https://github.com/pcesar22/domes/issues/99), and required [Software CI](https://github.com/pcesar22/domes/actions/runs/31039047667) passed |
-| Current execution package | `FS-WP-002C`, `Active` / `Amber`; exact physical identity and default-image checks pass on closure candidate `ce159ba`, with review, required CI, and merge remaining |
+| Current execution package | `FS-WP-002C`, `Active` / `Amber`; exact physical identity, default-image checks, and required software CI pass on reviewed candidate `2772f633`, with review and merge remaining |
 | Next program action | Select and start VC1 now; in parallel, record the HW owner/budget decision and then start HW-WP-001 while active PS1 and FS1 work continues |
-| Next autonomous execution delivery | Publish the FS-WP-002C closure candidate, pass required review and exact-checkout CI, and merge; do not begin FS-WP-002E before that package exit |
-| Current AI execution blocker | No remaining physical-evidence blocker; closure candidate `ce159ba` awaits publication, review, required CI, and merge. The separately observed guarded-OTA rollback needs follow-up ownership |
-| PR merge condition | Device-bound trace and passing two-boot restoration evidence are retained; the final closure head must pass required review and CI, with live checks authoritative |
+| Next autonomous execution delivery | Reconcile PR 105's candidate authority, repeat exact-final-head evidence as required, pass required review and exact-checkout CI, and merge; do not begin FS-WP-002E before that package exit |
+| Current AI execution blocker | Candidate `2772f633` passed device-bound closure and required software CI; authority reconciliation and any exact-final-head evidence invalidated by that commit must pass before review. The separately observed guarded-OTA rollback needs follow-up ownership |
+| PR merge condition | Device-bound trace and passing two-boot restoration evidence are retained for `2772f633`; the final closure head must repeat invalidated exact-head evidence and pass required review and CI, with live checks authoritative |
 | Next CEO/external decision | Name the HW design owner and approve the bounded HW-WP-001 definition/risk-prototype budget |
 | Immediate hardware work authorization | [`HW-WP-001`](hardware/NEXT_ITERATION_REQUEST.md), `Ready now` |
 | First product-hardware purchase authorization | G2 EVT Release to Fab, forecast 2026-11-02 |
@@ -89,21 +90,21 @@ edges, fail-closed evidence validation, and measured enabled/disabled overhead o
 | State / health | `Active` / `Amber`; physical exit passed on candidate, integration pending |
 | Execution issue / plan | Reopened issue [101](https://github.com/pcesar22/domes/issues/101); [execution plan](docs/plans/scheduler-trace-observability.md) |
 | Inputs | Merged FS-WP-002D target runtime, existing 16-byte trace ABI, ESP-IDF v5.4.4 trace facility, registered NFF boards |
-| Dependencies/blockers | Physical exit passed on exact closure candidate `ce159ba`; required review, exact-checkout CI, and merge remain before package completion |
+| Dependencies/blockers | Physical exit and required software CI passed on reviewed candidate `2772f633`; authority reconciliation, any invalidated exact-final-head evidence, review, and merge remain before package completion |
 | Gate/risk unlocked | Candidate evidence satisfies the physical exit; merging the green closure PR will unlock FS-WP-002E production radio seam work |
 | Stop condition | No scheduler replacement, unbounded hook/ISR work, reserved protobuf reuse, unmeasured 16-byte ABI migration, FS-WP-002E work, or hardware-equivalence/predictive claim |
 
 Acceptance requires stable mappings, per-core task/ISR/queue/semaphore/timeout/callback evidence, one
 synthetic interrupt causal chain, retained raw hashes, a versioned zero-exclusion normalizer, 100
 identical complete fixed QEMU traces, hard failure on invalid evidence, measured QEMU/NFF overhead,
-and preservation of default physical behavior. Final merged implementation `b3cb19c` passed 100/100
-accepted QEMU processes with one complete trace signature and all eight software checks in Software
-CI run 31068033646, including the aggregate `CI Gate`. Closure candidate `ce159ba` then produced a
-device-bound pod-2 run with 74 accepted events, zero drops/discontinuities, and 154/239 us
-disabled/enabled overhead. The restored normal image passed both heap thresholds, health, and all 10
-self-tests on two boots, while tracing remained disabled and empty. Review, exact-checkout CI, and
-merge remain. This is target-runtime and framed-command evidence, not physical actuation, radio,
-hardware-equivalence, or predictive evidence.
+and preservation of default physical behavior. Reviewed PR 105 candidate `2772f633` passed 100/100
+accepted QEMU processes and all eight required software checks in Software CI run 31918252989,
+including the aggregate `CI Gate`. Its device-bound pod-2 run contains 74 accepted events, zero
+drops/discontinuities, and 153/239 us disabled/enabled overhead. The restored normal image passed
+health and all 10 self-tests on two boots, while tracing remained disabled and empty. The authority
+reconciliation commit must repeat any invalidated exact-final-head evidence before review. This is
+target-runtime and framed-command evidence, not physical actuation, radio, hardware-equivalence, or
+predictive evidence.
 
 ### Latest Completed Execution Delivery
 
@@ -331,7 +332,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | --- | --- | --- |
 | 2026-08-05 | FS-WP-002B and D consolidated into one reviewable simulation delivery with reproducible tooling, concise qualification, independent reviews, and passing exact-checkout QEMU CI | D is complete and C is eligible but unselected; no scheduler, hardware-equivalence, or predictive claim is created |
 | 2026-08-05 | FS-WP-002C review repaired scheduler identities, cache-safe hook access, raw-evidence bounds, and fail-closed normalization; final code passed 100/100 QEMU and merge-ref CI, then an operator-correlated pod-2 trace passed semantic normalization | C remains active until exact physical identity is bound and retained default-image health/self-test evidence passes; no actuation, RF, hardware-equivalence, or predictive claim is created |
-| 2026-08-05 | FS-WP-002C closure candidate `ce159ba` bound a fresh 74-event trace to registered pod 2 and its exact executable/app image, reclaimed about 16 KiB internal memory, and passed health plus 10/10 self-test on two restored-default boots | Physical exit is satisfied on the candidate; C remains active until review, required CI, and merge. A separately observed guarded-OTA rollback remains outside the claim |
+| 2026-08-15 | Reviewed PR 105 candidate `2772f633` bound a fresh 74-event trace to registered pod 2 and its exact executable/app image, passed health plus 10/10 self-test on two restored-default boots, and passed all required software CI | The candidate evidence is accepted, but the authority reconciliation changes the exact head and must repeat invalidated evidence before review; C remains active until review and merge. A separately observed guarded-OTA rollback remains outside the claim |
 | 2026-08-14 | Product brief, hardware-driving requirement draft, and initial risk register | Conflicts and missing measurements surface early while simulation implementation proceeds on its separate ladder |
 | 2026-08-24 | NFF physical/peripheral/electrical characterization baseline | Guesses are replaced before selection freeze |
 | 2026-08-31 | Architecture/component shortlist and bounded risk-coupon review | Weak candidates are removed |
@@ -355,7 +356,7 @@ PCB outline/stack-up, placement, interfaces, safety, compliance route, or firmwa
 | Current main software CI | Commit `7b1554a9acd3c4db9899f1c077b1591633db481a`, [run 31068879786](https://github.com/pcesar22/domes/actions/runs/31068879786) | Passed | Builds, tests, generated artifacts, lint, docs, Flutter Linux/iOS, ESP-IDF release checks, 100-process QEMU runtime, and aggregate `CI Gate` |
 | Deterministic replay foundation | [PR 97](https://github.com/pcesar22/domes/pull/97), merged 2026-08-04 | Accepted | FS-WP-002A only: explicit host time, deterministic faults, delivery identity, and exact delivery replay; no trace-normalization, target-scheduler, or predictive claim |
 | ESP32-S3 QEMU simulation delivery | [PR 100](https://github.com/pcesar22/domes/pull/100), [Software CI run 31039047667](https://github.com/pcesar22/domes/actions/runs/31039047667) | `B` is `Viable`; `D` is `Complete` / `Green`; exact-checkout CI rebuilt runtime implementation head `f36447f931f9216b7733ff4685ffc5ccaab895ce`, executed 100 identical fresh production-runtime QEMU processes, and passed aggregate `CI Gate`; manual 100/100 campaigns, linked closure, source-equivalent two-board regression, current host tooling, and independent review also passed; every later PR head remains gated before merge | Target execution and declared production/adapted/modeled/disabled runtime profile only; successful results stay in CI logs and failure diagnostics are uploaded outside Git; no scheduler-trace, radio/RF, peripheral-actuation, cycle-accuracy, hardware-equivalence, or predictive claim |
-| Scheduler and causality trace implementation | Merged [PR 102](https://github.com/pcesar22/domes/pull/102), issue [101](https://github.com/pcesar22/domes/issues/101) reopened for physical closure, closure candidate `ce159ba`, and [Software CI run 31068033646](https://github.com/pcesar22/domes/actions/runs/31068033646) | Prior CI merge ref `b451b118` passed all eight software checks and 100/100 accepted QEMU runs. Candidate `ce159ba` adds a device-bound pod-2 trace with 74 events, zero drops/discontinuities, complete causality, 154/239 us overhead, raw SHA-256 `388fcd39...da7f`, exact firmware/executable/app-image/candidate hashes, and stable serial identity. Its restored normal image reports 31,795 bytes current and 26,595 bytes minimum internal heap, passes health and 10/10 self-test on two boots, and leaves trace disabled/empty | Physical target-runtime/framed-command evidence passes on the candidate; required review, exact-checkout CI, and merge remain. No physical actuation, radio, hardware-equivalence, predictive, or successful-OTA claim |
+| Scheduler and causality trace implementation | Merged [PR 102](https://github.com/pcesar22/domes/pull/102), issue [101](https://github.com/pcesar22/domes/issues/101) reopened for physical closure, reviewed PR 105 candidate `2772f633`, and [Software CI run 31918252989](https://github.com/pcesar22/domes/actions/runs/31918252989) | Candidate `2772f633` passed all eight software checks and 100/100 accepted QEMU runs. Its device-bound pod-2 trace has 74 events, zero drops/discontinuities, complete causality, 153/239 us overhead, raw SHA-256 `df0334af...fc2f`, ELF SHA-256 `ab499b0d...1b5b`, running-image SHA-256 `8d549e70...9116`, candidate-file SHA-256 `a089546c...d084`, and stable board/serial identity. Two restored-default boots pass health and 10/10 self-test and leave trace disabled/empty | Physical target-runtime/framed-command evidence and required software CI pass on `2772f633`; the authority reconciliation must repeat invalidated exact-final-head evidence before review. No physical actuation, radio, hardware-equivalence, predictive, or successful-OTA claim |
 | Repository effectiveness acceptance | [PR 85](https://github.com/pcesar22/domes/pull/85), merged 2026-08-03 | Accepted | Instructions, verification orchestration, pinned toolchains and CI behavior |
 | Automated hardware CI | Commit `76d312af1710a14102beeeeaeab716a02a0a4e70`, [run 30785241480](https://github.com/pcesar22/domes/actions/runs/30785241480) | Passed | Two NFF boards, serial/BLE/ESP-NOW/OTA/diagnostics/trace; no physical observation |
 
