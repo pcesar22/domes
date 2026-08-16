@@ -69,6 +69,22 @@ body:
       label: Required proof
     validations:
       required: true
+  - type: textarea
+    id: hardware_operations
+    attributes:
+      label: Hardware operations
+      description: Use `None` unless the accepted task needs finite host-broker operations; prose cannot grant device access.
+      value: None
+    validations:
+      required: true
+  - type: textarea
+    id: hardware_boards
+    attributes:
+      label: Hardware boards
+      description: Use `None` without hardware; otherwise list the exact broker aliases (`0`, `1`, or `0, 1`) authorized for this task.
+      value: None
+    validations:
+      required: true
   - type: dropdown
     id: autonomy_policy
     attributes:

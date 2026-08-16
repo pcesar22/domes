@@ -37,6 +37,27 @@ handoff, and continuous slot refill:
 python3 tools/agent_control/control.py run --execute --watch --autopilot
 ```
 
+To let accepted tickets request registered-NFF evidence, opt in when starting the controller:
+
+```bash
+python3 tools/agent_control/control.py run --execute --watch --autopilot --allow-registered-hardware
+```
+
+This is not a general hardware permission. A ticket must also contain an explicit, finite
+`Hardware operations` section and explicit `Hardware boards` aliases. Before dispatch, the controller verifies the two registered NFF
+CP2102N identities, takes an exclusive hardware lease, and starts a host-side broker. Codex remains
+in the workspace-write sandbox with no direct `/dev` access; it receives only a temporary
+ticket/specification-bound queue capability and only the ticketed board aliases. The broker revalidates the
+private udev mapping immediately before each request and executes fixed argv for only the ticketed
+operation. It requires a committed tracked-clean worktree and binds each manifest event to that
+commit. Flash and OTA images are built by the host broker from a private clean clone with ESP-IDF
+v5.4.4; worker-supplied build artifacts are rejected. It retains device evidence under the
+ticket's controller state.
+
+A failed preflight blocks only that ticket. It is automatically requeued only when a later
+preflight succeeds and the saved typed blocker still matches the same issue, specification, and PR
+head. Old comments and prose are not recovery authority.
+
 For a live tmux/operator view instead of machine-readable JSON snapshots:
 
 ```bash
@@ -99,12 +120,15 @@ cannot edit the project brain or implement work.
 
 - `queue` is read-only; `run --execute` is mutating.
 - The process uses the existing `gh` and `codex` authentication.
-- Planner and judge runs use a read-only Codex sandbox. Worker and verification runs use a
-  workspace-write sandbox in the issue worktree.
+- Planner and judge runs use a read-only Codex sandbox. Worker and verification runs always use a
+  workspace-write sandbox in the issue worktree. Hardware workers reach registered boards only
+  through the host broker described above.
 - Controller-marked `software-review-required` tickets are implemented, published, independently
   judged, and repaired through exact-head CI. They then stop at `agent:human-review`; the controller
   never submits a GitHub approval or merge. It continues separate unblocked work while review waits.
 - It never releases, adds `hw-test`, performs destructive device actions, or deletes a worktree.
+- `--allow-registered-hardware` does not authorize `hw-test`, erase, NVS/factory reset, eFuse,
+  secure boot, encryption, key, release, or arbitrary host commands.
 - JSONL logs are retained for operator diagnosis but excluded from cross-role prompts.
 
 Autopilot deliberately fails closed on its own policy and implementation, GitHub workflow files,

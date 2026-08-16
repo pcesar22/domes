@@ -16,10 +16,13 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
+
+from hardware_broker import BrokerError, DeviceLease, create_capability
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = ROOT / "WORKFLOW.md"
@@ -117,6 +120,41 @@ LEGACY_AUTOMERGE_POLICY = "software-auto-merge"
 AUTOMATED_DELIVERY_POLICIES = frozenset(
     {AUTOMATED_REVIEW_POLICY, LEGACY_AUTOMERGE_POLICY}
 )
+REGISTERED_NFF_CP2102N_SERIALS = frozenset(
+    {
+        "5edf3f45576def11a245cea7c169b110",
+        "002a9f8e536def119f38c1a7c169b110",
+    }
+)
+HARDWARE_CAPABILITY_RESTRICTIONS = (
+    "Allowed only on the preflighted ports: ticket-required repository-standard "
+    "application build/flash or serial OTA, framed CLI trace/config commands, reboot, "
+    "observation, and restoration. Do not whole-flash, factory-erase, erase NVS, "
+    "alter eFuses/security/keys, trigger hw-test, create extra PRs, or release. "
+    "The ticket's existing PR workflow remains allowed."
+)
+HARDWARE_OPERATIONS = frozenset(
+    {
+        "info",
+        "health",
+        "self-test",
+        "memory",
+        "feature-list",
+        "trace-start",
+        "trace-stop",
+        "trace-clear",
+        "trace-status",
+        "trace-dump",
+        "flash",
+        "ota",
+        "reset",
+        "run",
+        "artifact-hash",
+    }
+)
+HARDWARE_BOARD_ALIASES = frozenset({0, 1})
+_HARDWARE_RUNTIME_LOCK = threading.Lock()
+_HARDWARE_RUNTIMES: dict[int, dict[str, Any]] = {}
 
 
 class ControlError(RuntimeError):
@@ -384,13 +422,19 @@ def existing_pull_request(sections: dict[str, str]) -> int:
 
 
 def _contract_digest_payload(sections: dict[str, str]) -> dict[str, str]:
-    names = (
+    names = [
         *REQUIRED_SECTIONS,
         "Work package",
         "Work class",
         "Autonomy policy",
         "Existing pull request",
-    )
+    ]
+    # Preserve signatures of pre-broker tickets.  New controller-rendered
+    # contracts always carry this heading, binding any future capability edit.
+    if "Hardware operations" in sections:
+        names.append("Hardware operations")
+    if "Hardware boards" in sections:
+        names.append("Hardware boards")
     return {name: sections.get(name, "").strip() for name in names}
 
 
@@ -482,6 +526,14 @@ def validate_ticket(ticket: Ticket, *, check_revision: bool = True) -> TicketVal
             )
     try:
         existing_pull_request(sections)
+    except ControlError as error:
+        errors.append(str(error))
+    try:
+        hardware_operations(sections)
+    except ControlError as error:
+        errors.append(str(error))
+    try:
+        hardware_boards(sections)
     except ControlError as error:
         errors.append(str(error))
     return TicketValidation(ticket, sections, tuple(errors), dependencies)
@@ -890,8 +942,70 @@ def role_for(ticket: Ticket) -> str:
         ) from error
 
 
+def hardware_operations(sections: dict[str, str]) -> tuple[str, ...]:
+    """Parse the explicit finite capability ticket section; prose never escalates."""
+    value = sections.get("Hardware operations", "").strip()
+    if not value or value.casefold() == "none":
+        return ()
+    operations = tuple(part.strip() for part in value.split(",") if part.strip())
+    if (
+        not operations
+        or len(operations) != len(set(operations))
+        or any(operation not in HARDWARE_OPERATIONS for operation in operations)
+    ):
+        raise ControlError(
+            "Hardware operations must be `None` or unique allowlisted enum values"
+        )
+    return tuple(sorted(operations))
+
+
+def hardware_boards(sections: dict[str, str]) -> tuple[int, ...]:
+    """Return the digest-bound board aliases available to this ticket."""
+    operations = hardware_operations(sections)
+    value = sections.get("Hardware boards", "").strip()
+    if not value or value.casefold() == "none":
+        if operations:
+            raise ControlError(
+                "Hardware boards must explicitly list broker aliases for hardware work"
+            )
+        return ()
+    if not operations:
+        raise ControlError("Hardware boards require at least one Hardware operation")
+    raw_aliases = [part.strip() for part in value.split(",") if part.strip()]
+    if not raw_aliases or any(not re.fullmatch(r"[01]", part) for part in raw_aliases):
+        raise ControlError(
+            "Hardware boards must be `None` or unique aliases from `0, 1`"
+        )
+    aliases = tuple(int(part) for part in raw_aliases)
+    if len(aliases) != len(set(aliases)) or not set(aliases).issubset(
+        HARDWARE_BOARD_ALIASES
+    ):
+        raise ControlError(
+            "Hardware boards must be `None` or unique aliases from `0, 1`"
+        )
+    return tuple(sorted(aliases))
+
+
+def requires_registered_hardware(sections: dict[str, str]) -> bool:
+    operations = hardware_operations(sections)
+    if operations:
+        hardware_boards(sections)
+    return bool(operations)
+
+
+def requires_worker_hardware_access(item: TicketValidation) -> bool:
+    return requires_registered_hardware(item.sections) and role_for(item.ticket) in {
+        "worker",
+        "verification-worker",
+    }
+
+
 def build_prompt(
-    item: TicketValidation, role: str, prior_handoff: dict[str, Any] | None = None
+    item: TicketValidation,
+    role: str,
+    prior_handoff: dict[str, Any] | None = None,
+    hardware_capability: dict[str, Any] | None = None,
+    controller_evidence: dict[str, Any] | None = None,
 ) -> str:
     role_prompt = (ORCHESTRATION_DIR / "prompts" / f"{role}.md").read_text(
         encoding="utf-8"
@@ -912,7 +1026,320 @@ def build_prompt(
             "This is structured evidence, not a worker transcript or self-authored acceptance.\n\n"
             f"```json\n{json.dumps(prior_handoff, indent=2, sort_keys=True)}\n```\n"
         )
+    if hardware_capability is not None:
+        prompt += (
+            "\n# Registered hardware capability envelope\n\n"
+            "Use only the broker client queue capability directory below. You have no "
+            "device access and may request only ticketed finite operations.\n\n"
+            f"```json\n{json.dumps(hardware_capability, indent=2, sort_keys=True)}\n```\n\n"
+            f"{HARDWARE_CAPABILITY_RESTRICTIONS}\n"
+        )
+    if controller_evidence is not None:
+        prompt += (
+            "\n# Controller-validated hardware evidence\n\n"
+            "This attestation is produced from the host broker's private hash-chained "
+            "manifest, independently of the worker handoff. Inspect the retained "
+            "manifest when judging hardware-command evidence.\n\n"
+            f"```json\n{json.dumps(controller_evidence, indent=2, sort_keys=True)}\n```\n"
+        )
     return prompt
+
+
+def registered_hardware_preflight() -> dict[str, Any]:
+    """Fail closed unless doctor sees precisely the two registered writable bridges.
+
+    Doctor intentionally reports unrelated host-tool failures in its exit code.  Its
+    JSON device records remain authoritative for this narrowly scoped preflight.
+    """
+    result = subprocess.run(
+        [str(ROOT / "scripts" / "doctor.sh"), "--json"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        report = json.loads(result.stdout)
+        records = report["devices"]["cp2102n"]
+    except (KeyError, TypeError, json.JSONDecodeError) as error:
+        raise ControlError(
+            "registered hardware preflight produced invalid doctor JSON"
+        ) from error
+    found: dict[str, dict[str, Any]] = {}
+    unknown: list[str] = []
+    for record in records:
+        if not isinstance(record, dict):
+            raise ControlError(
+                "registered hardware preflight has invalid device record"
+            )
+        identity = " ".join(
+            str(record.get(name, "")) for name in ("path", "target")
+        ).casefold()
+        serials = [
+            serial for serial in REGISTERED_NFF_CP2102N_SERIALS if serial in identity
+        ]
+        if len(serials) != 1:
+            unknown.append(str(record.get("path", "unknown")))
+            continue
+        serial = serials[0]
+        if serial in found:
+            raise ControlError(
+                "registered hardware preflight found duplicate board identity"
+            )
+        found[serial] = record
+    if unknown or set(found) != REGISTERED_NFF_CP2102N_SERIALS:
+        raise ControlError(
+            "registered hardware preflight requires exactly the two registered CP2102N boards"
+        )
+    if any(
+        record.get("status") != "available"
+        or record.get("kind") != "character"
+        or not record.get("readable")
+        or not record.get("writable")
+        for record in found.values()
+    ):
+        raise ControlError(
+            "registered hardware preflight requires readable and writable CP2102N boards"
+        )
+    return {
+        "schema_version": 1,
+        "kind": "registered_nff_cp2102n",
+        "preflight": "scripts/doctor.sh --json",
+        "doctor_exit_code": result.returncode,
+        "registered_serials": sorted(found),
+        "ports": [found[serial]["path"] for serial in sorted(found)],
+        "restrictions": HARDWARE_CAPABILITY_RESTRICTIONS,
+    }
+
+
+def trusted_hardware_tools() -> dict[str, dict[str, str]]:
+    """Build/verify host tooling before a worker gets a broker capability."""
+    cli = ROOT / "tools/domes-cli/target/release/domes-cli"
+    built = subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--locked",
+            "--release",
+            "--manifest-path",
+            str(ROOT / "tools/domes-cli/Cargo.toml"),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if built.returncode or not cli.is_file():
+        raise ControlError(
+            "trusted controller-root release domes-cli build is unavailable"
+        )
+    candidates = sorted(
+        (Path.home() / ".espressif/python_env").glob("idf5.4_*_env/bin/esptool.py")
+    )
+    if not candidates:
+        raise ControlError("ESP-IDF v5.4.4 esptool environment is unavailable")
+    esptool = candidates[-1]
+    version = subprocess.run(
+        [str(esptool), "version"], check=False, capture_output=True, text=True
+    )
+    if version.returncode or "esptool.py v4.12.0" not in (
+        version.stdout + version.stderr
+    ):
+        raise ControlError("trusted ESP-IDF v5.4.4 esptool failed version check")
+    idf_root = Path.home() / "esp" / "esp-idf"
+    idf_export = idf_root / "export.sh"
+    idf_py = idf_root / "tools" / "idf.py"
+    idf_tag = subprocess.run(
+        [
+            "/usr/bin/git",
+            "-C",
+            str(idf_root),
+            "describe",
+            "--tags",
+            "--exact-match",
+            "HEAD",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    idf_revision = subprocess.run(
+        ["/usr/bin/git", "-C", str(idf_root), "rev-parse", "HEAD"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if (
+        idf_tag.returncode
+        or idf_tag.stdout.strip() != "v5.4.4"
+        or idf_revision.returncode
+        or not FULL_SHA.fullmatch(idf_revision.stdout.strip())
+        or not idf_export.is_file()
+        or not idf_py.is_file()
+    ):
+        raise ControlError("trusted ESP-IDF v5.4.4 build tools are unavailable")
+
+    def record(path: Path) -> dict[str, str]:
+        return {
+            "path": str(path.resolve()),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+
+    git = Path("/usr/bin/git")
+    if not git.is_file():
+        raise ControlError("trusted host git is unavailable")
+    idf_py_record = record(idf_py)
+    idf_py_record.update({"version": "v5.4.4", "revision": idf_revision.stdout.strip()})
+    return {
+        "domes-cli": record(cli),
+        "esptool": record(esptool),
+        "git": record(git),
+        "idf-export": record(idf_export),
+        "idf.py": idf_py_record,
+    }
+
+
+def hardware_block_reason(
+    ticket: Ticket, sections: dict[str, str], pr_head: str, code: str
+) -> dict[str, Any]:
+    """Create the controller-owned blocker record; this is never a role handoff."""
+    return {
+        "schema_version": 1,
+        "kind": "controller-hardware-block",
+        "code": code,
+        "issue": ticket.number,
+        "spec_revision": sections["Specification revision"],
+        "pr_head": pr_head,
+    }
+
+
+def recoverable_hardware_blockers(
+    reason: dict[str, Any],
+    ticket: Ticket | None = None,
+    sections: dict[str, str] | None = None,
+    pr_head: str = "",
+) -> bool:
+    expected_keys = {
+        "schema_version",
+        "kind",
+        "code",
+        "issue",
+        "spec_revision",
+        "pr_head",
+    }
+    if set(reason) != expected_keys:
+        return False
+    if (
+        reason.get("schema_version") != 1
+        or reason.get("kind") != "controller-hardware-block"
+    ):
+        return False
+    if reason.get("code") not in {"preflight-unavailable", "lease-held"}:
+        return False
+    if (
+        isinstance(reason.get("issue"), bool)
+        or not isinstance(reason.get("issue"), int)
+        or not FULL_SHA.fullmatch(str(reason.get("spec_revision", "")))
+        or not FULL_SHA.fullmatch(str(reason.get("pr_head", "")))
+    ):
+        return False
+    if ticket is not None:
+        if sections is None:
+            return False
+        if (
+            reason["issue"] != ticket.number
+            or reason["spec_revision"] != sections["Specification revision"]
+            or reason["pr_head"] != pr_head
+        ):
+            return False
+    return True
+
+
+def hardware_block_path(ticket_number: int) -> Path:
+    state_root = Path(
+        os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")
+    )
+    return (
+        state_root
+        / "domes-agent-control"
+        / f"issue-{ticket_number}"
+        / "hardware-block.json"
+    )
+
+
+def persist_hardware_block(
+    ticket: Ticket, sections: dict[str, str], pr_head: str, code: str
+) -> Path:
+    reason = hardware_block_reason(ticket, sections, pr_head, code)
+    if not recoverable_hardware_blockers(reason, ticket, sections, pr_head):
+        raise ControlError("refusing to persist an invalid hardware blocker record")
+    path = hardware_block_path(ticket.number)
+    write_handoff(path, reason)
+    return path
+
+
+def recover_hardware_blocked_tickets(
+    workflow: Workflow, tickets: Sequence[Ticket], hardware_capability: dict[str, Any]
+) -> list[int]:
+    """Requeue only a worker handoff whose complete blocker set is recoverable."""
+    recovered: list[int] = []
+    for ticket in tickets:
+        if ticket.agent_state != "agent:blocked":
+            continue
+        sections = parse_sections(ticket.body)
+        if not requires_registered_hardware(sections):
+            continue
+        path = hardware_block_path(ticket.number)
+        try:
+            reason = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        pr_head = sections["Specification revision"]
+        if existing_pull_request(sections):
+            try:
+                pr_head = load_pull_request(
+                    workflow, existing_pull_request(sections)
+                ).head_oid
+            except ControlError:
+                continue
+        if recoverable_hardware_blockers(reason, ticket, sections, pr_head):
+            transition(workflow, ticket, "agent:rework")
+            path.unlink(missing_ok=True)
+            recovered.append(ticket.number)
+    return recovered
+
+
+def block_hardware_preflight_tickets(
+    workflow: Workflow, tickets: Sequence[Ticket], error: str
+) -> list[int]:
+    """Persist a typed, artifact-bound block; never infer recovery from prose."""
+    blocked: list[int] = []
+    for ticket in tickets:
+        # A running worker may be holding a valid process/lease; never replace its
+        # handoff merely because a later global preflight is transiently unavailable.
+        if ticket.agent_state not in {"agent:ready", "agent:rework"}:
+            continue
+        sections = parse_sections(ticket.body)
+        try:
+            if not requires_registered_hardware(sections) or role_for(ticket) not in {
+                "worker",
+                "verification-worker",
+            }:
+                continue
+        except ControlError:
+            continue
+        pr_head = sections["Specification revision"]
+        if existing_pull_request(sections):
+            try:
+                pr_head = load_pull_request(
+                    workflow, existing_pull_request(sections)
+                ).head_oid
+            except ControlError:
+                pass
+        persist_hardware_block(ticket, sections, pr_head, "preflight-unavailable")
+        transition(workflow, ticket, "agent:blocked")
+        blocked.append(ticket.number)
+    return blocked
 
 
 def _git(*arguments: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
@@ -1217,6 +1644,8 @@ def render_ticket_contract(
     work_class: str,
     selected_policy: str,
     pull_request: int = 0,
+    hardware_operations: Sequence[str] = (),
+    hardware_boards: Sequence[int] = (),
 ) -> str:
     dependency_text = "\n".join(f"- #{number}" for number in dependencies) or "None"
     values = {
@@ -1233,6 +1662,14 @@ def render_ticket_contract(
         "Work class": work_class.strip(),
         "Autonomy policy": selected_policy.strip(),
         "Existing pull request": f"#{pull_request}" if pull_request else "None",
+        "Hardware operations": (
+            ", ".join(hardware_operations) if hardware_operations else "None"
+        ),
+        "Hardware boards": (
+            ", ".join(str(alias) for alias in hardware_boards)
+            if hardware_boards
+            else "None"
+        ),
     }
     return "\n\n".join(f"## {name}\n\n{value}" for name, value in values.items())
 
@@ -1779,6 +2216,7 @@ def normalized_plan(result: dict[str, Any]) -> list[dict[str, Any]]:
                     value.strip() for value in task["required_proof"]
                 ),
                 "autonomy_policy": task["autonomy_policy"],
+                "hardware_operations": sorted(task.get("hardware_operations", ())),
             }
         )
     return normalized
@@ -1891,6 +2329,12 @@ def materialize_plan(
             raise ControlError(
                 f"planner task {task['key']} changed the parent's autonomy policy"
             )
+        if not set(task.get("hardware_operations", ())).issubset(
+            hardware_operations(parent.sections)
+        ):
+            raise ControlError(
+                f"planner task {task['key']} expands parent hardware operations"
+            )
 
     plan_hash = plan_digest(result)
     tickets = load_live_tickets(workflow)
@@ -1946,6 +2390,12 @@ def materialize_plan(
                 work_package=parent.sections.get("Work package", task["key"]),
                 work_class=parent.sections.get("Work class", "software"),
                 selected_policy=task["autonomy_policy"],
+                hardware_operations=task.get("hardware_operations", ()),
+                hardware_boards=(
+                    hardware_boards(parent.sections)
+                    if task.get("hardware_operations")
+                    else ()
+                ),
             )
             body = marker + "\n\n" + with_autopilot_contract("", provisional_contract)
             child = create_issue(
@@ -1978,6 +2428,12 @@ def materialize_plan(
             work_package=parent.sections.get("Work package", task["key"]),
             work_class=parent.sections.get("Work class", "software"),
             selected_policy=task["autonomy_policy"],
+            hardware_operations=task.get("hardware_operations", ()),
+            hardware_boards=(
+                hardware_boards(parent.sections)
+                if task.get("hardware_operations")
+                else ()
+            ),
         )
         task_marker = PLAN_TASK_MARKER_RE.search(child.body)
         assert task_marker is not None
@@ -2011,11 +2467,140 @@ def materialize_plan(
 
 
 def write_handoff(path: Path, result: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
     temporary.write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     temporary.replace(path)
+
+
+def attest_hardware_manifest(
+    item: TicketValidation,
+    run_root: Path,
+    manifest: Path,
+    checkpoint_head: str,
+    artifact_head: str,
+) -> dict[str, Any]:
+    """Validate controller-owned broker evidence and bind it to the reviewed artifact."""
+    path = manifest
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
+        raise ControlError(
+            f"issue #{item.ticket.number}: hardware worker produced no broker manifest"
+        ) from error
+    lines = raw.decode("utf-8").splitlines()
+    if not lines:
+        raise ControlError(
+            f"issue #{item.ticket.number}: hardware broker manifest is empty"
+        )
+    previous = ""
+    allowed_operations = set(hardware_operations(item.sections))
+    allowed_boards = set(hardware_boards(item.sections))
+    for index, line in enumerate(lines, start=1):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ControlError(
+                f"issue #{item.ticket.number}: hardware manifest line {index} is invalid"
+            ) from error
+        if not isinstance(event, dict):
+            raise ControlError(
+                f"issue #{item.ticket.number}: hardware manifest line {index} is invalid"
+            )
+        event_digest = event.get("event_sha256")
+        payload = dict(event)
+        payload.pop("event_sha256", None)
+        expected_digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if (
+            event_digest != expected_digest
+            or event.get("previous_event_sha256") != previous
+        ):
+            raise ControlError(
+                f"issue #{item.ticket.number}: hardware manifest hash chain is invalid"
+            )
+        if (
+            event.get("issue") != item.ticket.number
+            or event.get("spec_revision") != item.sections["Specification revision"]
+            or event.get("pr_head") != checkpoint_head
+            or event.get("artifact_head") != artifact_head
+            or event.get("operation") not in allowed_operations
+        ):
+            raise ControlError(
+                f"issue #{item.ticket.number}: hardware manifest artifact binding is invalid"
+            )
+        if event.get("returncode") != 0 or event.get("error") is not None:
+            raise ControlError(
+                f"issue #{item.ticket.number}: hardware manifest contains a failed operation"
+            )
+        if (
+            event.get("operation") != "artifact-hash"
+            and event.get("board") not in allowed_boards
+        ):
+            raise ControlError(
+                f"issue #{item.ticket.number}: hardware manifest board binding is invalid"
+            )
+        if event.get("operation") in {"flash", "ota"}:
+            provenance = event.get("build_provenance")
+            inputs = event.get("inputs")
+            if (
+                not isinstance(provenance, dict)
+                or provenance.get("kind") != "controller-clean-clone-idf-build"
+                or provenance.get("source_head") != artifact_head
+                or provenance.get("idf_version") != "v5.4.4"
+                or not FULL_SHA.fullmatch(str(provenance.get("idf_revision", "")))
+                or any(
+                    not re.fullmatch(r"[0-9a-f]{64}", str(provenance.get(name, "")))
+                    for name in (
+                        "idf_export_sha256",
+                        "idf_py_sha256",
+                        "submodules_sha256",
+                        "stdout_sha256",
+                        "stderr_sha256",
+                    )
+                )
+                or not isinstance(inputs, list)
+            ):
+                raise ControlError(
+                    f"issue #{item.ticket.number}: trusted firmware build provenance is invalid"
+                )
+            expected_inputs = (
+                {
+                    ("0x0", "bootloader/bootloader.bin"),
+                    ("0x8000", "partition_table/partition-table.bin"),
+                    ("0x20000", "domes.bin"),
+                }
+                if event["operation"] == "flash"
+                else {(None, "domes.bin")}
+            )
+            actual_inputs = {
+                (record.get("offset"), record.get("artifact"))
+                for record in inputs
+                if isinstance(record, dict)
+                and re.fullmatch(r"[0-9a-f]{64}", str(record.get("sha256", "")))
+            }
+            if actual_inputs != expected_inputs or len(inputs) != len(expected_inputs):
+                raise ControlError(
+                    f"issue #{item.ticket.number}: trusted firmware input hashes are invalid"
+                )
+        previous = str(event_digest)
+    attestation = {
+        "schema_version": 1,
+        "kind": "controller-hardware-attestation",
+        "issue": item.ticket.number,
+        "spec_revision": item.sections["Specification revision"],
+        "checkpoint_head": checkpoint_head,
+        "artifact_head": artifact_head,
+        "manifest": str(path),
+        "manifest_sha256": hashlib.sha256(raw).hexdigest(),
+        "event_count": len(lines),
+        "last_event_sha256": previous,
+    }
+    write_handoff(run_root / "hardware-attestation.json", attestation)
+    return attestation
 
 
 def load_exact_role_handoff(
@@ -2071,6 +2656,42 @@ def load_exact_role_handoff(
         raise ControlError(f"issue #{ticket.number}: {role} handoff spec mismatch")
     validate_result_semantics(role, result)
     return result
+
+
+def load_latest_worker_handoff(workflow: Workflow, ticket: Ticket) -> dict[str, Any]:
+    """Prefer the newest published worker handoff before falling back to local state."""
+    document = _run_json(
+        [
+            "gh",
+            "issue",
+            "view",
+            str(ticket.number),
+            "--repo",
+            workflow.repository,
+            "--json",
+            "comments",
+        ]
+    )
+    marker = "Agent control-plane transition (worker)"
+    for comment in reversed(document.get("comments", [])):
+        body = str(comment.get("body", ""))
+        if marker not in body:
+            continue
+        match = re.search(r"```json\s*\n(.*?)\n```", body, re.DOTALL)
+        if match is None:
+            continue
+        try:
+            result = json.loads(match.group(1))
+            validate_result_semantics("worker", result)
+        except (json.JSONDecodeError, ControlError):
+            continue
+        if result.get("issue") != ticket.number:
+            continue
+        if result.get("spec_revision") == parse_sections(ticket.body).get(
+            "Specification revision"
+        ):
+            return result
+    return load_exact_role_handoff(workflow, ticket, "worker")
 
 
 def count_role_comments(workflow: Workflow, ticket: Ticket, role: str) -> int:
@@ -2265,9 +2886,36 @@ def post_result(
 
 
 def execute_one(
-    workflow: Workflow, item: TicketValidation, *, autopilot: bool = False
+    workflow: Workflow,
+    item: TicketValidation,
+    *,
+    autopilot: bool = False,
+    hardware_capability: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run one role with an outer teardown boundary for hardware capabilities."""
+    try:
+        return _execute_one(
+            workflow, item, autopilot=autopilot, hardware_capability=hardware_capability
+        )
+    finally:
+        _cleanup_registered_hardware_runtime(item.ticket.number)
+
+
+def _execute_one(
+    workflow: Workflow,
+    item: TicketValidation,
+    *,
+    autopilot: bool = False,
+    hardware_capability: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     role = role_for(item.ticket)
+    hardware_required = requires_registered_hardware(item.sections)
+    hardware_worker = role in {"worker", "verification-worker"}
+    hardware_access = hardware_required and hardware_worker
+    if hardware_access and hardware_capability is None:
+        raise ControlError(
+            f"issue #{item.ticket.number}: registered hardware requires --allow-registered-hardware preflight"
+        )
     state_root = Path(
         os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")
     )
@@ -2276,6 +2924,97 @@ def execute_one(
     lease_path = run_root / "active-process.json"
     terminate_recorded_process_group(lease_path)
     workspace = ensure_workspace(workflow, item, role)
+    broker_capability: dict[str, Any] | None = None
+    hardware_lease: DeviceLease | None = None
+    broker_process: subprocess.Popen[str] | None = None
+    hardware_evidence: Path | None = None
+    hardware_checkpoint_head = item.sections["Specification revision"]
+    if hardware_access:
+        # The controller owns the only lease.  Codex receives this directory, never
+        # a /dev path; the host broker rechecks identity before every operation.
+        pull_request_number = existing_pull_request(item.sections)
+        if pull_request_number:
+            hardware_checkpoint_head = load_pull_request(
+                workflow, pull_request_number
+            ).head_oid
+        pr_head = hardware_checkpoint_head
+        evidence = run_root / "hardware-evidence" / f"run-{time.time_ns()}"
+        hardware_evidence = evidence
+        tools = trusted_hardware_tools()
+        capability_root = workspace / ".artifacts" / "agent-control"
+        capability_root.mkdir(parents=True, exist_ok=True)
+        capability_directory = Path(
+            tempfile.mkdtemp(prefix=f"hw-{item.ticket.number}-", dir=capability_root)
+        )
+        os.chmod(capability_directory, 0o700)
+        hardware_lease = DeviceLease(run_root.parent / "registered-hardware.lock")
+        try:
+            hardware_lease.__enter__()
+        except BrokerError as error:
+            persist_hardware_block(item.ticket, item.sections, pr_head, "lease-held")
+            transition(workflow, item.ticket, "agent:blocked")
+            return {
+                "issue": item.ticket.number,
+                "role": role,
+                "state": "agent:blocked",
+                "hardware_block": "lease-held",
+            }
+        with _HARDWARE_RUNTIME_LOCK:
+            _HARDWARE_RUNTIMES[item.ticket.number] = {
+                "process": None,
+                "lease": hardware_lease,
+                "public": capability_directory,
+                "private": None,
+            }
+        # Snapshotting happens only while the global lease is held.  If this or any
+        # following setup step fails, execute_one's outer finally removes both dirs.
+        cap = create_capability(
+            capability_directory,
+            issue=item.ticket.number,
+            spec_revision=item.sections["Specification revision"],
+            pr_head=pr_head,
+            workspace=workspace,
+            evidence=evidence,
+            ports=list(hardware_capability["ports"]),
+            operations=list(hardware_operations(item.sections)),
+            boards=list(hardware_boards(item.sections)),
+            trusted_tools=tools,
+        )
+        broker_capability = {
+            "client": str(capability_directory / "hardware_client.py"),
+            "capability_directory": str(capability_directory),
+            "operations": list(hardware_operations(item.sections)),
+            "boards": list(hardware_boards(item.sections)),
+        }
+        broker_process = subprocess.Popen(
+            [
+                sys.executable,
+                str(ROOT / "tools/agent_control/hardware_broker.py"),
+                "--serve",
+                str(capability_directory),
+            ],
+            cwd=ROOT,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        assert broker_process.stdin is not None
+        broker_process.stdin.write(json.dumps(cap.private_document()))
+        broker_process.stdin.close()
+        with _HARDWARE_RUNTIME_LOCK:
+            _HARDWARE_RUNTIMES[item.ticket.number]["process"] = broker_process
+        # Do not launch a sandboxed worker until the host broker has published its
+        # readiness record.  This avoids lost first requests and makes failures
+        # deterministic rather than silently falling back to direct device access.
+        ready = capability_directory / "ready.json"
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not ready.is_file():
+            if broker_process.poll() is not None:
+                raise ControlError("hardware broker exited before readiness")
+            time.sleep(0.05)
+        if not ready.is_file():
+            raise ControlError("hardware broker readiness timed out")
     schema = ORCHESTRATION_DIR / "schemas" / SCHEMA_BY_ROLE[role]
     prior_handoff = required_prior_handoff(
         workflow,
@@ -2337,6 +3076,36 @@ def execute_one(
         result_path = Path(stream.name)
     event_path = result_path.with_suffix(".jsonl")
     stderr_path = result_path.with_suffix(".stderr.log")
+    controller_evidence: dict[str, Any] | None = None
+    attestation_path = run_root / "hardware-attestation.json"
+    if role == "judge" and prior_handoff is not None and attestation_path.is_file():
+        try:
+            recorded_attestation = json.loads(
+                attestation_path.read_text(encoding="utf-8")
+            )
+            recorded_manifest = Path(recorded_attestation["manifest"]).resolve(
+                strict=True
+            )
+            recorded_manifest.relative_to(
+                (run_root / "hardware-evidence").resolve(strict=True)
+            )
+            controller_evidence = attest_hardware_manifest(
+                item,
+                run_root,
+                recorded_manifest,
+                str(recorded_attestation["checkpoint_head"]),
+                str(prior_handoff["commit"]),
+            )
+        except (
+            KeyError,
+            OSError,
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+        ) as error:
+            raise ControlError(
+                f"issue #{item.ticket.number}: controller hardware attestation is invalid"
+            ) from error
     command = [
         "codex",
         "exec",
@@ -2358,7 +3127,13 @@ def execute_one(
     for attempt in range(1, 4):
         returncode, failure = run_codex_attempt(
             command,
-            build_prompt(item, role, prior_handoff),
+            build_prompt(
+                item,
+                role,
+                prior_handoff,
+                broker_capability if hardware_access else None,
+                controller_evidence,
+            ),
             event_path,
             stderr_path,
             workflow.stall_timeout_seconds,
@@ -2383,6 +3158,31 @@ def execute_one(
         raise ControlError(
             f"issue #{item.ticket.number}: result specification mismatch"
         )
+    if hardware_access:
+        assert hardware_evidence is not None
+        attestation = attest_hardware_manifest(
+            item,
+            run_root,
+            hardware_evidence / "broker-manifest.jsonl",
+            hardware_checkpoint_head,
+            str(result.get("commit", "")),
+        )
+        if role == "worker":
+            result = dict(result)
+            result["verification"] = [
+                *result.get("verification", []),
+                {
+                    "level": "accepted_command",
+                    "command_or_observation": (
+                        "controller-validated registered-hardware broker manifest"
+                    ),
+                    "status": "passed",
+                    "artifact": (
+                        f"{attestation['manifest']} sha256="
+                        f"{attestation['manifest_sha256']}"
+                    ),
+                },
+            ]
     validate_result_semantics(role, result)
     if role == "judge":
         if prior_handoff is None:
@@ -2450,6 +3250,43 @@ def execute_one(
         "events": str(event_path),
         "stderr": str(stderr_path),
     }
+
+
+def _cleanup_hardware_broker(
+    process: subprocess.Popen[str] | None,
+    lease: DeviceLease | None,
+    directory: Path | None,
+    private_directory: Path | None = None,
+) -> None:
+    """Best-effort cleanup used on normal completion and controller error paths."""
+    try:
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+    finally:
+        if lease is not None:
+            lease.__exit__(None, None, None)
+        if directory is not None:
+            import shutil
+
+            shutil.rmtree(directory, ignore_errors=True)
+        if private_directory is not None:
+            import shutil
+
+            shutil.rmtree(private_directory, ignore_errors=True)
+
+
+def _cleanup_registered_hardware_runtime(issue: int) -> None:
+    with _HARDWARE_RUNTIME_LOCK:
+        runtime = _HARDWARE_RUNTIMES.pop(issue, None)
+    if runtime is not None:
+        _cleanup_hardware_broker(
+            runtime["process"], runtime["lease"], runtime["public"], runtime["private"]
+        )
 
 
 def process_identity(pid: int) -> tuple[str, int, int] | None:
@@ -3407,6 +4244,11 @@ def make_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="show a live human-readable watch view instead of JSON snapshots",
     )
+    run.add_argument(
+        "--allow-registered-hardware",
+        action="store_true",
+        help="allow explicitly hardware-required worker tickets after doctor preflight",
+    )
     return parser
 
 
@@ -3491,7 +4333,43 @@ def main(argv: Sequence[str] | None = None) -> int:
                         ci_results.extend(reconcile_human_reviews(workflow, tickets))
                         if ci_results:
                             tickets = load_live_tickets(workflow)
+                    hardware_capability: dict[str, Any] | None = None
+                    hardware_preflight_error: str | None = None
+                    hardware_tickets = [
+                        ticket
+                        for ticket in tickets
+                        if requires_registered_hardware(parse_sections(ticket.body))
+                    ]
+                    if args.allow_registered_hardware and hardware_tickets:
+                        try:
+                            hardware_capability = registered_hardware_preflight()
+                            recovered = recover_hardware_blocked_tickets(
+                                workflow, tickets, hardware_capability
+                            )
+                            if recovered:
+                                tickets = load_live_tickets(workflow)
+                        except ControlError as error:
+                            hardware_preflight_error = str(error)
+                            # A preflight failure is a deterministic terminal state
+                            # for eligible hardware work, with typed local evidence.
+                            blocked_now = block_hardware_preflight_tickets(
+                                workflow, tickets, hardware_preflight_error
+                            )
+                            if blocked_now:
+                                tickets = load_live_tickets(workflow)
                     eligible, blockers = eligible_queue(tickets)
+                    for item in eligible:
+                        if not requires_worker_hardware_access(item):
+                            continue
+                        if not args.allow_registered_hardware:
+                            blockers.setdefault(item.ticket.number, []).append(
+                                "registered hardware requires --allow-registered-hardware"
+                            )
+                        elif hardware_capability is None:
+                            blockers.setdefault(item.ticket.number, []).append(
+                                hardware_preflight_error
+                                or "registered hardware preflight did not pass"
+                            )
                     last_tickets = tickets
                     last_eligible = eligible
                     last_blockers = blockers
@@ -3500,7 +4378,32 @@ def main(argv: Sequence[str] | None = None) -> int:
                         item
                         for item in eligible
                         if item.ticket.number not in active_numbers
+                        and (
+                            not requires_worker_hardware_access(item)
+                            or hardware_capability is not None
+                        )
                     ]
+                    # One physical fleet, one exclusive broker lease: reserve at
+                    # most one hardware worker before any GitHub claim.
+                    if any(
+                        requires_worker_hardware_access(item)
+                        for item in active.values()
+                    ):
+                        candidates = [
+                            item
+                            for item in candidates
+                            if not requires_worker_hardware_access(item)
+                        ]
+                    else:
+                        seen_hardware = False
+                        filtered: list[TicketValidation] = []
+                        for item in candidates:
+                            if requires_worker_hardware_access(item):
+                                if seen_hardware:
+                                    continue
+                                seen_hardware = True
+                            filtered.append(item)
+                        candidates = filtered
                     reserved = [
                         allowed_surfaces(
                             item.sections["Allowed architectural surfaces"]
@@ -3524,6 +4427,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                             workflow,
                             claimed,
                             autopilot=args.autopilot,
+                            hardware_capability=(
+                                hardware_capability
+                                if requires_worker_hardware_access(claimed)
+                                else None
+                            ),
                         )
                         active[future] = claimed
 

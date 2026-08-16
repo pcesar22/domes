@@ -73,6 +73,11 @@ Every dispatchable ticket contains these headings with non-empty values:
   outside these surfaces fail closed before agent review.
 - `Dependencies` — `None` or issue references such as `#123`.
 - `Required proof`
+- `Hardware operations` — `None` or the finite broker operation names required by this task. This
+  field is bound into the controller contract digest; narrative references to hardware grant no
+  device access.
+- `Hardware boards` — `None` without hardware, otherwise the exact registered broker aliases
+  authorized for this task. This field is also contract-digest-bound.
 
 Workers may add proposed follow-ups to their result. Those remain inert until a planner or
 requirements steward accepts and creates or transitions a ticket.
@@ -82,6 +87,14 @@ the pinned specification. `software-review-required` permits autonomous implemen
 publication, independent agent judgment, and CI repair. It never permits GitHub approval or merge;
 those remain human actions. Planner children inherit that policy and remain blocked on their parent
 until the complete DAG has been materialized.
+
+Even with a non-empty hardware operation list, Codex remains workspace-write with no direct device
+access. Dispatch also requires explicit ticketed board aliases, the controller's
+`--allow-registered-hardware` opt-in, and an exact
+registered-board preflight. A host broker maps opaque board aliases to private device paths,
+revalidates identity for every operation, binds its evidence to the committed worktree HEAD, and
+accepts no worker-provided command line or firmware build. Flash and OTA use a private clean clone
+and a controller-pinned ESP-IDF v5.4.4 build.
 
 ## Context hygiene
 
