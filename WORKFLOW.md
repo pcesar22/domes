@@ -59,7 +59,7 @@ The scheduler performs only these actions:
 2. Validate the ticket contract and pinned specification revision.
 3. Reject issues with unresolved dependencies or overlapping active workspaces.
 4. Sort eligible issues by numeric priority and then issue number.
-5. Reserve up to three slots and create one isolated worktree per issue.
+5. Reserve up to three slots and create one controller-owned standalone Git workspace per issue.
 6. Move a newly accepted implementation task to `agent:running` and launch a fresh role-specific
    run with the matching output schema; rejected work retains `agent:rework` so its judge handoff is
    never lost across a restart.
@@ -71,6 +71,29 @@ The scheduler performs only these actions:
 10. Poll required CI without spending an agent slot, repair failures through a fresh worker and
     judge cycle, then place the exact passing head in `agent:human-review` without approving or
     merging it.
+
+Every worker and verification-worker Codex process remains workspace-write and has no direct device
+access. Hardware execution requires all four of: an explicit finite `Hardware operations` enum and
+explicit `Hardware boards` aliases in the accepted ticket, the operator's
+`--allow-registered-hardware` startup opt-in, and a passing host preflight for the exact registered
+NFF CP2102N identities. The controller then holds one exclusive device lease and starts a host-side
+broker. The worker receives only a ticket-bound queue capability;
+the broker maps board aliases to private device paths, revalidates the udev identity immediately
+before every operation, requires a committed tracked-clean worktree, executes fixed allowlisted
+commands, and retains a hash-chained, commit-bound manifest with the ticket checkpoint. Flash is
+compiled by the broker from a private clean clone with pinned ESP-IDF v5.4.4, restricted to the
+standard DOMES application layout, and cannot write NVS, PHY, or OTA-data partitions. OTA likewise
+uses the broker-built application image. It cannot consume a worker build directory or execute
+worker-supplied argv.
+
+Each agent workspace is a standalone clone with private Git metadata inside the workspace-write
+sandbox. The scheduler does not reuse operator worktrees and never grants workers write access to
+the source repository's shared `.git` directory. The worker command explicitly grants write access
+only to its clone-local `.git`, which Codex otherwise protects even below a writable root.
+
+If preflight is unavailable, only that hardware ticket enters `agent:blocked`. Automatic recovery
+requires a new successful preflight and a typed blocker bound to the same issue, specification, and
+PR head; prose or an old worker summary can never trigger requeue.
 
 It never changes product intent, weakens acceptance checks, reads raw transcripts into another
 role's prompt, or treats a successful process exit as acceptance. The disposable selector may only
@@ -119,5 +142,9 @@ require the evidence defined by `docs/TESTING.md`.
 `--autopilot` records the user's standing authorization for routine software delivery. It does not
 authorize product-requirement or architecture changes, policy/self-modification, dependency or
 security-policy changes, releases, purchases, vendors, fabrication, destructive device actions, or
-`hw-test`. These surfaces fail closed under `.codex/orchestration/autopilot-policy.json`. A blocked
-package does not prevent the selector from choosing a separate eligible milestone delivery.
+`hw-test`. Registered hardware requires the separate controller-startup
+`--allow-registered-hardware` opt-in and an explicit ticket operation list; it never authorizes
+`hw-test`, erase/NVS/factory reset, eFuse, secure-boot, encryption, key, release, or arbitrary host
+commands. These surfaces fail closed under
+`.codex/orchestration/autopilot-policy.json`. A blocked package does not prevent the selector from
+choosing a separate eligible milestone delivery.
