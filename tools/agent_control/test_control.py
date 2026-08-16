@@ -621,6 +621,25 @@ class AutopilotReviewTest(unittest.TestCase):
         transition.assert_not_called()
         comment.assert_not_called()
 
+    def test_manual_human_review_without_pull_request_is_not_reconciled(self) -> None:
+        workflow = control.load_workflow()
+        ticket = make_ticket(41, self.revision, label="agent:human-review")
+        with (
+            mock.patch.object(control, "validate_ticket") as validate,
+            mock.patch.object(control, "load_latest_artifact_handoff") as artifact,
+            mock.patch.object(control, "load_pull_request") as pull_request_loader,
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            result = control.reconcile_human_reviews(workflow, (ticket,))
+        self.assertEqual("agent:human-review", result[0]["state"])
+        self.assertEqual("human", result[0]["review_authority"])
+        validate.assert_not_called()
+        artifact.assert_not_called()
+        pull_request_loader.assert_not_called()
+        transition.assert_not_called()
+        comment.assert_not_called()
+
     def test_observed_human_merge_completes_issue_bookkeeping(self) -> None:
         workflow = control.load_workflow()
         policy = control.load_autopilot_policy()

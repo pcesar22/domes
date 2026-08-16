@@ -2990,6 +2990,16 @@ def reconcile_human_reviews(
     for ticket in tickets:
         if ticket.state != "OPEN" or ticket.agent_state != "agent:human-review":
             continue
+        sections = parse_sections(ticket.body)
+        if not automated_delivery(sections):
+            results.append(
+                {
+                    "issue": ticket.number,
+                    "state": "agent:human-review",
+                    "review_authority": "human",
+                }
+            )
+            continue
         try:
             validation = validate_ticket(ticket)
             if not validation.valid:
