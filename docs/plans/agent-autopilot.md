@@ -51,7 +51,7 @@ conversational manager, and waiting human reviews do not occupy execution slots.
 
 | Evidence level | Command or observation | Status and artifact |
 | --- | --- | --- |
-| Automated | `python3 -m unittest discover -s tools/agent_control -p 'test_*.py' -v` | passed, 54 tests |
+| Automated | `python3 -m unittest discover -s tools/agent_control -p 'test_*.py' -v` | passed, 55 tests |
 | Contract | `python3 tools/agent_control/control.py validate` | passed |
 | Live read-only | `python3 tools/agent_control/control.py queue --live` | passed; no managed eligible or blocked issues before bootstrap |
 | Repository | `scripts/verify.sh --changed origin/main` plus focused tooling rerun | protocol, 294 host-firmware tests, 108 CLI tests, pre-commit, and focused controller tests passed; local `shellcheck` is unavailable, Flutter is 3.38.9 instead of 3.44.8, and the ESP-IDF v5.4.4 build exhausted `/tmp` at final link, so required CI remains authoritative |

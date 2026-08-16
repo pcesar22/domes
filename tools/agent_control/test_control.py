@@ -752,6 +752,44 @@ class SelectorAndPlanTest(unittest.TestCase):
                     (),
                 )
 
+    def test_selector_retries_semantically_invalid_result(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        prompts: list[str] = []
+
+        def run_attempt(command, prompt, *_args):
+            prompts.append(prompt)
+            result_path = Path(command[command.index("--output-last-message") + 1])
+            result_path.write_text(
+                json.dumps({"state": "idle", "work_package": ""}),
+                encoding="utf-8",
+            )
+            return 0, ""
+
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(
+                    control, "build_selector_prompt", return_value="prompt"
+                ),
+                mock.patch.object(
+                    control, "run_codex_attempt", side_effect=run_attempt
+                ),
+                mock.patch.object(
+                    control,
+                    "validate_selector_result",
+                    side_effect=[control.ControlError("bad issue/PR pairing"), None],
+                ) as validate,
+                mock.patch.object(control, "apply_selector_result", return_value=None),
+                mock.patch.object(control.time, "sleep") as sleep,
+            ):
+                result = control.run_selector(workflow, policy, (), ())
+        self.assertEqual("idle", result["state"])
+        self.assertEqual(2, validate.call_count)
+        self.assertEqual(2, len(prompts))
+        self.assertIn("bad issue/PR pairing", prompts[1])
+        sleep.assert_called_once_with(10)
+
     def test_materialize_plan_reuses_matching_child_on_retry(self) -> None:
         workflow = control.load_workflow()
         parent_ticket = automated_ticket(

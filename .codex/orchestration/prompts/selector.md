@@ -20,5 +20,9 @@ work whose actual diff can avoid every protected autonomous path in
 `.codex/orchestration/autopilot-policy.json`; otherwise use `review-only` or select another eligible
 package. Every pull request requires human review and merge.
 
+Set `existing_pull_request` to a nonzero value only when `existing_issue` identifies the issue that
+owns that pull request. A pull request without an associated available issue is not selectable;
+return zero for both fields or choose another package.
+
 Inspect repository authorities and GitHub read-only. Make no repository or tracker mutation.
 Return only the schema-conforming selection; do not include a transcript.

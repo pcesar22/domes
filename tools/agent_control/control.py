@@ -1543,18 +1543,34 @@ def run_selector(
         "-",
     ]
     failures: list[str] = []
+    result: dict[str, Any]
     for attempt in range(1, 4):
+        prompt = build_selector_prompt(workflow, policy, tickets, pull_requests)
+        if failures:
+            prompt += (
+                "\n\n# Previous selector attempt was rejected\n\n"
+                f"Correct this validation failure: {failures[-1][:1000]}\n"
+            )
         returncode, failure = run_codex_attempt(
             command,
-            build_selector_prompt(workflow, policy, tickets, pull_requests),
+            prompt,
             event_path,
             stderr_path,
             workflow.stall_timeout_seconds,
             lease_path,
         )
-        if returncode == 0:
-            break
-        failures.append(failure)
+        if returncode != 0:
+            failures.append(failure)
+        else:
+            try:
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                validate_selector_result(
+                    result, workflow, policy, tickets, pull_requests
+                )
+            except (ControlError, json.JSONDecodeError) as error:
+                failures.append(f"attempt {attempt} validation: {error}")
+            else:
+                break
         if attempt < 3:
             time.sleep(
                 min(10 * (2 ** (attempt - 1)), workflow.max_retry_backoff_seconds)
@@ -1563,8 +1579,6 @@ def run_selector(
         raise ControlError(
             "autonomous selector failed after 3 attempts: " + "; ".join(failures)
         )
-    result = json.loads(result_path.read_text(encoding="utf-8"))
-    validate_selector_result(result, workflow, policy, tickets, pull_requests)
     write_handoff(run_root / "handoff-selector.json", result)
     selected = apply_selector_result(workflow, result, tickets)
     return {
