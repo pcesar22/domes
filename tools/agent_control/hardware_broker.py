@@ -563,7 +563,9 @@ def _validate_candidate_firmware_safety(
     )
     forbidden = re.compile(
         r"(?i)(?:"
-        r"esp_efuse|efuse_(?:write|burn)|"
+        r"esp_efuse_(?!(?:read_|get_|check_|find_|count_|is_|"
+        r"block_is_empty\b|key_block_unused\b|mac_get_(?:default|custom)\b))|"
+        r"efuse_(?:write|burn)|"
         r"esp_flash_erase|spi_flash_erase|nvs_flash_erase|"
         r"esp_partition_erase_range|erase_flash|"
         r"CONFIG_(?:SECURE_BOOT|SECURE_FLASH_ENC|FLASH_ENCRYPTION)"

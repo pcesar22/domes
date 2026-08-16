@@ -1124,6 +1124,55 @@ class HardwareBrokerTest(unittest.TestCase):
                     cap, Path("/tmp/source"), "b" * 40
                 )
 
+    def test_candidate_firmware_safety_allows_read_only_factory_mac(self):
+        cap = broker.Capability(
+            1,
+            "a",
+            "b",
+            Path("/tmp/source"),
+            Path("/tmp/evidence"),
+            ("flash",),
+            (0,),
+            "token",
+            tools={"git": {"path": "/usr/bin/git", "sha256": "unused"}},
+            base_head="a" * 40,
+        )
+        completed = subprocess.CompletedProcess(
+            [], 0, stdout="+esp_efuse_mac_get_default(device_uid);\n", stderr=""
+        )
+        with (
+            mock.patch.object(broker, "_trusted_path", return_value="/usr/bin/git"),
+            mock.patch.object(broker.subprocess, "run", return_value=completed),
+        ):
+            broker._validate_candidate_firmware_safety(
+                cap, Path("/tmp/source"), "b" * 40
+            )
+
+    def test_candidate_firmware_safety_rejects_efuse_protection_changes(self):
+        cap = broker.Capability(
+            1,
+            "a",
+            "b",
+            Path("/tmp/source"),
+            Path("/tmp/evidence"),
+            ("flash",),
+            (0,),
+            "token",
+            tools={"git": {"path": "/usr/bin/git", "sha256": "unused"}},
+            base_head="a" * 40,
+        )
+        completed = subprocess.CompletedProcess(
+            [], 0, stdout="+esp_efuse_set_write_protect(EFUSE_BLK0);\n", stderr=""
+        )
+        with (
+            mock.patch.object(broker, "_trusted_path", return_value="/usr/bin/git"),
+            mock.patch.object(broker.subprocess, "run", return_value=completed),
+        ):
+            with self.assertRaisesRegex(broker.BrokerError, "forbidden"):
+                broker._validate_candidate_firmware_safety(
+                    cap, Path("/tmp/source"), "b" * 40
+                )
+
     def test_serial_proxy_cleans_up_every_fd_when_enter_partially_fails(self):
         proxy = serial_trace_proxy.SerialTraceProxy("/dev/fake")
         with (
