@@ -78,9 +78,10 @@ Workers may add proposed follow-ups to their result. Those remain inert until a 
 requirements steward accepts and creates or transitions a ticket.
 
 Autonomous tickets also contain `Autonomy policy`, `Work package`, and controller markers bound to
-the pinned specification. `software-auto-merge` permits only the deterministic controller to merge;
-it gives no role permission to merge or broaden scope. Planner children inherit that policy and
-remain blocked on their parent until the complete DAG has been materialized.
+the pinned specification. `software-review-required` permits autonomous implementation, PR
+publication, independent agent judgment, and CI repair. It never permits GitHub approval or merge;
+those remain human actions. Planner children inherit that policy and remain blocked on their parent
+until the complete DAG has been materialized.
 
 ## Context hygiene
 

@@ -30,12 +30,22 @@ Keep the explicit process polling and refilling available slots until interrupte
 python3 tools/agent_control/control.py run --execute --watch
 ```
 
-Run the closed-loop milestone selector, accepted-plan materializer, CI reconciler, scoped merge
-gate, and continuous slot refill:
+Run the closed-loop milestone selector, accepted-plan materializer, CI reconciler, human-review
+handoff, and continuous slot refill:
 
 ```bash
 python3 tools/agent_control/control.py run --execute --watch --autopilot
 ```
+
+For a live tmux/operator view instead of machine-readable JSON snapshots:
+
+```bash
+python3 tools/agent_control/control.py run --execute --watch --autopilot --dashboard
+```
+
+The dashboard refreshes every poll and shows active roles, CI state, review-ready PRs, blockers, and
+the selector's latest action. It never displays raw worker transcripts; detailed JSONL remains only
+in the runtime state directory.
 
 `run` is deliberately explicit because it creates worktrees, launches mutation-capable workers,
 and changes GitHub issue labels/comments. Mutation-capable runs are pinned to the reviewed
@@ -91,9 +101,10 @@ cannot edit the project brain or implement work.
 - The process uses the existing `gh` and `codex` authentication.
 - Planner and judge runs use a read-only Codex sandbox. Worker and verification runs use a
   workspace-write sandbox in the issue worktree.
-- The tool merges only controller-marked `software-auto-merge` tickets after independent approval,
-  exact-head required CI, PR metadata, and changed-path policy all pass. It never releases, adds
-  `hw-test`, performs destructive device actions, or deletes a worktree.
+- Controller-marked `software-review-required` tickets are implemented, published, independently
+  judged, and repaired through exact-head CI. They then stop at `agent:human-review`; the controller
+  never submits a GitHub approval or merge. It continues separate unblocked work while review waits.
+- It never releases, adds `hw-test`, performs destructive device actions, or deletes a worktree.
 - JSONL logs are retained for operator diagnosis but excluded from cross-role prompts.
 
 Autopilot deliberately fails closed on its own policy and implementation, GitHub workflow files,
