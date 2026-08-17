@@ -91,6 +91,8 @@ class DrillNotifier extends StateNotifier<DrillState> {
   Timer? _ledOffTimer;
   DateTime? _drillStartTime;
   late final StreamSubscription<PodTouchEvent> _touchSubscription;
+  late final StreamSubscription<PodConnectionFailure>
+  _connectionFailureSubscription;
   int _generation = 0;
   Future<void> _cleanupTail = Future<void>.value();
 
@@ -99,7 +101,9 @@ class DrillNotifier extends StateNotifier<DrillState> {
     _multiPod = multiPod ?? ref.read(multiPodProvider.notifier);
     _touchSubscription = _multiPod.touchEvents.listen(
       (event) => recordTouch(event.address),
-      onError: _handleTouchStreamError,
+    );
+    _connectionFailureSubscription = _multiPod.connectionFailures.listen(
+      _handleConnectionFailure,
     );
   }
 
@@ -412,9 +416,15 @@ class DrillNotifier extends StateNotifier<DrillState> {
     unawaited(_scheduleCleanup(config));
   }
 
-  void _handleTouchStreamError(Object error, StackTrace _) {
+  void _handleConnectionFailure(PodConnectionFailure failure) {
     if (!mounted || !state.isRunning) return;
-    _failSession(_generation, 'Touch event stream failed: $error');
+    if (!(state.config?.podAddresses.contains(failure.address) ?? false)) {
+      return;
+    }
+    _failSession(
+      _generation,
+      'Pod ${failure.address} connection failed: ${failure.error}',
+    );
   }
 
   void _failSession(int generation, String message) {
@@ -464,6 +474,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
     _cancelSession();
     unawaited(_scheduleCleanup(config));
     unawaited(_touchSubscription.cancel());
+    unawaited(_connectionFailureSubscription.cancel());
     super.dispose();
   }
 }
