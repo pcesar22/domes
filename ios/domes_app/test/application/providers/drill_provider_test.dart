@@ -468,6 +468,151 @@ void main() {
       // Should be no-op
       expect(container.read(drillProvider).phase, DrillPhase.idle);
     });
+
+    test('six-pod deterministic lifecycle stress campaign', () async {
+      const identities = [
+        'sim-pod-1',
+        'sim-pod-2',
+        'sim-pod-3',
+        'sim-pod-4',
+        'sim-pod-5',
+        'sim-pod-6',
+      ];
+      const lifecycleCycles = 100;
+      const roundsPerCycle = 10;
+      const expectedRounds = lifecycleCycles * roundsPerCycle;
+      final stressMultiPod = _FakeMultiPodNotifier();
+      final stressContainer = ProviderContainer(
+        overrides: [
+          drillProvider.overrideWith(
+            (ref) => DrillNotifier(ref, multiPod: stressMultiPod),
+          ),
+        ],
+      );
+      final stressNotifier = stressContainer.read(drillProvider.notifier);
+      var completedRounds = 0;
+      var staleMutations = 0;
+      var duplicateResults = 0;
+      var lostResults = 0;
+      var participantFailuresRecovered = 0;
+      var isolatedNonParticipantFailures = 0;
+
+      Future<void> waitForPhase(DrillPhase phase, int cycle) async {
+        for (var attempt = 0; attempt < 10; attempt++) {
+          if (stressContainer.read(drillProvider).phase == phase) return;
+          await Future<void>.delayed(Duration.zero);
+        }
+        fail(
+          'case=cycle-$cycle expected=$phase '
+          'actual=${stressContainer.read(drillProvider).phase}',
+        );
+      }
+
+      const roundConfig = DrillConfig(
+        roundCount: roundsPerCycle,
+        minDelay: Duration.zero,
+        maxDelay: Duration.zero,
+        podAddresses: identities,
+      );
+      const lifecycleConfig = DrillConfig(
+        roundCount: 1,
+        minDelay: Duration.zero,
+        maxDelay: Duration.zero,
+        podAddresses: identities,
+      );
+
+      for (var cycle = 0; cycle < lifecycleCycles; cycle++) {
+        await stressNotifier.startDrill(roundConfig);
+        for (var round = 0; round < roundsPerCycle; round++) {
+          await waitForPhase(DrillPhase.waitingTouch, cycle);
+          stressNotifier.simulateTouch();
+        }
+
+        final completed = stressContainer.read(drillProvider);
+        expect(
+          completed.phase,
+          DrillPhase.finished,
+          reason: 'case=cycle-$cycle completed campaign terminal',
+        );
+        final indexes = completed.results.map((result) => result.roundIndex);
+        final uniqueIndexes = indexes.toSet();
+        duplicateResults += completed.results.length - uniqueIndexes.length;
+        lostResults += roundsPerCycle - uniqueIndexes.length;
+        expect(
+          uniqueIndexes,
+          equals(Set<int>.from(List<int>.generate(roundsPerCycle, (i) => i))),
+          reason: 'case=cycle-$cycle result indexes',
+        );
+        completedRounds += completed.results.length;
+
+        await stressNotifier.startDrill(lifecycleConfig);
+        await waitForPhase(DrillPhase.waitingTouch, cycle);
+        final beforeIsolatedFailure = stressContainer.read(drillProvider);
+        stressMultiPod.fail('sim-pod-outside');
+        await Future<void>.delayed(Duration.zero);
+        if (identical(
+          stressContainer.read(drillProvider),
+          beforeIsolatedFailure,
+        )) {
+          isolatedNonParticipantFailures++;
+        }
+
+        final failedAddress = stressContainer
+            .read(drillProvider)
+            .activePodAddress!;
+        stressMultiPod.fail(failedAddress);
+        await Future<void>.delayed(Duration.zero);
+        final failed = stressContainer.read(drillProvider);
+        expect(
+          failed.phase,
+          DrillPhase.error,
+          reason: 'case=cycle-$cycle participating failure',
+        );
+        expect(failed.errorMessage, contains(failedAddress));
+
+        await stressNotifier.startDrill(lifecycleConfig);
+        await waitForPhase(DrillPhase.waitingTouch, cycle);
+        participantFailuresRecovered++;
+        final cancelledAddress = stressContainer
+            .read(drillProvider)
+            .activePodAddress!;
+        stressNotifier.stopDrill();
+        final stopped = stressContainer.read(drillProvider);
+        expect(
+          stopped.phase,
+          DrillPhase.idle,
+          reason: 'case=cycle-$cycle stop terminal',
+        );
+        stressNotifier.recordTouch(cancelledAddress);
+        await Future<void>.delayed(Duration.zero);
+        if (!identical(stressContainer.read(drillProvider), stopped)) {
+          staleMutations++;
+        }
+      }
+
+      expect(completedRounds, expectedRounds);
+      expect(staleMutations, 0);
+      expect(duplicateResults, 0);
+      expect(lostResults, 0);
+      expect(participantFailuresRecovered, lifecycleCycles);
+      expect(isolatedNonParticipantFailures, lifecycleCycles);
+      expect(stressContainer.read(drillProvider).phase, DrillPhase.idle);
+      // Retained CI evidence: values are deterministic and intentionally omit time.
+      // ignore: avoid_print
+      print(
+        'FS4_DRILL_STRESS identities=${identities.length} '
+        'rounds=$completedRounds lifecycle_cycles=$lifecycleCycles '
+        'participant_failures_recovered=$participantFailuresRecovered '
+        'isolated_nonparticipant_failures=$isolatedNonParticipantFailures '
+        'stale_mutations=$staleMutations duplicate_results=$duplicateResults '
+        'lost_results=$lostResults terminal=${stressContainer.read(drillProvider).phase.name}',
+      );
+
+      stressContainer.dispose();
+      await stressMultiPod.events.close();
+      await stressMultiPod.failures.close();
+      stressMultiPod.dispose();
+    });
   });
 
   group('DrillNotifier.drillResult', () {
