@@ -96,6 +96,20 @@ TEST(OtaBootVerification, FormatsDispatchFailureForRetention) {
     EXPECT_STREQ(reason.data(), "ota verify failed: dispatch-unavailable");
 }
 
+TEST(OtaBootVerification, DispatchesBootCompletionForPendingAndValidImages) {
+    EXPECT_EQ(domes::otaStartupDispatchAction(true, ESP_OK),
+              domes::OtaStartupDispatchAction::kScheduled);
+    EXPECT_EQ(domes::otaStartupDispatchAction(false, ESP_OK),
+              domes::OtaStartupDispatchAction::kScheduled);
+}
+
+TEST(OtaBootVerification, FailsClosedWithoutOffOwnerBootCompletion) {
+    EXPECT_EQ(domes::otaStartupDispatchAction(true, ESP_ERR_INVALID_STATE),
+              domes::OtaStartupDispatchAction::kRollbackPendingImage);
+    EXPECT_EQ(domes::otaStartupDispatchAction(false, ESP_ERR_INVALID_STATE),
+              domes::OtaStartupDispatchAction::kLeaveBootIncomplete);
+}
+
 TEST(OtaBootVerification, RecoversAfterBoundedHeapRetry) {
     uint32_t selfTestCalls = 0;
     uint32_t retryCalls = 0;

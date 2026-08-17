@@ -101,9 +101,9 @@ second reset.
   the same version and slot. This proves image confirmation and second-boot survival; the command
   suite establishes driver readiness, not observed light, touch, motion, vibration, or sound.
 - The deterministic controller supplied reconciled base `8ed71e4`; this issue branch must descend
-  from that exact commit and target `main`. The inherited implementation is unchanged, so this
-  package records reconciliation and obtains fresh exact-head evidence rather than duplicating the
-  repair.
+  from that exact commit and target `main`. This package also keeps ordinary boot completion on the
+  LED-owner task and makes dispatch failure explicit: a pending image rolls back with retained
+  diagnostics, while an already-valid image remains incomplete without off-owner LED access.
 
 ## Resume checkpoint
 

@@ -1648,13 +1648,22 @@ extern "C" void app_main() {
         ESP_LOGE(kTag, "Init-order incomplete: expected=%s", initOrder.expected());
     }
 
-    if (!otaPendingVerification) {
-        finishBootVerification(nullptr);
-    } else if (!ledService || ledService->runAfterStartup(finishBootVerification) != ESP_OK) {
-        // Never confirm a pending image on app_main's temporary stack or outside
-        // the LED-owner task. Fail closed and retain why verification could not run.
-        rollbackAfterOtaVerificationFailure(
-            domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kDispatchUnavailable),
-            false);
+    const esp_err_t verificationDispatch =
+        ledService ? ledService->runAfterStartup(finishBootVerification) : ESP_ERR_INVALID_STATE;
+    switch (domes::otaStartupDispatchAction(otaPendingVerification, verificationDispatch)) {
+        case domes::OtaStartupDispatchAction::kScheduled:
+            break;
+        case domes::OtaStartupDispatchAction::kLeaveBootIncomplete:
+            // Boot completion includes direct LED-driver access and must not run
+            // on app_main when owner dispatch is unavailable.
+            ESP_LOGE(kTag, "Post-startup boot completion dispatch unavailable: %s",
+                     esp_err_to_name(verificationDispatch));
+            break;
+        case domes::OtaStartupDispatchAction::kRollbackPendingImage:
+            // Never confirm a pending image on app_main's temporary stack or outside
+            // the LED-owner task. Fail closed and retain why verification could not run.
+            rollbackAfterOtaVerificationFailure(
+                domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kDispatchUnavailable),
+                false);
     }
 }

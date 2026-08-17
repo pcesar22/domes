@@ -55,6 +55,27 @@ constexpr uint8_t kOtaSelfTestMaxAttempts = 3;
 constexpr uint32_t kOtaSelfTestRetryDelayMs = 2000;
 
 /**
+ * @brief Required response after attempting LED-owner startup dispatch
+ */
+enum class OtaStartupDispatchAction : uint8_t {
+    kScheduled,
+    kLeaveBootIncomplete,
+    kRollbackPendingImage,
+};
+
+/**
+ * @brief Keep boot completion on the LED owner and fail closed for pending images
+ */
+inline OtaStartupDispatchAction otaStartupDispatchAction(bool pendingImage,
+                                                         esp_err_t dispatchStatus) {
+    if (dispatchStatus == ESP_OK) {
+        return OtaStartupDispatchAction::kScheduled;
+    }
+    return pendingImage ? OtaStartupDispatchAction::kRollbackPendingImage
+                        : OtaStartupDispatchAction::kLeaveBootIncomplete;
+}
+
+/**
  * @brief Whether a failed check can recover without reinitializing the runtime
  */
 inline bool isRetryableOtaSelfTestFailure(OtaSelfTestStage stage) {
