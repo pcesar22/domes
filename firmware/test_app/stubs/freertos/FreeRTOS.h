@@ -14,6 +14,7 @@ typedef uint32_t UBaseType_t;
 #define portYIELD_FROM_ISR(x) (void)(x)
 #define taskYIELD() ((void)0)
 #define portMAX_DELAY UINT32_MAX
+#define portTICK_PERIOD_MS 1
 struct portMUX_TYPE {
     std::recursive_mutex mutex;
 };

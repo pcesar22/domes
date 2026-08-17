@@ -27,4 +27,8 @@ inline int32_t xPortGetCoreID() {
     return sim_trace::currentCoreId;
 }
 
+inline uint32_t xTaskGetTickCount() {
+    return 0;
+}
+
 inline void vTaskDelay(uint32_t) {}
