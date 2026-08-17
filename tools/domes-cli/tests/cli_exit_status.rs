@@ -214,6 +214,8 @@ fn six_target_readiness_passes_only_after_both_checks_pass() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("six-target success exit: {}", output.status);
+    println!("six-target success stdout:\n{stdout}");
     for index in 0..6 {
         assert!(stdout.contains(&format!(
             "[wifi-{index}] readiness: PASS (health: PASS; self-test: PASS 1/1)"
@@ -225,10 +227,16 @@ fn six_target_readiness_passes_only_after_both_checks_pass() {
 
 #[test]
 fn mixed_readiness_names_every_failure_and_evaluates_reachable_targets() {
-    let (healthy_address, healthy_server) = serve_config_responses(vec![
-        (0x38, 0x39, healthy_health_payload()),
-        (0x44, 0x45, passing_self_test_payload()),
-    ]);
+    let mut healthy_addresses = Vec::new();
+    let mut healthy_servers = Vec::new();
+    for _ in 0..3 {
+        let (address, server) = serve_config_responses(vec![
+            (0x38, 0x39, healthy_health_payload()),
+            (0x44, 0x45, passing_self_test_payload()),
+        ]);
+        healthy_addresses.push(address);
+        healthy_servers.push(server);
+    }
     let (unhealthy_address, unhealthy_server) = serve_config_responses(vec![
         (0x38, 0x39, unhealthy_health_payload()),
         (0x44, 0x45, passing_self_test_payload()),
@@ -240,34 +248,37 @@ fn mixed_readiness_names_every_failure_and_evaluates_reachable_targets() {
     let unreachable_address = unused_tcp_address();
 
     let mut command = cargo_bin_cmd!("domes-cli");
-    command.args([
-        "--wifi",
-        &healthy_address,
-        "--wifi",
-        &unhealthy_address,
-        "--wifi",
-        &failed_test_address,
-        "--wifi",
-        &unreachable_address,
-        "system",
-        "readiness",
-    ]);
+    for address in &healthy_addresses {
+        command.args(["--wifi", address]);
+    }
+    command.args(["--wifi", &unhealthy_address]);
+    command.args(["--wifi", &failed_test_address]);
+    command.args(["--wifi", &unreachable_address]);
+    command.args(["system", "readiness"]);
 
     let output = command.output().unwrap();
-    healthy_server.join().unwrap();
+    for server in healthy_servers {
+        server.join().unwrap();
+    }
     unhealthy_server.join().unwrap();
     failed_test_server.join().unwrap();
 
     assert!(!output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("[wifi-0] readiness: PASS (health: PASS; self-test: PASS 1/1)"));
-    assert!(stdout.contains("[wifi-1] readiness: FAIL (health: FAIL"));
+    println!("six-target mixed exit: {}", output.status);
+    println!("six-target mixed stdout:\n{stdout}");
+    for index in 0..3 {
+        assert!(stdout.contains(&format!(
+            "[wifi-{index}] readiness: PASS (health: PASS; self-test: PASS 1/1)"
+        )));
+    }
+    assert!(stdout.contains("[wifi-3] readiness: FAIL (health: FAIL"));
     assert!(stdout.contains("self-test: PASS 1/1"));
-    assert!(stdout.contains("[wifi-2] readiness: FAIL (health: PASS; self-test: FAIL"));
+    assert!(stdout.contains("[wifi-4] readiness: FAIL (health: PASS; self-test: FAIL"));
     assert!(stdout.contains("On-device self-test failed"));
-    assert!(stdout.contains("[wifi-3] readiness: FAIL (connection:"));
-    assert_eq!(stdout.matches(" readiness: ").count(), 4);
-    assert!(stdout.contains("Readiness summary: FAIL (1/4 targets ready; 3 failed)"));
+    assert!(stdout.contains("[wifi-5] readiness: FAIL (connection:"));
+    assert_eq!(stdout.matches(" readiness: ").count(), 6);
+    assert!(stdout.contains("Readiness summary: FAIL (3/6 targets ready; 3 failed)"));
 }
 
 fn healthy_health_payload() -> Vec<u8> {
