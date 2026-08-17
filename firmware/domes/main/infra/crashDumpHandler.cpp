@@ -36,6 +36,7 @@ void encodeElfSha256(char (&output)[65]) {
 
 bool ShutdownDumpHandler::initialized_ = false;
 uint32_t ShutdownDumpHandler::bootCount_ = 0;
+char ShutdownDumpHandler::restartReason_[kRestartReasonCapacity] = "shutdown/restart";
 
 esp_err_t ShutdownDumpHandler::init(uint32_t bootCount) {
     bootCount_ = bootCount;
@@ -79,6 +80,20 @@ esp_err_t ShutdownDumpHandler::init(uint32_t bootCount) {
 
     initialized_ = true;
     ESP_LOGI(kTag, "Restart snapshot handler initialized");
+    return ESP_OK;
+}
+
+esp_err_t ShutdownDumpHandler::setRestartReason(const char* reason) {
+    if (reason == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const size_t length = strnlen(reason, sizeof(restartReason_));
+    if (length == 0 || length >= sizeof(restartReason_)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    std::memcpy(restartReason_, reason, length + 1);
     return ESP_OK;
 }
 
@@ -238,7 +253,7 @@ void ShutdownDumpHandler::shutdownHandler() {
 
     CrashDumpData record;
     record.formatVersion = kRestartSnapshotFormatVersion;
-    std::strncpy(record.reason, "shutdown/restart", sizeof(record.reason) - 1);
+    std::strncpy(record.reason, restartReason_, sizeof(record.reason) - 1);
     std::strncpy(record.taskName, taskName, sizeof(record.taskName) - 1);
     std::strncpy(record.firmwareVersion, firmwareVersion(), sizeof(record.firmwareVersion) - 1);
     encodeElfSha256(record.elfSha256);

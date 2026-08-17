@@ -53,6 +53,8 @@ struct LedPatternConfig {
  */
 class LedService {
 public:
+    using PostStartupCallback = void (*)(void* context);
+
     /**
      * @brief Construct LED service
      *
@@ -176,6 +178,27 @@ public:
     }
 
     /**
+     * @brief Run one callback on the LED task after app_main returns
+     *
+     * Use this for startup work that must serialize direct LED-driver access
+     * with animation updates. The callback and context are borrowed and
+     * invoked once without allocation.
+     */
+    esp_err_t runAfterStartup(PostStartupCallback callback, void* context = nullptr) {
+        bool expected = false;
+        if (!running_.load(std::memory_order_acquire) || taskHandle_ == nullptr ||
+            callback == nullptr ||
+            !postStartupScheduled_.compare_exchange_strong(expected, true,
+                                                           std::memory_order_acq_rel)) {
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        postStartupContext_.store(context, std::memory_order_relaxed);
+        postStartupCallback_.store(callback, std::memory_order_release);
+        return ESP_OK;
+    }
+
+    /**
      * @brief Set a solid color directly (convenience method for touch service)
      * @param color Color to display
      */
@@ -233,6 +256,17 @@ private:
         ESP_LOGI("LedService", "Task loop starting");
 
         while (running_) {
+            PostStartupCallback callback =
+                postStartupCallback_.exchange(nullptr, std::memory_order_acquire);
+            if (callback != nullptr) {
+                void* context = postStartupContext_.exchange(nullptr, std::memory_order_relaxed);
+                // Let app_main return and release its transient stack before
+                // measuring steady-state memory or touching the LED channel.
+                vTaskDelay(1);
+                callback(context);
+                continue;
+            }
+
             // Handle flash request (highest priority)
             if (flashRequested_.load()) {
                 flashRequested_ = false;
@@ -396,6 +430,11 @@ private:
     // Flash request (thread-safe)
     std::atomic<bool> flashRequested_{false};
     std::atomic<uint32_t> flashDurationMs_{100};
+
+    // One-shot post-startup work, executed by the LED channel owner.
+    std::atomic<PostStartupCallback> postStartupCallback_{nullptr};
+    std::atomic<void*> postStartupContext_{nullptr};
+    std::atomic<bool> postStartupScheduled_{false};
 };
 
 }  // namespace domes
