@@ -188,6 +188,136 @@ fn connection_failure_does_not_block_healthy_target() {
     assert!(stderr.contains("Failed on 1 device(s): offline"));
 }
 
+#[test]
+fn six_target_readiness_passes_only_after_both_checks_pass() {
+    let mut addresses = Vec::new();
+    let mut servers = Vec::new();
+    for _ in 0..6 {
+        let (address, server) = serve_config_responses(vec![
+            (0x38, 0x39, healthy_health_payload()),
+            (0x44, 0x45, passing_self_test_payload()),
+        ]);
+        addresses.push(address);
+        servers.push(server);
+    }
+
+    let mut command = cargo_bin_cmd!("domes-cli");
+    for address in &addresses {
+        command.args(["--wifi", address]);
+    }
+    command.args(["system", "readiness"]);
+
+    let output = command.output().unwrap();
+    for server in servers {
+        server.join().unwrap();
+    }
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for index in 0..6 {
+        assert!(stdout.contains(&format!(
+            "[wifi-{index}] readiness: PASS (health: PASS; self-test: PASS 1/1)"
+        )));
+    }
+    assert_eq!(stdout.matches(" readiness: PASS ").count(), 6);
+    assert!(stdout.contains("Readiness summary: PASS (6/6 targets ready)"));
+}
+
+#[test]
+fn mixed_readiness_names_every_failure_and_evaluates_reachable_targets() {
+    let (healthy_address, healthy_server) = serve_config_responses(vec![
+        (0x38, 0x39, healthy_health_payload()),
+        (0x44, 0x45, passing_self_test_payload()),
+    ]);
+    let (unhealthy_address, unhealthy_server) = serve_config_responses(vec![
+        (0x38, 0x39, unhealthy_health_payload()),
+        (0x44, 0x45, passing_self_test_payload()),
+    ]);
+    let (failed_test_address, failed_test_server) = serve_config_responses(vec![
+        (0x38, 0x39, healthy_health_payload()),
+        (0x44, 0x45, failed_self_test_payload()),
+    ]);
+    let unreachable_address = unused_tcp_address();
+
+    let mut command = cargo_bin_cmd!("domes-cli");
+    command.args([
+        "--wifi",
+        &healthy_address,
+        "--wifi",
+        &unhealthy_address,
+        "--wifi",
+        &failed_test_address,
+        "--wifi",
+        &unreachable_address,
+        "system",
+        "readiness",
+    ]);
+
+    let output = command.output().unwrap();
+    healthy_server.join().unwrap();
+    unhealthy_server.join().unwrap();
+    failed_test_server.join().unwrap();
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("[wifi-0] readiness: PASS (health: PASS; self-test: PASS 1/1)"));
+    assert!(stdout.contains("[wifi-1] readiness: FAIL (health: FAIL"));
+    assert!(stdout.contains("self-test: PASS 1/1"));
+    assert!(stdout.contains("[wifi-2] readiness: FAIL (health: PASS; self-test: FAIL"));
+    assert!(stdout.contains("On-device self-test failed"));
+    assert!(stdout.contains("[wifi-3] readiness: FAIL (connection:"));
+    assert_eq!(stdout.matches(" readiness: ").count(), 4);
+    assert!(stdout.contains("Readiness summary: FAIL (1/4 targets ready; 3 failed)"));
+}
+
+fn healthy_health_payload() -> Vec<u8> {
+    vec![
+        0x00, // outer status OK
+        0x08, 0x80, 0x80, 0x01, // free_heap = 16384
+        0x10, 0x80, 0x80, 0x01, // min_free_heap = 16384
+        0x18, 0x01, // uptime_seconds = 1
+        0x2A, 0x0B, // one TaskHealth message
+        0x0A, 0x04, b'm', b'a', b'i', b'n', // name = "main"
+        0x10, 0x80, 0x02, // stack_high_water = 256
+        0x18, 0x05, // priority = 5
+    ]
+}
+
+fn unhealthy_health_payload() -> Vec<u8> {
+    vec![
+        0x00, // outer status OK
+        0x08, 0x80, 0x40, // free_heap = 8192
+        0x10, 0x80, 0x40, // min_free_heap = 8192; tasks omitted
+    ]
+}
+
+fn passing_self_test_payload() -> Vec<u8> {
+    vec![
+        0x00, // outer status OK
+        0x08, 0x01, // tests_run = 1
+        0x10, 0x01, // tests_passed = 1
+        0x1A, 0x08, // one SelfTestResult message
+        0x0A, 0x04, b'h', b'e', b'a', b'p', // name = "heap"
+        0x10, 0x01, // passed = true
+    ]
+}
+
+fn failed_self_test_payload() -> Vec<u8> {
+    vec![
+        0x00, // outer status OK
+        0x08, 0x01, // tests_run = 1; tests_passed omitted (zero)
+        0x1A, 0x06, // one SelfTestResult message
+        0x0A, 0x04, b'h', b'e', b'a', b'p', // name = "heap"; passed omitted (false)
+    ]
+}
+
+fn unused_tcp_address() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    drop(listener);
+    address
+}
+
 fn serve_config_response(
     expected_request_type: u8,
     response_type: u8,

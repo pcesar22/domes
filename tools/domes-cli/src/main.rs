@@ -338,6 +338,9 @@ enum SystemAction {
 
     /// Run the on-device system and peripheral initialization checks
     SelfTest,
+
+    /// Evaluate health and self-test readiness for every selected pod
+    Readiness,
 }
 
 #[derive(Subcommand)]
@@ -677,6 +680,15 @@ fn main() -> anyhow::Result<()> {
 
     // Resolve device connections
     let resolution = device::resolve_devices(&cli.port, &cli.wifi, &cli.ble, &cli.target, cli.all)?;
+    if matches!(
+        &command,
+        Commands::System {
+            action: SystemAction::Readiness
+        }
+    ) {
+        return run_system_readiness(resolution);
+    }
+
     let multi = resolution.is_multi();
     let mut devices = resolution.connections;
     let mut failures: Vec<String> = Vec::new();
@@ -1275,6 +1287,9 @@ fn main() -> anyhow::Result<()> {
                         }
                         ensure_self_test_passed(&info)?;
                     }
+                    SystemAction::Readiness => {
+                        unreachable!("system readiness is handled before generic command dispatch")
+                    }
                 },
 
                 Commands::Espnow { action } => match action {
@@ -1408,6 +1423,76 @@ fn main() -> anyhow::Result<()> {
     }
 
     failed_devices(&failures)
+}
+
+fn run_system_readiness(mut resolution: device::DeviceResolution) -> anyhow::Result<()> {
+    let mut results: Vec<(String, bool, String)> = resolution
+        .failures
+        .drain(..)
+        .map(|failure| {
+            (
+                failure.name,
+                false,
+                format!("connection: {}", failure.error),
+            )
+        })
+        .collect();
+
+    for mut device in resolution.connections.drain(..) {
+        let health = commands::system_health(device.transport.as_mut())
+            .and_then(|health| validate_system_health(&health));
+        let health_ready = health.is_ok();
+        let health_detail = health
+            .map(|()| "health: PASS".to_string())
+            .unwrap_or_else(|error| format!("health: FAIL ({error:#})"));
+
+        // A failed health request must not suppress the self-test request. The
+        // readiness operation reports both existing diagnostic interfaces for
+        // every target whose transport was connected.
+        let self_test = commands::system_self_test(device.transport.as_mut()).and_then(|info| {
+            ensure_self_test_passed(&info)?;
+            Ok(format!(
+                "self-test: PASS {}/{}",
+                info.tests_passed, info.tests_run
+            ))
+        });
+        let self_test_ready = self_test.is_ok();
+        let self_test_detail =
+            self_test.unwrap_or_else(|error| format!("self-test: FAIL ({error:#})"));
+
+        results.push((
+            device.name,
+            health_ready && self_test_ready,
+            format!("{health_detail}; {self_test_detail}"),
+        ));
+    }
+
+    results.sort_by(|left, right| left.0.cmp(&right.0));
+    let total = results.len();
+    let ready = results.iter().filter(|(_, ready, _)| *ready).count();
+
+    for (name, is_ready, detail) in &results {
+        println!(
+            "[{}] readiness: {} ({})",
+            name,
+            if *is_ready { "PASS" } else { "FAIL" },
+            detail
+        );
+    }
+
+    if total > 0 && ready == total {
+        println!("Readiness summary: PASS ({ready}/{total} targets ready)");
+        return Ok(());
+    }
+
+    println!(
+        "Readiness summary: FAIL ({ready}/{total} targets ready; {} failed)",
+        total - ready
+    );
+    if total == 0 {
+        anyhow::bail!("System readiness failed: no targets selected")
+    }
+    anyhow::bail!("System readiness failed for {} target(s)", total - ready)
 }
 
 fn validate_trace_stream_selection(cli: &Cli) -> anyhow::Result<()> {
