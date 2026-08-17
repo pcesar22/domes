@@ -56,6 +56,7 @@ add_executable(test_app
     main/test_crc32.cpp
     main/test_frame_codec.cpp
     main/test_ota_protocol.cpp
+    main/test_ota_boot_verification.cpp
     main/test_ota_session_coordinator.cpp
     main/test_ota_state_machine.cpp
     main/test_esp_now_protocol.cpp

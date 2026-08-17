@@ -269,6 +269,10 @@ enum TraceAction {
         /// Span name mapping file (e.g., trace_names.json)
         #[arg(short, long)]
         names: Option<PathBuf>,
+
+        /// Candidate app image to bind to the device-originated trace identity
+        #[arg(long)]
+        firmware_bin: Option<PathBuf>,
     },
 
     /// Stream trace events in real-time over WiFi/TCP
@@ -733,8 +737,10 @@ fn main() -> anyhow::Result<()> {
         } else {
             String::new()
         };
-        let transport = dev.transport.as_mut();
         let dev_label = dev.name.clone();
+        let transport_type = dev.transport_type.clone();
+        let transport_address = dev.address.clone();
+        let transport = dev.transport.as_mut();
 
         if multi {
             println!("--- {} ---", dev_label);
@@ -955,7 +961,11 @@ fn main() -> anyhow::Result<()> {
                     TraceAction::Stream { .. } => {
                         unreachable!("trace stream is handled before transport resolution")
                     }
-                    TraceAction::Dump { output, names } => {
+                    TraceAction::Dump {
+                        output,
+                        names,
+                        firmware_bin,
+                    } => {
                         let dump_path = if multi {
                             // Per-device output file
                             let stem = output.file_stem().unwrap_or_default().to_string_lossy();
@@ -965,7 +975,18 @@ fn main() -> anyhow::Result<()> {
                             output.clone()
                         };
                         println!("{}Dumping traces to {}...", prefix, dump_path.display());
-                        let result = commands::trace_dump(transport, &dump_path, names.as_deref())?;
+                        let evidence_context = commands::trace::TraceEvidenceContext {
+                            device_name: &dev_label,
+                            transport_type: &transport_type,
+                            address: &transport_address,
+                        };
+                        let result = commands::trace_dump(
+                            transport,
+                            &dump_path,
+                            names.as_deref(),
+                            Some(&evidence_context),
+                            firmware_bin.as_deref(),
+                        )?;
                         println!(
                             "{}Dump complete: {} events (pod_id={})",
                             prefix, result.event_count, result.pod_id
@@ -980,6 +1001,12 @@ fn main() -> anyhow::Result<()> {
                         println!("{}Raw: {}", prefix, result.raw_path.display());
                         println!("{}Session: {}", prefix, result.session_path.display());
                         println!("{}Raw SHA-256: {}", prefix, result.raw_sha256);
+                        println!("{}Firmware: {}", prefix, result.firmware_version);
+                        println!("{}Device UID: {}", prefix, result.device_uid);
+                        println!("{}App image SHA-256: {}", prefix, result.app_image_sha256);
+                        if let Some(hash) = result.candidate_file_sha256 {
+                            println!("{}Candidate file SHA-256: {}", prefix, hash);
+                        }
                     }
                 },
 

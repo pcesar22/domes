@@ -35,6 +35,7 @@
 #include "services/githubClient.hpp"
 #include "services/imuService.hpp"
 #include "services/ledService.hpp"
+#include "services/otaBootVerification.hpp"
 #include "services/otaManager.hpp"
 #include "services/touchService.hpp"
 #include "trace/traceAcceptanceProbe.hpp"
@@ -184,15 +185,15 @@ static bool readAutoUpdateEnabled() {
  * Validates critical systems after an OTA update.
  * If this fails, firmware will roll back to previous version.
  *
- * @return ESP_OK if all tests pass
+ * @return Structured passing result or the exact failed check
  */
-static esp_err_t performSelfTest() {
+static domes::OtaSelfTestResult performSelfTest() {
     ESP_LOGI(kTag, "Running post-OTA self-test...");
 
     // Test 1: Watchdog initialized
     if (!domes::infra::Watchdog::isInitialized()) {
         ESP_LOGE(kTag, "Self-test FAIL: Watchdog not initialized");
-        return ESP_FAIL;
+        return domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kWatchdog);
     }
     ESP_LOGI(kTag, "  [PASS] Watchdog initialized");
 
@@ -201,7 +202,7 @@ static esp_err_t performSelfTest() {
     esp_err_t err = testNvs.open(domes::infra::nvs_ns::kConfig);
     if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
         ESP_LOGE(kTag, "Self-test FAIL: NVS inaccessible");
-        return ESP_FAIL;
+        return domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kNvs, err);
     }
     testNvs.close();
     ESP_LOGI(kTag, "  [PASS] NVS accessible");
@@ -212,7 +213,8 @@ static esp_err_t performSelfTest() {
     size_t freeHeap = heap_caps_get_free_size(kInternalHeapCaps);
     if (freeHeap < 30 * 1024) {
         ESP_LOGE(kTag, "Self-test FAIL: Heap too low (%zu bytes)", freeHeap);
-        return ESP_FAIL;
+        return domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kInternalHeap, ESP_FAIL,
+                                                 static_cast<uint32_t>(freeHeap));
     }
     ESP_LOGI(kTag, "  [PASS] Heap OK (%zu bytes free)", freeHeap);
 
@@ -225,7 +227,8 @@ static esp_err_t performSelfTest() {
     for (auto subsystem : requiredHardware) {
         if (!domes::infra::HardwareStatus::isReady(subsystem)) {
             ESP_LOGE(kTag, "Self-test FAIL: required hardware was not initialized");
-            return ESP_FAIL;
+            return domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kHardware, ESP_FAIL,
+                                                     static_cast<uint32_t>(subsystem));
         }
     }
     ESP_LOGI(kTag, "  [PASS] Required hardware initialized");
@@ -233,7 +236,7 @@ static esp_err_t performSelfTest() {
     // Test 5: LED output path accepts and transmits a frame.
     if (!ledDriver) {
         ESP_LOGE(kTag, "Self-test FAIL: LED driver unavailable");
-        return ESP_FAIL;
+        return domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kLedOutput);
     }
     err = ledDriver->setPixel(0, domes::Color::green());
     if (err == ESP_OK) {
@@ -241,19 +244,19 @@ static esp_err_t performSelfTest() {
     }
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "Self-test FAIL: LED output error: %s", esp_err_to_name(err));
-        return err;
+        return domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kLedOutput, err);
     }
     ESP_LOGI(kTag, "  [PASS] LED output path OK");
 
     // Test 6: host-facing transports and runtime control services are live.
     if (!modeManager || !serialOtaReceiver || !bleOtaReceiver || !espNowService) {
         ESP_LOGE(kTag, "Self-test FAIL: required runtime service unavailable");
-        return ESP_FAIL;
+        return domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kRuntimeServices);
     }
     ESP_LOGI(kTag, "  [PASS] Runtime services initialized");
 
     ESP_LOGI(kTag, "Self-test PASSED");
-    return ESP_OK;
+    return {};
 }
 #endif
 
@@ -277,12 +280,21 @@ static void handleOtaVerification() {
 
 #ifdef DOMES_FORCE_OTA_VERIFY_FAILURE
     ESP_LOGE(kTag, "Injecting OTA verification failure for rollback test image");
-    esp_err_t selfTestResult = ESP_FAIL;
+    domes::OtaSelfTestResult selfTestResult =
+        domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kInjectedFailure);
 #else
-    esp_err_t selfTestResult = performSelfTest();
+    domes::OtaSelfTestResult selfTestResult = domes::runOtaSelfTestWithRetry(
+        performSelfTest, [](uint8_t completedAttempts, const domes::OtaSelfTestResult& result) {
+            ESP_LOGW(kTag,
+                     "Post-OTA heap below safety floor (%lu bytes); settling before attempt %u/%u",
+                     static_cast<unsigned long>(result.detail),
+                     static_cast<unsigned>(completedAttempts + 1),
+                     static_cast<unsigned>(domes::kOtaSelfTestMaxAttempts));
+            vTaskDelay(pdMS_TO_TICKS(domes::kOtaSelfTestRetryDelayMs));
+        });
 #endif
 
-    if (selfTestResult == ESP_OK) {
+    if (selfTestResult.passed()) {
         // Confirm new firmware is good
         esp_err_t err = otaManager->confirmFirmware();
         if (err == ESP_OK) {
@@ -301,7 +313,19 @@ static void handleOtaVerification() {
         }
     } else {
         // Self-test failed - rollback
-        ESP_LOGE(kTag, "Self-test FAILED - rolling back to previous firmware");
+        ESP_LOGE(kTag, "Self-test FAILED at %s - rolling back to previous firmware",
+                 domes::otaSelfTestStageName(selfTestResult.stage));
+
+        char restartReason[domes::infra::kRestartReasonCapacity] = {};
+        if (domes::formatOtaSelfTestRestartReason(selfTestResult, restartReason,
+                                                  sizeof(restartReason))) {
+            const esp_err_t reasonErr =
+                domes::infra::ShutdownDumpHandler::setRestartReason(restartReason);
+            if (reasonErr != ESP_OK) {
+                ESP_LOGW(kTag, "Failed to retain OTA verification reason: %s",
+                         esp_err_to_name(reasonErr));
+            }
+        }
 
         // Visual indication - red LED
         if (ledDriver) {
@@ -312,6 +336,20 @@ static void handleOtaVerification() {
 
         otaManager->rollback();  // Never returns
     }
+}
+
+static void finishBootVerification(void*) {
+    handleOtaVerification();
+
+    // Green LED = complete runtime accepted for this boot.
+    if (ledDriver) {
+        ledDriver->setAll(domes::Color::green());
+        ledDriver->refresh();
+    }
+
+    ESP_LOGI(kTag, "Boot verification complete. Tasks: %zu, Heap: %lu",
+             taskManager.getActiveTaskCount(),
+             static_cast<unsigned long>(esp_get_free_heap_size()));
 }
 
 /**
@@ -1476,23 +1514,22 @@ extern "C" void app_main() {
         ESP_LOGI(kTag, "System mode: BOOTING → IDLE");
     }
 
-    // Confirm a new image only after the complete runtime is initialized.
+    // Verification is dispatched on the LED task after app_main returns. This
+    // excludes the temporary main stack from the steady-state heap check and
+    // serializes the active LED test with animation updates.
     if (!advanceInitStage(initOrder, "ota_verification")) {
         return;
     }
-    handleOtaVerification();
+    const bool otaPendingVerification = otaManager && otaManager->isPendingVerification();
+    if (otaPendingVerification) {
+        ESP_LOGI(kTag, "OTA verification queued on the LED task after startup");
+    }
 
-    // Green LED = boot success
+    // The ready indication is applied by finishBootVerification only after a
+    // pending image is confirmed (or immediately for an already-valid image).
     if (!advanceInitStage(initOrder, "ready_led")) {
         return;
     }
-    if (ledDriver) {
-        ledDriver->setAll(domes::Color::green());
-        ledDriver->refresh();
-    }
-
-    ESP_LOGI(kTag, "Init complete. Tasks: %zu, Heap: %lu", taskManager.getActiveTaskCount(),
-             static_cast<unsigned long>(esp_get_free_heap_size()));
 
     // The persisted setting overrides the Kconfig build default on subsequent boots.
     if (!advanceInitStage(initOrder, "ota_check")) {
@@ -1500,7 +1537,9 @@ extern "C" void app_main() {
     }
 #ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
     const bool autoUpdateEnabled = readAutoUpdateEnabled();
-    if (autoUpdateEnabled && wifiManager && wifiManager->isConnected() && otaManager) {
+    if (otaPendingVerification) {
+        ESP_LOGI(kTag, "Automatic OTA check deferred until the new image is confirmed");
+    } else if (autoUpdateEnabled && wifiManager && wifiManager->isConnected() && otaManager) {
         ESP_LOGI(kTag, "Creating OTA check task...");
 
         const auto& otaTask = domes::infra::task::kOtaCheck;
@@ -1599,5 +1638,10 @@ extern "C" void app_main() {
 #endif
     if (!initOrder.complete()) {
         ESP_LOGE(kTag, "Init-order incomplete: expected=%s", initOrder.expected());
+    }
+
+    if (!ledService || ledService->runAfterStartup(finishBootVerification) != ESP_OK) {
+        ESP_LOGE(kTag, "Post-startup verification dispatch unavailable; verifying before return");
+        finishBootVerification(nullptr);
     }
 }

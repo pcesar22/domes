@@ -517,6 +517,12 @@ fn decode_trace_payload(kind: TraceMsgType, payload: &[u8]) -> Vec<(String, Stri
                 fields.push(("events".into(), info.event_count.to_string()));
                 fields.push(("dropped".into(), info.dropped_count.to_string()));
                 fields.push(("tasks".into(), info.tasks.len().to_string()));
+                fields.push(("firmware".into(), info.firmware_version));
+                fields.push(("device_uid".into(), hex::encode(info.device_uid)));
+                fields.push((
+                    "app_image_sha256".into(),
+                    hex::encode(info.app_image_sha256),
+                ));
             }
         }
         TraceMsgType::Data => {

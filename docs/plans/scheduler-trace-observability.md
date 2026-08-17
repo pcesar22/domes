@@ -1,9 +1,9 @@
 # Deliver Scheduler And Causality Trace Evidence
 
-Status: implementation merged; post-merge registered-NFF evidence captured with closure gaps
-Current phase: bind physical identity and pass the required default-image verification
-Repository state: PR 102 merged as `7b1554a`; accepted implementation head `b3cb19c`
-Last updated: 2026-08-05; trace semantics passed, but physical identity and restoration are open
+Status: reviewed candidate evidence and required CI passed; exact-final-head reconciliation remains
+Current phase: reconcile PR 105 authority and repeat invalidated exact-head evidence
+Repository state: PR 102 merged as `7b1554a`; closure branch `codex/fix/trace-evidence-closure`
+Last updated: 2026-08-15; candidate `2772f633` physical evidence and required software CI passed
 
 ## Objective and observable outcome
 
@@ -51,20 +51,32 @@ predictive claim.
   run 31067343275, including the accepted 100-process QEMU job and aggregate `CI Gate`.
 - [x] Capture and normalize a fresh registered-NFF trace from final implementation `b3cb19c`, then
   restore the default image without making physical-output claims.
-- [ ] Bind the retained physical session to the exact flashed-image hash and stable hardware
+- [x] Add device-originated firmware/image/hardware identity, candidate-image verification, and
+  transport identity to the retained trace session; pass focused host and paired-profile builds.
+- [x] Bind the retained physical session to the exact flashed-image hash and stable hardware
   identity instead of relying on operator-correlated commands.
-- [ ] Retain the post-restoration command evidence and pass the repository-required `system health`
+- [x] Retain the post-restoration command evidence and pass the repository-required `system health`
   and complete `system self-test` checks before technical exit.
+- [x] Reclaim the redundant 16 KiB trace merge buffer without changing event ordering, then measure
+  the default image again instead of weakening either heap threshold.
+- [x] Bind reviewed PR 105 candidate `2772f633` to retained device/image identity, causal trace,
+  two-boot default restoration, and all eight required software checks.
+- [ ] Commit the authority reconciliation, repeat invalidated exact-final-head evidence, and obtain
+  human review before merge.
 
 ## Verification
 
 | Evidence level | Command or observation | Status and artifact |
 | --- | --- | --- |
 | Automated | Full pre-commit suite; 53 focused Python tests; 294 host firmware tests; 98 Rust unit and 10 integration tests plus clippy; generated protocols; trace generator; fresh ESP-IDF v5.4.4 physical build | passed on final implementation head `b3cb19c`; the final head's documentation-only delta was also covered by exact-checkout CI |
+| Superseded closure implementation | Generated nanopb/Dart drift checks; 296 host-firmware tests; 100 Rust unit and 10 integration tests plus clippy; 22 trace-tool tests; pre-commit hooks; fresh ESP-IDF v5.4.4 physical and QEMU builds; paired-profile validator | Historical commit `ce159ba0c10610648caa0b7a158abc9dc6ff5d95` passed these checks, but it is not an ancestor of reviewed PR 105 candidate `2772f633` and is not evidence for that candidate. Its artifact hashes are intentionally omitted here to prevent them from being mistaken for the reviewed closure. |
 | Target execution | `tools/simulation/qemu_runtime.py` final fixed 100-run trace campaign | passed 100/100 in Software CI run 31068033646 with ready signature `505b529d...de1be` and trace signature `a9800774...85d4`; separate final local development run passed with 68 events, zero drops/discontinuities, and 101/160 us disabled/enabled measurements |
 | Historical accepted command | pre-fix serial raw trace dump and normalization from registered NFF pod 2 | retained: 74 events, SHA-256 `5a37fe73...0505`, zero drops/discontinuities, complete causal chain, and 92/177 us measurements; this predates `5ea561c` and does not verify the corrected implementation |
 | Registered-NFF target execution | fresh isolated ESP-IDF v5.4.4 probe build and serial capture, operator-correlated to registered pod 2 and final PR head `b3cb19c` | trace semantics passed: 75 events, zero drops/discontinuities, one complete causal chain at raw positions 49/58/59/62/64/65/66/69/71/72, 12 task mappings, 6 object mappings, and 154/267 us disabled/enabled overhead for 32 records; raw SHA-256 `b3232cf4eb39ddaa69168b7503c16395bdb9032f0c0e44bcb64c7039b92d98ec`, normalizer-declared content SHA-256 `78d2694b97aec7a22a15576b2f3b0d8c4fde1be6baf55c823b1c234577177225`. The session itself does not bind the image hash or CP2102N identity, so it is not final physical-differential evidence |
 | Default-image restoration | fresh isolated default build from `b3cb19c`, `domes.bin` SHA-256 `7fe4124c1a6e89b3adb1beb4182115acd46f8957cba11a57ae3f083d171937df`, flashed back to operator-correlated pod 2 | observed firmware `v0.1.0-27-gb3cb19c`, idle mode, disabled/empty trace, and restored default feature mask, but the command outputs were not retained. Required verification did not pass: `system health` missed its 16 KiB current/minimum-free-heap thresholds and `system self-test` passed 9/10, missing its separate 30 KiB heap threshold. The old-main pre-capture health value was also below 16 KiB, but that does not prove non-regression or satisfy restoration acceptance |
+| Device-bound registered-NFF closure | exact reviewed PR 105 candidate `2772f633b57663f731bbf30856802ac51862ae42`, registered pod 2, and its stable CP2102N endpoint | passed: 74 events, zero drops/discontinuities, complete causal chain at raw positions 50/59/60/63/65/66/67/69/71/72, 12 task mappings, 6 object mappings, and 153/239 us disabled/enabled overhead for 32 records. The session verifies device UID `94a9900aea50`, CP2102N serial `002a9f8e536def119f38c1a7c169b110`, version `v0.1.0-31-g2772f63`, ELF SHA-256 `ab499b0de770add4eb8e6989d7783238c9ed7d2b3d038f41a9d341b9d00c1b5b`, running-image SHA-256 `8d549e706cf19d92a7f455da1a72c73a7c3c2c141e48fa82d106ac1267a69116`, and candidate-file SHA-256 `a089546cd290ebed99fbeddd2cb0951f0cca7e16d6d4f0dbcd22b0cc4f82d084`. Raw SHA-256 is `df0334afe9ba8d5c697f45b302e75493047b20bc7acb12f1652c6a74a34cfc2f`; replay and semantic projections are `8e47b196edafe6dc797706ec68353523d421d383a714bf2e503c8c6b16dcd2ac` and `0695b88015de7cf328adfb39ffe76ee72bc2d20279edfe37318b1a78a8ed400d` |
+| Passing default-image restoration | exact reviewed candidate `2772f633b57663f731bbf30856802ac51862ae42` default app restored to registered pod 2, followed by boots 39 and 40 | passed twice: tracing disabled, zero events/drops/discontinuities, `system health` pass, and `system self-test` 10/10. This is command-visible device evidence, not physical-actuation evidence |
+| Reviewed-candidate required CI | [Software CI run 31918252989](https://github.com/pcesar22/domes/actions/runs/31918252989) on exact PR 105 head `2772f633b57663f731bbf30856802ac51862ae42` | passed all eight required jobs, including the 100-process QEMU runtime campaign and aggregate `CI Gate`; hardware CI intentionally skipped |
 | PR merge-ref checkout | [Software CI run 31068033646](https://github.com/pcesar22/domes/actions/runs/31068033646) on merge ref `b451b118` formed from final PR 102 head `b3cb19c` and base `d4251d5` | passed: all eight software checks, 100 identical accepted QEMU processes with trace signature `a98007744af8b34395141cd9c3303bee95d5e983f2531b5cd0a1073c1ada85d4`, and aggregate `CI Gate`; hardware CI intentionally skipped |
 
 ## Decisions, discoveries, and deviations
@@ -97,11 +109,25 @@ predictive claim.
   free heap. Both required checks failed after restoration. The prior main image also missed the
   health threshold, but no retained pre/post record proves non-regression and a prior failure is not
   a passing restoration result.
+- The physical evidence record will use device-originated base-MAC, firmware-version, ELF-hash, and
+  running-app-image-hash fields. When given the candidate `domes.bin`, the CLI will verify its
+  embedded application descriptor and appended image hash against those device fields, then retain
+  the artifact's full-file SHA-256 and the selected transport endpoint in the same session record.
+- The two per-core capture buffers are required for bounded SMP hook recording, but the additional
+  16 KiB global merge buffer is not. Stable in-place sorting per core followed by a stable two-way
+  merge preserves the existing timestamp and equal-timestamp ordering contract while returning that
+  internal DRAM to the default image.
+- Two guarded serial OTA attempts of the exact probe and default candidates completed transfer and
+  rebooted, but the bootloader rolled back before framed commands became available. Directly writing
+  the same verified default app to the already-active `ota_0` slot then passed health and the 30 KiB
+  self-test twice. This does not invalidate the trace/default-restoration exit evidence, but it is a
+  separate OTA verification-timing or heap-margin defect; no successful-OTA claim is made here.
 
 ## Resume checkpoint
 
-FS-WP-002C remains active after its implementation merge. Extend the evidence session so one
-retained record binds the raw trace to the flashed-image hash, stable CP2102N identity, and queried
-firmware identity. Repeat the registered-pod capture, retain post-restoration command results, and
-pass `system health` plus the complete `system self-test`. Do not select FS-WP-002E until those gaps
-close.
+Reviewed PR 105 candidate `2772f633` has retained device-bound trace evidence, two passing
+restored-default boots, and passing required software CI. The authority reconciliation changes the
+exact firmware identity, so commit it before requesting broker evidence, repeat the invalidated
+exact-final-head trace and restoration checks, rerun required CI, and obtain human review before
+merge or FS-WP-002E selection. Track the guarded-OTA rollback separately; this plan makes no
+successful-OTA claim.

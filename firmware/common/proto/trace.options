@@ -8,6 +8,10 @@ domes.trace.TaskEntry.name  max_size:16
 domes.trace.TraceSessionInfo.tasks  max_count:16
 domes.trace.ObjectEntry.name  max_size:16
 domes.trace.TraceSessionInfo.objects  max_count:8
+domes.trace.TraceSessionInfo.firmware_version  max_size:32
+domes.trace.TraceSessionInfo.app_elf_sha256  max_size:32
+domes.trace.TraceSessionInfo.app_image_sha256  max_size:32
+domes.trace.TraceSessionInfo.device_uid  max_size:6
 
 # TraceDataChunk: max 256 bytes = 16 events * 16 bytes
 domes.trace.TraceDataChunk.events  max_size:256

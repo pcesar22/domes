@@ -643,6 +643,70 @@ def validate_session(
         raise TraceNormalizationError(
             "session format version does not match the trace ABI"
         )
+    firmware_version = session.get("firmware_version")
+    if (
+        not isinstance(firmware_version, str)
+        or not firmware_version
+        or len(firmware_version.encode("utf-8")) >= 32
+    ):
+        raise TraceNormalizationError("session firmware version is missing or invalid")
+
+    def validated_hex(name: str, size: int) -> str:
+        value = session.get(name)
+        if not isinstance(value, str) or len(value) != size * 2:
+            raise TraceNormalizationError(f"session {name} is missing or invalid")
+        try:
+            decoded = bytes.fromhex(value)
+        except ValueError as error:
+            raise TraceNormalizationError(
+                f"session {name} is not hexadecimal"
+            ) from error
+        if len(decoded) != size or all(byte == 0 for byte in decoded):
+            raise TraceNormalizationError(f"session {name} is missing or invalid")
+        return value
+
+    app_elf_sha256 = validated_hex("app_elf_sha256", 32)
+    app_image_sha256 = validated_hex("app_image_sha256", 32)
+    device_uid = bytes.fromhex(validated_hex("device_uid", 6))
+    if all(byte == 0xFF for byte in device_uid) or device_uid[0] & 0x01:
+        raise TraceNormalizationError("session device_uid is not a factory unicast MAC")
+
+    transport = session.get("transport")
+    if (
+        not isinstance(transport, dict)
+        or transport.get("type") not in {"serial", "wifi", "tcp", "ble"}
+        or not isinstance(transport.get("device_name"), str)
+        or not transport["device_name"]
+        or not isinstance(transport.get("address"), str)
+        or not transport["address"]
+    ):
+        raise TraceNormalizationError(
+            "session transport identity is missing or invalid"
+        )
+
+    candidate = session.get("candidate_image")
+    if candidate is not None:
+        if (
+            not isinstance(candidate, dict)
+            or candidate.get("binding_verified") is not True
+            or candidate.get("firmware_version") != firmware_version
+            or candidate.get("app_elf_sha256") != app_elf_sha256
+            or candidate.get("app_image_sha256") != app_image_sha256
+        ):
+            raise TraceNormalizationError("candidate image binding is invalid")
+        file_hash = candidate.get("file_sha256")
+        if not isinstance(file_hash, str) or len(file_hash) != 64:
+            raise TraceNormalizationError("candidate image file hash is invalid")
+        try:
+            decoded_file_hash = bytes.fromhex(file_hash)
+            if len(decoded_file_hash) != 32 or all(
+                byte == 0 for byte in decoded_file_hash
+            ):
+                raise ValueError
+        except ValueError as error:
+            raise TraceNormalizationError(
+                "candidate image file hash is invalid"
+            ) from error
     if int(session.get("event_count", -1)) != len(raw) // EVENT_SIZE:
         raise TraceNormalizationError("session event count does not match raw evidence")
     if int(session.get("received_raw_bytes", -1)) != len(raw):

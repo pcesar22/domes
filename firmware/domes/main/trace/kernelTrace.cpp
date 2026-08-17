@@ -38,7 +38,6 @@ DRAM_ATTR const void* gRunningTaskHandles[kCoreCount] = {};
 DRAM_ATTR std::atomic<uint32_t> gIsrDepth[kCoreCount];
 DRAM_ATTR uint32_t gInterruptStack[kCoreCount][kMaxIsrNesting];
 DRAM_ATTR std::array<domes::trace::ObjectNameEntry, domes::trace::kMaxTraceObjects> gObjects{};
-DRAM_ATTR std::array<domes::trace::TraceEvent, kCoreCount * kEventsPerCore> gMergeBuffer{};
 
 uint32_t boundedCount(const CoreBuffer& buffer) {
     return std::min<uint32_t>(buffer.reserved.load(std::memory_order_acquire), kEventsPerCore);
@@ -108,6 +107,25 @@ uint32_t sanitizeSchedulerSessionBoundary(CoreBuffer& buffer, uint32_t count) {
         --output;  // Task was still running when capture stopped.
     }
     return output;
+}
+
+bool timestampBefore(const domes::trace::TraceEvent& left, const domes::trace::TraceEvent& right) {
+    return static_cast<int32_t>(left.timestamp - right.timestamp) < 0;
+}
+
+void stableSortByTimestamp(CoreBuffer& buffer, uint32_t count) {
+    // Timestamps can be captured before a nested ISR claims the same core's
+    // next slot. Sort in place after capture so the hook path stays bounded
+    // and allocation-free without retaining a second full-session buffer.
+    for (uint32_t index = 1; index < count; ++index) {
+        const domes::trace::TraceEvent event = buffer.events[index];
+        uint32_t position = index;
+        while (position > 0 && timestampBefore(event, buffer.events[position - 1])) {
+            buffer.events[position] = buffer.events[position - 1];
+            --position;
+        }
+        buffer.events[position] = event;
+    }
 }
 
 uint32_t IRAM_ATTR currentCore() {
@@ -209,28 +227,22 @@ void KernelTrace::stopAndFlush(TraceBuffer& destination) {
         sanitizeSchedulerSessionBoundary(
             gCoreBuffers[1],
             sanitizeIsrSessionBoundary(gCoreBuffers[1], boundedCount(gCoreBuffers[1])))};
-    size_t mergedCount = 0;
     for (size_t core = 0; core < kCoreCount; ++core) {
-        for (uint32_t index = 0; index < count[core]; ++index) {
-            gMergeBuffer[mergedCount++] = gCoreBuffers[core].events[index];
-        }
+        stableSortByTimestamp(gCoreBuffers[core], count[core]);
     }
-    // Bounded stable insertion sort: timestamps may be reserved out of order
-    // when an ISR preempts a task between timestamp capture and buffer claim.
-    // Equal timestamps retain per-core reservation order; semantic fields must
-    // never be used to reorder lifecycle or causal events.
-    for (size_t index = 1; index < mergedCount; ++index) {
-        const TraceEvent event = gMergeBuffer[index];
-        size_t position = index;
-        while (position > 0 &&
-               static_cast<int32_t>(event.timestamp - gMergeBuffer[position - 1].timestamp) < 0) {
-            gMergeBuffer[position] = gMergeBuffer[position - 1];
-            --position;
+
+    // Stable two-way merge. Core 0 wins equal timestamps, matching the old
+    // stable sort's core-0-then-core-1 input order without a 16 KiB scratch
+    // array.
+    std::array<uint32_t, kCoreCount> position{};
+    while (position[0] < count[0] || position[1] < count[1]) {
+        size_t selectedCore = 0;
+        if (position[0] >= count[0] ||
+            (position[1] < count[1] && timestampBefore(gCoreBuffers[1].events[position[1]],
+                                                       gCoreBuffers[0].events[position[0]]))) {
+            selectedCore = 1;
         }
-        gMergeBuffer[position] = event;
-    }
-    for (size_t index = 0; index < mergedCount; ++index) {
-        if (!destination.record(gMergeBuffer[index])) {
+        if (!destination.record(gCoreBuffers[selectedCore].events[position[selectedCore]++])) {
             gDiscontinuities.fetch_add(1, std::memory_order_relaxed);
         }
     }

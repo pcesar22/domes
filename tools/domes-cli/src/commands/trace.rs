@@ -31,6 +31,135 @@ struct TraceEvent {
 const TRACE_EVENT_SIZE: usize = 16;
 const MAX_TRACE_DUMP_BYTES: usize = 32 * 1024;
 const TRACE_EVENT_FORMAT_VERSION: u32 = 1;
+const ESP_IMAGE_HEADER_SIZE: usize = 24;
+const ESP_SEGMENT_HEADER_SIZE: usize = 8;
+const ESP_APP_DESC_SIZE: usize = 256;
+const ESP_APP_DESC_MAGIC: u32 = 0xABCD_5432;
+
+pub struct TraceEvidenceContext<'a> {
+    pub device_name: &'a str,
+    pub transport_type: &'a str,
+    pub address: &'a str,
+}
+
+#[derive(Debug)]
+struct CandidateImage {
+    path: std::path::PathBuf,
+    file_sha256: [u8; 32],
+    app_image_sha256: [u8; 32],
+    app_elf_sha256: [u8; 32],
+    firmware_version: String,
+}
+
+fn fixed_c_string(bytes: &[u8], field: &str) -> Result<String> {
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .context(format!("Candidate app image {field} is not NUL terminated"))?;
+    let value = std::str::from_utf8(&bytes[..end])
+        .with_context(|| format!("Candidate app image {field} is not UTF-8"))?;
+    if value.is_empty() {
+        anyhow::bail!("Candidate app image {field} is empty");
+    }
+    Ok(value.to_string())
+}
+
+fn inspect_candidate_image(path: &Path) -> Result<CandidateImage> {
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("Failed to read candidate app image {}", path.display()))?;
+    let minimum_size = ESP_IMAGE_HEADER_SIZE + ESP_SEGMENT_HEADER_SIZE + ESP_APP_DESC_SIZE + 32;
+    if bytes.len() < minimum_size || bytes[0] != 0xE9 || bytes[1] == 0 || bytes[1] > 16 {
+        anyhow::bail!("Candidate file is not a bounded ESP application image");
+    }
+    if bytes[23] != 1 {
+        anyhow::bail!("Candidate ESP application image has no appended SHA-256");
+    }
+
+    let segment_data = ESP_IMAGE_HEADER_SIZE + ESP_SEGMENT_HEADER_SIZE;
+    let first_segment_size = u32::from_le_bytes(
+        bytes[ESP_IMAGE_HEADER_SIZE + 4..segment_data]
+            .try_into()
+            .expect("fixed ESP segment size"),
+    ) as usize;
+    let first_segment_end = segment_data
+        .checked_add(first_segment_size)
+        .context("Candidate ESP application image first segment overflows")?;
+    if first_segment_size < ESP_APP_DESC_SIZE || first_segment_end > bytes.len() {
+        anyhow::bail!("Candidate ESP application image has an invalid first segment");
+    }
+    if u32::from_le_bytes(
+        bytes[segment_data..segment_data + 4]
+            .try_into()
+            .expect("fixed app descriptor magic"),
+    ) != ESP_APP_DESC_MAGIC
+    {
+        anyhow::bail!("Candidate ESP application image has no valid app descriptor");
+    }
+
+    let firmware_version = fixed_c_string(
+        &bytes[segment_data + 16..segment_data + 48],
+        "firmware version",
+    )?;
+    let mut app_elf_sha256 = [0u8; 32];
+    app_elf_sha256.copy_from_slice(&bytes[segment_data + 144..segment_data + 176]);
+
+    let appended_hash_offset = bytes.len() - 32;
+    let calculated_image_hash = Sha256::digest(&bytes[..appended_hash_offset]);
+    if calculated_image_hash.as_slice() != &bytes[appended_hash_offset..] {
+        anyhow::bail!("Candidate ESP application image has an invalid appended SHA-256");
+    }
+    let mut app_image_sha256 = [0u8; 32];
+    app_image_sha256.copy_from_slice(&bytes[appended_hash_offset..]);
+    let mut file_sha256 = [0u8; 32];
+    file_sha256.copy_from_slice(&Sha256::digest(&bytes));
+
+    Ok(CandidateImage {
+        path: path.to_path_buf(),
+        file_sha256,
+        app_image_sha256,
+        app_elf_sha256,
+        firmware_version,
+    })
+}
+
+fn validate_evidence_identity(session: &TraceSessionInfo) -> Result<()> {
+    if session.firmware_version.is_empty() || session.firmware_version.len() >= 32 {
+        anyhow::bail!("Trace session has an invalid firmware version");
+    }
+    for (name, digest) in [
+        ("ELF", session.app_elf_sha256.as_slice()),
+        ("app image", session.app_image_sha256.as_slice()),
+    ] {
+        if digest.len() != 32 || digest.iter().all(|byte| *byte == 0) {
+            anyhow::bail!("Trace session has an invalid {name} SHA-256");
+        }
+    }
+    if session.device_uid.len() != 6
+        || session.device_uid.iter().all(|byte| *byte == 0)
+        || session.device_uid.iter().all(|byte| *byte == 0xFF)
+        || session.device_uid[0] & 0x01 != 0
+    {
+        anyhow::bail!("Trace session has an invalid factory base MAC");
+    }
+    Ok(())
+}
+
+fn validate_candidate_binding(session: &TraceSessionInfo, image: &CandidateImage) -> Result<()> {
+    if image.firmware_version != session.firmware_version {
+        anyhow::bail!(
+            "Candidate firmware version '{}' does not match running version '{}'",
+            image.firmware_version,
+            session.firmware_version
+        );
+    }
+    if image.app_elf_sha256.as_slice() != session.app_elf_sha256.as_slice() {
+        anyhow::bail!("Candidate ELF SHA-256 does not match the running firmware");
+    }
+    if image.app_image_sha256.as_slice() != session.app_image_sha256.as_slice() {
+        anyhow::bail!("Candidate app image SHA-256 does not match the running firmware");
+    }
+    Ok(())
+}
 
 fn trace_dump_byte_count(event_count: u32, buffer_size_bytes: u32) -> Result<usize> {
     let buffer_size =
@@ -102,6 +231,7 @@ fn validate_timestamp_order(events: &[TraceEvent]) -> Result<()> {
 }
 
 fn validate_session_binding(session: &TraceSessionInfo, events: &[TraceEvent]) -> Result<()> {
+    validate_evidence_identity(session)?;
     let first = events.first().context("Trace session contains no events")?;
     let last = events.last().context("Trace session contains no events")?;
     if first.timestamp != session.start_timestamp_us || last.timestamp != session.end_timestamp_us {
@@ -504,6 +634,10 @@ pub struct DumpResult {
     pub raw_path: std::path::PathBuf,
     pub session_path: std::path::PathBuf,
     pub raw_sha256: String,
+    pub firmware_version: String,
+    pub device_uid: String,
+    pub app_image_sha256: String,
+    pub candidate_file_sha256: Option<String>,
 }
 
 struct RawEvidence {
@@ -539,6 +673,10 @@ fn write_raw_trace_evidence(
         "start_timestamp_us": session_info.start_timestamp_us,
         "end_timestamp_us": session_info.end_timestamp_us,
         "buffer_size_bytes": session_info.buffer_size_bytes,
+        "firmware_version": session_info.firmware_version,
+        "app_elf_sha256": hex::encode(&session_info.app_elf_sha256),
+        "app_image_sha256": hex::encode(&session_info.app_image_sha256),
+        "device_uid": hex::encode(&session_info.device_uid),
         "received_raw_bytes": raw_events.len(),
         "raw_sha256": raw_sha256,
         "integrity_error": integrity_error,
@@ -564,6 +702,46 @@ fn write_raw_trace_evidence(
         session_path,
         raw_sha256,
     })
+}
+
+fn augment_successful_evidence(
+    session_path: &Path,
+    context: Option<&TraceEvidenceContext<'_>>,
+    candidate: Option<&CandidateImage>,
+) -> Result<()> {
+    let mut evidence: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(session_path).context("Failed to reread raw trace session file")?,
+    )?;
+    let object = evidence
+        .as_object_mut()
+        .context("Raw trace session evidence must be a JSON object")?;
+    object.insert(
+        "transport".into(),
+        context.map_or(serde_json::Value::Null, |value| {
+            serde_json::json!({
+                "device_name": value.device_name,
+                "type": value.transport_type,
+                "address": value.address,
+            })
+        }),
+    );
+    object.insert(
+        "candidate_image".into(),
+        candidate.map_or(serde_json::Value::Null, |value| {
+            serde_json::json!({
+                "path": value.path.display().to_string(),
+                "file_sha256": hex::encode(value.file_sha256),
+                "app_image_sha256": hex::encode(value.app_image_sha256),
+                "app_elf_sha256": hex::encode(value.app_elf_sha256),
+                "firmware_version": value.firmware_version,
+                "binding_verified": true,
+            })
+        }),
+    );
+    File::create(session_path)
+        .context("Failed to update raw trace session file")?
+        .write_all(serde_json::to_string_pretty(&evidence)?.as_bytes())
+        .context("Failed to write bound raw trace session file")
 }
 
 fn fail_with_raw_evidence<T>(
@@ -593,8 +771,11 @@ pub fn trace_dump(
     transport: &mut dyn Transport,
     output_path: &Path,
     names_path: Option<&Path>,
+    evidence_context: Option<&TraceEvidenceContext<'_>>,
+    firmware_bin: Option<&Path>,
 ) -> Result<DumpResult> {
     let span_names = load_span_names(names_path)?;
+    let candidate_image = firmware_bin.map(inspect_candidate_image).transpose()?;
 
     let frame = transport
         .send_command(TraceMsgType::Dump.as_u8(), &[])
@@ -762,6 +943,18 @@ pub fn trace_dump(
     {
         return fail_with_raw_evidence(output_path, &raw_events, &session_info, error);
     }
+    if let Some(candidate) = &candidate_image {
+        if let Err(error) = validate_candidate_binding(&session_info, candidate)
+            .context("Candidate image is not bound to the trace-producing firmware")
+        {
+            return fail_with_raw_evidence(output_path, &raw_events, &session_info, error);
+        }
+    }
+    augment_successful_evidence(
+        &evidence.session_path,
+        evidence_context,
+        candidate_image.as_ref(),
+    )?;
     let json = convert_to_perfetto_json(&events, &task_names, &span_names, session_info.pod_id)?;
 
     let mut file = File::create(output_path).context("Failed to create output file")?;
@@ -780,6 +973,12 @@ pub fn trace_dump(
         raw_path: evidence.raw_path,
         session_path: evidence.session_path,
         raw_sha256: evidence.raw_sha256,
+        firmware_version: session_info.firmware_version.clone(),
+        device_uid: hex::encode(&session_info.device_uid),
+        app_image_sha256: hex::encode(&session_info.app_image_sha256),
+        candidate_file_sha256: candidate_image
+            .as_ref()
+            .map(|image| hex::encode(image.file_sha256)),
     })
 }
 
@@ -1129,6 +1328,10 @@ mod tests {
                 kind: 1,
                 name: "queue".into(),
             }],
+            firmware_version: "host-test".into(),
+            app_elf_sha256: vec![0xA5; 32],
+            app_image_sha256: vec![0x5A; 32],
+            device_uid: vec![0x02, 0, 0, 0, 0, 1],
             ..Default::default()
         }
     }
@@ -1152,6 +1355,54 @@ mod tests {
                 arg2: 0,
             },
         ]
+    }
+
+    fn candidate_image_bytes(version: &str, elf_sha256: &[u8; 32]) -> Vec<u8> {
+        let mut image =
+            vec![0u8; ESP_IMAGE_HEADER_SIZE + ESP_SEGMENT_HEADER_SIZE + ESP_APP_DESC_SIZE];
+        image[0] = 0xE9;
+        image[1] = 1;
+        image[23] = 1;
+        image[ESP_IMAGE_HEADER_SIZE + 4..ESP_IMAGE_HEADER_SIZE + 8]
+            .copy_from_slice(&(ESP_APP_DESC_SIZE as u32).to_le_bytes());
+        let descriptor = ESP_IMAGE_HEADER_SIZE + ESP_SEGMENT_HEADER_SIZE;
+        image[descriptor..descriptor + 4].copy_from_slice(&ESP_APP_DESC_MAGIC.to_le_bytes());
+        image[descriptor + 16..descriptor + 16 + version.len()].copy_from_slice(version.as_bytes());
+        image[descriptor + 144..descriptor + 176].copy_from_slice(elf_sha256);
+        let appended = Sha256::digest(&image);
+        image.extend_from_slice(&appended);
+        image
+    }
+
+    #[test]
+    fn candidate_image_binds_version_elf_and_running_image_hash() {
+        let directory =
+            std::env::temp_dir().join(format!("domes-image-bind-test-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("domes.bin");
+        let elf_sha256 = [0xA5; 32];
+        std::fs::write(&path, candidate_image_bytes("host-test", &elf_sha256)).unwrap();
+
+        let candidate = inspect_candidate_image(&path).unwrap();
+        let mut session = bound_session(1, 2);
+        session.app_image_sha256 = candidate.app_image_sha256.to_vec();
+        validate_candidate_binding(&session, &candidate).unwrap();
+
+        session.app_image_sha256[0] ^= 0xFF;
+        assert!(validate_candidate_binding(&session, &candidate).is_err());
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn evidence_identity_rejects_missing_or_multicast_device_identity() {
+        let mut session = bound_session(1, 2);
+        session.app_elf_sha256.clear();
+        assert!(validate_evidence_identity(&session).is_err());
+
+        session.app_elf_sha256 = vec![0xA5; 32];
+        session.device_uid = vec![0x03, 0, 0, 0, 0, 1];
+        assert!(validate_evidence_identity(&session).is_err());
     }
 
     #[test]
@@ -1192,7 +1443,7 @@ mod tests {
             }]),
         };
 
-        assert!(trace_dump(&mut transport, &output_path, None).is_err());
+        assert!(trace_dump(&mut transport, &output_path, None, None, None).is_err());
         let raw_path = std::path::PathBuf::from(format!("{}.raw", output_path.display()));
         assert_eq!(std::fs::read(&raw_path).unwrap(), offending_bytes);
         let session_path = std::path::PathBuf::from(format!("{}.session.json", raw_path.display()));

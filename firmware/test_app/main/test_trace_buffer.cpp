@@ -192,5 +192,39 @@ TEST(KernelTraceTest, ObjectIdentityCannotChangeWhenReboundOrWhileEnabled) {
     KernelTrace::clearObjects();
 }
 
+TEST(KernelTraceTest, FlushStablyOrdersBothCoresWithoutMergeStorage) {
+    KernelTrace::start();
+    KernelTrace::enable();
+
+    sim_trace::currentCoreId = 0;
+    ASSERT_TRUE(KernelTrace::record(eventAt(30)));
+    TraceEvent coreZeroEqual = eventAt(10);
+    coreZeroEqual.arg1 = 100;
+    ASSERT_TRUE(KernelTrace::record(coreZeroEqual));
+    sim_trace::currentCoreId = 1;
+    TraceEvent coreOneEqual = eventAt(10);
+    coreOneEqual.arg1 = 200;
+    ASSERT_TRUE(KernelTrace::record(coreOneEqual));
+    ASSERT_TRUE(KernelTrace::record(eventAt(20)));
+
+    TraceBuffer destination(1024);
+    ASSERT_EQ(destination.init(), ESP_OK);
+    KernelTrace::stopAndFlush(destination);
+
+    std::array<uint32_t, 4> timestamps{};
+    std::array<uint32_t, 4> arguments{};
+    size_t index = 0;
+    for (auto& timestamp : timestamps) {
+        TraceEvent event{};
+        ASSERT_TRUE(destination.read(&event));
+        timestamp = event.timestamp;
+        arguments[index++] = event.arg1;
+    }
+    EXPECT_EQ((std::array<uint32_t, 4>{10, 10, 20, 30}), timestamps);
+    EXPECT_EQ(100U, arguments[0]);
+    EXPECT_EQ(200U, arguments[1]);
+    EXPECT_EQ(destination.count(), 0U);
+}
+
 }  // namespace
 }  // namespace domes::trace

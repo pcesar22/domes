@@ -117,5 +117,37 @@ TEST(TraceCommandHandler, StatusReportsActualKernelCaptureCapacity) {
     Recorder::shutdown();
 }
 
+TEST(TraceCommandHandler, DumpCarriesFirmwareImageAndDeviceIdentity) {
+    Recorder::shutdown();
+    ASSERT_EQ(Recorder::init(1024), ESP_OK);
+    Recorder::finalizeTaskCatalog();
+    ASSERT_TRUE(Recorder::setEnabled(true));
+    TraceEvent event{};
+    event.timestamp = 42;
+    Recorder::record(event);
+
+    CapturingTransport transport;
+    CommandHandler handler(transport, 2);
+    ASSERT_TRUE(handler.handleCommand(static_cast<uint8_t>(MsgType::kDump), nullptr, 0));
+    ASSERT_GE(transport.sentFrames.size(), 3u);
+
+    FrameDecoder decoder;
+    for (uint8_t byte : transport.sentFrames.front()) {
+        decoder.feedByte(byte);
+    }
+    ASSERT_TRUE(decoder.isComplete());
+    ASSERT_EQ(static_cast<uint8_t>(MsgType::kSessionInfo), decoder.getType());
+    domes_trace_TraceSessionInfo response = domes_trace_TraceSessionInfo_init_zero;
+    pb_istream_t stream = pb_istream_from_buffer(decoder.getPayload(), decoder.getPayloadLen());
+    ASSERT_TRUE(pb_decode(&stream, domes_trace_TraceSessionInfo_fields, &response));
+    EXPECT_EQ(2u, response.pod_id);
+    EXPECT_STREQ("host-test", response.firmware_version);
+    EXPECT_EQ(32u, response.app_elf_sha256.size);
+    EXPECT_EQ(32u, response.app_image_sha256.size);
+    EXPECT_EQ(6u, response.device_uid.size);
+
+    Recorder::shutdown();
+}
+
 }  // namespace
 }  // namespace domes::trace

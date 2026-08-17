@@ -15,6 +15,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 /// A named device connection
 pub struct DeviceConnection {
     pub name: String,
+    pub transport_type: String,
+    pub address: String,
     pub transport: Box<dyn Transport>,
 }
 
@@ -202,6 +204,8 @@ pub fn resolve_devices(
             record_connection(
                 &mut resolution,
                 name.clone(),
+                entry.transport_type.clone(),
+                entry.address.clone(),
                 connect_device(entry).with_context(|| format!("Failed to connect to {}", name)),
             );
         }
@@ -234,6 +238,8 @@ pub fn resolve_devices(
             record_connection(
                 &mut resolution,
                 target_name.clone(),
+                entry.transport_type.clone(),
+                entry.address.clone(),
                 connect_device(entry)
                     .with_context(|| format!("Failed to connect to {}", target_name)),
             );
@@ -249,7 +255,13 @@ pub fn resolve_devices(
         let connection = SerialTransport::open(port)
             .map(|transport| Box::new(transport) as Box<dyn Transport>)
             .with_context(|| format!("Failed to connect to serial port {}", port));
-        record_connection(&mut resolution, name, connection);
+        record_connection(
+            &mut resolution,
+            name,
+            "serial".into(),
+            port.clone(),
+            connection,
+        );
     }
 
     // Direct connections via --wifi
@@ -262,7 +274,13 @@ pub fn resolve_devices(
         let connection = TcpTransport::connect(addr)
             .map(|transport| Box::new(transport) as Box<dyn Transport>)
             .with_context(|| format!("Failed to connect to WiFi device {}", addr));
-        record_connection(&mut resolution, name, connection);
+        record_connection(
+            &mut resolution,
+            name,
+            "wifi".into(),
+            addr.clone(),
+            connection,
+        );
     }
 
     // Direct connections via --ble
@@ -276,7 +294,13 @@ pub fn resolve_devices(
         let connection = BleTransport::connect(target, Duration::from_secs(10), true)
             .map(|transport| Box::new(transport) as Box<dyn Transport>)
             .with_context(|| format!("Failed to connect to BLE device {}", ble_target));
-        record_connection(&mut resolution, name, connection);
+        record_connection(
+            &mut resolution,
+            name,
+            "ble".into(),
+            ble_target.clone(),
+            connection,
+        );
     }
 
     Ok(resolution)
@@ -285,12 +309,17 @@ pub fn resolve_devices(
 fn record_connection(
     resolution: &mut DeviceResolution,
     name: String,
+    transport_type: String,
+    address: String,
     connection: Result<Box<dyn Transport>>,
 ) {
     match connection {
-        Ok(transport) => resolution
-            .connections
-            .push(DeviceConnection { name, transport }),
+        Ok(transport) => resolution.connections.push(DeviceConnection {
+            name,
+            transport_type,
+            address,
+            transport,
+        }),
         Err(error) => resolution.failures.push(DeviceConnectionFailure {
             name,
             error: format!("{error:#}"),
@@ -618,17 +647,23 @@ mod tests {
         record_connection(
             &mut resolution,
             "offline".to_string(),
+            "serial".to_string(),
+            "/dev/ttyUSB0".to_string(),
             Err(anyhow::anyhow!("connection refused")),
         );
         record_connection(
             &mut resolution,
             "healthy".to_string(),
+            "serial".to_string(),
+            "/dev/ttyUSB1".to_string(),
             Ok(Box::new(TestTransport)),
         );
 
         assert!(resolution.is_multi());
         assert_eq!(resolution.connections.len(), 1);
         assert_eq!(resolution.connections[0].name, "healthy");
+        assert_eq!(resolution.connections[0].transport_type, "serial");
+        assert_eq!(resolution.connections[0].address, "/dev/ttyUSB1");
         assert_eq!(resolution.failures.len(), 1);
         assert_eq!(resolution.failures[0].name, "offline");
         assert!(resolution.failures[0].error.contains("connection refused"));

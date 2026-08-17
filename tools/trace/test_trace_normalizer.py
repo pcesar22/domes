@@ -71,6 +71,16 @@ class TraceNormalizerTests(unittest.TestCase):
             "start_timestamp_us": struct.unpack_from("<I", raw, 0)[0],
             "end_timestamp_us": struct.unpack_from("<I", raw, len(raw) - 16)[0],
             "buffer_size_bytes": 16 * 1024,
+            "firmware_version": "host-test",
+            "app_elf_sha256": "a5" * 32,
+            "app_image_sha256": "5a" * 32,
+            "device_uid": "020000000001",
+            "transport": {
+                "device_name": "test-pod",
+                "type": "serial",
+                "address": "/dev/serial/by-id/test-pod",
+            },
+            "candidate_image": None,
             "received_raw_bytes": len(raw),
             "raw_sha256": hashlib.sha256(raw).hexdigest(),
             "integrity_error": None,
@@ -256,6 +266,16 @@ class TraceNormalizerTests(unittest.TestCase):
     def test_validates_session_binding_and_full_object_catalog(self):
         session = self.session()
         self.assertEqual(validate_session(self.raw, session), PROBE_OBJECTS)
+        bound_candidate = self.session()
+        bound_candidate["candidate_image"] = {
+            "path": "/tmp/domes.bin",
+            "file_sha256": "12" * 32,
+            "app_image_sha256": bound_candidate["app_image_sha256"],
+            "app_elf_sha256": bound_candidate["app_elf_sha256"],
+            "firmware_version": bound_candidate["firmware_version"],
+            "binding_verified": True,
+        }
+        self.assertEqual(validate_session(self.raw, bound_candidate), PROBE_OBJECTS)
         mutations = []
         for key, value in (
             ("format_version", 2),
@@ -263,6 +283,8 @@ class TraceNormalizerTests(unittest.TestCase):
             ("start_timestamp_us", 0),
             ("end_timestamp_us", 0),
             ("raw_sha256", "0" * 64),
+            ("app_elf_sha256", "0" * 64),
+            ("device_uid", "03" + "00" * 5),
         ):
             mutated = self.session()
             mutated[key] = value
@@ -282,6 +304,9 @@ class TraceNormalizerTests(unittest.TestCase):
         integrity_error = self.session()
         integrity_error["integrity_error"] = "offset mismatch"
         mutations.append(integrity_error)
+        invalid_candidate = bound_candidate
+        invalid_candidate["candidate_image"]["binding_verified"] = False
+        mutations.append(invalid_candidate)
         oversized_buffer = self.session()
         oversized_buffer["buffer_size_bytes"] = 32 * 1024 + 1
         mutations.append(oversized_buffer)
