@@ -25,6 +25,8 @@ enum class OtaSelfTestStage : uint8_t {
     kHardware,
     kLedOutput,
     kRuntimeServices,
+    kDispatchUnavailable,
+    kConfirmation,
 };
 
 /**
@@ -101,6 +103,10 @@ inline const char* otaSelfTestStageName(OtaSelfTestStage stage) {
             return "led-output";
         case OtaSelfTestStage::kRuntimeServices:
             return "runtime-services";
+        case OtaSelfTestStage::kDispatchUnavailable:
+            return "dispatch-unavailable";
+        case OtaSelfTestStage::kConfirmation:
+            return "confirmation";
     }
     return "unknown";
 }

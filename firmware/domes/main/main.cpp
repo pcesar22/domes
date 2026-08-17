@@ -68,6 +68,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 static constexpr const char* kTag = domes::infra::tag::kMain;
@@ -266,6 +267,32 @@ static domes::OtaSelfTestResult performSelfTest() {
  * If running from a new OTA partition, performs self-test
  * and either confirms the firmware or rolls back.
  */
+[[noreturn]] static void rollbackAfterOtaVerificationFailure(
+    const domes::OtaSelfTestResult& failure, bool indicateOnLed) {
+    ESP_LOGE(kTag, "OTA verification FAILED at %s - rolling back to previous firmware",
+             domes::otaSelfTestStageName(failure.stage));
+
+    char restartReason[domes::infra::kRestartReasonCapacity] = {};
+    if (domes::formatOtaSelfTestRestartReason(failure, restartReason, sizeof(restartReason))) {
+        const esp_err_t reasonErr =
+            domes::infra::ShutdownDumpHandler::setRestartReason(restartReason);
+        if (reasonErr != ESP_OK) {
+            ESP_LOGW(kTag, "Failed to retain OTA verification reason: %s",
+                     esp_err_to_name(reasonErr));
+        }
+    }
+
+    // Only the LED-owner task may touch the output channel during verification.
+    if (indicateOnLed && ledDriver) {
+        ledDriver->setPixel(0, domes::Color::red());
+        ledDriver->refresh();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+
+    otaManager->rollback();
+    std::abort();
+}
+
 static void handleOtaVerification() {
     if (!otaManager) {
         return;
@@ -310,31 +337,12 @@ static void handleOtaVerification() {
             }
         } else {
             ESP_LOGE(kTag, "Failed to confirm firmware: %s", esp_err_to_name(err));
+            rollbackAfterOtaVerificationFailure(
+                domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kConfirmation, err),
+                true);
         }
     } else {
-        // Self-test failed - rollback
-        ESP_LOGE(kTag, "Self-test FAILED at %s - rolling back to previous firmware",
-                 domes::otaSelfTestStageName(selfTestResult.stage));
-
-        char restartReason[domes::infra::kRestartReasonCapacity] = {};
-        if (domes::formatOtaSelfTestRestartReason(selfTestResult, restartReason,
-                                                  sizeof(restartReason))) {
-            const esp_err_t reasonErr =
-                domes::infra::ShutdownDumpHandler::setRestartReason(restartReason);
-            if (reasonErr != ESP_OK) {
-                ESP_LOGW(kTag, "Failed to retain OTA verification reason: %s",
-                         esp_err_to_name(reasonErr));
-            }
-        }
-
-        // Visual indication - red LED
-        if (ledDriver) {
-            ledDriver->setPixel(0, domes::Color::red());
-            ledDriver->refresh();
-            vTaskDelay(pdMS_TO_TICKS(2000));
-        }
-
-        otaManager->rollback();  // Never returns
+        rollbackAfterOtaVerificationFailure(selfTestResult, true);
     }
 }
 
@@ -1640,8 +1648,13 @@ extern "C" void app_main() {
         ESP_LOGE(kTag, "Init-order incomplete: expected=%s", initOrder.expected());
     }
 
-    if (!ledService || ledService->runAfterStartup(finishBootVerification) != ESP_OK) {
-        ESP_LOGE(kTag, "Post-startup verification dispatch unavailable; verifying before return");
+    if (!otaPendingVerification) {
         finishBootVerification(nullptr);
+    } else if (!ledService || ledService->runAfterStartup(finishBootVerification) != ESP_OK) {
+        // Never confirm a pending image on app_main's temporary stack or outside
+        // the LED-owner task. Fail closed and retain why verification could not run.
+        rollbackAfterOtaVerificationFailure(
+            domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kDispatchUnavailable),
+            false);
     }
 }

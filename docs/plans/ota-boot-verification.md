@@ -1,11 +1,12 @@
 # Make Guarded Firmware Updates Reliably Reach A Healthy Runtime
 
 Status: active
-Current phase: publish the guarded-update repair from the controller-required PR 105 base
-Repository state: issue [106](https://github.com/pcesar22/domes/issues/106) is implemented from
-required base `d58c1a2df84d8d0a3257ff65057e1a3f32033e2f`; exact-head software checks, independent review,
-and separately brokered registered-pod verification gate completion
-Last updated: 2026-08-16; earlier candidate hardware evidence is historical and must not be treated
+Current phase: reconcile the guarded-update repair on the controller-required `main` base
+Repository state: issue [121](https://github.com/pcesar22/domes/issues/121) inherits the completed
+implementation from required base `8ed71e4a9adadbfddbde1548ef7060bcf79a76e9`; exact-head
+software checks, independent review, and separately brokered registered-pod verification gate
+completion
+Last updated: 2026-08-17; earlier candidate hardware evidence is historical and must not be treated
 as exact-head evidence for this review artifact
 
 ## Objective and observable outcome
@@ -56,9 +57,10 @@ second reset.
   and repeat the checks without claiming the separately forced failure path.
 - [x] Reapply the focused change to controller base
   `d58c1a2df84d8d0a3257ff65057e1a3f32033e2f` without prerequisite history.
-- [ ] **Current:** Pass exact-head software checks and CI, publish one PR against
-  `codex/fix/trace-evidence-closure`, then stop for independent review and registered-pod
-  verification.
+- [x] Reconcile the implementation onto controller base `8ed71e4`, which already contains the
+  merged guarded-update repair from commit `2be8679` without weakening its safety contracts.
+- [ ] **Current:** Pass exact-head software checks and CI, publish one PR against `main`, then stop
+  for independent review and registered-pod verification.
 
 ## Verification
 
@@ -98,12 +100,14 @@ second reset.
   transfer completed, boot 36 remained on `ota_1`, and a separate CP2102N reset reached boot 37 on
   the same version and slot. This proves image confirmation and second-boot survival; the command
   suite establishes driver readiness, not observed light, touch, motion, vibration, or sound.
-- The deterministic controller supplied reconciled base `d58c1a2`; this issue branch must descend
-  from that exact commit and target `codex/fix/trace-evidence-closure`.
+- The deterministic controller supplied reconciled base `8ed71e4`; this issue branch must descend
+  from that exact commit and target `main`. The inherited implementation is unchanged, so this
+  package records reconciliation and obtains fresh exact-head evidence rather than duplicating the
+  repair.
 
 ## Resume checkpoint
 
 Run focused host tests, a fresh isolated ESP-IDF v5.4.4 build, and repository verification. Publish
-one PR for issue 106 against `codex/fix/trace-evidence-closure`, monitor required software CI, and
-stop at independent review. Registered-pod update and second-reset evidence belongs to the separate
-verification worker exercising the immutable reviewed commit.
+one PR for issue 121 against `main`, monitor required software CI, and stop at independent review.
+Registered-pod update and second-reset evidence belongs to the separate verification worker
+exercising the immutable reviewed commit.

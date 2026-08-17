@@ -38,6 +38,10 @@ TEST(OtaBootVerification, FormatsStableStageNames) {
     EXPECT_STREQ(domes::otaSelfTestStageName(domes::OtaSelfTestStage::kLedOutput), "led-output");
     EXPECT_STREQ(domes::otaSelfTestStageName(domes::OtaSelfTestStage::kRuntimeServices),
                  "runtime-services");
+    EXPECT_STREQ(domes::otaSelfTestStageName(domes::OtaSelfTestStage::kDispatchUnavailable),
+                 "dispatch-unavailable");
+    EXPECT_STREQ(domes::otaSelfTestStageName(domes::OtaSelfTestStage::kConfirmation),
+                 "confirmation");
 }
 
 TEST(OtaBootVerification, FormatsHeapAndHardwareDetails) {
@@ -81,6 +85,15 @@ TEST(OtaBootVerification, DoesNotRetryNonHeapFailures) {
     EXPECT_EQ(result.stage, domes::OtaSelfTestStage::kHardware);
     EXPECT_EQ(selfTestCalls, 1u);
     EXPECT_EQ(retryCalls, 0u);
+}
+
+TEST(OtaBootVerification, FormatsDispatchFailureForRetention) {
+    std::array<char, 64> reason = {};
+    const auto result =
+        domes::OtaSelfTestResult::failure(domes::OtaSelfTestStage::kDispatchUnavailable);
+
+    EXPECT_TRUE(domes::formatOtaSelfTestRestartReason(result, reason.data(), reason.size()));
+    EXPECT_STREQ(reason.data(), "ota verify failed: dispatch-unavailable");
 }
 
 TEST(OtaBootVerification, RecoversAfterBoundedHeapRetry) {
