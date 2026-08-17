@@ -139,23 +139,28 @@ class DrillNotifier extends StateNotifier<DrillState> {
     await _cleanupTail;
     if (!_isCurrent(generation, DrillPhase.preparing)) return;
 
-    try {
-      // Set all physical pods to GAME mode and start from a dark LED state.
-      for (final addr in config.podAddresses) {
-        if (!_isSimulatedAddress(addr)) {
+    // Set all physical pods to GAME mode and start from a dark LED state.
+    for (final addr in config.podAddresses) {
+      if (!_isSimulatedAddress(addr)) {
+        try {
           await _multiPod.setMode(addr, SystemMode.SYSTEM_MODE_GAME);
           if (!_isCurrent(generation, DrillPhase.preparing)) return;
+        } catch (e) {
+          _failSession(generation, 'Failed to prepare pod $addr: $e');
+          return;
         }
       }
-      for (final addr in config.podAddresses) {
-        if (!_isSimulatedAddress(addr)) {
+    }
+    for (final addr in config.podAddresses) {
+      if (!_isSimulatedAddress(addr)) {
+        try {
           await _multiPod.setLedPattern(addr, AppLedPattern.off());
           if (!_isCurrent(generation, DrillPhase.preparing)) return;
+        } catch (e) {
+          _failSession(generation, 'Failed to prepare pod $addr: $e');
+          return;
         }
       }
-    } catch (e) {
-      _failSession(generation, 'Failed to prepare pods: $e');
-      return;
     }
 
     if (_isCurrent(generation, DrillPhase.preparing)) {

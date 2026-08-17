@@ -360,6 +360,43 @@ void main() {
       expect(idleParticipants, containsAll(['pod-1', 'pod-2']));
     });
 
+    test(
+      'preparation command failure identifies pod before stream failure',
+      () async {
+        const config = DrillConfig(
+          minDelay: Duration(seconds: 1),
+          maxDelay: Duration(seconds: 1),
+          podAddresses: ['pod-1'],
+        );
+        var terminalErrors = 0;
+        final subscription = hardwareContainer.listen<DrillState>(
+          drillProvider,
+          (_, next) {
+            if (next.phase == DrillPhase.error) terminalErrors++;
+          },
+        );
+        multiPod.gameModeGate = Completer<void>();
+
+        final start = hardwareNotifier.startDrill(config);
+        await Future<void>.delayed(Duration.zero);
+        multiPod.gameModeGate!.completeError(StateError('link reset'));
+        await start;
+
+        final commandFailure = hardwareContainer.read(drillProvider);
+        expect(commandFailure.phase, DrillPhase.error);
+        expect(commandFailure.errorMessage, contains('pod-1'));
+        expect(commandFailure.results, isEmpty);
+        expect(terminalErrors, 1);
+
+        multiPod.fail('pod-1', StateError('connection lost'));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(hardwareContainer.read(drillProvider), same(commandFailure));
+        expect(terminalErrors, 1);
+        subscription.close();
+      },
+    );
+
     test('non-participating failure does not mutate active drill', () async {
       const config = DrillConfig(
         minDelay: Duration(seconds: 1),
