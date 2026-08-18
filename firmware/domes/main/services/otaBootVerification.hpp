@@ -25,6 +25,8 @@ enum class OtaSelfTestStage : uint8_t {
     kHardware,
     kLedOutput,
     kRuntimeServices,
+    kDispatchUnavailable,
+    kConfirmation,
 };
 
 /**
@@ -51,6 +53,27 @@ constexpr uint8_t kOtaSelfTestMaxAttempts = 3;
 
 /// Settling time between recoverable internal-heap checks.
 constexpr uint32_t kOtaSelfTestRetryDelayMs = 2000;
+
+/**
+ * @brief Required response after attempting LED-owner startup dispatch
+ */
+enum class OtaStartupDispatchAction : uint8_t {
+    kScheduled,
+    kLeaveBootIncomplete,
+    kRollbackPendingImage,
+};
+
+/**
+ * @brief Keep boot completion on the LED owner and fail closed for pending images
+ */
+inline OtaStartupDispatchAction otaStartupDispatchAction(bool pendingImage,
+                                                         esp_err_t dispatchStatus) {
+    if (dispatchStatus == ESP_OK) {
+        return OtaStartupDispatchAction::kScheduled;
+    }
+    return pendingImage ? OtaStartupDispatchAction::kRollbackPendingImage
+                        : OtaStartupDispatchAction::kLeaveBootIncomplete;
+}
 
 /**
  * @brief Whether a failed check can recover without reinitializing the runtime
@@ -101,6 +124,10 @@ inline const char* otaSelfTestStageName(OtaSelfTestStage stage) {
             return "led-output";
         case OtaSelfTestStage::kRuntimeServices:
             return "runtime-services";
+        case OtaSelfTestStage::kDispatchUnavailable:
+            return "dispatch-unavailable";
+        case OtaSelfTestStage::kConfirmation:
+            return "confirmation";
     }
     return "unknown";
 }
