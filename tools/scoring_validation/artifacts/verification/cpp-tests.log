@@ -1,0 +1,744 @@
+$ cmake -S firmware/test_app -B /tmp/domes-issue-132-host-tests -DCMAKE_BUILD_TYPE=Debug
+-- The CXX compiler identification is GNU 15.2.1
+-- The C compiler identification is GNU 15.2.1
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Found Python3: /usr/bin/python3 (found version "3.14.3") found components: Interpreter
+-- Looking for pthread.h
+-- Looking for pthread.h - found
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /tmp/domes-issue-132-host-tests
+$ cmake --build /tmp/domes-issue-132-host-tests -j16
+[  1%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest.dir/src/gtest-all.cc.o
+[  3%] Building CXX object common/CMakeFiles/domes_common.dir/protocol/otaProtocol.cpp.o
+[  4%] Building C object common/CMakeFiles/domes_common.dir/proto/peer_drill.pb.c.o
+[  6%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/third_party/nanopb/pb_common.c.o
+[  7%] Building C object common/CMakeFiles/domes_common.dir/proto/trace.pb.c.o
+[  9%] Building C object common/CMakeFiles/domes_common.dir/proto/config.pb.c.o
+[ 10%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/third_party/nanopb/pb_decode.c.o
+[ 12%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/third_party/nanopb/pb_encode.c.o
+[ 13%] Linking CXX static library libdomes_common.a
+[ 13%] Built target domes_common
+[ 18%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/config/featureManager.cpp.o
+[ 18%] Building CXX object CMakeFiles/trace_generator.dir/main/generate_trace.cpp.o
+[ 18%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/game/gameEngine.cpp.o
+[ 20%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/kernelTrace.cpp.o
+[ 21%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/config/modeManager.cpp.o
+[ 23%] Building CXX object CMakeFiles/trace_generator.dir/sim/hostTraceBuffer.cpp.o
+[ 24%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/traceDumpSnapshot.cpp.o
+[ 26%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/traceCommandHandler.cpp.o
+[ 27%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/traceRecorder.cpp.o
+[ 29%] Linking CXX executable trace_generator
+[ 29%] Built target trace_generator
+[ 30%] Linking CXX static library ../../../lib/libgtest.a
+[ 30%] Built target gtest
+[ 32%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o
+[ 33%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/src/gmock-all.cc.o
+[ 35%] Linking CXX static library ../../../lib/libgtest_main.a
+[ 35%] Built target gtest_main
+[ 36%] Linking CXX static library ../../../lib/libgmock.a
+[ 36%] Built target gmock
+[ 43%] Building CXX object CMakeFiles/test_app.dir/main/test_main.cpp.o
+[ 43%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_protocol.cpp.o
+[ 43%] Building CXX object CMakeFiles/test_app.dir/main/test_frame_codec.cpp.o
+[ 43%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/src/gmock_main.cc.o
+[ 44%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_boot_verification.cpp.o
+[ 46%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_session_coordinator.cpp.o
+[ 49%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_state_machine.cpp.o
+[ 49%] Building CXX object CMakeFiles/test_app.dir/main/test_crc32.cpp.o
+[ 52%] Building CXX object CMakeFiles/test_app.dir/main/test_esp_now_transport.cpp.o
+[ 52%] Building CXX object CMakeFiles/test_app.dir/main/test_esp_now_protocol.cpp.o
+[ 53%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/transport/espNowTransport.cpp.o
+[ 56%] Building CXX object CMakeFiles/test_app.dir/main/test_platform_inputs.cpp.o
+[ 56%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/platform/qemu/deterministicPlatformInputs.cpp.o
+[ 58%] Building CXX object CMakeFiles/test_app.dir/main/test_qemu_peripheral_adapters.cpp.o
+[ 60%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/platform/qemu/qemuPeripheralAdapters.cpp.o
+[ 61%] Building CXX object CMakeFiles/test_app.dir/main/test_task_start_evidence.cpp.o
+[ 63%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/infra/taskStartEvidence.cpp.o
+[ 64%] Building CXX object CMakeFiles/test_app.dir/main/test_version_parser.cpp.o
+[ 66%] Building CXX object CMakeFiles/test_app.dir/main/test_release_metadata.cpp.o
+[ 67%] Building CXX object CMakeFiles/test_app.dir/main/test_restart_snapshot_record.cpp.o
+[ 69%] Building CXX object CMakeFiles/test_app.dir/main/test_config_protocol.cpp.o
+[ 70%] Building CXX object CMakeFiles/test_app.dir/main/test_feature_manager.cpp.o
+[ 72%] Building CXX object CMakeFiles/test_app.dir/main/test_mode_manager.cpp.o
+[ 73%] Building CXX object CMakeFiles/test_app.dir/main/test_game_engine.cpp.o
+[ 75%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_buffer.cpp.o
+[ 76%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_command_handler.cpp.o
+[ 78%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_stream_writer.cpp.o
+[ 80%] Building CXX object CMakeFiles/test_app.dir/main/test_multi_pod_sim.cpp.o
+[ 81%] Linking CXX static library ../../../lib/libgmock_main.a
+[ 81%] Built target gmock_main
+[ 83%] Building CXX object CMakeFiles/test_app.dir/main/test_sim_drill.cpp.o
+[ 84%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/config/featureManager.cpp.o
+[ 86%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/config/modeManager.cpp.o
+[ 87%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/services/firmwareVersion.cpp.o
+[ 89%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/services/releaseMetadata.cpp.o
+[ 90%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/game/gameEngine.cpp.o
+[ 92%] Building CXX object CMakeFiles/test_app.dir/sim/hostTraceBuffer.cpp.o
+[ 93%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/kernelTrace.cpp.o
+[ 95%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/traceDumpSnapshot.cpp.o
+[ 96%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/traceCommandHandler.cpp.o
+[ 98%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/traceRecorder.cpp.o
+[100%] Linking CXX executable test_app
+[100%] Built target test_app
+$ ctest --test-dir /tmp/domes-issue-132-host-tests --output-on-failure --no-tests=error
+Internal ctest changing into directory: /tmp/domes-issue-132-host-tests
+Test project /tmp/domes-issue-132-host-tests
+        Start   1: Crc32.EmptyBufferReturns0x00000000
+  1/321 Test   #1: Crc32.EmptyBufferReturns0x00000000 ...................................................................................   Passed    0.00 sec
+        Start   2: Crc32.Of123456789MatchesIEEE802_3CheckValue
+  2/321 Test   #2: Crc32.Of123456789MatchesIEEE802_3CheckValue ..........................................................................   Passed    0.00 sec
+        Start   3: Crc32.SingleByte0x00
+  3/321 Test   #3: Crc32.SingleByte0x00 .................................................................................................   Passed    0.00 sec
+        Start   4: Crc32.SingleByte0xFF
+  4/321 Test   #4: Crc32.SingleByte0xFF .................................................................................................   Passed    0.00 sec
+        Start   5: Crc32.AllZeros4Bytes
+  5/321 Test   #5: Crc32.AllZeros4Bytes .................................................................................................   Passed    0.00 sec
+        Start   6: Crc32.AllOnes4Bytes
+  6/321 Test   #6: Crc32.AllOnes4Bytes ..................................................................................................   Passed    0.00 sec
+        Start   7: Crc32.IncrementalMatchesSingleShot
+  7/321 Test   #7: Crc32.IncrementalMatchesSingleShot ...................................................................................   Passed    0.00 sec
+        Start   8: Crc32.IncrementalByteByByteMatchesSingleShot
+  8/321 Test   #8: Crc32.IncrementalByteByByteMatchesSingleShot .........................................................................   Passed    0.00 sec
+        Start   9: Crc32.DifferentDataProducesDifferentCRC
+  9/321 Test   #9: Crc32.DifferentDataProducesDifferentCRC ..............................................................................   Passed    0.00 sec
+        Start  10: Crc32.DetectsSingleBitFlip
+ 10/321 Test  #10: Crc32.DetectsSingleBitFlip ...........................................................................................   Passed    0.00 sec
+        Start  11: Crc32.LargeBuffer
+ 11/321 Test  #11: Crc32.LargeBuffer ....................................................................................................   Passed    0.00 sec
+        Start  12: EncodeFrame.MinimalFrameNoPayload
+ 12/321 Test  #12: EncodeFrame.MinimalFrameNoPayload ....................................................................................   Passed    0.00 sec
+        Start  13: EncodeFrame.WithPayload
+ 13/321 Test  #13: EncodeFrame.WithPayload ..............................................................................................   Passed    0.00 sec
+        Start  14: EncodeFrame.BufferTooSmallReturnsError
+ 14/321 Test  #14: EncodeFrame.BufferTooSmallReturnsError ...............................................................................   Passed    0.00 sec
+        Start  15: EncodeFrame.PayloadTooLargeReturnsError
+ 15/321 Test  #15: EncodeFrame.PayloadTooLargeReturnsError ..............................................................................   Passed    0.00 sec
+        Start  16: EncodeFrame.MaxPayloadSizeSucceeds
+ 16/321 Test  #16: EncodeFrame.MaxPayloadSizeSucceeds ...................................................................................   Passed    0.00 sec
+        Start  17: FrameDecoder.InitialStateIsWaitStart0
+ 17/321 Test  #17: FrameDecoder.InitialStateIsWaitStart0 ................................................................................   Passed    0.00 sec
+        Start  18: FrameDecoder.DetectsStartBytes
+ 18/321 Test  #18: FrameDecoder.DetectsStartBytes .......................................................................................   Passed    0.00 sec
+        Start  19: FrameDecoder.Handles0xAA0xAA0x55Sequence
+ 19/321 Test  #19: FrameDecoder.Handles0xAA0xAA0x55Sequence .............................................................................   Passed    0.00 sec
+        Start  20: FrameDecoder.RejectsNonStartByteAfter0xAA
+ 20/321 Test  #20: FrameDecoder.RejectsNonStartByteAfter0xAA ............................................................................   Passed    0.00 sec
+        Start  21: FrameDecoder.RejectsZeroLength
+ 21/321 Test  #21: FrameDecoder.RejectsZeroLength .......................................................................................   Passed    0.00 sec
+        Start  22: FrameDecoder.RejectsOversizedLength
+ 22/321 Test  #22: FrameDecoder.RejectsOversizedLength ..................................................................................   Passed    0.00 sec
+        Start  23: FrameDecoder.ResetClearsState
+ 23/321 Test  #23: FrameDecoder.ResetClearsState ........................................................................................   Passed    0.00 sec
+        Start  24: FrameDecoder.DetectsCRCMismatch
+ 24/321 Test  #24: FrameDecoder.DetectsCRCMismatch ......................................................................................   Passed    0.00 sec
+        Start  25: FrameDecoder.DetectsPayloadCorruption
+ 25/321 Test  #25: FrameDecoder.DetectsPayloadCorruption ................................................................................   Passed    0.00 sec
+        Start  26: FrameDecoder.HandlesGarbageBeforeSync
+ 26/321 Test  #26: FrameDecoder.HandlesGarbageBeforeSync ................................................................................   Passed    0.00 sec
+        Start  27: FrameDecoder.RequiresResetAfterComplete
+ 27/321 Test  #27: FrameDecoder.RequiresResetAfterComplete ..............................................................................   Passed    0.00 sec
+        Start  28: FrameRoundTrip.EncodeThenDecode
+ 28/321 Test  #28: FrameRoundTrip.EncodeThenDecode ......................................................................................   Passed    0.00 sec
+        Start  29: FrameRoundTrip.NoPayload
+ 29/321 Test  #29: FrameRoundTrip.NoPayload .............................................................................................   Passed    0.00 sec
+        Start  30: FrameRoundTrip.MaxPayload
+ 30/321 Test  #30: FrameRoundTrip.MaxPayload ............................................................................................   Passed    0.00 sec
+        Start  31: OtaBegin.SerializeDeserializeRoundTrip
+ 31/321 Test  #31: OtaBegin.SerializeDeserializeRoundTrip ...............................................................................   Passed    0.00 sec
+        Start  32: OtaBegin.SerializeWithNullSHA256ReturnsError
+ 32/321 Test  #32: OtaBegin.SerializeWithNullSHA256ReturnsError .........................................................................   Passed    0.00 sec
+        Start  33: OtaBegin.SerializeRejectsMissingVersion
+ 33/321 Test  #33: OtaBegin.SerializeRejectsMissingVersion ..............................................................................   Passed    0.00 sec
+        Start  34: OtaBegin.RejectsVersionWithoutRoomForNullTerminator
+ 34/321 Test  #34: OtaBegin.RejectsVersionWithoutRoomForNullTerminator ..................................................................   Passed    0.00 sec
+        Start  35: OtaBegin.AcceptsLongestNullTerminatedVersion
+ 35/321 Test  #35: OtaBegin.AcceptsLongestNullTerminatedVersion .........................................................................   Passed    0.00 sec
+        Start  36: OtaBegin.BufferTooSmallReturnsError
+ 36/321 Test  #36: OtaBegin.BufferTooSmallReturnsError ..................................................................................   Passed    0.00 sec
+        Start  37: OtaBegin.DeserializeWithShortPayloadReturnsError
+ 37/321 Test  #37: OtaBegin.DeserializeWithShortPayloadReturnsError .....................................................................   Passed    0.00 sec
+        Start  38: OtaBegin.DeserializeRejectsOversizedPayload
+ 38/321 Test  #38: OtaBegin.DeserializeRejectsOversizedPayload ..........................................................................   Passed    0.00 sec
+        Start  39: OtaBegin.DeserializeRejectsVersionWithoutNullTerminator
+ 39/321 Test  #39: OtaBegin.DeserializeRejectsVersionWithoutNullTerminator ..............................................................   Passed    0.00 sec
+        Start  40: OtaData.SerializeDeserializeRoundTrip
+ 40/321 Test  #40: OtaData.SerializeDeserializeRoundTrip ................................................................................   Passed    0.00 sec
+        Start  41: OtaData.RejectsZeroLengthChunk
+ 41/321 Test  #41: OtaData.RejectsZeroLengthChunk .......................................................................................   Passed    0.00 sec
+        Start  42: OtaData.AcceptsOneByteMinimumChunk
+ 42/321 Test  #42: OtaData.AcceptsOneByteMinimumChunk ...................................................................................   Passed    0.00 sec
+        Start  43: OtaData.SerializeMaxChunkSize
+ 43/321 Test  #43: OtaData.SerializeMaxChunkSize ........................................................................................   Passed    0.00 sec
+        Start  44: OtaData.SerializeOversizedChunkReturnsError
+ 44/321 Test  #44: OtaData.SerializeOversizedChunkReturnsError ..........................................................................   Passed    0.00 sec
+        Start  45: OtaData.DeserializeWithTruncatedPayloadReturnsError
+ 45/321 Test  #45: OtaData.DeserializeWithTruncatedPayloadReturnsError ..................................................................   Passed    0.00 sec
+        Start  46: OtaData.DeserializeRejectsTrailingBytes
+ 46/321 Test  #46: OtaData.DeserializeRejectsTrailingBytes ..............................................................................   Passed    0.00 sec
+        Start  47: OtaData.DeserializeRejectsChunkAboveProtocolMaximum
+ 47/321 Test  #47: OtaData.DeserializeRejectsChunkAboveProtocolMaximum ..................................................................   Passed    0.00 sec
+        Start  48: OtaEnd.SerializeProducesZeroLengthPayload
+ 48/321 Test  #48: OtaEnd.SerializeProducesZeroLengthPayload ............................................................................   Passed    0.00 sec
+        Start  49: OtaEnd.SerializeWithNullOutLenReturnsError
+ 49/321 Test  #49: OtaEnd.SerializeWithNullOutLenReturnsError ...........................................................................   Passed    0.00 sec
+        Start  50: OtaEnd.DeserializeRequiresEmptyPayload
+ 50/321 Test  #50: OtaEnd.DeserializeRequiresEmptyPayload ...............................................................................   Passed    0.00 sec
+        Start  51: OtaAck.SerializeDeserializeRoundTrip
+ 51/321 Test  #51: OtaAck.SerializeDeserializeRoundTrip .................................................................................   Passed    0.00 sec
+        Start  52: OtaAck.AllStatusCodes
+ 52/321 Test  #52: OtaAck.AllStatusCodes ................................................................................................   Passed    0.00 sec
+        Start  53: OtaAck.BufferTooSmallReturnsError
+ 53/321 Test  #53: OtaAck.BufferTooSmallReturnsError ....................................................................................   Passed    0.00 sec
+        Start  54: OtaAck.RejectsTrailingBytesAndUnknownStatus
+ 54/321 Test  #54: OtaAck.RejectsTrailingBytesAndUnknownStatus ..........................................................................   Passed    0.00 sec
+        Start  55: OtaAbort.SerializeDeserializeRoundTrip
+ 55/321 Test  #55: OtaAbort.SerializeDeserializeRoundTrip ...............................................................................   Passed    0.00 sec
+        Start  56: OtaAbort.DeserializeWithNullReasonReturnsError
+ 56/321 Test  #56: OtaAbort.DeserializeWithNullReasonReturnsError .......................................................................   Passed    0.00 sec
+        Start  57: OtaAbort.DeserializeWithEmptyPayloadReturnsError
+ 57/321 Test  #57: OtaAbort.DeserializeWithEmptyPayloadReturnsError .....................................................................   Passed    0.00 sec
+        Start  58: OtaAbort.RejectsTrailingBytesAndUnknownStatus
+ 58/321 Test  #58: OtaAbort.RejectsTrailingBytesAndUnknownStatus ........................................................................   Passed    0.00 sec
+        Start  59: OtaSerializer.RejectsNullBuffer
+ 59/321 Test  #59: OtaSerializer.RejectsNullBuffer ......................................................................................   Passed    0.00 sec
+        Start  60: OtaSerializer.RejectsNullOutLen
+ 60/321 Test  #60: OtaSerializer.RejectsNullOutLen ......................................................................................   Passed    0.00 sec
+        Start  61: OtaDeserializer.RejectsNullRequiredOutputs
+ 61/321 Test  #61: OtaDeserializer.RejectsNullRequiredOutputs ...........................................................................   Passed    0.00 sec
+        Start  62: OtaBootVerification.DefaultResultPasses
+ 62/321 Test  #62: OtaBootVerification.DefaultResultPasses ..............................................................................   Passed    0.00 sec
+        Start  63: OtaBootVerification.FailureRetainsStageStatusAndDetail
+ 63/321 Test  #63: OtaBootVerification.FailureRetainsStageStatusAndDetail ...............................................................   Passed    0.00 sec
+        Start  64: OtaBootVerification.FormatsStableStageNames
+ 64/321 Test  #64: OtaBootVerification.FormatsStableStageNames ..........................................................................   Passed    0.00 sec
+        Start  65: OtaBootVerification.FormatsHeapAndHardwareDetails
+ 65/321 Test  #65: OtaBootVerification.FormatsHeapAndHardwareDetails ....................................................................   Passed    0.00 sec
+        Start  66: OtaBootVerification.RejectsPassingOrTruncatedReason
+ 66/321 Test  #66: OtaBootVerification.RejectsPassingOrTruncatedReason ..................................................................   Passed    0.00 sec
+        Start  67: OtaBootVerification.DoesNotRetryNonHeapFailures
+ 67/321 Test  #67: OtaBootVerification.DoesNotRetryNonHeapFailures ......................................................................   Passed    0.00 sec
+        Start  68: OtaBootVerification.FormatsDispatchFailureForRetention
+ 68/321 Test  #68: OtaBootVerification.FormatsDispatchFailureForRetention ...............................................................   Passed    0.00 sec
+        Start  69: OtaBootVerification.DispatchesBootCompletionForPendingAndValidImages
+ 69/321 Test  #69: OtaBootVerification.DispatchesBootCompletionForPendingAndValidImages .................................................   Passed    0.00 sec
+        Start  70: OtaBootVerification.FailsClosedWithoutOffOwnerBootCompletion
+ 70/321 Test  #70: OtaBootVerification.FailsClosedWithoutOffOwnerBootCompletion .........................................................   Passed    0.00 sec
+        Start  71: OtaBootVerification.RecoversAfterBoundedHeapRetry
+ 71/321 Test  #71: OtaBootVerification.RecoversAfterBoundedHeapRetry ....................................................................   Passed    0.00 sec
+        Start  72: OtaBootVerification.StopsAfterMaximumHeapAttempts
+ 72/321 Test  #72: OtaBootVerification.StopsAfterMaximumHeapAttempts ....................................................................   Passed    0.00 sec
+        Start  73: OtaSessionCoordinator.AllowsOnlyOneOwner
+ 73/321 Test  #73: OtaSessionCoordinator.AllowsOnlyOneOwner .............................................................................   Passed    0.00 sec
+        Start  74: OtaSessionCoordinator.NonOwnerCannotReleaseLease
+ 74/321 Test  #74: OtaSessionCoordinator.NonOwnerCannotReleaseLease .....................................................................   Passed    0.00 sec
+        Start  75: OtaSessionCoordinator.InactivityTimeoutUsesInclusiveBoundary
+ 75/321 Test  #75: OtaSessionCoordinator.InactivityTimeoutUsesInclusiveBoundary .........................................................   Passed    0.00 sec
+        Start  76: OtaStateMachineTest.StartsFromIdle
+ 76/321 Test  #76: OtaStateMachineTest.StartsFromIdle ...................................................................................   Passed    0.00 sec
+        Start  77: OtaStateMachineTest.ErrorStateAllowsRetryWithoutReboot
+ 77/321 Test  #77: OtaStateMachineTest.ErrorStateAllowsRetryWithoutReboot ...............................................................   Passed    0.00 sec
+        Start  78: OtaStateMachineTest.ActiveOperationCannotBeReplaced
+ 78/321 Test  #78: OtaStateMachineTest.ActiveOperationCannotBeReplaced ..................................................................   Passed    0.00 sec
+        Start  79: EspNowProtocolTest.DefinesExactWireSizeForEveryMessage
+ 79/321 Test  #79: EspNowProtocolTest.DefinesExactWireSizeForEveryMessage ...............................................................   Passed    0.00 sec
+        Start  80: EspNowProtocolTest.OnlyBeaconPingAndPongAreDiscoveryTraffic
+ 80/321 Test  #80: EspNowProtocolTest.OnlyBeaconPingAndPongAreDiscoveryTraffic ..........................................................   Passed    0.00 sec
+        Start  81: EspNowProtocolTest.SenderMustMatchRadioSource
+ 81/321 Test  #81: EspNowProtocolTest.SenderMustMatchRadioSource ........................................................................   Passed    0.00 sec
+        Start  82: EspNowProtocolTest.RoundTokenIsEchoedByEveryRoundScopedMessage
+ 82/321 Test  #82: EspNowProtocolTest.RoundTokenIsEchoedByEveryRoundScopedMessage .......................................................   Passed    0.00 sec
+        Start  83: EspNowProtocolTest.EveryVariantRoundTripsPortableGeneratedEncoding
+ 83/321 Test  #83: EspNowProtocolTest.EveryVariantRoundTripsPortableGeneratedEncoding ...................................................   Passed    0.00 sec
+        Start  84: EspNowProtocolTest.PortableDecoderRejectsMalformedUnknownTruncatedAndOversized
+ 84/321 Test  #84: EspNowProtocolTest.PortableDecoderRejectsMalformedUnknownTruncatedAndOversized .......................................   Passed    0.00 sec
+        Start  85: EspNowProtocolTest.SemanticValidationRejectsRoleAndStateViolations
+ 85/321 Test  #85: EspNowProtocolTest.SemanticValidationRejectsRoleAndStateViolations ...................................................   Passed    0.00 sec
+        Start  86: EspNowProtocolTest.LegacyDecoderRejectsUnknownTruncatedOversizedAndInvalidPayloads
+ 86/321 Test  #86: EspNowProtocolTest.LegacyDecoderRejectsUnknownTruncatedOversizedAndInvalidPayloads ...................................   Passed    0.00 sec
+        Start  87: EspNowProtocolTest.EveryLegacyWireVariantMapsLosslesslyToGeneratedPayload
+ 87/321 Test  #87: EspNowProtocolTest.EveryLegacyWireVariantMapsLosslesslyToGeneratedPayload ............................................   Passed    0.00 sec
+        Start  88: PhysicalEspNowRadioTest.OwnsVendorCallbacksMetadataAndSubmissionTokens
+ 88/321 Test  #88: PhysicalEspNowRadioTest.OwnsVendorCallbacksMetadataAndSubmissionTokens ...............................................   Passed    0.00 sec
+        Start  89: EspNowTransportTest.OwnsRadioLifecycleAndBroadcastPeer
+ 89/321 Test  #89: EspNowTransportTest.OwnsRadioLifecycleAndBroadcastPeer ...............................................................   Passed    0.00 sec
+        Start  90: EspNowTransportTest.PreservesPeerOperationsAndExcludesBroadcastFromCount
+ 90/321 Test  #90: EspNowTransportTest.PreservesPeerOperationsAndExcludesBroadcastFromCount .............................................   Passed    0.00 sec
+        Start  91: EspNowTransportTest.SeparatesSynchronousFailureAndAsynchronousCompletion
+ 91/321 Test  #91: EspNowTransportTest.SeparatesSynchronousFailureAndAsynchronousCompletion .............................................   Passed    0.00 sec
+        Start  92: EspNowTransportTest.CopiesReceiveMetadataPayloadAndCorrelationToken
+ 92/321 Test  #92: EspNowTransportTest.CopiesReceiveMetadataPayloadAndCorrelationToken ..................................................   Passed    0.00 sec
+        Start  93: EspNowTransportTest.PreservesSevenMaximumFramesAndDropsSaturationExcess
+ 93/321 Test  #93: EspNowTransportTest.PreservesSevenMaximumFramesAndDropsSaturationExcess ..............................................   Passed    0.00 sec
+        Start  94: EspNowTransportTest.TimeoutPoisonsSessionUntilLifecycleRecovery
+ 94/321 Test  #94: EspNowTransportTest.TimeoutPoisonsSessionUntilLifecycleRecovery ......................................................   Passed    0.00 sec
+        Start  95: EspNowTransportTest.EmitsOneCorrelationTokenAtEveryCallbackToTaskBoundary
+ 95/321 Test  #95: EspNowTransportTest.EmitsOneCorrelationTokenAtEveryCallbackToTaskBoundary ............................................   Passed    0.00 sec
+        Start  96: PlatformInputsTest.FixedIdentityReturnsExactSixBytes
+ 96/321 Test  #96: PlatformInputsTest.FixedIdentityReturnsExactSixBytes .................................................................   Passed    0.00 sec
+        Start  97: PlatformInputsTest.RecordedRandomSourceConsumesFiniteSequenceAndFailsClosed
+ 97/321 Test  #97: PlatformInputsTest.RecordedRandomSourceConsumesFiniteSequenceAndFailsClosed ..........................................   Passed    0.00 sec
+        Start  98: PlatformInputsTest.RoundTokenSequencePreservesSeedPlusOneAndSkipsZero
+ 98/321 Test  #98: PlatformInputsTest.RoundTokenSequencePreservesSeedPlusOneAndSkipsZero ................................................   Passed    0.00 sec
+        Start  99: QemuHapticDriverTest.EnforcesPhysicalEffectAndIntensityBounds
+ 99/321 Test  #99: QemuHapticDriverTest.EnforcesPhysicalEffectAndIntensityBounds ........................................................   Passed    0.00 sec
+        Start 100: TaskStartEvidenceTest.RecordsDuplicateEntryAndExclusiveCoreMasks
+100/321 Test #100: TaskStartEvidenceTest.RecordsDuplicateEntryAndExclusiveCoreMasks .....................................................   Passed    0.00 sec
+        Start 101: ParseVersion.HandlesSimpleVersion
+101/321 Test #101: ParseVersion.HandlesSimpleVersion ....................................................................................   Passed    0.00 sec
+        Start 102: ParseVersion.HandlesVersionWithoutVPrefix
+102/321 Test #102: ParseVersion.HandlesVersionWithoutVPrefix ............................................................................   Passed    0.00 sec
+        Start 103: ParseVersion.HandlesDirtyFlag
+103/321 Test #103: ParseVersion.HandlesDirtyFlag ........................................................................................   Passed    0.00 sec
+        Start 104: ParseVersion.HandlesGitDescribeOutput
+104/321 Test #104: ParseVersion.HandlesGitDescribeOutput ................................................................................   Passed    0.00 sec
+        Start 105: ParseVersion.HandlesHardwareRollbackBuildVersion
+105/321 Test #105: ParseVersion.HandlesHardwareRollbackBuildVersion .....................................................................   Passed    0.00 sec
+        Start 106: ParseVersion.HandlesGitDescribeWithDirty
+106/321 Test #106: ParseVersion.HandlesGitDescribeWithDirty .............................................................................   Passed    0.00 sec
+        Start 107: ParseVersion.HandlesFullLengthGitHash
+107/321 Test #107: ParseVersion.HandlesFullLengthGitHash ................................................................................   Passed    0.00 sec
+        Start 108: ParseVersion.HandlesZeroVersion
+108/321 Test #108: ParseVersion.HandlesZeroVersion ......................................................................................   Passed    0.00 sec
+        Start 109: ParseVersion.HandlesLargeVersionNumbers
+109/321 Test #109: ParseVersion.HandlesLargeVersionNumbers ..............................................................................   Passed    0.00 sec
+        Start 110: ParseVersion.HandlesNullInput
+110/321 Test #110: ParseVersion.HandlesNullInput ........................................................................................   Passed    0.00 sec
+        Start 111: ParseVersion.HandlesEmptyString
+111/321 Test #111: ParseVersion.HandlesEmptyString ......................................................................................   Passed    0.00 sec
+        Start 112: ParseVersion.HandlesInvalidFormat
+112/321 Test #112: ParseVersion.HandlesInvalidFormat ....................................................................................   Passed    0.00 sec
+        Start 113: ParseVersion.RejectsOverflowAndMalformedSuffixes
+113/321 Test #113: ParseVersion.RejectsOverflowAndMalformedSuffixes .....................................................................   Passed    0.00 sec
+        Start 114: FirmwareVersionIntegrity.RequiresExactParserValidMatch
+114/321 Test #114: FirmwareVersionIntegrity.RequiresExactParserValidMatch ...............................................................   Passed    0.00 sec
+        Start 115: FirmwareVersionCompare.EqualVersions
+115/321 Test #115: FirmwareVersionCompare.EqualVersions .................................................................................   Passed    0.00 sec
+        Start 116: FirmwareVersionCompare.MajorDifference
+116/321 Test #116: FirmwareVersionCompare.MajorDifference ...............................................................................   Passed    0.00 sec
+        Start 117: FirmwareVersionCompare.MinorDifference
+117/321 Test #117: FirmwareVersionCompare.MinorDifference ...............................................................................   Passed    0.00 sec
+        Start 118: FirmwareVersionCompare.PatchDifference
+118/321 Test #118: FirmwareVersionCompare.PatchDifference ...............................................................................   Passed    0.00 sec
+        Start 119: FirmwareVersionCompare.IsUpdateAvailable
+119/321 Test #119: FirmwareVersionCompare.IsUpdateAvailable .............................................................................   Passed    0.00 sec
+        Start 120: FirmwareVersionCompare.IgnoresDirtyFlag
+120/321 Test #120: FirmwareVersionCompare.IgnoresDirtyFlag ..............................................................................   Passed    0.00 sec
+        Start 121: FirmwareVersionCompare.IgnoresGitHash
+121/321 Test #121: FirmwareVersionCompare.IgnoresGitHash ................................................................................   Passed    0.00 sec
+        Start 122: FirmwareVersionCompare.InvalidVersionsNeverOfferUpdates
+122/321 Test #122: FirmwareVersionCompare.InvalidVersionsNeverOfferUpdates ..............................................................   Passed    0.00 sec
+        Start 123: ReleaseMetadata.AcceptsExactly64HexCharacters
+123/321 Test #123: ReleaseMetadata.AcceptsExactly64HexCharacters ........................................................................   Passed    0.00 sec
+        Start 124: ReleaseMetadata.RejectsMissingMalformedOrWrongLengthDigest
+124/321 Test #124: ReleaseMetadata.RejectsMissingMalformedOrWrongLengthDigest ...........................................................   Passed    0.00 sec
+        Start 125: ReleaseMetadata.FormatsTheExactVersionedOtaAssetName
+125/321 Test #125: ReleaseMetadata.FormatsTheExactVersionedOtaAssetName .................................................................   Passed    0.00 sec
+        Start 126: ReleaseMetadata.RejectsInvalidTagAndInsufficientOutputBuffer
+126/321 Test #126: ReleaseMetadata.RejectsInvalidTagAndInsufficientOutputBuffer .........................................................   Passed    0.00 sec
+        Start 127: ReleaseMetadata.AcceptsPositiveIntegralAssetSize
+127/321 Test #127: ReleaseMetadata.AcceptsPositiveIntegralAssetSize .....................................................................   Passed    0.00 sec
+        Start 128: ReleaseMetadata.RejectsMalformedAssetSizes
+128/321 Test #128: ReleaseMetadata.RejectsMalformedAssetSizes ...........................................................................   Passed    0.00 sec
+        Start 129: ReleaseMetadata.RejectsAssetSizeOutsideSizeT
+129/321 Test #129: ReleaseMetadata.RejectsAssetSizeOutsideSizeT .........................................................................   Passed    0.00 sec
+        Start 130: RestartSnapshotRecord.AcceptsUnchangedCurrentRecord
+130/321 Test #130: RestartSnapshotRecord.AcceptsUnchangedCurrentRecord ..................................................................   Passed    0.00 sec
+        Start 131: RestartSnapshotRecord.RejectsEveryPersistedFieldClassAfterCorruption
+131/321 Test #131: RestartSnapshotRecord.RejectsEveryPersistedFieldClassAfterCorruption .................................................   Passed    0.00 sec
+        Start 132: RestartSnapshotRecord.RejectsUnsupportedFormats
+132/321 Test #132: RestartSnapshotRecord.RejectsUnsupportedFormats ......................................................................   Passed    0.00 sec
+        Start 133: RestartSnapshotRecord.LegacySanitizationRemovesUntrustedIdentityMetadata
+133/321 Test #133: RestartSnapshotRecord.LegacySanitizationRemovesUntrustedIdentityMetadata .............................................   Passed    0.00 sec
+        Start 134: ConfigMsgType.RecognizesEveryRequestId
+134/321 Test #134: ConfigMsgType.RecognizesEveryRequestId ...............................................................................   Passed    0.00 sec
+        Start 135: ConfigMsgType.RejectsResponsesReservedAndOtherProtocolIds
+135/321 Test #135: ConfigMsgType.RejectsResponsesReservedAndOtherProtocolIds ............................................................   Passed    0.00 sec
+        Start 136: ConfigMsgType.PassiveRequestsDoNotRecordActivity
+136/321 Test #136: ConfigMsgType.PassiveRequestsDoNotRecordActivity .....................................................................   Passed    0.00 sec
+        Start 137: ConfigMsgType.ActiveRequestsRecordActivity
+137/321 Test #137: ConfigMsgType.ActiveRequestsRecordActivity ...........................................................................   Passed    0.00 sec
+        Start 138: ConfigMsgType.IsConfigRequestGitHubOtaRange
+138/321 Test #138: ConfigMsgType.IsConfigRequestGitHubOtaRange ..........................................................................   Passed    0.00 sec
+        Start 139: ConfigMsgType.IsConfigRequestTouchInjectionRange
+139/321 Test #139: ConfigMsgType.IsConfigRequestTouchInjectionRange .....................................................................   Passed    0.00 sec
+        Start 140: ConfigProtocol.ValidatesLedPatternWithoutNarrowing
+140/321 Test #140: ConfigProtocol.ValidatesLedPatternWithoutNarrowing ...................................................................   Passed    0.00 sec
+        Start 141: Feature.ValidFeatureIds
+141/321 Test #141: Feature.ValidFeatureIds ..............................................................................................   Passed    0.00 sec
+        Start 142: Feature.FeatureToString
+142/321 Test #142: Feature.FeatureToString ..............................................................................................   Passed    0.00 sec
+        Start 143: Status.StatusValues
+143/321 Test #143: Status.StatusValues ..................................................................................................   Passed    0.00 sec
+        Start 144: Status.StatusToString
+144/321 Test #144: Status.StatusToString ................................................................................................   Passed    0.00 sec
+        Start 145: Protobuf.SetFeatureRequestEncodeDecode
+145/321 Test #145: Protobuf.SetFeatureRequestEncodeDecode ...............................................................................   Passed    0.00 sec
+        Start 146: Protobuf.SetFeatureResponseEncodeDecode
+146/321 Test #146: Protobuf.SetFeatureResponseEncodeDecode ..............................................................................   Passed    0.00 sec
+        Start 147: Protobuf.GetFeatureRequestAndResponseEncodeDecode
+147/321 Test #147: Protobuf.GetFeatureRequestAndResponseEncodeDecode ....................................................................   Passed    0.00 sec
+        Start 148: Protobuf.ListFeaturesResponseEncodeDecode
+148/321 Test #148: Protobuf.ListFeaturesResponseEncodeDecode ............................................................................   Passed    0.00 sec
+        Start 149: Protobuf.EmptyListFeaturesResponse
+149/321 Test #149: Protobuf.EmptyListFeaturesResponse ...................................................................................   Passed    0.00 sec
+        Start 150: Protobuf.MaxMemoryProfileResponseFitsSharedFramePayload
+150/321 Test #150: Protobuf.MaxMemoryProfileResponseFitsSharedFramePayload ..............................................................   Passed    0.00 sec
+        Start 151: Protobuf.GetModeResponseEncodeDecode
+151/321 Test #151: Protobuf.GetModeResponseEncodeDecode .................................................................................   Passed    0.00 sec
+        Start 152: Protobuf.SetModeRequestEncodeDecode
+152/321 Test #152: Protobuf.SetModeRequestEncodeDecode ..................................................................................   Passed    0.00 sec
+        Start 153: Protobuf.SetModeResponseEncodeDecode
+153/321 Test #153: Protobuf.SetModeResponseEncodeDecode .................................................................................   Passed    0.00 sec
+        Start 154: Protobuf.GetSystemInfoResponseEncodeDecode
+154/321 Test #154: Protobuf.GetSystemInfoResponseEncodeDecode ...........................................................................   Passed    0.00 sec
+        Start 155: Protobuf.SelfTestResponseEncodeDecode
+155/321 Test #155: Protobuf.SelfTestResponseEncodeDecode ................................................................................   Passed    0.00 sec
+        Start 156: Protobuf.CheckUpdateResponseEncodeDecode
+156/321 Test #156: Protobuf.CheckUpdateResponseEncodeDecode .............................................................................   Passed    0.00 sec
+        Start 157: Protobuf.CheckUpdateResponseNoUpdate
+157/321 Test #157: Protobuf.CheckUpdateResponseNoUpdate .................................................................................   Passed    0.00 sec
+        Start 158: Protobuf.SetAutoUpdateRequestEncodeDecode
+158/321 Test #158: Protobuf.SetAutoUpdateRequestEncodeDecode ............................................................................   Passed    0.00 sec
+        Start 159: Protobuf.SetAutoUpdateResponseEncodeDecode
+159/321 Test #159: Protobuf.SetAutoUpdateResponseEncodeDecode ...........................................................................   Passed    0.00 sec
+        Start 160: Protobuf.SimulateTouchRequestEncodeDecode
+160/321 Test #160: Protobuf.SimulateTouchRequestEncodeDecode ............................................................................   Passed    0.00 sec
+        Start 161: Protobuf.SetSimModeRequestEncodeDecode
+161/321 Test #161: Protobuf.SetSimModeRequestEncodeDecode ...............................................................................   Passed    0.00 sec
+        Start 162: Protobuf.SetSimModeResponseEncodeDecode
+162/321 Test #162: Protobuf.SetSimModeResponseEncodeDecode ..............................................................................   Passed    0.00 sec
+        Start 163: Protobuf.TouchEventNotificationEncodeDecode
+163/321 Test #163: Protobuf.TouchEventNotificationEncodeDecode ..........................................................................   Passed    0.00 sec
+        Start 164: Protobuf.SelfTestResponseEmpty
+164/321 Test #164: Protobuf.SelfTestResponseEmpty .......................................................................................   Passed    0.00 sec
+        Start 165: Constants.MaxFeatures
+165/321 Test #165: Constants.MaxFeatures ................................................................................................   Passed    0.00 sec
+        Start 166: Constants.MaxFrameSize
+166/321 Test #166: Constants.MaxFrameSize ...............................................................................................   Passed    0.00 sec
+        Start 167: FeatureManager.AllFeaturesEnabledByDefault
+167/321 Test #167: FeatureManager.AllFeaturesEnabledByDefault ...........................................................................   Passed    0.00 sec
+        Start 168: FeatureManager.DefaultMaskContainsOnlyDefinedFeatures
+168/321 Test #168: FeatureManager.DefaultMaskContainsOnlyDefinedFeatures ................................................................   Passed    0.00 sec
+        Start 169: FeatureManager.DisableFeature
+169/321 Test #169: FeatureManager.DisableFeature ........................................................................................   Passed    0.00 sec
+        Start 170: FeatureManager.EnableFeature
+170/321 Test #170: FeatureManager.EnableFeature .........................................................................................   Passed    0.00 sec
+        Start 171: FeatureManager.DisableMultipleFeatures
+171/321 Test #171: FeatureManager.DisableMultipleFeatures ...............................................................................   Passed    0.00 sec
+        Start 172: FeatureManager.UnsupportedFeaturesAreOmittedAndRejected
+172/321 Test #172: FeatureManager.UnsupportedFeaturesAreOmittedAndRejected ..............................................................   Passed    0.00 sec
+        Start 173: FeatureManager.ChangeCallbackTracksSingleAndMaskUpdates
+173/321 Test #173: FeatureManager.ChangeCallbackTracksSingleAndMaskUpdates ..............................................................   Passed    0.00 sec
+        Start 174: FeatureManager.RuntimeApplyRunsAfterCallerBarrier
+174/321 Test #174: FeatureManager.RuntimeApplyRunsAfterCallerBarrier ....................................................................   Passed    0.00 sec
+        Start 175: FeatureManager.InvalidFeatureReturnsFalse
+175/321 Test #175: FeatureManager.InvalidFeatureReturnsFalse ............................................................................   Passed    0.00 sec
+        Start 176: FeatureManager.OutOfRangeFeatureReturnsFalse
+176/321 Test #176: FeatureManager.OutOfRangeFeatureReturnsFalse .........................................................................   Passed    0.00 sec
+        Start 177: FeatureManager.GetAllReturnsAllFeatures
+177/321 Test #177: FeatureManager.GetAllReturnsAllFeatures ..............................................................................   Passed    0.00 sec
+        Start 178: FeatureManager.GetAllReturnsCorrectStates
+178/321 Test #178: FeatureManager.GetAllReturnsCorrectStates ............................................................................   Passed    0.00 sec
+        Start 179: FeatureManager.GetMaskReflectsState
+179/321 Test #179: FeatureManager.GetMaskReflectsState ..................................................................................   Passed    0.00 sec
+        Start 180: FeatureManager.SetMaskUpdatesState
+180/321 Test #180: FeatureManager.SetMaskUpdatesState ...................................................................................   Passed    0.00 sec
+        Start 181: FeatureManager.ConcurrentReadsDoNotCrash
+181/321 Test #181: FeatureManager.ConcurrentReadsDoNotCrash .............................................................................   Passed    0.00 sec
+        Start 182: FeatureManager.ConcurrentWritesApplyCallbacksInMutationOrder
+182/321 Test #182: FeatureManager.ConcurrentWritesApplyCallbacksInMutationOrder .........................................................   Passed    0.02 sec
+        Start 183: ModeManagerTest.StartsInBootingMode
+183/321 Test #183: ModeManagerTest.StartsInBootingMode ..................................................................................   Passed    0.00 sec
+        Start 184: ModeManagerTest.BootingFeatureMaskIsZero
+184/321 Test #184: ModeManagerTest.BootingFeatureMaskIsZero .............................................................................   Passed    0.00 sec
+        Start 185: ModeManagerTest.IdleMaskIsLedAndBle
+185/321 Test #185: ModeManagerTest.IdleMaskIsLedAndBle ..................................................................................   Passed    0.00 sec
+        Start 186: ModeManagerTest.TriageMaskExcludesEspNowAndWifiPolicy
+186/321 Test #186: ModeManagerTest.TriageMaskExcludesEspNowAndWifiPolicy ................................................................   Passed    0.00 sec
+        Start 187: ModeManagerTest.ConnectedMaskExcludesWifiPolicy
+187/321 Test #187: ModeManagerTest.ConnectedMaskExcludesWifiPolicy ......................................................................   Passed    0.00 sec
+        Start 188: ModeManagerTest.GameMaskSameAsConnected
+188/321 Test #188: ModeManagerTest.GameMaskSameAsConnected ..............................................................................   Passed    0.00 sec
+        Start 189: ModeManagerTest.ErrorMaskIsLedAndBle
+189/321 Test #189: ModeManagerTest.ErrorMaskIsLedAndBle .................................................................................   Passed    0.00 sec
+        Start 190: ModeManagerTest.BootingToIdle
+190/321 Test #190: ModeManagerTest.BootingToIdle ........................................................................................   Passed    0.00 sec
+        Start 191: ModeManagerTest.IdleToTriage
+191/321 Test #191: ModeManagerTest.IdleToTriage .........................................................................................   Passed    0.00 sec
+        Start 192: ModeManagerTest.IdleToConnected
+192/321 Test #192: ModeManagerTest.IdleToConnected ......................................................................................   Passed    0.00 sec
+        Start 193: ModeManagerTest.TriageToConnected
+193/321 Test #193: ModeManagerTest.TriageToConnected ....................................................................................   Passed    0.00 sec
+        Start 194: ModeManagerTest.ConnectedToGame
+194/321 Test #194: ModeManagerTest.ConnectedToGame ......................................................................................   Passed    0.00 sec
+        Start 195: ModeManagerTest.GameToConnected
+195/321 Test #195: ModeManagerTest.GameToConnected ......................................................................................   Passed    0.00 sec
+        Start 196: ModeManagerTest.ConnectedToTriage
+196/321 Test #196: ModeManagerTest.ConnectedToTriage ....................................................................................   Passed    0.00 sec
+        Start 197: ModeManagerTest.AnyModeToError
+197/321 Test #197: ModeManagerTest.AnyModeToError .......................................................................................   Passed    0.00 sec
+        Start 198: ModeManagerTest.AnyModeToIdle
+198/321 Test #198: ModeManagerTest.AnyModeToIdle ........................................................................................   Passed    0.00 sec
+        Start 199: ModeManagerTest.ErrorToIdle
+199/321 Test #199: ModeManagerTest.ErrorToIdle ..........................................................................................   Passed    0.00 sec
+        Start 200: ModeManagerTest.SameModeTransitionSucceeds
+200/321 Test #200: ModeManagerTest.SameModeTransitionSucceeds ...........................................................................   Passed    0.00 sec
+        Start 201: ModeManagerTest.PeerGameNormalizesBootingThroughConnected
+201/321 Test #201: ModeManagerTest.PeerGameNormalizesBootingThroughConnected ............................................................   Passed    0.00 sec
+        Start 202: ModeManagerTest.PeerGameNormalizesTriageThroughConnected
+202/321 Test #202: ModeManagerTest.PeerGameNormalizesTriageThroughConnected .............................................................   Passed    0.00 sec
+        Start 203: ModeManagerTest.PeerGameRecoversErrorThroughConnected
+203/321 Test #203: ModeManagerTest.PeerGameRecoversErrorThroughConnected ................................................................   Passed    0.00 sec
+        Start 204: ModeManagerTest.PeerGameIsIdempotent
+204/321 Test #204: ModeManagerTest.PeerGameIsIdempotent .................................................................................   Passed    0.00 sec
+        Start 205: ModeManagerTest.ConcurrentTransitionsKeepModeAndFeatureMaskConsistent
+205/321 Test #205: ModeManagerTest.ConcurrentTransitionsKeepModeAndFeatureMaskConsistent ................................................   Passed    0.00 sec
+        Start 206: ModeManagerTest.BootingToTriageInvalid
+206/321 Test #206: ModeManagerTest.BootingToTriageInvalid ...............................................................................   Passed    0.00 sec
+        Start 207: ModeManagerTest.BootingToConnectedInvalid
+207/321 Test #207: ModeManagerTest.BootingToConnectedInvalid ............................................................................   Passed    0.00 sec
+        Start 208: ModeManagerTest.BootingToGameInvalid
+208/321 Test #208: ModeManagerTest.BootingToGameInvalid .................................................................................   Passed    0.00 sec
+        Start 209: ModeManagerTest.SoloDrillIdleToGame
+209/321 Test #209: ModeManagerTest.SoloDrillIdleToGame ..................................................................................   Passed    0.00 sec
+        Start 210: ModeManagerTest.TriageToGameInvalid
+210/321 Test #210: ModeManagerTest.TriageToGameInvalid ..................................................................................   Passed    0.00 sec
+        Start 211: ModeManagerTest.GameToTriageInvalid
+211/321 Test #211: ModeManagerTest.GameToTriageInvalid ..................................................................................   Passed    0.00 sec
+        Start 212: ModeManagerTest.TransitionAppliesFeatureMaskAndPreservesWifiPolicy
+212/321 Test #212: ModeManagerTest.TransitionAppliesFeatureMaskAndPreservesWifiPolicy ...................................................   Passed    0.00 sec
+        Start 213: ModeManagerTest.TriagePreservesDisabledWifiPolicy
+213/321 Test #213: ModeManagerTest.TriagePreservesDisabledWifiPolicy ....................................................................   Passed    0.00 sec
+        Start 214: ModeManagerTest.ConnectedMaskEnablesEspNowAndPreservesWifiPolicy
+214/321 Test #214: ModeManagerTest.ConnectedMaskEnablesEspNowAndPreservesWifiPolicy .....................................................   Passed    0.00 sec
+        Start 215: ModeManagerTest.TriageTimeoutToIdle
+215/321 Test #215: ModeManagerTest.TriageTimeoutToIdle ..................................................................................   Passed    0.00 sec
+        Start 216: ModeManagerTest.TriageActivityResetsTimeout
+216/321 Test #216: ModeManagerTest.TriageActivityResetsTimeout ..........................................................................   Passed    0.00 sec
+        Start 217: ModeManagerTest.ErrorRecoveryTimeout
+217/321 Test #217: ModeManagerTest.ErrorRecoveryTimeout .................................................................................   Passed    0.00 sec
+        Start 218: ModeManagerTest.PeerDrillTimeoutToConnected
+218/321 Test #218: ModeManagerTest.PeerDrillTimeoutToConnected ..........................................................................   Passed    0.00 sec
+        Start 219: ModeManagerTest.IdleNoTimeout
+219/321 Test #219: ModeManagerTest.IdleNoTimeout ........................................................................................   Passed    0.00 sec
+        Start 220: ModeManagerTest.ConnectedNoTimeout
+220/321 Test #220: ModeManagerTest.ConnectedNoTimeout ...................................................................................   Passed    0.00 sec
+        Start 221: ModeManagerTest.ModeToString
+221/321 Test #221: ModeManagerTest.ModeToString .........................................................................................   Passed    0.00 sec
+        Start 222: ModeManagerTest.GameEnteredFromTracksConnected
+222/321 Test #222: ModeManagerTest.GameEnteredFromTracksConnected .......................................................................   Passed    0.00 sec
+        Start 223: ModeManagerTest.GameEnteredFromTracksIdle
+223/321 Test #223: ModeManagerTest.GameEnteredFromTracksIdle ............................................................................   Passed    0.00 sec
+        Start 224: ModeManagerTest.SoloDrillTimeoutToIdle
+224/321 Test #224: ModeManagerTest.SoloDrillTimeoutToIdle ...............................................................................   Passed    0.00 sec
+        Start 225: ModeManagerTest.TransitionCallbackInvoked
+225/321 Test #225: ModeManagerTest.TransitionCallbackInvoked ............................................................................   Passed    0.00 sec
+        Start 226: ModeManagerTest.TransitionCallbackCalledOnEachTransition
+226/321 Test #226: ModeManagerTest.TransitionCallbackCalledOnEachTransition .............................................................   Passed    0.00 sec
+        Start 227: ModeManagerTest.TransitionCallbackNotCalledOnInvalid
+227/321 Test #227: ModeManagerTest.TransitionCallbackNotCalledOnInvalid .................................................................   Passed    0.00 sec
+        Start 228: ModeManagerTest.TransitionCallbackNotCalledOnSameMode
+228/321 Test #228: ModeManagerTest.TransitionCallbackNotCalledOnSameMode ................................................................   Passed    0.00 sec
+        Start 229: GameEngineTest.StartsInReadyState
+229/321 Test #229: GameEngineTest.StartsInReadyState ....................................................................................   Passed    0.00 sec
+        Start 230: GameEngineTest.ArmTransitionsToArmed
+230/321 Test #230: GameEngineTest.ArmTransitionsToArmed .................................................................................   Passed    0.00 sec
+        Start 231: GameEngineTest.ArmFailsWhenNotReady
+231/321 Test #231: GameEngineTest.ArmFailsWhenNotReady ..................................................................................   Passed    0.00 sec
+        Start 232: GameEngineTest.DisarmFromArmed
+232/321 Test #232: GameEngineTest.DisarmFromArmed .......................................................................................   Passed    0.00 sec
+        Start 233: GameEngineTest.DisarmFromReady
+233/321 Test #233: GameEngineTest.DisarmFromReady .......................................................................................   Passed    0.00 sec
+        Start 234: GameEngineTest.DisarmFromFeedback
+234/321 Test #234: GameEngineTest.DisarmFromFeedback ....................................................................................   Passed    0.00 sec
+        Start 235: GameEngineTest.TouchInArmedStateRecordsHit
+235/321 Test #235: GameEngineTest.TouchInArmedStateRecordsHit ...........................................................................   Passed    0.00 sec
+        Start 236: GameEngineTest.HitReactionTimeIsCorrect
+236/321 Test #236: GameEngineTest.HitReactionTimeIsCorrect ..............................................................................   Passed    0.00 sec
+        Start 237: GameEngineTest.HitTriggersWhiteFlashAndSound
+237/321 Test #237: GameEngineTest.HitTriggersWhiteFlashAndSound .........................................................................   Passed    0.00 sec
+        Start 238: GameEngineTest.HitEmitsGameEvent
+238/321 Test #238: GameEngineTest.HitEmitsGameEvent .....................................................................................   Passed    0.00 sec
+        Start 239: GameEngineTest.FeedbackCompletesAfterDuration
+239/321 Test #239: GameEngineTest.FeedbackCompletesAfterDuration ........................................................................   Passed    0.00 sec
+        Start 240: GameEngineTest.MultiPadDetectionFirstWins
+240/321 Test #240: GameEngineTest.MultiPadDetectionFirstWins ............................................................................   Passed    0.00 sec
+        Start 241: GameEngineTest.TimeoutInArmedStateRecordsMiss
+241/321 Test #241: GameEngineTest.TimeoutInArmedStateRecordsMiss ........................................................................   Passed    0.00 sec
+        Start 242: GameEngineTest.MissTriggersRedFlash
+242/321 Test #242: GameEngineTest.MissTriggersRedFlash ..................................................................................   Passed    0.00 sec
+        Start 243: GameEngineTest.MissEmitsGameEvent
+243/321 Test #243: GameEngineTest.MissEmitsGameEvent ....................................................................................   Passed    0.00 sec
+        Start 244: GameEngineTest.MissNoSound
+244/321 Test #244: GameEngineTest.MissNoSound ...........................................................................................   Passed    0.00 sec
+        Start 245: GameEngineTest.FeedbackModeNoneSkipsFlashAndSound
+245/321 Test #245: GameEngineTest.FeedbackModeNoneSkipsFlashAndSound ....................................................................   Passed    0.00 sec
+        Start 246: GameEngineTest.FeedbackModeAudioOnlySkipsLed
+246/321 Test #246: GameEngineTest.FeedbackModeAudioOnlySkipsLed .........................................................................   Passed    0.00 sec
+        Start 247: GameEngineTest.FeedbackModeLedOnlySkipsAudio
+247/321 Test #247: GameEngineTest.FeedbackModeLedOnlySkipsAudio .........................................................................   Passed    0.00 sec
+        Start 248: GameEngineTest.MultipleArmDisarmCycles
+248/321 Test #248: GameEngineTest.MultipleArmDisarmCycles ...............................................................................   Passed    0.00 sec
+        Start 249: GameEngineTest.TouchAfterTimeoutIgnored
+249/321 Test #249: GameEngineTest.TouchAfterTimeoutIgnored ..............................................................................   Passed    0.00 sec
+        Start 250: GameEngineTest.TouchDuringFeedbackIgnored
+250/321 Test #250: GameEngineTest.TouchDuringFeedbackIgnored ............................................................................   Passed    0.00 sec
+        Start 251: GameEngineTest.DisarmDuringArmed
+251/321 Test #251: GameEngineTest.DisarmDuringArmed .....................................................................................   Passed    0.00 sec
+        Start 252: GameEngineTest.ZeroTimeoutImmediateMiss
+252/321 Test #252: GameEngineTest.ZeroTimeoutImmediateMiss ..............................................................................   Passed    0.00 sec
+        Start 253: GameEngineTest.FullCycleHitThenRearm
+253/321 Test #253: GameEngineTest.FullCycleHitThenRearm .................................................................................   Passed    0.00 sec
+        Start 254: GameEngineTest.FullCycleMissThenRearm
+254/321 Test #254: GameEngineTest.FullCycleMissThenRearm ................................................................................   Passed    0.00 sec
+        Start 255: GameEngineTest.TickInReadyIsNoop
+255/321 Test #255: GameEngineTest.TickInReadyIsNoop .....................................................................................   Passed    0.00 sec
+        Start 256: GameEngineTest.TouchUpdateCalledInArmed
+256/321 Test #256: GameEngineTest.TouchUpdateCalledInArmed ..............................................................................   Passed    0.00 sec
+        Start 257: GameEngineTest.EventCallbackCanQueryAndDisarmEngine
+257/321 Test #257: GameEngineTest.EventCallbackCanQueryAndDisarmEngine ..................................................................   Passed    0.00 sec
+        Start 258: GameEngineTest.ConcurrentControlTickStatsAndCallbackAccessIsSerialized
+258/321 Test #258: GameEngineTest.ConcurrentControlTickStatsAndCallbackAccessIsSerialized ...............................................   Passed    0.01 sec
+        Start 259: GameEngineTest.StateToString
+259/321 Test #259: GameEngineTest.StateToString .........................................................................................   Passed    0.00 sec
+        Start 260: TraceBufferTest.AcquiredEventsRemainCountedUntilReleased
+260/321 Test #260: TraceBufferTest.AcquiredEventsRemainCountedUntilReleased .............................................................   Passed    0.00 sec
+        Start 261: TraceBufferTest.PendingAcquisitionSurvivesAdditionalRecording
+261/321 Test #261: TraceBufferTest.PendingAcquisitionSurvivesAdditionalRecording ........................................................   Passed    0.00 sec
+        Start 262: TraceBufferTest.RetainedDumpSnapshotHasSingleOwnerAcrossTransports
+262/321 Test #262: TraceBufferTest.RetainedDumpSnapshotHasSingleOwnerAcrossTransports ...................................................   Passed    0.00 sec
+        Start 263: TraceBufferTest.OwningTransportCanClearRetainedSnapshotAndLaterEvents
+263/321 Test #263: TraceBufferTest.OwningTransportCanClearRetainedSnapshotAndLaterEvents ................................................   Passed    0.00 sec
+        Start 264: TraceRecorderTest.StableTaskIdMustFitActiveTaskBitmap
+264/321 Test #264: TraceRecorderTest.StableTaskIdMustFitActiveTaskBitmap ................................................................   Passed    0.00 sec
+        Start 265: TraceRecorderTest.StableTaskIdsAndHandlesCannotAlias
+265/321 Test #265: TraceRecorderTest.StableTaskIdsAndHandlesCannotAlias .................................................................   Passed    0.00 sec
+        Start 266: TraceApiTest.ApplicationEventsCarryFormatV1TaskContext
+266/321 Test #266: TraceApiTest.ApplicationEventsCarryFormatV1TaskContext ...............................................................   Passed    0.00 sec
+        Start 267: KernelTraceTest.TaskHandlesMapOnlyToExplicitStableIds
+267/321 Test #267: KernelTraceTest.TaskHandlesMapOnlyToExplicitStableIds ................................................................   Passed    0.00 sec
+        Start 268: KernelTraceTest.ObjectIdentityCannotChangeWhenReboundOrWhileEnabled
+268/321 Test #268: KernelTraceTest.ObjectIdentityCannotChangeWhenReboundOrWhileEnabled ..................................................   Passed    0.00 sec
+        Start 269: KernelTraceTest.FlushStablyOrdersBothCoresWithoutMergeStorage
+269/321 Test #269: KernelTraceTest.FlushStablyOrdersBothCoresWithoutMergeStorage ........................................................   Passed    0.00 sec
+        Start 270: TraceCommandHandler.AcceptsEmptyControlRequestPayload
+270/321 Test #270: TraceCommandHandler.AcceptsEmptyControlRequestPayload ................................................................   Passed    0.00 sec
+        Start 271: TraceCommandHandler.StatusReportsActualKernelCaptureCapacity
+271/321 Test #271: TraceCommandHandler.StatusReportsActualKernelCaptureCapacity .........................................................   Passed    0.00 sec
+        Start 272: TraceCommandHandler.DumpCarriesFirmwareImageAndDeviceIdentity
+272/321 Test #272: TraceCommandHandler.DumpCarriesFirmwareImageAndDeviceIdentity ........................................................   Passed    0.00 sec
+        Start 273: TraceStreamWriter.SendsWholeBuffer
+273/321 Test #273: TraceStreamWriter.SendsWholeBuffer ...................................................................................   Passed    0.00 sec
+        Start 274: TraceStreamWriter.RetriesUntilAllPartialWritesComplete
+274/321 Test #274: TraceStreamWriter.RetriesUntilAllPartialWritesComplete ...............................................................   Passed    0.00 sec
+        Start 275: TraceStreamWriter.ReportsClosedConnectionMidFrame
+275/321 Test #275: TraceStreamWriter.ReportsClosedConnectionMidFrame ....................................................................   Passed    0.00 sec
+        Start 276: TraceStreamWriter.ReportsWriteErrorMidFrame
+276/321 Test #276: TraceStreamWriter.ReportsWriteErrorMidFrame ..........................................................................   Passed    0.00 sec
+        Start 277: TraceStreamWriter.RejectsInvalidWriterProgress
+277/321 Test #277: TraceStreamWriter.RejectsInvalidWriterProgress .......................................................................   Passed    0.00 sec
+        Start 278: TraceStreamWriter.AcceptsEmptyBufferWithoutWriting
+278/321 Test #278: TraceStreamWriter.AcceptsEmptyBufferWithoutWriting ...................................................................   Passed    0.00 sec
+        Start 279: MultiPodSimTest.SinglePod_ArmHitCycle
+279/321 Test #279: MultiPodSimTest.SinglePod_ArmHitCycle ................................................................................   Passed    0.00 sec
+        Start 280: MultiPodSimTest.SinglePod_ArmMissCycle
+280/321 Test #280: MultiPodSimTest.SinglePod_ArmMissCycle ...............................................................................   Passed    0.00 sec
+        Start 281: MultiPodSimTest.MultiPod_IndependentArming
+281/321 Test #281: MultiPodSimTest.MultiPod_IndependentArming ...........................................................................   Passed    0.00 sec
+        Start 282: MultiPodSimTest.SimLog_CapturesLedEvents
+282/321 Test #282: MultiPodSimTest.SimLog_CapturesLedEvents .............................................................................   Passed    0.00 sec
+        Start 283: MultiPodSimTest.SimLog_CapturesAudioEvents
+283/321 Test #283: MultiPodSimTest.SimLog_CapturesAudioEvents ...........................................................................   Passed    0.00 sec
+        Start 284: MultiPodSimTest.SimLog_FilterByCategory
+284/321 Test #284: MultiPodSimTest.SimLog_FilterByCategory ..............................................................................   Passed    0.00 sec
+        Start 285: MultiPodSimTest.SimLog_FilterByPod
+285/321 Test #285: MultiPodSimTest.SimLog_FilterByPod ...................................................................................   Passed    0.00 sec
+        Start 286: MultiPodSimTest.ModeTransition_BootToGame
+286/321 Test #286: MultiPodSimTest.ModeTransition_BootToGame ............................................................................   Passed    0.00 sec
+        Start 287: MultiPodSimTest.PodInstance_FeedbackCallbacksLogged
+287/321 Test #287: MultiPodSimTest.PodInstance_FeedbackCallbacksLogged ..................................................................   Passed    0.00 sec
+        Start 288: MultiPodSimTest.Orchestrator_TicksAllPods
+288/321 Test #288: MultiPodSimTest.Orchestrator_TicksAllPods ............................................................................   Passed    0.00 sec
+        Start 289: MultiPodSimTest.Bus_UnicastDelivery
+289/321 Test #289: MultiPodSimTest.Bus_UnicastDelivery ..................................................................................   Passed    0.00 sec
+        Start 290: MultiPodSimTest.Bus_BroadcastDelivery
+290/321 Test #290: MultiPodSimTest.Bus_BroadcastDelivery ................................................................................   Passed    0.00 sec
+        Start 291: MultiPodSimTest.Bus_DelaysDeliveryUntilVirtualDeadline
+291/321 Test #291: MultiPodSimTest.Bus_DelaysDeliveryUntilVirtualDeadline ...............................................................   Passed    0.00 sec
+        Start 292: MultiPodSimTest.Bus_AppliesDropAndDuplicateDeterministically
+292/321 Test #292: MultiPodSimTest.Bus_AppliesDropAndDuplicateDeterministically .........................................................   Passed    0.00 sec
+        Start 293: MultiPodSimTest.Bus_ReplaysCapturedDeliveryRecordExactly
+293/321 Test #293: MultiPodSimTest.Bus_ReplaysCapturedDeliveryRecordExactly .............................................................   Passed    0.00 sec
+        Start 294: MultiPodSimTest.Bus_PayloadMismatchFailsClosed
+294/321 Test #294: MultiPodSimTest.Bus_PayloadMismatchFailsClosed .......................................................................   Passed    0.00 sec
+        Start 295: MultiPodSimTest.Bus_EmptyReplayRejectsUnexpectedDelivery
+295/321 Test #295: MultiPodSimTest.Bus_EmptyReplayRejectsUnexpectedDelivery .............................................................   Passed    0.00 sec
+        Start 296: MultiPodSimTest.CanonicalPayloadPreservesEveryMessageVariant
+296/321 Test #296: MultiPodSimTest.CanonicalPayloadPreservesEveryMessageVariant .........................................................   Passed    0.00 sec
+        Start 297: MultiPodSimTest.CanonicalPayloadIncludesRoundToken
+297/321 Test #297: MultiPodSimTest.CanonicalPayloadIncludesRoundToken ...................................................................   Passed    0.00 sec
+        Start 298: MultiPodSimTest.PodCommandHandler_JoinGame
+298/321 Test #298: MultiPodSimTest.PodCommandHandler_JoinGame ...........................................................................   Passed    0.00 sec
+        Start 299: MultiPodSimTest.PodCommandHandler_SetColor
+299/321 Test #299: MultiPodSimTest.PodCommandHandler_SetColor ...........................................................................   Passed    0.00 sec
+        Start 300: MultiPodSimTest.PodCommandHandler_ArmAndTouch
+300/321 Test #300: MultiPodSimTest.PodCommandHandler_ArmAndTouch ........................................................................   Passed    0.00 sec
+        Start 301: MultiPodSimTest.PodCommandHandler_RejectedRearmKeepsActiveRoundCallback
+301/321 Test #301: MultiPodSimTest.PodCommandHandler_RejectedRearmKeepsActiveRoundCallback ..............................................   Passed    0.00 sec
+        Start 302: SimDrillTest.DrillResult_Statistics
+302/321 Test #302: SimDrillTest.DrillResult_Statistics ..................................................................................   Passed    0.00 sec
+        Start 303: SimDrillTest.DrillResult_AllMisses
+303/321 Test #303: SimDrillTest.DrillResult_AllMisses ...................................................................................   Passed    0.00 sec
+        Start 304: SimDrillTest.FixedTwoPodScoringFixture
+304/321 Test #304: SimDrillTest.FixedTwoPodScoringFixture ...............................................................................   Passed    0.00 sec
+        Start 305: SimDrillTest.ThreePod_AllHits
+305/321 Test #305: SimDrillTest.ThreePod_AllHits ........................................................................................   Passed    0.00 sec
+        Start 306: SimDrillTest.ThreePod_WithMisses
+306/321 Test #306: SimDrillTest.ThreePod_WithMisses .....................................................................................   Passed    0.00 sec
+        Start 307: SimDrillTest.ThreePod_MasterAsTarget
+307/321 Test #307: SimDrillTest.ThreePod_MasterAsTarget .................................................................................   Passed    0.00 sec
+        Start 308: SimDrillTest.DelayedArmIsAppliedBeforeTouch
+308/321 Test #308: SimDrillTest.DelayedArmIsAppliedBeforeTouch ..........................................................................   Passed    0.00 sec
+        Start 309: SimDrillTest.DelayedArmTimeoutStartsAtDelivery
+309/321 Test #309: SimDrillTest.DelayedArmTimeoutStartsAtDelivery .......................................................................   Passed    0.00 sec
+        Start 310: SimDrillTest.StaleDelayedTimeoutDoesNotMaskNextTouchResponse
+310/321 Test #310: SimDrillTest.StaleDelayedTimeoutDoesNotMaskNextTouchResponse .........................................................   Passed    0.00 sec
+        Start 311: SimDrillTest.DelayedOldArmCannotClaimNextRoundTouch
+311/321 Test #311: SimDrillTest.DelayedOldArmCannotClaimNextRoundTouch ..................................................................   Passed    0.00 sec
+        Start 312: SimDrillTest.FivePod_LargeDrill
+312/321 Test #312: SimDrillTest.FivePod_LargeDrill ......................................................................................   Passed    0.00 sec
+        Start 313: SimDrillTest.Determinism_SameInputSameOutput
+313/321 Test #313: SimDrillTest.Determinism_SameInputSameOutput .........................................................................   Passed    0.00 sec
+        Start 314: SimDrillTest.PerfettoExport_ProducesValidJson
+314/321 Test #314: SimDrillTest.PerfettoExport_ProducesValidJson ........................................................................   Passed    0.00 sec
+        Start 315: SimDrillTest.PerfettoExport_ContainsFlowEvents
+315/321 Test #315: SimDrillTest.PerfettoExport_ContainsFlowEvents .......................................................................   Passed    0.00 sec
+        Start 316: SimDrillTest.PerfettoExport_WritesToFile
+316/321 Test #316: SimDrillTest.PerfettoExport_WritesToFile .............................................................................   Passed    0.00 sec
+        Start 317: ControlRequests/EmptyPayloadTraceCommandTest.RejectsNonemptyPayloadWithErrorAck/Start#GetParam()=1-byteobject<10>
+317/321 Test #317: ControlRequests/EmptyPayloadTraceCommandTest.RejectsNonemptyPayloadWithErrorAck/Start#GetParam()=1-byteobject<10> ....   Passed    0.00 sec
+        Start 318: ControlRequests/EmptyPayloadTraceCommandTest.RejectsNonemptyPayloadWithErrorAck/Stop#GetParam()=1-byteobject<11>
+318/321 Test #318: ControlRequests/EmptyPayloadTraceCommandTest.RejectsNonemptyPayloadWithErrorAck/Stop#GetParam()=1-byteobject<11> .....   Passed    0.00 sec
+        Start 319: ControlRequests/EmptyPayloadTraceCommandTest.RejectsNonemptyPayloadWithErrorAck/Dump#GetParam()=1-byteobject<12>
+319/321 Test #319: ControlRequests/EmptyPayloadTraceCommandTest.RejectsNonemptyPayloadWithErrorAck/Dump#GetParam()=1-byteobject<12> .....   Passed    0.00 sec
+        Start 320: ControlRequests/EmptyPayloadTraceCommandTest.RejectsNonemptyPayloadWithErrorAck/Clear#GetParam()=1-byteobject<15>
+320/321 Test #320: ControlRequests/EmptyPayloadTraceCommandTest.RejectsNonemptyPayloadWithErrorAck/Clear#GetParam()=1-byteobject<15> ....   Passed    0.00 sec
+        Start 321: ControlRequests/EmptyPayloadTraceCommandTest.RejectsNonemptyPayloadWithErrorAck/Status#GetParam()=1-byteobject<16>
+321/321 Test #321: ControlRequests/EmptyPayloadTraceCommandTest.RejectsNonemptyPayloadWithErrorAck/Status#GetParam()=1-byteobject<16> ...   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 321
+
+Total Test time (real) =   0.96 sec

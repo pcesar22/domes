@@ -1,0 +1,21 @@
+$ python3 -m unittest discover -s tools/scoring_validation -p 'test_*.py' -v
+test_ambiguous_identity_is_rejected (test_campaign.CampaignTest.test_ambiguous_identity_is_rejected) ... ok
+test_duplicate_token_is_rejected (test_campaign.CampaignTest.test_duplicate_token_is_rejected) ... ok
+test_every_changed_independent_field_is_reported (test_campaign.CampaignTest.test_every_changed_independent_field_is_reported) ... ok
+test_generated_cpp_binding_is_current (test_campaign.CampaignTest.test_generated_cpp_binding_is_current) ... ok
+test_incomplete_fixture_is_rejected (test_campaign.CampaignTest.test_incomplete_fixture_is_rejected) ... ok
+test_malformed_json_is_rejected (test_campaign.CampaignTest.test_malformed_json_is_rejected) ... ok
+test_missing_clock_provenance_is_rejected (test_campaign.CampaignTest.test_missing_clock_provenance_is_rejected) ... ok
+test_repeated_independent_outputs_and_verdict_are_identical (test_campaign.CampaignTest.test_repeated_independent_outputs_and_verdict_are_identical) ... ok
+test_result_without_clock_provenance_is_rejected (test_campaign.CampaignTest.test_result_without_clock_provenance_is_rejected) ... ok
+test_wrong_pod_is_rejected (test_campaign.CampaignTest.test_wrong_pod_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.004s
+
+OK
+$ sha256sum tools/scoring_validation/fixtures/fixed_two_pod_v1.json tools/scoring_validation/artifacts/normalized-run-1.json tools/scoring_validation/artifacts/normalized-run-2.json tools/scoring_validation/artifacts/verdict.json
+5bf359be3b254608bf737d1a5f5a17139b6d6fdd32a30c863003a6332c0fdd2e  tools/scoring_validation/fixtures/fixed_two_pod_v1.json
+c4e22820ff91344b8c87db7e16d59e9dcb9583c05937fe94709f90a9ca392176  tools/scoring_validation/artifacts/normalized-run-1.json
+c4e22820ff91344b8c87db7e16d59e9dcb9583c05937fe94709f90a9ca392176  tools/scoring_validation/artifacts/normalized-run-2.json
+7e36ea0ec49dd0a134dce4176141d3a27d8687c5e364f92292e13a7769e1c390  tools/scoring_validation/artifacts/verdict.json
