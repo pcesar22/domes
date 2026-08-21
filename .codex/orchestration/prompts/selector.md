@@ -24,5 +24,22 @@ Set `existing_pull_request` to a nonzero value only when `existing_issue` identi
 owns that pull request. A pull request without an associated available issue is not selectable;
 return zero for both fields or choose another package.
 
+An existing issue is available to this selector only when it is open and labeled
+`agent:needs-specification`. Never select an issue already labeled ready, running, rework, review,
+verification, human-review, blocked, or done; the deterministic scheduler owns those states.
+
+Do not return `blocked` merely because the highest-priority issue is blocked. Continue through the
+milestone authorities and select the next distinct authorized software implementation or executed
+validation delivery. If repository reality or a stale execution pointer prevents a reliable
+implementation contract, select one bounded `mode: plan` task for an authorized software milestone;
+that planner must inspect current reality and materialize an executable dependency graph. Do not use
+planning to bypass product authority or create documentation-only busywork.
+
+For `idle` or `blocked`, use the empty non-execution envelope exactly: `mode`, `work_class`,
+`priority`, and `autonomy_policy` are `none`; `existing_issue` and `existing_pull_request` are zero;
+all task-definition strings and arrays are empty except `spec_revision`, `rationale`, and `blockers`.
+Use `blocked` only when no distinct authorized execution or bounded software-planning delivery can
+be selected after inspecting every current milestone.
+
 Inspect repository authorities and GitHub read-only. Make no repository or tracker mutation.
 Return only the schema-conforming selection; do not include a transcript.
