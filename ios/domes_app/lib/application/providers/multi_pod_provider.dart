@@ -45,6 +45,19 @@ class PodTouchEvent {
   const PodTouchEvent({required this.address, required this.event});
 }
 
+/// A connection failure associated with the pod connection that reported it.
+class PodConnectionFailure {
+  final String address;
+  final Object error;
+  final StackTrace stackTrace;
+
+  const PodConnectionFailure({
+    required this.address,
+    required this.error,
+    required this.stackTrace,
+  });
+}
+
 /// Manages multiple pod connections.
 class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
   MultiPodNotifier({PodConnector? connector})
@@ -55,11 +68,18 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
 
   final StreamController<PodTouchEvent> _touchEvents =
       StreamController<PodTouchEvent>.broadcast();
+  final StreamController<PodConnectionFailure> _connectionFailures =
+      StreamController<PodConnectionFailure>.broadcast();
   final Map<String, StreamSubscription<AppTouchEvent>> _touchSubscriptions = {};
   final Map<String, int> _connectionGenerations = {};
+  final Map<String, Future<void>> _connectionCleanupTails = {};
 
   /// Physical touch edges from every connected pod.
   Stream<PodTouchEvent> get touchEvents => _touchEvents.stream;
+
+  /// Terminal failures from individual pod connections.
+  Stream<PodConnectionFailure> get connectionFailures =>
+      _connectionFailures.stream;
 
   /// Connect to a pod by address.
   Future<void> connectPod(PodDevice pod) async {
@@ -75,6 +95,8 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
 
     Transport? pendingTransport;
     try {
+      await _connectionCleanupTails[pod.address];
+      if (!mounted || _connectionGenerations[pod.address] != generation) return;
       await _touchSubscriptions.remove(pod.address)?.cancel();
       await previous?.transport?.disconnect();
       if (!mounted || _connectionGenerations[pod.address] != generation) return;
@@ -135,9 +157,25 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
       final subscription = _touchSubscriptions.remove(address);
       final transport = entry.transport;
       if (transport != null) {
-        unawaited(_cleanupFailedConnection(subscription, transport));
+        final cleanup = _cleanupFailedConnection(subscription, transport);
+        _connectionCleanupTails[address] = cleanup;
+        unawaited(
+          cleanup.whenComplete(() {
+            if (identical(_connectionCleanupTails[address], cleanup)) {
+              _connectionCleanupTails.remove(address);
+            }
+          }),
+        );
       } else if (subscription != null) {
-        unawaited(_cancelSubscription(subscription));
+        final cleanup = _cancelSubscription(subscription);
+        _connectionCleanupTails[address] = cleanup;
+        unawaited(
+          cleanup.whenComplete(() {
+            if (identical(_connectionCleanupTails[address], cleanup)) {
+              _connectionCleanupTails.remove(address);
+            }
+          }),
+        );
       }
       state = {
         ...state,
@@ -149,7 +187,13 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
         ),
       };
     }
-    _touchEvents.addError(error, stackTrace);
+    _connectionFailures.add(
+      PodConnectionFailure(
+        address: address,
+        error: error,
+        stackTrace: stackTrace,
+      ),
+    );
   }
 
   static Future<void> _cleanupFailedConnection(
@@ -281,6 +325,7 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
       }
     }
     unawaited(_touchEvents.close());
+    unawaited(_connectionFailures.close());
     super.dispose();
   }
 }

@@ -11,17 +11,26 @@ import 'package:flutter_test/flutter_test.dart';
 final class _FakeMultiPodNotifier extends MultiPodNotifier {
   final StreamController<PodTouchEvent> events =
       StreamController<PodTouchEvent>.broadcast();
+  final StreamController<PodConnectionFailure> failures =
+      StreamController<PodConnectionFailure>.broadcast();
   final List<SystemMode> modeCalls = [];
   final List<AppLedPattern> ledCalls = [];
+  final List<(String, SystemMode)> addressedModeCalls = [];
+  final List<(String, AppLedPattern)> addressedLedCalls = [];
   Completer<void>? gameModeGate;
   Completer<void>? idleModeGate;
+  Completer<void>? nextLedOffGate;
 
   @override
   Stream<PodTouchEvent> get touchEvents => events.stream;
 
   @override
+  Stream<PodConnectionFailure> get connectionFailures => failures.stream;
+
+  @override
   Future<void> setMode(String address, SystemMode mode) async {
     modeCalls.add(mode);
+    addressedModeCalls.add((address, mode));
     if (mode == SystemMode.SYSTEM_MODE_GAME) {
       await gameModeGate?.future;
     } else if (mode == SystemMode.SYSTEM_MODE_IDLE) {
@@ -32,6 +41,23 @@ final class _FakeMultiPodNotifier extends MultiPodNotifier {
   @override
   Future<void> setLedPattern(String address, AppLedPattern pattern) async {
     ledCalls.add(pattern);
+    addressedLedCalls.add((address, pattern));
+    if (pattern.patternType == LedPatternType.LED_PATTERN_OFF &&
+        nextLedOffGate != null) {
+      final gate = nextLedOffGate!;
+      nextLedOffGate = null;
+      await gate.future;
+    }
+  }
+
+  void fail(String address, [Object? error]) {
+    failures.add(
+      PodConnectionFailure(
+        address: address,
+        error: error ?? StateError('connection lost'),
+        stackTrace: StackTrace.current,
+      ),
+    );
   }
 
   int get greenCalls =>
@@ -169,6 +195,7 @@ void main() {
     tearDown(() async {
       hardwareContainer.dispose();
       await multiPod.events.close();
+      await multiPod.failures.close();
       multiPod.dispose();
     });
 
@@ -233,6 +260,183 @@ void main() {
 
       await Future<void>.delayed(const Duration(milliseconds: 350));
       expect(multiPod.greenCalls, 2);
+    });
+
+    test('participating failure is terminal in every active phase', () async {
+      Future<void> expectFailure({
+        required DrillPhase phase,
+        required Future<void> Function(DrillConfig config) reachPhase,
+      }) async {
+        hardwareNotifier.reset();
+        await Future<void>.delayed(Duration.zero);
+        const config = DrillConfig(
+          roundCount: 3,
+          timeout: Duration(seconds: 1),
+          minDelay: Duration(seconds: 1),
+          maxDelay: Duration(seconds: 1),
+          podAddresses: ['pod-1', 'pod-2'],
+        );
+        var terminalErrors = 0;
+        final subscription = hardwareContainer.listen<DrillState>(
+          drillProvider,
+          (_, next) {
+            if (next.phase == DrillPhase.error) terminalErrors++;
+          },
+        );
+
+        await reachPhase(config);
+        expect(hardwareContainer.read(drillProvider).phase, phase);
+        final completed = List.of(
+          hardwareContainer.read(drillProvider).results,
+        );
+        final failedAddress =
+            hardwareContainer.read(drillProvider).activePodAddress ?? 'pod-1';
+        multiPod.fail(failedAddress);
+        await Future<void>.delayed(Duration.zero);
+
+        final failed = hardwareContainer.read(drillProvider);
+        expect(failed.phase, DrillPhase.error);
+        expect(failed.errorMessage, contains(failedAddress));
+        expect(failed.results, completed);
+        expect(terminalErrors, 1);
+
+        multiPod.gameModeGate?.complete();
+        multiPod.gameModeGate = null;
+        multiPod.nextLedOffGate?.complete();
+        multiPod.nextLedOffGate = null;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(hardwareContainer.read(drillProvider).phase, DrillPhase.error);
+        expect(hardwareContainer.read(drillProvider).results, completed);
+        subscription.close();
+      }
+
+      await expectFailure(
+        phase: DrillPhase.preparing,
+        reachPhase: (config) async {
+          multiPod.gameModeGate = Completer<void>();
+          unawaited(hardwareNotifier.startDrill(config));
+          await Future<void>.delayed(Duration.zero);
+        },
+      );
+      await expectFailure(
+        phase: DrillPhase.waitingDelay,
+        reachPhase: hardwareNotifier.startDrill,
+      );
+      await expectFailure(
+        phase: DrillPhase.waitingTouch,
+        reachPhase: (config) async {
+          final immediate = DrillConfig(
+            roundCount: config.roundCount,
+            timeout: config.timeout,
+            minDelay: Duration.zero,
+            maxDelay: Duration.zero,
+            podAddresses: config.podAddresses,
+          );
+          await hardwareNotifier.startDrill(immediate);
+          await Future<void>.delayed(Duration.zero);
+        },
+      );
+      await expectFailure(
+        phase: DrillPhase.roundComplete,
+        reachPhase: (config) async {
+          final immediate = DrillConfig(
+            roundCount: config.roundCount,
+            timeout: config.timeout,
+            minDelay: Duration.zero,
+            maxDelay: Duration.zero,
+            podAddresses: const ['pod-1'],
+          );
+          await hardwareNotifier.startDrill(immediate);
+          await Future<void>.delayed(Duration.zero);
+          multiPod.nextLedOffGate = Completer<void>();
+          hardwareNotifier.recordTouch('pod-1');
+        },
+      );
+
+      final idleParticipants = multiPod.addressedModeCalls
+          .where((call) => call.$2 == SystemMode.SYSTEM_MODE_IDLE)
+          .map((call) => call.$1)
+          .toSet();
+      expect(idleParticipants, containsAll(['pod-1', 'pod-2']));
+    });
+
+    test(
+      'preparation command failure identifies pod before stream failure',
+      () async {
+        const config = DrillConfig(
+          minDelay: Duration(seconds: 1),
+          maxDelay: Duration(seconds: 1),
+          podAddresses: ['pod-1'],
+        );
+        var terminalErrors = 0;
+        final subscription = hardwareContainer.listen<DrillState>(
+          drillProvider,
+          (_, next) {
+            if (next.phase == DrillPhase.error) terminalErrors++;
+          },
+        );
+        multiPod.gameModeGate = Completer<void>();
+
+        final start = hardwareNotifier.startDrill(config);
+        await Future<void>.delayed(Duration.zero);
+        multiPod.gameModeGate!.completeError(StateError('link reset'));
+        await start;
+
+        final commandFailure = hardwareContainer.read(drillProvider);
+        expect(commandFailure.phase, DrillPhase.error);
+        expect(commandFailure.errorMessage, contains('pod-1'));
+        expect(commandFailure.results, isEmpty);
+        expect(terminalErrors, 1);
+
+        multiPod.fail('pod-1', StateError('connection lost'));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(hardwareContainer.read(drillProvider), same(commandFailure));
+        expect(terminalErrors, 1);
+        subscription.close();
+      },
+    );
+
+    test('non-participating failure does not mutate active drill', () async {
+      const config = DrillConfig(
+        minDelay: Duration(seconds: 1),
+        maxDelay: Duration(seconds: 1),
+        podAddresses: ['pod-1'],
+      );
+      await hardwareNotifier.startDrill(config);
+      final before = hardwareContainer.read(drillProvider);
+
+      multiPod.fail('pod-outside');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(hardwareContainer.read(drillProvider), same(before));
+    });
+
+    test('restart after failure waits for cleanup and can finish', () async {
+      const config = DrillConfig(
+        roundCount: 1,
+        minDelay: Duration.zero,
+        maxDelay: Duration.zero,
+        podAddresses: ['pod-1'],
+      );
+      await hardwareNotifier.startDrill(config);
+      await Future<void>.delayed(Duration.zero);
+      multiPod.idleModeGate = Completer<void>();
+      multiPod.fail('pod-1');
+      await Future<void>.delayed(Duration.zero);
+
+      final restart = hardwareNotifier.startDrill(config);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        multiPod.modeCalls.where((mode) => mode == SystemMode.SYSTEM_MODE_GAME),
+        hasLength(1),
+      );
+
+      multiPod.idleModeGate!.complete();
+      await restart;
+      await Future<void>.delayed(Duration.zero);
+      hardwareNotifier.recordTouch('pod-1');
+      expect(hardwareContainer.read(drillProvider).phase, DrillPhase.finished);
     });
   });
 
