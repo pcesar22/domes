@@ -1982,6 +1982,69 @@ class SelectorAndPlanTest(unittest.TestCase):
                     (),
                 )
 
+    def test_nonselected_selector_result_requires_empty_envelope(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        for field, value in (
+            ("mode", "execute"),
+            ("autonomy_policy", "review-only"),
+            ("priority", "p1"),
+            ("work_class", "software"),
+            ("existing_issue", 132),
+            ("existing_pull_request", 107),
+        ):
+            with self.subTest(field=field):
+                result = {
+                    "state": "blocked",
+                    "mode": "none",
+                    "autonomy_policy": "none",
+                    "priority": "none",
+                    "work_class": "none",
+                    "existing_issue": 0,
+                    "existing_pull_request": 0,
+                }
+                result[field] = value
+                with self.assertRaisesRegex(
+                    control.ControlError, "empty `none` envelope"
+                ):
+                    control.validate_selector_result(result, workflow, policy, (), ())
+
+    def test_nonselected_selector_result_accepts_empty_envelope(self) -> None:
+        result = {
+            "state": "idle",
+            "mode": "none",
+            "autonomy_policy": "none",
+            "priority": "none",
+            "work_class": "none",
+            "existing_issue": 0,
+            "existing_pull_request": 0,
+        }
+        control.validate_selector_result(
+            result, control.load_workflow(), control.load_autopilot_policy(), (), ()
+        )
+
+    def test_selector_error_retries_quickly_and_retains_snapshot(self) -> None:
+        result = {"state": "error", "error": "invalid selector result"}
+        self.assertEqual(
+            control.SELECTOR_ERROR_COOLDOWN_SECONDS,
+            control.selector_retry_cooldown(result),
+        )
+        self.assertEqual(
+            "tracker-fingerprint",
+            control.selector_retry_snapshot(result, "tracker-fingerprint"),
+        )
+
+    def test_valid_selector_idle_uses_normal_cooldown_and_own_snapshot(self) -> None:
+        result = {"state": "idle", "snapshot": "current-fingerprint"}
+        self.assertEqual(
+            control.SELECTOR_COOLDOWN_SECONDS,
+            control.selector_retry_cooldown(result),
+        )
+        self.assertEqual(
+            "current-fingerprint",
+            control.selector_retry_snapshot(result, "previous-fingerprint"),
+        )
+
     def test_selector_retries_semantically_invalid_result(self) -> None:
         workflow = control.load_workflow()
         policy = control.load_autopilot_policy()
@@ -3675,7 +3738,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
                 mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
                 mock.patch.object(control.time, "time", return_value=100),
                 mock.patch.object(
-                    control, "planner_schema_sha256", return_value="new-schema"
+                    control, "role_schema_sha256", return_value="new-schema"
                 ),
             ):
                 path = control.role_retry_path(ticket.number)
@@ -3692,6 +3755,78 @@ class ReviewFixRegressionTest(unittest.TestCase):
                 )
                 self.assertEqual({}, control.deferred_role_retries((ticket,)))
                 self.assertFalse(path.exists())
+
+    def test_worker_failure_returns_ready_and_defers_retry(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(69, self.revision, label="agent:ready")
+        item = control.validate_ticket(ticket, check_revision=False)
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(control.time, "time", return_value=100),
+                mock.patch.object(control, "transition") as transition,
+                mock.patch.object(
+                    control.subprocess,
+                    "run",
+                    return_value=subprocess.CompletedProcess([], 0, "", ""),
+                ),
+            ):
+                control.block_failed_run(
+                    workflow, item, control.ControlError("sandbox quota exceeded")
+                )
+                self.assertEqual(
+                    {69: workflow.poll_interval_seconds},
+                    control.deferred_role_retries((ticket,)),
+                )
+        transition.assert_called_once_with(workflow, ticket, "agent:ready")
+
+    def test_rework_worker_failure_preserves_rework_state(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(70, self.revision, label="agent:rework")
+        item = control.validate_ticket(ticket, check_revision=False)
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(control.time, "time", return_value=100),
+                mock.patch.object(control, "transition") as transition,
+                mock.patch.object(
+                    control.subprocess,
+                    "run",
+                    return_value=subprocess.CompletedProcess([], 0, "", ""),
+                ),
+            ):
+                control.block_failed_run(
+                    workflow, item, control.ControlError("worker process exited")
+                )
+                self.assertEqual(
+                    {70: workflow.poll_interval_seconds},
+                    control.deferred_role_retries((ticket,)),
+                )
+        transition.assert_called_once_with(workflow, ticket, "agent:rework")
+
+    def test_judge_failure_returns_to_agent_review(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(71, self.revision, label="agent:agent-review")
+        item = control.validate_ticket(ticket, check_revision=False)
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(control.time, "time", return_value=100),
+                mock.patch.object(control, "transition") as transition,
+                mock.patch.object(
+                    control.subprocess,
+                    "run",
+                    return_value=subprocess.CompletedProcess([], 0, "", ""),
+                ),
+            ):
+                control.block_failed_run(
+                    workflow, item, control.ControlError("judge schema rejected")
+                )
+                self.assertEqual(
+                    {71: workflow.poll_interval_seconds},
+                    control.deferred_role_retries((ticket,)),
+                )
+        transition.assert_called_once_with(workflow, ticket, "agent:agent-review")
 
     def test_dashboard_shows_active_work_and_human_review_without_raw_paths(
         self,

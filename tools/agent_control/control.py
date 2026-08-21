@@ -117,6 +117,7 @@ PLAN_TASK_MARKER_RE = re.compile(
     r"key=([^ ]+) uid=([0-9a-f]{64}) -->"
 )
 SELECTOR_COOLDOWN_SECONDS = 600
+SELECTOR_ERROR_COOLDOWN_SECONDS = 30
 MAX_RECURSIVE_PLANNER_DEPTH = 4
 AUTOMATED_REVIEW_POLICY = "software-review-required"
 LEGACY_AUTOMERGE_POLICY = "software-auto-merge"
@@ -129,6 +130,20 @@ REGISTERED_NFF_CP2102N_SERIALS = frozenset(
         "002a9f8e536def119f38c1a7c169b110",
     }
 )
+
+
+def selector_retry_cooldown(result: dict[str, Any]) -> int:
+    return (
+        SELECTOR_ERROR_COOLDOWN_SECONDS
+        if result.get("state") == "error"
+        else SELECTOR_COOLDOWN_SECONDS
+    )
+
+
+def selector_retry_snapshot(result: dict[str, Any], last_snapshot: str) -> str:
+    return str(result.get("snapshot", "")) or last_snapshot
+
+
 HARDWARE_CAPABILITY_RESTRICTIONS = (
     "Allowed only on the preflighted ports: ticket-required repository-standard "
     "application build/flash or serial OTA, framed CLI trace/config commands, reboot, "
@@ -1749,23 +1764,52 @@ def role_retry_path(ticket_number: int) -> Path:
     )
 
 
-def planner_schema_sha256() -> str:
-    schema_path = ORCHESTRATION_DIR / "schemas" / SCHEMA_BY_ROLE["planner"]
+def role_schema_sha256(role: str) -> str:
+    schema_name = SCHEMA_BY_ROLE.get(role)
+    if schema_name is None or role == "selector":
+        raise ControlError(f"unsupported retry role: {role}")
+    schema_path = ORCHESTRATION_DIR / "schemas" / schema_name
     return hashlib.sha256(schema_path.read_bytes()).hexdigest()
 
 
-def persist_planner_retry(
-    workflow: Workflow, item: TicketValidation, error: Exception
+def planner_schema_sha256() -> str:
+    """Retain the pending-plan identity helper for planner recovery journals."""
+    return role_schema_sha256("planner")
+
+
+def retry_state_for(item: TicketValidation, role: str) -> str:
+    if role == "planner":
+        return "agent:plan"
+    if role == "worker":
+        for state in (item.source_state, item.ticket.agent_state):
+            if state in {"agent:ready", "agent:rework"}:
+                return state
+        return "agent:ready"
+    if role == "judge":
+        return "agent:agent-review"
+    if role == "verification-worker":
+        return "agent:verification"
+    raise ControlError(f"unsupported retry role: {role}")
+
+
+def persist_role_retry(
+    workflow: Workflow,
+    item: TicketValidation,
+    error: Exception,
+    role: str,
+    resume_state: str,
 ) -> Path:
-    """Keep controller/planner failures retryable without calling them project blockers."""
+    """Keep controller-owned role failures retryable instead of inventing blockers."""
     path = role_retry_path(item.ticket.number)
-    schema_sha256 = planner_schema_sha256()
+    schema_sha256 = role_schema_sha256(role)
     attempt = 1
     try:
         previous = json.loads(path.read_text(encoding="utf-8"))
         if (
             previous.get("issue") == item.ticket.number
             and previous.get("spec_revision") == item.sections["Specification revision"]
+            and previous.get("role") == role
+            and previous.get("resume_state") == resume_state
             and previous.get("schema_sha256") == schema_sha256
         ):
             attempt = int(previous.get("attempt", 0)) + 1
@@ -1778,8 +1822,8 @@ def persist_planner_retry(
     record = {
         "issue": item.ticket.number,
         "spec_revision": item.sections["Specification revision"],
-        "role": "planner",
-        "resume_state": "agent:plan",
+        "role": role,
+        "resume_state": resume_state,
         "schema_sha256": schema_sha256,
         "attempt": attempt,
         "retry_after": int(time.time()) + delay,
@@ -1793,10 +1837,9 @@ def persist_planner_retry(
 def deferred_role_retries(tickets: Sequence[Ticket]) -> dict[int, int]:
     """Return seconds remaining for valid controller-owned retry journals."""
     now = int(time.time())
-    schema_sha256 = planner_schema_sha256()
     deferred: dict[int, int] = {}
     for ticket in tickets:
-        if ticket.state != "OPEN" or ticket.agent_state != "agent:plan":
+        if ticket.state != "OPEN" or ticket.agent_state not in ROLE_BY_STATE:
             continue
         sections = parse_sections(ticket.body)
         path = role_retry_path(ticket.number)
@@ -1804,13 +1847,20 @@ def deferred_role_retries(tickets: Sequence[Ticket]) -> dict[int, int]:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        role = str(record.get("role", ""))
+        resume_state = str(record.get("resume_state", ""))
         if (
             record.get("issue") != ticket.number
             or record.get("spec_revision") != sections.get("Specification revision")
-            or record.get("role") != "planner"
-            or record.get("resume_state") != "agent:plan"
+            or resume_state != ticket.agent_state
+            or ROLE_BY_STATE.get(resume_state) != role
             or not isinstance(record.get("retry_after"), int)
         ):
+            continue
+        try:
+            schema_sha256 = role_schema_sha256(role)
+        except ControlError:
+            path.unlink(missing_ok=True)
             continue
         if record.get("schema_sha256") != schema_sha256:
             path.unlink(missing_ok=True)
@@ -2501,8 +2551,17 @@ def validate_selector_result(
 ) -> None:
     state = result["state"]
     if state != "selected":
-        if result["mode"] != "none" or result["autonomy_policy"] != "none":
-            raise ControlError("idle or blocked selector result must use `none` policy")
+        if (
+            result["mode"] != "none"
+            or result["autonomy_policy"] != "none"
+            or result["priority"] != "none"
+            or result["work_class"] != "none"
+            or int(result["existing_issue"]) != 0
+            or int(result["existing_pull_request"]) != 0
+        ):
+            raise ControlError(
+                "idle or blocked selector result must use the empty `none` envelope"
+            )
         return
     revision = expected_revision or origin_main_revision(workflow)
     if result["spec_revision"] != revision:
@@ -6245,6 +6304,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             selector_future: concurrent.futures.Future[dict[str, Any]] | None = None
             next_selector_at = 0.0
             blocked_selector_snapshot = ""
+            last_selector_snapshot = ""
             last_tickets: Sequence[Ticket] = ()
             last_eligible: Sequence[TicketValidation] = ()
             last_blockers: dict[int, list[str]] = {}
@@ -6264,11 +6324,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                             next_selector_at = 0.0
                             blocked_selector_snapshot = ""
                         else:
-                            next_selector_at = (
-                                time.monotonic() + SELECTOR_COOLDOWN_SECONDS
-                            )
-                            blocked_selector_snapshot = str(
-                                selector_result.get("snapshot", "")
+                            cooldown = selector_retry_cooldown(selector_result)
+                            next_selector_at = time.monotonic() + cooldown
+                            blocked_selector_snapshot = selector_retry_snapshot(
+                                selector_result, last_selector_snapshot
                             )
                     try:
                         if policy is not None:
@@ -6281,6 +6340,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         else:
                             tickets = load_live_tickets(workflow)
                             pull_request_snapshot = []
+                            current_selector_snapshot = ""
                     except (ControlError, OSError, json.JSONDecodeError) as error:
                         if not args.watch:
                             raise
@@ -6301,6 +6361,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                         time.sleep(workflow.poll_interval_seconds)
                         continue
+                    last_selector_snapshot = current_selector_snapshot
                     if policy is not None and blocked_selector_snapshot:
                         if current_selector_snapshot != blocked_selector_snapshot:
                             next_selector_at = 0.0
@@ -6347,7 +6408,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     deferred_retries = deferred_role_retries(tickets)
                     for issue, seconds in deferred_retries.items():
                         blockers.setdefault(issue, []).append(
-                            f"controller planner retry scheduled in {seconds}s"
+                            f"controller role retry scheduled in {seconds}s"
                         )
                     for item in eligible:
                         if not requires_worker_hardware_access(item):
@@ -6607,28 +6668,20 @@ def block_failed_run(
             f"to rework: {error}",
         )
         return
-    if role == "planner":
-        retry_path = persist_planner_retry(workflow, item, error)
-        transition(workflow, item.ticket, "agent:plan")
-        retry_record = json.loads(retry_path.read_text(encoding="utf-8"))
-        if int(retry_record["attempt"]) > 1:
-            return
-        body = (
-            "Agent control-plane transition (planner retry)\n\n"
-            "The planner process or controller contract failed after bounded in-run "
-            "retries. This is not an external project blocker: the issue remains "
-            "`agent:plan` and will retry with bounded backoff while the selector may "
-            "fill other capacity.\n\n"
-            f"Failure class: `{type(error).__name__}`. Raw output is intentionally excluded."
-        )
-    else:
-        transition(workflow, item.ticket, "agent:blocked")
-        body = (
-            f"Agent control-plane transition ({role})\n\n"
-            "The role failed after bounded retries and moved to `agent:blocked`. "
-            "Inspect the retained local run logs before retrying.\n\n"
-            f"Failure class: `{type(error).__name__}`. Raw output is intentionally excluded."
-        )
+    resume_state = retry_state_for(item, role)
+    retry_path = persist_role_retry(workflow, item, error, role, resume_state)
+    transition(workflow, item.ticket, resume_state)
+    retry_record = json.loads(retry_path.read_text(encoding="utf-8"))
+    if int(retry_record["attempt"]) > 1:
+        return
+    body = (
+        f"Agent control-plane transition ({role} retry)\n\n"
+        "The role process, sandbox, or controller contract failed after bounded "
+        "in-run retries. This is not an external project blocker: the issue returned "
+        f"to `{resume_state}` and will retry with bounded backoff while other work "
+        "continues.\n\n"
+        f"Failure class: `{type(error).__name__}`. Raw output is intentionally excluded."
+    )
     posted = subprocess.run(
         [
             "gh",
@@ -6648,7 +6701,7 @@ def block_failed_run(
     if posted.returncode != 0:
         raise ControlError(
             posted.stderr.strip()
-            or f"failed to report blocked issue #{item.ticket.number}"
+            or f"failed to report retryable issue #{item.ticket.number}"
         )
 
 
