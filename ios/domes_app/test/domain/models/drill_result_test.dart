@@ -21,6 +21,59 @@ void main() {
   }
 
   group('DrillResult stats', () {
+    test('matches the deterministic two-pod scoring fixture', () {
+      final result = makeResult([
+        RoundResult(
+          roundIndex: 0,
+          podAddress: 'local-pod-0',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 1),
+          timestamp: now,
+        ),
+        RoundResult(
+          roundIndex: 1,
+          podAddress: 'peer-pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 100),
+          timestamp: now,
+        ),
+        RoundResult(
+          roundIndex: 2,
+          podAddress: 'local-pod-0',
+          hit: false,
+          timestamp: now,
+        ),
+        RoundResult(
+          roundIndex: 3,
+          podAddress: 'peer-pod-1',
+          hit: false,
+          timestamp: now,
+        ),
+        RoundResult(
+          roundIndex: 4,
+          podAddress: 'peer-pod-1',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 2999),
+          timestamp: now,
+        ),
+        RoundResult(
+          roundIndex: 5,
+          podAddress: 'local-pod-0',
+          hit: true,
+          reactionTime: const Duration(milliseconds: 1000),
+          timestamp: now,
+        ),
+      ]);
+
+      expect(result.hits, 4);
+      expect(result.misses, 2);
+      expect(result.avgReactionTime, const Duration(milliseconds: 1025));
+      expect(result.bestReactionTime, const Duration(milliseconds: 1));
+      expect(result.worstReactionTime, const Duration(milliseconds: 2999));
+      expect(result.perPodResults['local-pod-0'], hasLength(3));
+      expect(result.perPodResults['peer-pod-1'], hasLength(3));
+    });
+
     test('counts hits and misses', () {
       final result = makeResult([
         RoundResult(

@@ -460,6 +460,23 @@ void main() {
       // Should be no-op - state remains idle
       expect(container.read(drillProvider).phase, DrillPhase.idle);
     });
+
+    test('rejects wrong-pod touch without scoring the round', () async {
+      const config = DrillConfig(
+        roundCount: 1,
+        minDelay: Duration.zero,
+        maxDelay: Duration.zero,
+        podAddresses: ['sim-pod-1'],
+      );
+      await notifier.startDrill(config);
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(drillProvider).phase, DrillPhase.waitingTouch);
+
+      notifier.recordTouch('sim-pod-2');
+
+      expect(container.read(drillProvider).phase, DrillPhase.waitingTouch);
+      expect(container.read(drillProvider).results, isEmpty);
+    });
   });
 
   group('DrillNotifier.simulateTouch', () {

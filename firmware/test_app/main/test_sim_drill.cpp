@@ -56,11 +56,11 @@ protected:
 
 TEST_F(SimDrillTest, DrillResult_Statistics) {
     DrillResult result;
-    result.rounds.push_back({1, true, 100000, 0});
-    result.rounds.push_back({2, true, 200000, 1});
-    result.rounds.push_back({1, false, 0, 0});
-    result.rounds.push_back({2, true, 300000, 0});
-    result.rounds.push_back({1, false, 0, 0});
+    result.rounds.push_back({1, 1, true, 100000, 0});
+    result.rounds.push_back({2, 2, true, 200000, 1});
+    result.rounds.push_back({1, 3, false, 0, 0});
+    result.rounds.push_back({2, 4, true, 300000, 0});
+    result.rounds.push_back({1, 5, false, 0, 0});
     result.totalTimeUs = 5000000;
 
     EXPECT_EQ(result.hitCount(), 3u);
@@ -70,12 +70,45 @@ TEST_F(SimDrillTest, DrillResult_Statistics) {
 
 TEST_F(SimDrillTest, DrillResult_AllMisses) {
     DrillResult result;
-    result.rounds.push_back({1, false, 0, 0});
-    result.rounds.push_back({2, false, 0, 0});
+    result.rounds.push_back({1, 1, false, 0, 0});
+    result.rounds.push_back({2, 2, false, 0, 0});
 
     EXPECT_EQ(result.hitCount(), 0u);
     EXPECT_EQ(result.missCount(), 2u);
     EXPECT_EQ(result.avgReactionUs(), 0u);
+}
+
+TEST_F(SimDrillTest, FixedTwoPodScoringFixture) {
+    DrillEnv env(2);
+    const std::vector<DrillStep> steps = {
+        {0, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+        {1, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+        {0, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+        {1, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+        {1, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+        {0, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+    };
+    const std::vector<TouchScenario> touches = {
+        {0, 1, 0}, {1, 100, 1}, {0, 0, 0}, {1, 0, 0}, {1, 2999, 0}, {0, 1000, 1},
+    };
+
+    const DrillResult result = env.drill->execute(steps, touches);
+
+    ASSERT_EQ(result.rounds.size(), 6u);
+    const uint16_t expectedPods[] = {0, 1, 0, 1, 1, 0};
+    const bool expectedHits[] = {true, true, false, false, true, true};
+    const uint32_t expectedReactionUs[] = {1'000, 100'000, 0, 0, 2'999'000, 1'000'000};
+    for (size_t i = 0; i < result.rounds.size(); ++i) {
+        EXPECT_EQ(result.rounds[i].targetPodId, expectedPods[i]);
+        EXPECT_EQ(result.rounds[i].roundToken, i + 1);
+        EXPECT_EQ(result.rounds[i].hit, expectedHits[i]);
+        EXPECT_EQ(result.rounds[i].reactionTimeUs, expectedReactionUs[i]);
+    }
+    EXPECT_EQ(result.hitCount(), 4u);
+    EXPECT_EQ(result.missCount(), 2u);
+    EXPECT_EQ(result.avgReactionUs(), 1'025'000u);
+    EXPECT_EQ(result.bestReactionUs(), 1'000u);
+    EXPECT_EQ(result.worstReactionUs(), 2'999'000u);
 }
 
 // =============================================================================
@@ -347,6 +380,7 @@ TEST_F(SimDrillTest, Determinism_SameInputSameOutput) {
     ASSERT_EQ(r1.rounds.size(), r2.rounds.size());
     for (size_t i = 0; i < r1.rounds.size(); i++) {
         EXPECT_EQ(r1.rounds[i].hit, r2.rounds[i].hit) << "round " << i;
+        EXPECT_EQ(r1.rounds[i].roundToken, r2.rounds[i].roundToken) << "round " << i;
         EXPECT_EQ(r1.rounds[i].reactionTimeUs, r2.rounds[i].reactionTimeUs) << "round " << i;
         EXPECT_EQ(r1.rounds[i].padIndex, r2.rounds[i].padIndex) << "round " << i;
         EXPECT_EQ(r1.rounds[i].targetPodId, r2.rounds[i].targetPodId) << "round " << i;
