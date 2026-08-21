@@ -91,6 +91,8 @@ class DrillNotifier extends StateNotifier<DrillState> {
   Timer? _ledOffTimer;
   DateTime? _drillStartTime;
   late final StreamSubscription<PodTouchEvent> _touchSubscription;
+  late final StreamSubscription<PodConnectionFailure>
+  _connectionFailureSubscription;
   int _generation = 0;
   Future<void> _cleanupTail = Future<void>.value();
 
@@ -99,7 +101,9 @@ class DrillNotifier extends StateNotifier<DrillState> {
     _multiPod = multiPod ?? ref.read(multiPodProvider.notifier);
     _touchSubscription = _multiPod.touchEvents.listen(
       (event) => recordTouch(event.address),
-      onError: _handleTouchStreamError,
+    );
+    _connectionFailureSubscription = _multiPod.connectionFailures.listen(
+      _handleConnectionFailure,
     );
   }
 
@@ -135,23 +139,28 @@ class DrillNotifier extends StateNotifier<DrillState> {
     await _cleanupTail;
     if (!_isCurrent(generation, DrillPhase.preparing)) return;
 
-    try {
-      // Set all physical pods to GAME mode and start from a dark LED state.
-      for (final addr in config.podAddresses) {
-        if (!_isSimulatedAddress(addr)) {
+    // Set all physical pods to GAME mode and start from a dark LED state.
+    for (final addr in config.podAddresses) {
+      if (!_isSimulatedAddress(addr)) {
+        try {
           await _multiPod.setMode(addr, SystemMode.SYSTEM_MODE_GAME);
           if (!_isCurrent(generation, DrillPhase.preparing)) return;
+        } catch (e) {
+          _failSession(generation, 'Failed to prepare pod $addr: $e');
+          return;
         }
       }
-      for (final addr in config.podAddresses) {
-        if (!_isSimulatedAddress(addr)) {
+    }
+    for (final addr in config.podAddresses) {
+      if (!_isSimulatedAddress(addr)) {
+        try {
           await _multiPod.setLedPattern(addr, AppLedPattern.off());
           if (!_isCurrent(generation, DrillPhase.preparing)) return;
+        } catch (e) {
+          _failSession(generation, 'Failed to prepare pod $addr: $e');
+          return;
         }
       }
-    } catch (e) {
-      _failSession(generation, 'Failed to prepare pods: $e');
-      return;
     }
 
     if (_isCurrent(generation, DrillPhase.preparing)) {
@@ -412,9 +421,15 @@ class DrillNotifier extends StateNotifier<DrillState> {
     unawaited(_scheduleCleanup(config));
   }
 
-  void _handleTouchStreamError(Object error, StackTrace _) {
+  void _handleConnectionFailure(PodConnectionFailure failure) {
     if (!mounted || !state.isRunning) return;
-    _failSession(_generation, 'Touch event stream failed: $error');
+    if (!(state.config?.podAddresses.contains(failure.address) ?? false)) {
+      return;
+    }
+    _failSession(
+      _generation,
+      'Pod ${failure.address} connection failed: ${failure.error}',
+    );
   }
 
   void _failSession(int generation, String message) {
@@ -464,6 +479,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
     _cancelSession();
     unawaited(_scheduleCleanup(config));
     unawaited(_touchSubscription.cancel());
+    unawaited(_connectionFailureSubscription.cancel());
     super.dispose();
   }
 }

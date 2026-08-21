@@ -12,9 +12,15 @@ import 'package:flutter_test/flutter_test.dart';
 
 final class _FakeTransport extends Transport {
   bool connected = true;
+  Completer<void>? disconnectGate;
+  int disconnectCalls = 0;
 
   @override
-  Future<void> disconnect() async => connected = false;
+  Future<void> disconnect() async {
+    disconnectCalls++;
+    await disconnectGate?.future;
+    connected = false;
+  }
 
   @override
   bool get isConnected => connected;
@@ -145,11 +151,65 @@ void main() {
   });
 
   test('marks a pod disconnected when its event stream fails', () async {
+    final failure = notifier.connectionFailures.first;
     repository.eventController.addError(StateError('BLE disconnected'));
     await Future<void>.delayed(Duration.zero);
 
     expect(notifier.state['pod-1']!.isConnected, isFalse);
     expect(notifier.state['pod-1']!.error, contains('BLE disconnected'));
     expect(transport.connected, isFalse);
+    expect((await failure).address, 'pod-1');
   });
+
+  test(
+    'reconnect waits for failed generation cleanup and replaces stream',
+    () async {
+      final oldTransport = _FakeTransport()..disconnectGate = Completer<void>();
+      final oldRepository = _FakeRepository();
+      final newTransport = _FakeTransport();
+      final newRepository = _FakeRepository();
+      var connectorCalls = 0;
+      final localNotifier = MultiPodNotifier(
+        connector: (_) async {
+          connectorCalls++;
+          return connectorCalls == 1
+              ? (transport: oldTransport, repository: oldRepository)
+              : (transport: newTransport, repository: newRepository);
+        },
+      );
+      const pod = PodDevice(name: 'Pod 2', address: 'pod-2');
+      await localNotifier.connectPod(pod);
+      final failures = <PodConnectionFailure>[];
+      final failureSubscription = localNotifier.connectionFailures.listen(
+        failures.add,
+      );
+
+      oldRepository.eventController.addError(StateError('link lost'));
+      await Future<void>.delayed(Duration.zero);
+      final reconnect = localNotifier.connectPod(pod);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(connectorCalls, 1);
+      expect(oldTransport.disconnectCalls, 1);
+      oldTransport.disconnectGate!.complete();
+      await reconnect;
+      expect(connectorCalls, 2);
+      expect(localNotifier.state['pod-2']!.transport, same(newTransport));
+
+      oldRepository.eventController.addError(StateError('stale failure'));
+      await Future<void>.delayed(Duration.zero);
+      expect(failures, hasLength(1));
+
+      final touch = localNotifier.touchEvents.first;
+      newRepository.eventController.add(
+        const AppTouchEvent(podId: 2, padIndex: 3, timestampUs: 99),
+      );
+      expect((await touch).address, 'pod-2');
+
+      await failureSubscription.cancel();
+      localNotifier.dispose();
+      await oldRepository.eventController.close();
+      await newRepository.eventController.close();
+    },
+  );
 }
