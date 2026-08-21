@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:domes_app/domain/models/drill_config.dart';
 import 'package:domes_app/domain/models/drill_result.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,48 +24,35 @@ void main() {
 
   group('DrillResult stats', () {
     test('matches the deterministic two-pod scoring fixture', () {
-      final result = makeResult([
-        RoundResult(
-          roundIndex: 0,
-          podAddress: 'local-pod-0',
-          hit: true,
-          reactionTime: const Duration(milliseconds: 1),
+      var fixtureFile = File(
+        'tools/scoring_validation/fixtures/fixed_two_pod_v1.json',
+      );
+      for (var depth = 0; !fixtureFile.existsSync() && depth < 5; depth++) {
+        fixtureFile = File('../${fixtureFile.path}');
+      }
+      expect(
+        fixtureFile.existsSync(),
+        isTrue,
+        reason: 'fixture must be reachable',
+      );
+      final fixtureBytes = fixtureFile.readAsBytesSync();
+      final fixture =
+          jsonDecode(utf8.decode(fixtureBytes)) as Map<String, dynamic>;
+      final fixtureRounds = (fixture['rounds'] as List<dynamic>)
+          .cast<Map<String, dynamic>>();
+      final rounds = fixtureRounds.map((round) {
+        final reactionUs = round['reaction_time_us'] as int?;
+        return RoundResult(
+          roundIndex: round['index'] as int,
+          podAddress: round['target_identity'] as String,
+          hit: round['hit'] as bool,
+          reactionTime: reactionUs == null
+              ? null
+              : Duration(microseconds: reactionUs),
           timestamp: now,
-        ),
-        RoundResult(
-          roundIndex: 1,
-          podAddress: 'peer-pod-1',
-          hit: true,
-          reactionTime: const Duration(milliseconds: 100),
-          timestamp: now,
-        ),
-        RoundResult(
-          roundIndex: 2,
-          podAddress: 'local-pod-0',
-          hit: false,
-          timestamp: now,
-        ),
-        RoundResult(
-          roundIndex: 3,
-          podAddress: 'peer-pod-1',
-          hit: false,
-          timestamp: now,
-        ),
-        RoundResult(
-          roundIndex: 4,
-          podAddress: 'peer-pod-1',
-          hit: true,
-          reactionTime: const Duration(milliseconds: 2999),
-          timestamp: now,
-        ),
-        RoundResult(
-          roundIndex: 5,
-          podAddress: 'local-pod-0',
-          hit: true,
-          reactionTime: const Duration(milliseconds: 1000),
-          timestamp: now,
-        ),
-      ]);
+        );
+      }).toList();
+      final result = makeResult(rounds);
 
       expect(result.hits, 4);
       expect(result.misses, 2);
@@ -72,6 +61,29 @@ void main() {
       expect(result.worstReactionTime, const Duration(milliseconds: 2999));
       expect(result.perPodResults['local-pod-0'], hasLength(3));
       expect(result.perPodResults['peer-pod-1'], hasLength(3));
+      expect(
+        fixtureRounds.map((round) => round['round_token']),
+        everyElement(greaterThan(0)),
+      );
+
+      final outputPath = Platform.environment['DOMES_MOBILE_SCORING_RESULT'];
+      if (outputPath != null) {
+        final mobilePath =
+            (fixture['paths'] as Map<String, dynamic>)['mobile']
+                as Map<String, dynamic>;
+        File(outputPath).writeAsStringSync(
+          '${const JsonEncoder.withIndent('  ').convert({
+            'aggregate': {'average_reaction_us': result.avgReactionTime?.inMicroseconds, 'best_reaction_us': result.bestReactionTime?.inMicroseconds, 'hits': result.hits, 'misses': result.misses, 'worst_reaction_us': result.worstReactionTime?.inMicroseconds},
+            'clock_provenance': mobilePath['clock'],
+            'fixture_id': fixture['fixture_id'],
+            'fixture_sha256': sha256.convert(fixtureBytes).toString(),
+            'path': 'mobile',
+            'result_provenance': mobilePath['result'],
+            'rounds': rounds.map((round) => {'hit': round.hit, 'index': round.roundIndex, 'reaction_time_us': round.reactionTime?.inMicroseconds, 'round_token': null, 'target_identity': round.podAddress}).toList(),
+            'schema_version': 1,
+          })}\n',
+        );
+      }
     });
 
     test('counts hits and misses', () {

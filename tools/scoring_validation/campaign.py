@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Deterministic fixed-drill/mobile scoring differential campaign."""
+"""Compare independently emitted fixed-simulator and mobile scoring results."""
 
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -13,6 +12,10 @@ from typing import Any
 
 class FixtureError(ValueError):
     """The fixture cannot be compared without guessing."""
+
+
+class ResultError(ValueError):
+    """A path result cannot be attributed to the immutable fixture."""
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -57,7 +60,7 @@ def validate_fixture(fixture: dict[str, Any]) -> None:
         clock = _required(path, "clock", f"paths.{name}")
         result = _required(path, "result", f"paths.{name}")
         if not isinstance(clock, dict) or not all(
-            clock.get(k) for k in ("kind", "origin", "unit")
+            clock.get(key) for key in ("kind", "origin", "unit")
         ):
             raise FixtureError(f"paths.{name} clock provenance is incomplete")
         if not isinstance(result, dict) or not result.get("origin"):
@@ -137,48 +140,73 @@ def validate_fixture(fixture: dict[str, Any]) -> None:
         )
 
 
-def _score(fixture: dict[str, Any], path_name: str) -> dict[str, Any]:
-    resolution = fixture["paths"][path_name]["result"]["reaction_resolution_us"]
-    rounds = []
-    hit_reactions = []
-    for source in fixture["rounds"]:
-        reaction = source["reaction_time_us"]
-        normalized_reaction = (
-            None if reaction is None else (reaction // resolution) * resolution
+def load_result(
+    path: Path, expected_path: str, fixture: dict[str, Any], digest: str
+) -> dict[str, Any]:
+    try:
+        result = json.loads(path.read_bytes())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ResultError(
+            f"{expected_path} result is missing or malformed: {error}"
+        ) from error
+    if not isinstance(result, dict) or result.get("schema_version") != 1:
+        raise ResultError(f"{expected_path} result schema is missing or unsupported")
+    if result.get("path") != expected_path:
+        raise ResultError(f"expected {expected_path} result provenance")
+    if (
+        result.get("fixture_id") != fixture["fixture_id"]
+        or result.get("fixture_sha256") != digest
+    ):
+        raise ResultError(
+            f"{expected_path} result does not identify the immutable fixture"
         )
-        if source["hit"]:
-            hit_reactions.append(normalized_reaction)
-        rounds.append(
-            {
-                "hit": source["hit"],
-                "index": source["index"],
-                "reaction_time_us": normalized_reaction,
-                "round_token": source["round_token"],
-                "target_identity": source["target_identity"],
-            }
-        )
-    hit_count = len(hit_reactions)
-    aggregate = {
-        "average_reaction_us": sum(hit_reactions) // hit_count if hit_count else None,
-        "best_reaction_us": min(hit_reactions) if hit_count else None,
-        "hits": hit_count,
-        "misses": len(rounds) - hit_count,
-        "worst_reaction_us": max(hit_reactions) if hit_count else None,
+    if result.get("clock_provenance") != fixture["paths"][expected_path]["clock"]:
+        raise ResultError(f"{expected_path} clock provenance is missing or ambiguous")
+    if result.get("result_provenance") != fixture["paths"][expected_path]["result"]:
+        raise ResultError(f"{expected_path} result provenance is missing or ambiguous")
+    rounds = result.get("rounds")
+    aggregate = result.get("aggregate")
+    if not isinstance(rounds, list) or not isinstance(aggregate, dict):
+        raise ResultError(f"{expected_path} result is incomplete")
+    if len(rounds) != len(fixture["rounds"]):
+        raise ResultError(f"{expected_path} result round count is incomplete")
+    required_aggregate = {
+        "hits",
+        "misses",
+        "average_reaction_us",
+        "best_reaction_us",
+        "worst_reaction_us",
     }
-    return {
-        "aggregate": aggregate,
-        "clock_provenance": fixture["paths"][path_name]["clock"],
-        "path": path_name,
-        "result_provenance": fixture["paths"][path_name]["result"],
-        "rounds": rounds,
-    }
+    if not required_aggregate.issubset(aggregate):
+        raise ResultError(f"{expected_path} aggregate result is incomplete")
+    identities = {pod["identity"] for pod in fixture["pods"]}
+    tokens: set[int] = set()
+    for index, (actual, source) in enumerate(
+        zip(rounds, fixture["rounds"], strict=True)
+    ):
+        if not isinstance(actual, dict) or actual.get("index") != index:
+            raise ResultError(f"{expected_path} round {index} is missing or ambiguous")
+        if not {"target_identity", "round_token", "hit", "reaction_time_us"}.issubset(
+            actual
+        ):
+            raise ResultError(f"{expected_path} round {index} is incomplete")
+        if actual.get("target_identity") not in identities:
+            raise ResultError(f"{expected_path} round {index} has wrong pod identity")
+        token = actual.get("round_token")
+        if expected_path == "fixed" and (not isinstance(token, int) or token <= 0):
+            raise ResultError(f"fixed round {index} token is missing or ambiguous")
+        if expected_path == "fixed" and token in tokens:
+            raise ResultError(f"fixed round {index} token is duplicated")
+        if expected_path == "fixed":
+            tokens.add(token)
+        if expected_path == "mobile" and token is not None:
+            raise ResultError(f"mobile round {index} claims an unavailable round token")
+    return result
 
 
-def compare(
-    fixture: dict[str, Any], fixture_digest: str
+def compare_results(
+    fixture: dict[str, Any], digest: str, fixed: dict[str, Any], mobile: dict[str, Any]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    fixed = _score(fixture, "fixed")
-    mobile = _score(fixture, "mobile")
     matches: list[str] = []
     divergences: list[dict[str, Any]] = []
     for field in (
@@ -188,8 +216,8 @@ def compare(
         "best_reaction_us",
         "worst_reaction_us",
     ):
-        left = fixed["aggregate"][field]
-        right = mobile["aggregate"][field]
+        left = fixed["aggregate"].get(field)
+        right = mobile["aggregate"].get(field)
         if left == right:
             matches.append(f"aggregate.{field}")
         else:
@@ -200,57 +228,72 @@ def compare(
         zip(fixed["rounds"], mobile["rounds"], strict=True)
     ):
         for field in ("round_token", "target_identity", "hit", "reaction_time_us"):
-            if left[field] == right[field]:
+            left_value = left.get(field)
+            right_value = right.get(field)
+            if left_value == right_value:
                 matches.append(f"rounds[{index}].{field}")
             else:
-                divergences.append(
-                    {
-                        "field": f"rounds[{index}].{field}",
-                        "fixed": left[field],
-                        "mobile": right[field],
-                    }
-                )
+                divergence = {
+                    "field": f"rounds[{index}].{field}",
+                    "fixed": left_value,
+                    "mobile": right_value,
+                }
+                if field == "round_token" and right_value is None:
+                    divergence["reason"] = "unavailable_in_mobile_result"
+                divergences.append(divergence)
     normalized = {
         "fixture_id": fixture["fixture_id"],
-        "fixture_sha256": fixture_digest,
+        "fixture_sha256": digest,
         "paths": {"fixed": fixed, "mobile": mobile},
         "schema_version": 1,
     }
-    limitations = [
-        "simulated monotonic and host wall clocks have different origins and are not physically equivalent",
-        "mobile DrillResult does not retain round tokens; campaign tokens come from the validated orchestration fixture",
-        "BLE, ESP-NOW, touch, and wall-clock equivalence are unverified",
-    ]
     verdict = {
         "divergences": divergences,
         "fixture_id": fixture["fixture_id"],
-        "fixture_sha256": fixture_digest,
+        "fixture_sha256": digest,
         "matches": matches,
-        "provenance_limitations": limitations,
+        "provenance_limitations": [
+            "mobile production results do not retain round tokens",
+            "mobile fixture durations exercise DrillResult scoring but not DateTime.now capture",
+            "simulated monotonic and host wall clocks have different origins and are not physically equivalent",
+            "BLE, ESP-NOW, touch, and wall-clock equivalence are unverified",
+        ],
         "schema_version": 1,
         "status": "diverged" if divergences else "match_with_provenance_limitations",
     }
     return normalized, verdict
 
 
-def run_campaign(fixture_path: Path, output_dir: Path) -> dict[str, Any]:
+def run_campaign(
+    fixture_path: Path,
+    fixed_paths: list[Path],
+    mobile_paths: list[Path],
+    output_dir: Path,
+) -> dict[str, Any]:
+    if len(fixed_paths) != 2 or len(mobile_paths) != 2:
+        raise ResultError("exactly two independent outputs per path are required")
     fixture, digest = load_fixture(fixture_path)
     output_dir.mkdir(parents=True, exist_ok=True)
-    run_hashes = []
+    run_hashes: list[str] = []
+    verdict_hashes: list[str] = []
     verdict: dict[str, Any] | None = None
-    for repetition in (1, 2):
-        normalized, current_verdict = compare(copy.deepcopy(fixture), digest)
+    for repetition, (fixed_path, mobile_path) in enumerate(
+        zip(fixed_paths, mobile_paths, strict=True), 1
+    ):
+        fixed = load_result(fixed_path, "fixed", fixture, digest)
+        mobile = load_result(mobile_path, "mobile", fixture, digest)
+        normalized, current_verdict = compare_results(fixture, digest, fixed, mobile)
         output = canonical_bytes(normalized)
+        verdict_output = canonical_bytes(current_verdict)
         (output_dir / f"normalized-run-{repetition}.json").write_bytes(output)
         run_hashes.append(sha256_bytes(output))
-        if verdict is None:
-            verdict = current_verdict
-        elif canonical_bytes(verdict) != canonical_bytes(current_verdict):
-            raise RuntimeError("verdict changed across repetitions")
-    if run_hashes[0] != run_hashes[1]:
-        raise RuntimeError("normalized output changed across repetitions")
+        verdict_hashes.append(sha256_bytes(verdict_output))
+        verdict = current_verdict
+    if run_hashes[0] != run_hashes[1] or verdict_hashes[0] != verdict_hashes[1]:
+        raise ResultError("normalized output or verdict changed across repetitions")
     assert verdict is not None
     verdict["normalized_output_sha256"] = run_hashes
+    verdict["comparison_verdict_sha256"] = verdict_hashes
     (output_dir / "verdict.json").write_bytes(canonical_bytes(verdict))
     return verdict
 
@@ -258,9 +301,13 @@ def run_campaign(fixture_path: Path, output_dir: Path) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--fixture", type=Path, required=True)
+    parser.add_argument("--fixed-result", type=Path, action="append", required=True)
+    parser.add_argument("--mobile-result", type=Path, action="append", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
-    verdict = run_campaign(args.fixture, args.output_dir)
+    verdict = run_campaign(
+        args.fixture, args.fixed_result, args.mobile_result, args.output_dir
+    )
     print(json.dumps(verdict, sort_keys=True))
     return 0
 

@@ -6,6 +6,7 @@
  * and Perfetto trace export with flow events.
  */
 
+#include "../../../tools/scoring_validation/generated/fixed_two_pod_v1.hpp"
 #include "esp_timer.h"
 #include "sim/drillOrchestrator.hpp"
 #include "sim/perfettoExporter.hpp"
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 
 #include <gtest/gtest.h>
@@ -80,35 +82,65 @@ TEST_F(SimDrillTest, DrillResult_AllMisses) {
 
 TEST_F(SimDrillTest, FixedTwoPodScoringFixture) {
     DrillEnv env(2);
-    const std::vector<DrillStep> steps = {
-        {0, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
-        {1, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
-        {0, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
-        {1, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
-        {1, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
-        {0, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
-    };
-    const std::vector<TouchScenario> touches = {
-        {0, 1, 0}, {1, 100, 1}, {0, 0, 0}, {1, 0, 0}, {1, 2999, 0}, {0, 1000, 1},
-    };
+    std::vector<DrillStep> steps;
+    std::vector<TouchScenario> touches;
+    for (const auto& round : scoring_fixture::kRounds) {
+        steps.push_back(
+            {round.fixedPodId, 0, round.timeoutUs / 1000, 0x03, domes::Color::rgb(0, 255, 0)});
+        touches.push_back({round.fixedPodId, round.reactionTimeUs / 1000, 0});
+    }
 
     const DrillResult result = env.drill->execute(steps, touches);
 
-    ASSERT_EQ(result.rounds.size(), 6u);
-    const uint16_t expectedPods[] = {0, 1, 0, 1, 1, 0};
-    const bool expectedHits[] = {true, true, false, false, true, true};
-    const uint32_t expectedReactionUs[] = {1'000, 100'000, 0, 0, 2'999'000, 1'000'000};
+    ASSERT_EQ(result.rounds.size(), scoring_fixture::kRoundCount);
     for (size_t i = 0; i < result.rounds.size(); ++i) {
-        EXPECT_EQ(result.rounds[i].targetPodId, expectedPods[i]);
-        EXPECT_EQ(result.rounds[i].roundToken, i + 1);
-        EXPECT_EQ(result.rounds[i].hit, expectedHits[i]);
-        EXPECT_EQ(result.rounds[i].reactionTimeUs, expectedReactionUs[i]);
+        EXPECT_EQ(result.rounds[i].targetPodId, scoring_fixture::kRounds[i].fixedPodId);
+        EXPECT_EQ(result.rounds[i].roundToken, scoring_fixture::kRounds[i].roundToken);
+        EXPECT_EQ(result.rounds[i].hit, scoring_fixture::kRounds[i].hit);
+        EXPECT_EQ(result.rounds[i].reactionTimeUs, scoring_fixture::kRounds[i].reactionTimeUs);
     }
     EXPECT_EQ(result.hitCount(), 4u);
     EXPECT_EQ(result.missCount(), 2u);
     EXPECT_EQ(result.avgReactionUs(), 1'025'000u);
     EXPECT_EQ(result.bestReactionUs(), 1'000u);
     EXPECT_EQ(result.worstReactionUs(), 2'999'000u);
+
+    const char* outputPath = std::getenv("DOMES_FIXED_SCORING_RESULT");
+    if (outputPath != nullptr) {
+        std::ofstream output(outputPath, std::ios::trunc);
+        ASSERT_TRUE(output.is_open());
+        output << "{\n"
+               << "  \"aggregate\": {\n"
+               << "    \"average_reaction_us\": " << result.avgReactionUs() << ",\n"
+               << "    \"best_reaction_us\": " << result.bestReactionUs() << ",\n"
+               << "    \"hits\": " << result.hitCount() << ",\n"
+               << "    \"misses\": " << result.missCount() << ",\n"
+               << "    \"worst_reaction_us\": " << result.worstReactionUs() << "\n"
+               << "  },\n"
+               << "  \"clock_provenance\": {\"kind\": \"simulated_monotonic\", "
+                  "\"origin\": \"SimClock::nowUs\", \"unit\": \"microseconds\"},\n"
+               << "  \"fixture_id\": \"" << scoring_fixture::kFixtureId << "\",\n"
+               << "  \"fixture_sha256\": \"" << scoring_fixture::kFixtureSha256 << "\",\n"
+               << "  \"path\": \"fixed\",\n"
+               << "  \"result_provenance\": {\"origin\": "
+                  "\"sim::DrillOrchestrator::execute\", \"reaction_resolution_us\": 1000},\n"
+               << "  \"rounds\": [\n";
+        for (size_t i = 0; i < result.rounds.size(); ++i) {
+            const auto& actual = result.rounds[i];
+            const auto& fixture = scoring_fixture::kRounds[i];
+            output << "    {\"hit\": " << (actual.hit ? "true" : "false") << ", \"index\": " << i
+                   << ", \"reaction_time_us\": ";
+            if (actual.hit) {
+                output << actual.reactionTimeUs;
+            } else {
+                output << "null";
+            }
+            output << ", \"round_token\": " << actual.roundToken << ", \"target_identity\": \""
+                   << fixture.identity << "\"}" << (i + 1 == result.rounds.size() ? "\n" : ",\n");
+        }
+        output << "  ],\n  \"schema_version\": 1\n}\n";
+        ASSERT_TRUE(output.good());
+    }
 }
 
 // =============================================================================
