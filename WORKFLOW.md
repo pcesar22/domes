@@ -5,7 +5,7 @@ repository: pcesar22/domes
 tracker_actor: pcesar22
 state_prefix: agent:
 scheduler_host: ministrom
-max_concurrent_workers: 3
+max_concurrent_workers: 4
 workspace_root: .worktrees/agents
 base_branch: main
 poll_interval_seconds: 30

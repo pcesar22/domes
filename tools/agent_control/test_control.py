@@ -129,7 +129,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertEqual("pcesar22/domes", workflow.repository)
         self.assertEqual("pcesar22", workflow.tracker_actor)
         self.assertEqual("ministrom", workflow.scheduler_host)
-        self.assertEqual(3, workflow.max_concurrent_workers)
+        self.assertEqual(4, workflow.max_concurrent_workers)
         self.assertEqual("main", workflow.base_branch)
 
     def test_repository_contracts_validate(self) -> None:
@@ -1888,12 +1888,12 @@ class SelectorAndPlanTest(unittest.TestCase):
             with self.assertRaises(StopWatch):
                 control.main(["run", "--execute", "--watch", "--autopilot"])
 
-        self.assertEqual([3], executor_limits)
+        self.assertEqual([4], executor_limits)
         self.assertEqual(1, submits.count(control.execute_one))
         self.assertEqual(1, submits.count(control.run_selector))
         self.assertEqual(2, len(submits))
-        self.assertEqual((1, 3, 0), capacity[0])
-        self.assertEqual((0, 1, 1), capacity[1])
+        self.assertEqual((1, 4, 0), capacity[0])
+        self.assertEqual((0, 2, 1), capacity[1])
         self.assertTrue(emissions[0]["selector_active"])
         self.assertLessEqual(len(submits), workflow.max_concurrent_workers)
         lock.close.assert_called_once()
@@ -3738,7 +3738,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
             phase="working and planning",
             selector_active=True,
         )
-        self.assertIn("agents 1/3", rendered)
+        self.assertIn("agents 1/4", rendered)
         self.assertIn(
             "milestone selector | reading project brain and live tracker", rendered
         )

@@ -16,6 +16,8 @@ typedef enum {
     ESP_LOG_VERBOSE,
 } esp_log_level_t;
 
+inline void esp_log_level_set(const char*, esp_log_level_t) {}
+
 // No-op logging macros for tests
 #define ESP_LOGE(tag, fmt, ...) (void)0
 #define ESP_LOGW(tag, fmt, ...) (void)0
