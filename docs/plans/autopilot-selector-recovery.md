@@ -1,7 +1,7 @@
 # Keep autonomous execution supplied after role and selector failures
 
-Status: active
-Current phase: runtime deployment and observation
+Status: completed
+Current phase: human review; runtime candidate deployed
 Repository state: `codex/fix/autopilot-selector-recovery`; intentional changes are limited to the
 agent controller, selector prompt, tests, and this plan
 Last updated: 2026-08-21; failure chain reproduced from retained controller evidence
@@ -33,8 +33,8 @@ selector may create one bounded software planner task so the executable DAG can 
 - [x] Reproduce the empty-queue, quota failure, invalid selector, and cooldown chain.
 - [x] Implement retry and selector-contract corrections with regression coverage.
 - [x] Run controller tests and repository contract validation.
-- [ ] **Current:** Publish a human-review PR and deploy the candidate runtime revision without
-  merging.
+- [x] Deploy the candidate runtime revision without merging and observe executable dispatch.
+- [ ] **Human boundary:** Review and merge the published pull request.
 
 ## Verification
 
@@ -43,7 +43,7 @@ selector may create one bounded software planner task so the executable DAG can 
 | Automated | `python3 -m unittest discover -s tools/agent_control -p 'test_control.py'` | 132 passed |
 | Automated | `python3 tools/agent_control/control.py validate` | passed |
 | Scoped gate | `scripts/verify.sh --component tooling --component docs` | passed; host tooling 17 s |
-| Runtime | dashboard shows planner or worker dispatch after recovery | pending |
+| Runtime | candidate `7bb0887`; issue #132 | controller claimed `agent:running` and launched a workspace-write Codex worker |
 
 ## Decisions, discoveries, and deviations
 
@@ -53,6 +53,7 @@ selector may create one bounded software planner task so the executable DAG can 
 
 ## Resume checkpoint
 
-Publish without merging, fast-forward the idle runtime worktree to the candidate commit, requeue the
-infrastructure-failed task, and observe real planner or worker dispatch. Runtime recovery must not
-interrupt active implementation workers.
+The runtime worktree is fast-forwarded to candidate `7bb0887`. Issue #132 was requeued after stale,
+unused temporary build artifacts were removed; a live worker now owns it. Publish the repair PR for
+human review without merging it. If the worker fails, the retry journal should preserve executable
+state and the controller should continue selecting other work.
