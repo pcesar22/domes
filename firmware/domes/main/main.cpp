@@ -44,6 +44,7 @@
 #include "trace/traceStreamServer.hpp"
 #include "transport/bleOtaService.hpp"
 #include "transport/espNowTransport.hpp"
+#include "transport/physicalEspNowRadio.hpp"
 #include "transport/serialOtaReceiver.hpp"
 #include "transport/tcpConfigServer.hpp"
 #include "transport/uartTransport.hpp"
@@ -716,7 +717,8 @@ static esp_err_t initEspNowTransport() {
     // Always init ESP-NOW hardware — feature flag gates runtime behavior, not init
     ESP_LOGI(kTag, "Initializing ESP-NOW transport...");
 
-    static domes::EspNowTransport transport;
+    static domes::PhysicalEspNowRadio radio;
+    static domes::EspNowTransport transport(radio);
     espNowTransport = &transport;
 
     domes::TransportError err = espNowTransport->init();

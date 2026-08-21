@@ -1,9 +1,14 @@
 #pragma once
+
 #include "freertos/FreeRTOS.h"
 
 #include <cstddef>
-
-typedef void* RingbufHandle_t;
+#include <cstdint>
+#include <cstring>
+#include <deque>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
 
 typedef enum {
     RINGBUF_TYPE_NOSPLIT = 0,
@@ -12,22 +17,71 @@ typedef enum {
     RINGBUF_TYPE_MAX,
 } RingbufferType_t;
 
-// These are declared but never called — hostTraceBuffer.cpp provides the real TraceBuffer
-// implementation
-inline RingbufHandle_t xRingbufferCreate(size_t, RingbufferType_t) {
-    return nullptr;
+struct HostRingBuffer {
+    explicit HostRingBuffer(size_t capacity) : capacity(capacity) {}
+    size_t capacity;
+    size_t used = 0;
+    std::deque<std::vector<uint8_t>> queued;
+    std::unordered_map<void*, size_t> acquired;
+    std::mutex mutex;
+};
+
+using RingbufHandle_t = HostRingBuffer*;
+
+inline size_t hostRingStorage(size_t size) {
+    return 8 + ((size + 3U) & ~size_t{3U});
 }
-inline void vRingbufferDelete(RingbufHandle_t) {}
-inline BaseType_t xRingbufferSend(RingbufHandle_t, const void*, size_t, TickType_t) {
-    return pdFALSE;
+
+inline RingbufHandle_t xRingbufferCreate(size_t size, RingbufferType_t) {
+    return new HostRingBuffer(size);
 }
-inline BaseType_t xRingbufferSendFromISR(RingbufHandle_t, const void*, size_t, BaseType_t*) {
-    return pdFALSE;
+
+inline void vRingbufferDelete(RingbufHandle_t ring) {
+    delete ring;
 }
-inline void* xRingbufferReceive(RingbufHandle_t, size_t*, TickType_t) {
-    return nullptr;
+
+inline BaseType_t xRingbufferSend(RingbufHandle_t ring, const void* data, size_t size, TickType_t) {
+    std::lock_guard lock(ring->mutex);
+    const size_t storage = hostRingStorage(size);
+    if (ring->used + storage > ring->capacity) {
+        return pdFALSE;
+    }
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    ring->queued.emplace_back(bytes, bytes + size);
+    ring->used += storage;
+    return pdTRUE;
 }
-inline void vRingbufferReturnItem(RingbufHandle_t, void*) {}
-inline size_t xRingbufferGetCurFreeSize(RingbufHandle_t) {
-    return 0;
+
+inline BaseType_t xRingbufferSendFromISR(RingbufHandle_t ring, const void* data, size_t size,
+                                         BaseType_t*) {
+    return xRingbufferSend(ring, data, size, 0);
+}
+
+inline void* xRingbufferReceive(RingbufHandle_t ring, size_t* size, TickType_t) {
+    std::lock_guard lock(ring->mutex);
+    if (ring->queued.empty()) {
+        return nullptr;
+    }
+    std::vector<uint8_t> item = std::move(ring->queued.front());
+    ring->queued.pop_front();
+    auto* result = new uint8_t[item.size()];
+    std::memcpy(result, item.data(), item.size());
+    *size = item.size();
+    ring->acquired[result] = hostRingStorage(item.size());
+    return result;
+}
+
+inline void vRingbufferReturnItem(RingbufHandle_t ring, void* item) {
+    std::lock_guard lock(ring->mutex);
+    const auto found = ring->acquired.find(item);
+    if (found != ring->acquired.end()) {
+        ring->used -= found->second;
+        ring->acquired.erase(found);
+    }
+    delete[] static_cast<uint8_t*>(item);
+}
+
+inline size_t xRingbufferGetCurFreeSize(RingbufHandle_t ring) {
+    std::lock_guard lock(ring->mutex);
+    return ring->capacity - ring->used;
 }
