@@ -44,8 +44,7 @@ public:
     // the callback and cache-disabled paths fixed-capacity and DRAM-backed.
     static constexpr size_t kEventsPerCore = 1024;
     static constexpr size_t kPerCoreCaptureBytes = kEventsPerCore * sizeof(TraceEvent);
-    static constexpr size_t kCaptureCapacityBytes =
-        kCoreCount * kPerCoreCaptureBytes;
+    static constexpr size_t kCaptureCapacityBytes = kCoreCount * kPerCoreCaptureBytes;
 
     static void start();
     static void enable();

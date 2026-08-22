@@ -23,8 +23,7 @@ struct CoreBuffer {
 };
 
 DRAM_ATTR CoreBuffer gCoreBuffers[kCoreCount];
-static_assert(sizeof(gCoreBuffers[0].events) ==
-              domes::trace::KernelTrace::kPerCoreCaptureBytes);
+static_assert(sizeof(gCoreBuffers[0].events) == domes::trace::KernelTrace::kPerCoreCaptureBytes);
 static_assert(sizeof(gCoreBuffers[0].events) * kCoreCount ==
               domes::trace::KernelTrace::kCaptureCapacityBytes);
 static_assert(domes::trace::TraceBuffer::kMaxEvents >=
