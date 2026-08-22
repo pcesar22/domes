@@ -389,9 +389,15 @@ class ReplayIdentity:
             or values["scenario_schema"] != SCHEMA_VERSION
         ):
             raise BackplaneFailure("unsupported replay identity schema")
-        if values["vcpu_count"] != 1 or not isinstance(values["icount_shift"], int):
+        if (
+            not isinstance(values["vcpu_count"], int)
+            or isinstance(values["vcpu_count"], bool)
+            or values["vcpu_count"] <= 0
+            or not isinstance(values["icount_shift"], int)
+            or isinstance(values["icount_shift"], bool)
+        ):
             raise BackplaneFailure(
-                "one-DUT replay requires one vCPU and integer icount shift"
+                "one-DUT replay requires positive vCPU count and integer icount shift"
             )
         if values["unconsumed_events"] != 0:
             raise BackplaneFailure("replay identity contains unconsumed events")

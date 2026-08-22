@@ -319,6 +319,89 @@ def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str
         )
     finally:
         client.close()
+
+    def run_slave_role() -> bool:
+        slave = QtestClient(
+            binary,
+            [
+                "-global",
+                "domes-link.scenario-model=1",
+                "-global",
+                "domes-link.dut-role=2",
+            ],
+        )
+        try:
+            payload = bytes((2,)) + mac + (4).to_bytes(4, "little")
+            for offset in range(0, len(payload), 4):
+                slave.write(
+                    registers["tx_payload"] + offset,
+                    int.from_bytes(payload[offset : offset + 4], "little"),
+                )
+            slave.write(registers["tx_destination_low"], 2)
+            slave.write(registers["tx_destination_high"], 0x200)
+            slave.write(registers["tx_length"], len(payload))
+            slave.write(registers["tx_correlation"], 51)
+            slave.write(registers["tx_submit"], 1)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                if slave.read(registers["tx_status"]) == 2:
+                    return (
+                        slave.read(registers["rx_length"]) == 11
+                        and (slave.read(registers["rx_payload"]) & 0xFF) == 3
+                    )
+                time.sleep(0.005)
+            return False
+        finally:
+            slave.close()
+
+    def run_distinct_queue_overflow() -> bool:
+        queued = QtestClient(
+            binary,
+            [
+                "-global",
+                "domes-link.scenario-model=1",
+                "-global",
+                "domes-link.dut-role=1",
+                "-global",
+                "domes-link.peer-delay-ns=1000000000",
+            ],
+        )
+        try:
+            payload = bytes((2,)) + mac + (5).to_bytes(4, "little")
+            for token in range(1, 10):
+                queued.write(registers["tx_destination_low"], 2)
+                queued.write(registers["tx_destination_high"], 0x200)
+                for offset in range(0, len(payload), 4):
+                    queued.write(
+                        registers["tx_payload"] + offset,
+                        int.from_bytes(payload[offset : offset + 4], "little"),
+                    )
+                queued.write(registers["tx_length"], len(payload))
+                queued.write(registers["tx_correlation"], token)
+                queued.write(registers["tx_submit"], 1)
+                expected = 3 if token == 9 else 2
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    if queued.read(registers["tx_status"]) == expected:
+                        break
+                    time.sleep(0.005)
+                else:
+                    return False
+                if token < 9:
+                    queued.write(
+                        registers["interrupt_ack"],
+                        abi["interrupt_bits"]["tx_complete"],
+                    )
+            sticky = queued.read(registers["sticky_status"])
+            return bool(
+                sticky & abi["sticky_bits"]["overflow"]
+                and sticky & abi["sticky_bits"]["model_failure"]
+            )
+        finally:
+            queued.close()
+
+    cases["slave_role_ping_to_pong"] = run_slave_role()
+    cases["distinct_event_queue_overflow_fails_closed"] = run_distinct_queue_overflow()
     return cases
 
 

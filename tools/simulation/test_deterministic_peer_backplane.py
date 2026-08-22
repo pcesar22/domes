@@ -95,7 +95,10 @@ class EventQueueTest(unittest.TestCase):
         queue = MODULE.BoundedEventQueue(1)
         event = MODULE.Event(MODULE.EventKey(0, 0, 0, 0, 0), b"x")
         queue.push(event)
-        with self.assertRaisesRegex(MODULE.BackplaneFailure, "duplicate|overflow"):
+        distinct = MODULE.Event(MODULE.EventKey(0, 0, 0, 0, 1), b"y")
+        with self.assertRaisesRegex(MODULE.BackplaneFailure, "overflow"):
+            queue.push(distinct)
+        with self.assertRaisesRegex(MODULE.BackplaneFailure, "duplicate"):
             queue.push(event)
         queue.pop()
         with self.assertRaisesRegex(MODULE.BackplaneFailure, "exhausted"):
@@ -147,12 +150,16 @@ class ProductionActorTest(unittest.TestCase):
             "DOMES_LINK_EVENT_CAPACITY",
             "event_class_priority",
             'DEFINE_PROP_UINT32("scenario-model"',
+            'DEFINE_PROP_UINT32("scenario-seed"',
             'DEFINE_PROP_UINT32("dut-role"',
             'DEFINE_PROP_UINT64("peer-delay-ns"',
+            "DOMES_PEER_DELIVERY schema=1",
+            "s->tx_status = TX_FAILURE",
         )
         self.assertTrue(all(token in patch for token in required))
         self.assertNotIn("QEMU_CLOCK_REALTIME", patch)
         self.assertNotIn("QEMU_CLOCK_HOST", patch)
+        self.assertIn("if (!enqueue_event(s, event))", patch)
 
     def test_active_production_wire_variants_are_exchanged(self):
         actor = MODULE.FunctionalActor(MODULE.resolve_scenario(scenario()).actors[0])

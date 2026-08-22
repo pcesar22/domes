@@ -1,0 +1,4 @@
+esptool.py --chip=esp32s3 merge_bin --output=/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-142/tools/simulation/evidence/issue-142/master/002/qemu_flash.bin --fill-flash-size=8MB --flash_mode dio --flash_freq 80m --flash_size 8MB 0x0 bootloader/bootloader.bin 0x10000 domes_qemu_link_probe.bin 0x8000 partition_table/partition-table.bin
+esptool.py v4.12.0
+SHA digest in image updated
+Wrote 0x800000 bytes to file /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-142/tools/simulation/evidence/issue-142/master/002/qemu_flash.bin, ready to flash to offset 0x0

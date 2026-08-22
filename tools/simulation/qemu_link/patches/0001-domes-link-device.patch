@@ -3,11 +3,12 @@ new file mode 100644
 index 0000000000..fe642931fd
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,385 @@
+@@ -0,0 +1,405 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
 +#include "hw/qdev-properties.h"
++#include "qemu/log.h"
 +#include "qemu/module.h"
 +
 +#define MAGIC 0x444c4e4b
@@ -117,7 +118,7 @@ index 0000000000..fe642931fd
 +    event->length = wire_size(response);
 +    event->payload[0] = response;
 +    memcpy(&event->payload[1], actor_mac, sizeof(actor_mac));
-+    stl_le_p(&event->payload[7], event->deadline_ns / 1000);
++    stl_le_p(&event->payload[7], s->scenario_seed);
 +    if (response == MSG_TOUCH_EVENT) {
 +        memcpy(&event->payload[11], &s->tx_payload[11], 4);
 +        stl_le_p(&event->payload[15], 500);
@@ -201,6 +202,19 @@ index 0000000000..fe642931fd
 +        s->rx_correlation = event.correlation;
 +        memcpy(s->rx_payload, event.payload, event.length);
 +        s->irq_status |= IRQ_RX;
++        if (qemu_loglevel_mask(LOG_GUEST_ERROR)) {
++            g_autofree char *payload = g_malloc0((event.length * 2) + 1);
++            uint32_t index;
++            for (index = 0; index < event.length; index++) {
++                sprintf(payload + (index * 2), "%02x", event.payload[index]);
++            }
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "DOMES_PEER_DELIVERY schema=1 deadline_ns=%" PRIi64
++                          " class=%u source=%u destination=%u sequence=%" PRIu32
++                          " correlation=%u payload=%s\n",
++                          event.deadline_ns, event.event_class_priority, event.source_id,
++                          event.destination_id, event.sequence, event.correlation, payload);
++        }
 +    }
 +    if (s->event_count) timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
 +    update_irq(s);
@@ -236,9 +250,14 @@ index 0000000000..fe642931fd
 +               !actor_transition(s, &event)) {
 +        s->sticky |= ST_MODEL_FAILURE;
 +        s->tx_status = TX_FAILURE;
-+    } else if (event.length && enqueue_event(s, event)) {
-+        timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
-+        deliver_due(s);
++    } else if (event.length) {
++        if (!enqueue_event(s, event)) {
++            s->sticky |= ST_MODEL_FAILURE;
++            s->tx_status = TX_FAILURE;
++        } else {
++            timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
++            deliver_due(s);
++        }
 +    }
 +    update_irq(s);
 +}
@@ -374,6 +393,7 @@ index 0000000000..fe642931fd
 +    dc->realize = link_realize;
 +    static const Property properties[] = {
 +        DEFINE_PROP_UINT32("scenario-model", DomesLinkState, scenario_model, SCENARIO_LOOPBACK),
++        DEFINE_PROP_UINT32("scenario-seed", DomesLinkState, scenario_seed, 0),
 +        DEFINE_PROP_UINT32("dut-role", DomesLinkState, dut_role, DUT_ROLE_MASTER),
 +        DEFINE_PROP_UINT64("peer-delay-ns", DomesLinkState, peer_delay_ns, 0),
 +        DEFINE_PROP_END_OF_LIST(),
@@ -485,6 +505,6 @@ index 0000000000..61b520bd68
 +    uint8_t tx_payload[256], rx_payload[256];
 +    DomesLinkEvent events[DOMES_LINK_EVENT_CAPACITY];
 +    uint32_t event_count, next_sequence;
-+    uint32_t scenario_model, dut_role;
++    uint32_t scenario_model, scenario_seed, dut_role;
 +    uint64_t peer_delay_ns;
 +};
