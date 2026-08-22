@@ -215,11 +215,7 @@ private:
      */
     void handleSetSimMode(const uint8_t* payload, size_t len);
 
-    void handleGetAudioVolume();
-    void handleSetAudioVolume(const uint8_t* payload, size_t len);
-    void handleTriggerFeedback(const uint8_t* payload, size_t len);
-    void sendAudioVolumeResponse(MsgType type, Status status, uint8_t volume);
-    void sendFeedbackResponse(Status status, FeedbackProbe probe, bool accepted);
+    void handleFeedbackCommand(MsgType type, const uint8_t* payload, size_t len);
 
     /**
      * @brief Send list features response

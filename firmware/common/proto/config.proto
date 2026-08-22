@@ -74,13 +74,13 @@ enum MsgType {
     // Device-originated touch notification (0x50)
     MSG_TYPE_TOUCH_EVENT_NTF = 0x50;
 
-    // Bounded feedback interface commands (0x51-0x56)
-    MSG_TYPE_GET_AUDIO_VOLUME_REQ = 0x51;
-    MSG_TYPE_GET_AUDIO_VOLUME_RSP = 0x52;
-    MSG_TYPE_SET_AUDIO_VOLUME_REQ = 0x53;
-    MSG_TYPE_SET_AUDIO_VOLUME_RSP = 0x54;
-    MSG_TYPE_TRIGGER_FEEDBACK_REQ = 0x55;
-    MSG_TYPE_TRIGGER_FEEDBACK_RSP = 0x56;
+    // Bounded feedback interface commands in reserved config-command gaps.
+    MSG_TYPE_GET_AUDIO_VOLUME_REQ = 0x2C;
+    MSG_TYPE_GET_AUDIO_VOLUME_RSP = 0x2D;
+    MSG_TYPE_SET_AUDIO_VOLUME_REQ = 0x2E;
+    MSG_TYPE_SET_AUDIO_VOLUME_RSP = 0x2F;
+    MSG_TYPE_TRIGGER_FEEDBACK_REQ = 0x4A;
+    MSG_TYPE_TRIGGER_FEEDBACK_RSP = 0x4B;
 }
 
 // Status codes for responses

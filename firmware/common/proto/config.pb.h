@@ -67,13 +67,13 @@ typedef enum _domes_config_MsgType {
     domes_config_MsgType_MSG_TYPE_SET_SIM_MODE_RSP = 79,
     /* Device-originated touch notification (0x50) */
     domes_config_MsgType_MSG_TYPE_TOUCH_EVENT_NTF = 80,
-    /* Bounded feedback interface commands (0x51-0x56) */
-    domes_config_MsgType_MSG_TYPE_GET_AUDIO_VOLUME_REQ = 81,
-    domes_config_MsgType_MSG_TYPE_GET_AUDIO_VOLUME_RSP = 82,
-    domes_config_MsgType_MSG_TYPE_SET_AUDIO_VOLUME_REQ = 83,
-    domes_config_MsgType_MSG_TYPE_SET_AUDIO_VOLUME_RSP = 84,
-    domes_config_MsgType_MSG_TYPE_TRIGGER_FEEDBACK_REQ = 85,
-    domes_config_MsgType_MSG_TYPE_TRIGGER_FEEDBACK_RSP = 86
+    /* Bounded feedback interface commands in reserved config-command gaps. */
+    domes_config_MsgType_MSG_TYPE_GET_AUDIO_VOLUME_REQ = 44,
+    domes_config_MsgType_MSG_TYPE_GET_AUDIO_VOLUME_RSP = 45,
+    domes_config_MsgType_MSG_TYPE_SET_AUDIO_VOLUME_REQ = 46,
+    domes_config_MsgType_MSG_TYPE_SET_AUDIO_VOLUME_RSP = 47,
+    domes_config_MsgType_MSG_TYPE_TRIGGER_FEEDBACK_REQ = 74,
+    domes_config_MsgType_MSG_TYPE_TRIGGER_FEEDBACK_RSP = 75
 } domes_config_MsgType;
 
 /* Status codes for responses */
@@ -493,8 +493,8 @@ extern "C" {
 
 /* Helper constants for enums */
 #define _domes_config_MsgType_MIN domes_config_MsgType_MSG_TYPE_UNKNOWN
-#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_TRIGGER_FEEDBACK_RSP
-#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_TRIGGER_FEEDBACK_RSP+1))
+#define _domes_config_MsgType_MAX domes_config_MsgType_MSG_TYPE_TOUCH_EVENT_NTF
+#define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_TOUCH_EVENT_NTF+1))
 
 #define _domes_config_Status_MIN domes_config_Status_STATUS_OK
 #define _domes_config_Status_MAX domes_config_Status_STATUS_STORAGE_ERROR

@@ -34,7 +34,7 @@ fn rejected_mode_transition_exits_nonzero() {
 
 #[test]
 fn rejected_feedback_command_exits_nonzero_without_physical_claim() {
-    let (address, server) = serve_config_response(0x55, 0x56, &[0x08]);
+    let (address, server) = serve_config_response(0x4A, 0x4B, &[0x08]);
     let mut command = cargo_bin_cmd!("domes-cli");
     command.args(["--wifi", &address, "feedback", "play", "beep"]);
 

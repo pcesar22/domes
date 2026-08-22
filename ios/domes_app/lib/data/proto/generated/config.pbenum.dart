@@ -126,19 +126,19 @@ class MsgType extends $pb.ProtobufEnum {
   static const MsgType MSG_TYPE_TOUCH_EVENT_NTF =
       MsgType._(80, _omitEnumNames ? '' : 'MSG_TYPE_TOUCH_EVENT_NTF');
 
-  /// Bounded feedback interface commands (0x51-0x56)
+  /// Bounded feedback interface commands in reserved config-command gaps.
   static const MsgType MSG_TYPE_GET_AUDIO_VOLUME_REQ =
-      MsgType._(81, _omitEnumNames ? '' : 'MSG_TYPE_GET_AUDIO_VOLUME_REQ');
+      MsgType._(44, _omitEnumNames ? '' : 'MSG_TYPE_GET_AUDIO_VOLUME_REQ');
   static const MsgType MSG_TYPE_GET_AUDIO_VOLUME_RSP =
-      MsgType._(82, _omitEnumNames ? '' : 'MSG_TYPE_GET_AUDIO_VOLUME_RSP');
+      MsgType._(45, _omitEnumNames ? '' : 'MSG_TYPE_GET_AUDIO_VOLUME_RSP');
   static const MsgType MSG_TYPE_SET_AUDIO_VOLUME_REQ =
-      MsgType._(83, _omitEnumNames ? '' : 'MSG_TYPE_SET_AUDIO_VOLUME_REQ');
+      MsgType._(46, _omitEnumNames ? '' : 'MSG_TYPE_SET_AUDIO_VOLUME_REQ');
   static const MsgType MSG_TYPE_SET_AUDIO_VOLUME_RSP =
-      MsgType._(84, _omitEnumNames ? '' : 'MSG_TYPE_SET_AUDIO_VOLUME_RSP');
+      MsgType._(47, _omitEnumNames ? '' : 'MSG_TYPE_SET_AUDIO_VOLUME_RSP');
   static const MsgType MSG_TYPE_TRIGGER_FEEDBACK_REQ =
-      MsgType._(85, _omitEnumNames ? '' : 'MSG_TYPE_TRIGGER_FEEDBACK_REQ');
+      MsgType._(74, _omitEnumNames ? '' : 'MSG_TYPE_TRIGGER_FEEDBACK_REQ');
   static const MsgType MSG_TYPE_TRIGGER_FEEDBACK_RSP =
-      MsgType._(86, _omitEnumNames ? '' : 'MSG_TYPE_TRIGGER_FEEDBACK_RSP');
+      MsgType._(75, _omitEnumNames ? '' : 'MSG_TYPE_TRIGGER_FEEDBACK_RSP');
 
   static const $core.List<MsgType> values = <MsgType>[
     MSG_TYPE_UNKNOWN,

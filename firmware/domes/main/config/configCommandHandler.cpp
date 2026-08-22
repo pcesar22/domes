@@ -9,6 +9,7 @@
 
 #include "config.hpp"
 #include "config.pb.h"
+#include "feedbackCommandHandler.hpp"
 
 #include "drivers/injectableTouchDriver.hpp"
 #include "esp_heap_caps.h"
@@ -232,15 +233,15 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
             return true;
 
         case MsgType::kGetAudioVolumeReq:
-            handleGetAudioVolume();
+            handleFeedbackCommand(msgType, payload, len);
             return true;
 
         case MsgType::kSetAudioVolumeReq:
-            handleSetAudioVolume(payload, len);
+            handleFeedbackCommand(msgType, payload, len);
             return true;
 
         case MsgType::kTriggerFeedbackReq:
-            handleTriggerFeedback(payload, len);
+            handleFeedbackCommand(msgType, payload, len);
             return true;
 
         default:
@@ -249,90 +250,11 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
     }
 }
 
-namespace {
-Status feedbackStatus(FeedbackController::Result result) {
-    switch (result) {
-        case FeedbackController::Result::kOk:
-            return Status::kOk;
-        case FeedbackController::Result::kInvalid:
-            return Status::kInvalidValue;
-        case FeedbackController::Result::kDisabled:
-            return Status::kDisabled;
-        case FeedbackController::Result::kRejected:
-            return Status::kRejected;
-        case FeedbackController::Result::kStorageError:
-            return Status::kStorageError;
-        case FeedbackController::Result::kUnavailable:
-        default:
-            return Status::kError;
-    }
-}
-}  // namespace
-
-void ConfigCommandHandler::handleGetAudioVolume() {
-    uint8_t volume = 0;
-    const auto result =
-        feedback_ ? feedback_->getVolume(volume) : FeedbackController::Result::kUnavailable;
-    sendAudioVolumeResponse(MsgType::kGetAudioVolumeRsp, feedbackStatus(result), volume);
-}
-
-void ConfigCommandHandler::handleSetAudioVolume(const uint8_t* payload, size_t len) {
-    domes_config_SetAudioVolumeRequest request = domes_config_SetAudioVolumeRequest_init_zero;
-    pb_istream_t stream = pb_istream_from_buffer(payload, len);
-    uint8_t applied = 0;
-    if (!pb_decode(&stream, domes_config_SetAudioVolumeRequest_fields, &request)) {
-        sendAudioVolumeResponse(MsgType::kSetAudioVolumeRsp, Status::kInvalidValue, applied);
-        return;
-    }
-    const auto result = feedback_ ? feedback_->setVolume(request.volume, applied)
-                                  : FeedbackController::Result::kUnavailable;
-    sendAudioVolumeResponse(MsgType::kSetAudioVolumeRsp, feedbackStatus(result), applied);
-}
-
-void ConfigCommandHandler::handleTriggerFeedback(const uint8_t* payload, size_t len) {
-    domes_config_TriggerFeedbackRequest request = domes_config_TriggerFeedbackRequest_init_zero;
-    pb_istream_t stream = pb_istream_from_buffer(payload, len);
-    if (!pb_decode(&stream, domes_config_TriggerFeedbackRequest_fields, &request)) {
-        sendFeedbackResponse(Status::kInvalidValue, FeedbackProbe::kUnknown, false);
-        return;
-    }
-    const auto probe = static_cast<FeedbackProbe>(request.probe);
-    const auto result = feedback_ ? feedback_->trigger(probe)
-                                  : FeedbackController::ProbeResult{
-                                        FeedbackController::Result::kUnavailable, false};
-    sendFeedbackResponse(feedbackStatus(result.result), probe, result.accepted);
-}
-
-void ConfigCommandHandler::sendAudioVolumeResponse(MsgType type, Status status, uint8_t volume) {
-    std::array<uint8_t, domes_config_SetAudioVolumeResponse_size + 2> payload{};
-    payload[0] = static_cast<uint8_t>(status);
-    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
-    if (type == MsgType::kGetAudioVolumeRsp) {
-        domes_config_GetAudioVolumeResponse response =
-            domes_config_GetAudioVolumeResponse_init_zero;
-        response.volume = volume;
-        if (pb_encode(&stream, domes_config_GetAudioVolumeResponse_fields, &response)) {
-            sendFrame(type, payload.data(), stream.bytes_written + 1);
-        }
-        return;
-    }
-
-    domes_config_SetAudioVolumeResponse response = domes_config_SetAudioVolumeResponse_init_zero;
-    response.volume = volume;
-    if (pb_encode(&stream, domes_config_SetAudioVolumeResponse_fields, &response)) {
-        sendFrame(type, payload.data(), stream.bytes_written + 1);
-    }
-}
-
-void ConfigCommandHandler::sendFeedbackResponse(Status status, FeedbackProbe probe, bool accepted) {
-    domes_config_TriggerFeedbackResponse response = domes_config_TriggerFeedbackResponse_init_zero;
-    response.probe = static_cast<domes_config_FeedbackProbe>(probe);
-    response.accepted = accepted;
-    std::array<uint8_t, domes_config_TriggerFeedbackResponse_size + 2> payload{};
-    payload[0] = static_cast<uint8_t>(status);
-    pb_ostream_t stream = pb_ostream_from_buffer(payload.data() + 1, payload.size() - 1);
-    if (pb_encode(&stream, domes_config_TriggerFeedbackResponse_fields, &response)) {
-        sendFrame(MsgType::kTriggerFeedbackRsp, payload.data(), stream.bytes_written + 1);
+void ConfigCommandHandler::handleFeedbackCommand(MsgType type, const uint8_t* payload, size_t len) {
+    FeedbackCommandHandler::Response response;
+    FeedbackCommandHandler handler(feedback_);
+    if (handler.handle(type, payload, len, response)) {
+        sendFrame(response.type, response.payload.data(), response.length);
     }
 }
 
