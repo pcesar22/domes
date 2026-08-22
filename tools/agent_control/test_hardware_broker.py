@@ -236,6 +236,12 @@ class HardwareBrokerTest(unittest.TestCase):
                 if command[1] == ["espnow", "status"]
             )
             self.assertLess(simulated_peer_status, first_trace_start)
+            trace_starts = [
+                command for command in commands if command[1] == ["trace", "start"]
+            ]
+            self.assertCountEqual(
+                [(0, ["trace", "start"]), (1, ["trace", "start"])], trace_starts
+            )
             self.assertTrue(
                 (evidence / f"espnow-regression-{'b' * 16}.jsonl").is_file()
             )
