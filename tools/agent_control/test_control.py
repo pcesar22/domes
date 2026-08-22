@@ -1919,6 +1919,19 @@ class SelectorAndPlanTest(unittest.TestCase):
                     (),
                 )
 
+    def test_selector_rejects_review_only_selected_work(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        result = self.selector_result()
+        result["autonomy_policy"] = "review-only"
+        with mock.patch.object(
+            control, "origin_main_revision", return_value=self.revision
+        ):
+            with self.assertRaisesRegex(
+                control.ControlError, "must use the software-review-required policy"
+            ):
+                control.validate_selector_result(result, workflow, policy, (), ())
+
     def test_selector_rejects_unavailable_existing_issue_or_pull_request(self) -> None:
         workflow = control.load_workflow()
         policy = control.load_autopilot_policy()
