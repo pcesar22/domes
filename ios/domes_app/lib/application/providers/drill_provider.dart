@@ -93,6 +93,8 @@ class DrillNotifier extends StateNotifier<DrillState> {
   late final StreamSubscription<PodTouchEvent> _touchSubscription;
   late final StreamSubscription<PodConnectionFailure>
   _connectionFailureSubscription;
+  late final StreamSubscription<PodConnectionFailure>
+  _lifecycleFailureSubscription;
   int _generation = 0;
   Future<void> _cleanupTail = Future<void>.value();
 
@@ -103,6 +105,9 @@ class DrillNotifier extends StateNotifier<DrillState> {
       (event) => recordTouch(event.address),
     );
     _connectionFailureSubscription = _multiPod.connectionFailures.listen(
+      _handleConnectionFailure,
+    );
+    _lifecycleFailureSubscription = _multiPod.lifecycleFailures.listen(
       _handleConnectionFailure,
     );
   }
@@ -480,6 +485,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
     unawaited(_scheduleCleanup(config));
     unawaited(_touchSubscription.cancel());
     unawaited(_connectionFailureSubscription.cancel());
+    unawaited(_lifecycleFailureSubscription.cancel());
     super.dispose();
   }
 }

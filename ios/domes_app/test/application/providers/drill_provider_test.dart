@@ -13,6 +13,8 @@ final class _FakeMultiPodNotifier extends MultiPodNotifier {
       StreamController<PodTouchEvent>.broadcast();
   final StreamController<PodConnectionFailure> failures =
       StreamController<PodConnectionFailure>.broadcast();
+  final StreamController<PodConnectionFailure> lifecycleEvents =
+      StreamController<PodConnectionFailure>.broadcast();
   final List<SystemMode> modeCalls = [];
   final List<AppLedPattern> ledCalls = [];
   final List<(String, SystemMode)> addressedModeCalls = [];
@@ -26,6 +28,9 @@ final class _FakeMultiPodNotifier extends MultiPodNotifier {
 
   @override
   Stream<PodConnectionFailure> get connectionFailures => failures.stream;
+
+  @override
+  Stream<PodConnectionFailure> get lifecycleFailures => lifecycleEvents.stream;
 
   @override
   Future<void> setMode(String address, SystemMode mode) async {
@@ -50,11 +55,23 @@ final class _FakeMultiPodNotifier extends MultiPodNotifier {
     }
   }
 
-  void fail(String address, [Object? error]) {
+  void fail(String address, [Object? error, int generation = 1]) {
     failures.add(
       PodConnectionFailure(
         address: address,
+        generation: generation,
         error: error ?? StateError('connection lost'),
+        stackTrace: StackTrace.current,
+      ),
+    );
+  }
+
+  void lifecycle(String address, String action, [int generation = 1]) {
+    lifecycleEvents.add(
+      PodConnectionFailure(
+        address: address,
+        generation: generation,
+        error: PodLifecycleFailure(address: address, action: action),
         stackTrace: StackTrace.current,
       ),
     );
@@ -196,6 +213,7 @@ void main() {
       hardwareContainer.dispose();
       await multiPod.events.close();
       await multiPod.failures.close();
+      await multiPod.lifecycleEvents.close();
       multiPod.dispose();
     });
 
@@ -262,9 +280,10 @@ void main() {
       expect(multiPod.greenCalls, 2);
     });
 
-    test('participating failure is terminal in every active phase', () async {
+    test('operator lifecycle is terminal in every active phase', () async {
       Future<void> expectFailure({
         required DrillPhase phase,
+        required String action,
         required Future<void> Function(DrillConfig config) reachPhase,
       }) async {
         hardwareNotifier.reset();
@@ -291,7 +310,7 @@ void main() {
         );
         final failedAddress =
             hardwareContainer.read(drillProvider).activePodAddress ?? 'pod-1';
-        multiPod.fail(failedAddress);
+        multiPod.lifecycle(failedAddress, action);
         await Future<void>.delayed(Duration.zero);
 
         final failed = hardwareContainer.read(drillProvider);
@@ -310,48 +329,58 @@ void main() {
         subscription.close();
       }
 
-      await expectFailure(
-        phase: DrillPhase.preparing,
-        reachPhase: (config) async {
-          multiPod.gameModeGate = Completer<void>();
-          unawaited(hardwareNotifier.startDrill(config));
-          await Future<void>.delayed(Duration.zero);
-        },
-      );
-      await expectFailure(
-        phase: DrillPhase.waitingDelay,
-        reachPhase: hardwareNotifier.startDrill,
-      );
-      await expectFailure(
-        phase: DrillPhase.waitingTouch,
-        reachPhase: (config) async {
-          final immediate = DrillConfig(
-            roundCount: config.roundCount,
-            timeout: config.timeout,
-            minDelay: Duration.zero,
-            maxDelay: Duration.zero,
-            podAddresses: config.podAddresses,
-          );
-          await hardwareNotifier.startDrill(immediate);
-          await Future<void>.delayed(Duration.zero);
-        },
-      );
-      await expectFailure(
-        phase: DrillPhase.roundComplete,
-        reachPhase: (config) async {
-          final immediate = DrillConfig(
-            roundCount: config.roundCount,
-            timeout: config.timeout,
-            minDelay: Duration.zero,
-            maxDelay: Duration.zero,
-            podAddresses: const ['pod-1'],
-          );
-          await hardwareNotifier.startDrill(immediate);
-          await Future<void>.delayed(Duration.zero);
-          multiPod.nextLedOffGate = Completer<void>();
-          hardwareNotifier.recordTouch('pod-1');
-        },
-      );
+      for (final action in [
+        'disconnectPod',
+        'disconnectAll',
+        'replacement connect',
+      ]) {
+        await expectFailure(
+          phase: DrillPhase.preparing,
+          action: action,
+          reachPhase: (config) async {
+            multiPod.gameModeGate = Completer<void>();
+            unawaited(hardwareNotifier.startDrill(config));
+            await Future<void>.delayed(Duration.zero);
+          },
+        );
+        await expectFailure(
+          phase: DrillPhase.waitingDelay,
+          action: action,
+          reachPhase: hardwareNotifier.startDrill,
+        );
+        await expectFailure(
+          phase: DrillPhase.waitingTouch,
+          action: action,
+          reachPhase: (config) async {
+            final immediate = DrillConfig(
+              roundCount: config.roundCount,
+              timeout: config.timeout,
+              minDelay: Duration.zero,
+              maxDelay: Duration.zero,
+              podAddresses: config.podAddresses,
+            );
+            await hardwareNotifier.startDrill(immediate);
+            await Future<void>.delayed(Duration.zero);
+          },
+        );
+        await expectFailure(
+          phase: DrillPhase.roundComplete,
+          action: action,
+          reachPhase: (config) async {
+            final immediate = DrillConfig(
+              roundCount: config.roundCount,
+              timeout: config.timeout,
+              minDelay: Duration.zero,
+              maxDelay: Duration.zero,
+              podAddresses: const ['pod-1'],
+            );
+            await hardwareNotifier.startDrill(immediate);
+            await Future<void>.delayed(Duration.zero);
+            multiPod.nextLedOffGate = Completer<void>();
+            hardwareNotifier.recordTouch('pod-1');
+          },
+        );
+      }
 
       final idleParticipants = multiPod.addressedModeCalls
           .where((call) => call.$2 == SystemMode.SYSTEM_MODE_IDLE)
@@ -411,6 +440,100 @@ void main() {
 
       expect(hardwareContainer.read(drillProvider), same(before));
     });
+
+    test(
+      'lifecycle events cannot mutate inactive or terminal drills',
+      () async {
+        const delayed = DrillConfig(
+          minDelay: Duration(seconds: 1),
+          maxDelay: Duration(seconds: 1),
+          podAddresses: ['pod-1'],
+        );
+        const immediate = DrillConfig(
+          roundCount: 1,
+          minDelay: Duration.zero,
+          maxDelay: Duration.zero,
+          podAddresses: ['pod-1'],
+        );
+
+        final idle = hardwareContainer.read(drillProvider);
+        multiPod.lifecycle('pod-1', 'disconnectPod');
+        await Future<void>.delayed(Duration.zero);
+        expect(hardwareContainer.read(drillProvider), same(idle));
+
+        await hardwareNotifier.startDrill(delayed);
+        hardwareNotifier.stopDrill();
+        final stopped = hardwareContainer.read(drillProvider);
+        multiPod.lifecycle('pod-1', 'disconnectAll', 2);
+        await Future<void>.delayed(Duration.zero);
+        expect(hardwareContainer.read(drillProvider), same(stopped));
+
+        await hardwareNotifier.startDrill(delayed);
+        hardwareNotifier.reset();
+        final reset = hardwareContainer.read(drillProvider);
+        multiPod.lifecycle('pod-1', 'replacement connect', 3);
+        await Future<void>.delayed(Duration.zero);
+        expect(hardwareContainer.read(drillProvider), same(reset));
+
+        await hardwareNotifier.startDrill(immediate);
+        await Future<void>.delayed(Duration.zero);
+        hardwareNotifier.recordTouch('pod-1');
+        final finished = hardwareContainer.read(drillProvider);
+        expect(finished.phase, DrillPhase.finished);
+        multiPod.lifecycle('pod-1', 'disconnectPod', 4);
+        await Future<void>.delayed(Duration.zero);
+        expect(hardwareContainer.read(drillProvider), same(finished));
+
+        await hardwareNotifier.startDrill(delayed);
+        multiPod.lifecycle('pod-1', 'disconnectPod', 5);
+        await Future<void>.delayed(Duration.zero);
+        final failed = hardwareContainer.read(drillProvider);
+        expect(failed.phase, DrillPhase.error);
+        multiPod.lifecycle('pod-1', 'replacement connect', 6);
+        await Future<void>.delayed(Duration.zero);
+        expect(hardwareContainer.read(drillProvider), same(failed));
+      },
+    );
+
+    test(
+      'lifecycle event after dispose cannot mutate retained state',
+      () async {
+        final disposedMultiPod = _FakeMultiPodNotifier();
+        final disposedContainer = ProviderContainer(
+          overrides: [
+            drillProvider.overrideWith(
+              (ref) => DrillNotifier(ref, multiPod: disposedMultiPod),
+            ),
+          ],
+        );
+        final disposedNotifier = disposedContainer.read(drillProvider.notifier);
+        var stateMutations = 0;
+        DrillState? lastState;
+        disposedContainer.listen<DrillState>(drillProvider, (_, next) {
+          stateMutations++;
+          lastState = next;
+        });
+        const config = DrillConfig(
+          minDelay: Duration(seconds: 1),
+          maxDelay: Duration(seconds: 1),
+          podAddresses: ['pod-1'],
+        );
+        await disposedNotifier.startDrill(config);
+        final mutationsBeforeDispose = stateMutations;
+        final before = lastState;
+
+        disposedContainer.dispose();
+        disposedMultiPod.lifecycle('pod-1', 'disconnectAll');
+        await Future<void>.delayed(Duration.zero);
+
+        expect(stateMutations, mutationsBeforeDispose);
+        expect(lastState, same(before));
+        await disposedMultiPod.events.close();
+        await disposedMultiPod.failures.close();
+        await disposedMultiPod.lifecycleEvents.close();
+        disposedMultiPod.dispose();
+      },
+    );
 
     test('restart after failure waits for cleanup and can finish', () async {
       const config = DrillConfig(
@@ -513,6 +636,16 @@ void main() {
       var lostResults = 0;
       var participantFailuresRecovered = 0;
       var isolatedNonParticipantFailures = 0;
+      var terminalEvents = 0;
+      var duplicateTerminalEvents = 0;
+      var retainedResults = 0;
+      var reconnects = 0;
+      final terminalSubscription = stressContainer.listen<DrillState>(
+        drillProvider,
+        (_, next) {
+          if (next.phase == DrillPhase.error) terminalEvents++;
+        },
+      );
 
       Future<void> waitForPhase(DrillPhase phase, int cycle) async {
         for (var attempt = 0; attempt < 10; attempt++) {
@@ -532,7 +665,7 @@ void main() {
         podAddresses: identities,
       );
       const lifecycleConfig = DrillConfig(
-        roundCount: 1,
+        roundCount: 2,
         minDelay: Duration.zero,
         maxDelay: Duration.zero,
         podAddresses: identities,
@@ -564,6 +697,8 @@ void main() {
 
         await stressNotifier.startDrill(lifecycleConfig);
         await waitForPhase(DrillPhase.waitingTouch, cycle);
+        stressNotifier.simulateTouch();
+        await waitForPhase(DrillPhase.waitingTouch, cycle);
         final beforeIsolatedFailure = stressContainer.read(drillProvider);
         stressMultiPod.fail('sim-pod-outside');
         await Future<void>.delayed(Duration.zero);
@@ -574,10 +709,13 @@ void main() {
           isolatedNonParticipantFailures++;
         }
 
-        final failedAddress = stressContainer
-            .read(drillProvider)
-            .activePodAddress!;
-        stressMultiPod.fail(failedAddress);
+        final failedAddress = identities[cycle % identities.length];
+        final terminalsBefore = terminalEvents;
+        stressMultiPod.lifecycle(
+          failedAddress,
+          cycle.isEven ? 'disconnectPod' : 'replacement connect',
+          cycle + 1,
+        );
         await Future<void>.delayed(Duration.zero);
         final failed = stressContainer.read(drillProvider);
         expect(
@@ -586,8 +724,12 @@ void main() {
           reason: 'case=cycle-$cycle participating failure',
         );
         expect(failed.errorMessage, contains(failedAddress));
+        expect(failed.results, hasLength(1));
+        retainedResults += failed.results.length;
+        if (terminalEvents - terminalsBefore != 1) duplicateTerminalEvents++;
 
         await stressNotifier.startDrill(lifecycleConfig);
+        reconnects++;
         await waitForPhase(DrillPhase.waitingTouch, cycle);
         participantFailuresRecovered++;
         final cancelledAddress = stressContainer
@@ -613,21 +755,30 @@ void main() {
       expect(lostResults, 0);
       expect(participantFailuresRecovered, lifecycleCycles);
       expect(isolatedNonParticipantFailures, lifecycleCycles);
+      expect(terminalEvents, lifecycleCycles);
+      expect(duplicateTerminalEvents, 0);
+      expect(retainedResults, lifecycleCycles);
+      expect(reconnects, lifecycleCycles);
       expect(stressContainer.read(drillProvider).phase, DrillPhase.idle);
       // Retained CI evidence: values are deterministic and intentionally omit time.
       // ignore: avoid_print
       print(
-        'FS4_DRILL_STRESS identities=${identities.length} '
-        'rounds=$completedRounds lifecycle_cycles=$lifecycleCycles '
+        'FS4_DRILL_LIFECYCLE_SOFTWARE_ONLY identities=${identities.length} '
+        'fault_types=2 rounds=$completedRounds '
+        'lifecycle_cycles=$lifecycleCycles terminal_events=$terminalEvents '
+        'reconnects=$reconnects retained_results=$retainedResults '
+        'duplicate_terminal_events=$duplicateTerminalEvents '
         'participant_failures_recovered=$participantFailuresRecovered '
         'isolated_nonparticipant_failures=$isolatedNonParticipantFailures '
         'stale_mutations=$staleMutations duplicate_results=$duplicateResults '
         'lost_results=$lostResults terminal=${stressContainer.read(drillProvider).phase.name}',
       );
 
+      terminalSubscription.close();
       stressContainer.dispose();
       await stressMultiPod.events.close();
       await stressMultiPod.failures.close();
+      await stressMultiPod.lifecycleEvents.close();
       stressMultiPod.dispose();
     });
   });
