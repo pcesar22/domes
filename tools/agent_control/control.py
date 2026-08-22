@@ -781,7 +781,11 @@ def dependency_cycles(validations: Iterable[TicketValidation]) -> list[list[int]
 
 
 def terminal(ticket: Ticket) -> bool:
-    return ticket.state == "CLOSED" or ticket.agent_state == "agent:done"
+    # GitHub can auto-close an issue as soon as a linked PR is merged, including
+    # while the independent judge is still running.  Only the controller-owned
+    # done state is authoritative completion; a closed review/rework issue must
+    # continue to block its dependants.
+    return ticket.agent_state == "agent:done"
 
 
 def _stack_parent(
@@ -2355,14 +2359,16 @@ def update_issue_body(workflow: Workflow, ticket: Ticket, body: str) -> None:
         )
 
 
-def bind_ticket_pull_request(
-    workflow: Workflow, item: TicketValidation, pull_request_number: int
+def set_ticket_pull_request(
+    workflow: Workflow, ticket: Ticket, pull_request_number: int
 ) -> None:
-    if existing_pull_request(item.sections):
+    sections = parse_sections(ticket.body)
+    current = existing_pull_request(sections)
+    if current == pull_request_number:
         return
-    if not has_valid_autopilot_marker(item.ticket, item.sections):
+    if not has_valid_autopilot_marker(ticket, sections):
         raise ControlError(
-            f"issue #{item.ticket.number}: cannot bind PR to an invalid contract"
+            f"issue #{ticket.number}: cannot bind PR to an invalid contract"
         )
     pattern = re.compile(
         r"(## Existing pull request\s*\n\n).*?"
@@ -2370,21 +2376,98 @@ def bind_ticket_pull_request(
         re.DOTALL,
     )
     body, substitutions = pattern.subn(
-        rf"\g<1>#{pull_request_number}", item.ticket.body, count=1
+        rf"\g<1>{f'#{pull_request_number}' if pull_request_number else 'None'}",
+        ticket.body,
+        count=1,
     )
     if substitutions != 1:
-        raise ControlError(
-            f"issue #{item.ticket.number}: cannot locate PR contract field"
-        )
+        raise ControlError(f"issue #{ticket.number}: cannot locate PR contract field")
     digest = contract_digest(parse_sections(body))
     body, markers = AUTOPILOT_MARKER_RE.subn(
         f"<!-- domes-autopilot-contract:v1 digest={digest} -->", body, count=1
     )
     if markers != 1:
+        raise ControlError(f"issue #{ticket.number}: cannot refresh PR contract marker")
+    update_issue_body(workflow, ticket, body)
+
+
+def bind_ticket_pull_request(
+    workflow: Workflow, item: TicketValidation, pull_request_number: int
+) -> None:
+    if existing_pull_request(item.sections):
+        return
+    set_ticket_pull_request(workflow, item.ticket, pull_request_number)
+
+
+def reopen_issue(workflow: Workflow, ticket: Ticket) -> None:
+    result = subprocess.run(
+        [
+            "gh",
+            "issue",
+            "reopen",
+            str(ticket.number),
+            "--repo",
+            workflow.repository,
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
         raise ControlError(
-            f"issue #{item.ticket.number}: cannot refresh PR contract marker"
+            result.stderr.strip() or f"failed to reopen issue #{ticket.number}"
         )
-    update_issue_body(workflow, item.ticket, body)
+
+
+def recover_merged_rework_tickets(
+    workflow: Workflow,
+    tickets: Sequence[Ticket],
+    active_ticket_numbers: Sequence[int] = (),
+) -> list[dict[str, Any]]:
+    """Recover a human-merged artifact that a later judge rejected."""
+    recovered: list[dict[str, Any]] = []
+    active = set(active_ticket_numbers)
+    for ticket in tickets:
+        if ticket.number in active or ticket.agent_state != "agent:rework":
+            continue
+        sections = parse_sections(ticket.body)
+        if not automated_delivery(sections):
+            continue
+        pull_request_number = existing_pull_request(sections)
+        if not pull_request_number:
+            continue
+        pull_request = load_pull_request(workflow, pull_request_number)
+        if pull_request.state != "MERGED":
+            continue
+        validation = validate_ticket(ticket, check_revision=False)
+        if not validation.valid:
+            raise ControlError(
+                f"issue #{ticket.number}: invalid merged-rework ticket: "
+                + "; ".join(validation.errors)
+            )
+        if ticket.state == "CLOSED":
+            reopen_issue(workflow, ticket)
+        set_ticket_pull_request(workflow, ticket, 0)
+        post_controller_comment(
+            workflow,
+            ticket,
+            "Agent control-plane transition (merged before judge)",
+            (
+                f"PR #{pull_request.number} was human-merged before independent "
+                "acceptance completed, and the artifact remains in rework. The "
+                "issue was reopened if necessary and its execution-only PR slot "
+                "was cleared so corrections produce a new human-review PR."
+            ),
+        )
+        recovered.append(
+            {
+                "issue": ticket.number,
+                "state": "agent:rework",
+                "merged_pull_request": pull_request.number,
+            }
+        )
+    return recovered
 
 
 def block_invalid_human_merged_stack(
@@ -5815,7 +5898,7 @@ def reconcile_human_reviews(
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for ticket in tickets:
-        if ticket.state != "OPEN" or ticket.agent_state != "agent:human-review":
+        if ticket.agent_state != "agent:human-review":
             continue
         sections = parse_sections(ticket.body)
         if not automated_delivery(sections):
@@ -5835,6 +5918,10 @@ def reconcile_human_reviews(
                 )
             pull_request = load_pull_request(workflow, pull_request_number)
             binding = artifact_stack_binding(artifact)
+            if ticket.state != "OPEN" and pull_request.state != "MERGED":
+                # Preserve human authority over an independently closed issue.
+                # Only an exact merged artifact authorizes final bookkeeping.
+                continue
             if pull_request.head_oid != artifact.get("commit"):
                 transition(workflow, ticket, "agent:rework")
                 post_controller_comment(
@@ -6371,6 +6458,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                             blocked_selector_snapshot = ""
                     ci_results: list[dict[str, Any]] = []
                     if policy is not None:
+                        merged_rework = recover_merged_rework_tickets(
+                            workflow,
+                            tickets,
+                            tuple(item.ticket.number for item in active.values()),
+                        )
+                        if merged_rework:
+                            tickets = load_live_tickets(workflow)
+                        ci_results.extend(merged_rework)
                         stack_results = reconcile_stacked_children(
                             workflow,
                             tickets,
