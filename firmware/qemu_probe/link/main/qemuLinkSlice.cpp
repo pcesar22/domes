@@ -1,8 +1,7 @@
-#include "platform/qemu/qemuEspNowRadio.hpp"
-
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "platform/qemu/qemuEspNowRadio.hpp"
 #include "trace/traceRecorder.hpp"
 #include "transport/espNowTransport.hpp"
 
@@ -14,8 +13,7 @@
 namespace {
 
 constexpr char kTag[] = "qemu_link_slice";
-constexpr std::array<uint8_t, 8> kServiceRequest = {0x44, 0x4f, 0x4d, 0x45,
-                                                    0x53, 0x2d, 0x31, 0x00};
+constexpr std::array<uint8_t, 8> kServiceRequest = {0x44, 0x4f, 0x4d, 0x45, 0x53, 0x2d, 0x31, 0x00};
 
 void emitTrace() {
     static uint8_t owner;
@@ -62,8 +60,8 @@ extern "C" void app_main() {
 
     std::array<uint8_t, domes::kEspNowMaxPayload> response{};
     size_t responseSize = response.size();
-    if (failure == 0 && transport.receive(response.data(), &responseSize, 500) !=
-                            domes::TransportError::kOk) {
+    if (failure == 0 &&
+        transport.receive(response.data(), &responseSize, 500) != domes::TransportError::kOk) {
         failure |= 1U << 4;
     }
     if (responseSize != kServiceRequest.size() ||
@@ -80,7 +78,8 @@ extern "C" void app_main() {
             TRACE_ID("QemuLink.ServiceDispatch"), token));
     }
     if (token == 0 || !transport.lastReceivedRssi(rssi) || rssi != -42 ||
-        !transport.lastReceivedSource(source.data()) || source != domes::EspNowAddress{2, 0, 0, 0, 0, 2}) {
+        !transport.lastReceivedSource(source.data()) ||
+        source != domes::EspNowAddress{2, 0, 0, 0, 0, 2}) {
         failure |= 1U << 6;
     }
     if (domes::trace::Recorder::droppedCount() != 0 ||
@@ -90,13 +89,13 @@ extern "C" void app_main() {
 
     domes::trace::Recorder::setEnabled(false);
     emitTrace();
-    std::printf("DOMES_QEMU_LINK_RESULT schema=1 status=%s failure_mask=0x%08" PRIx32
-                " token=%" PRIu32 " mmio=1 irq=1 from_isr=1 task=1 callback=1"
-                " ring=1 semaphore=1 dequeue=1 dispatch=1 tx_complete=1"
-                " trace_drops=%" PRIu32 " trace_discontinuities=%" PRIu32 "\n",
-                failure == 0 ? "PASS" : "FAIL", failure, token,
-                domes::trace::Recorder::droppedCount(),
-                domes::trace::Recorder::discontinuityCount());
+    std::printf(
+        "DOMES_QEMU_LINK_RESULT schema=1 status=%s failure_mask=0x%08" PRIx32 " token=%" PRIu32
+        " mmio=1 irq=1 from_isr=1 task=1 callback=1"
+        " ring=1 semaphore=1 dequeue=1 dispatch=1 tx_complete=1"
+        " trace_drops=%" PRIu32 " trace_discontinuities=%" PRIu32 "\n",
+        failure == 0 ? "PASS" : "FAIL", failure, token, domes::trace::Recorder::droppedCount(),
+        domes::trace::Recorder::discontinuityCount());
     std::fflush(stdout);
     ESP_LOGI(kTag, "FS-WP-002F vertical slice complete");
     while (true) {

@@ -101,9 +101,12 @@ def verify(output: Path | None) -> dict[str, object]:
     failures: list[str] = []
 
     expected_header_values = {
-        "kMmioBase": "0x600D0000U", "kMmioWindowSize": "0x1000U",
-        "kCapabilityMagic": "0x444C4E4BU", "kAbiVersion": "1U",
-        "kInterruptSource": "0", "kPayloadWindowSize": "0x100U",
+        "kMmioBase": "0x600D0000U",
+        "kMmioWindowSize": "0x1000U",
+        "kCapabilityMagic": "0x444C4E4BU",
+        "kAbiVersion": "1U",
+        "kInterruptSource": "0",
+        "kPayloadWindowSize": "0x100U",
     }
     for symbol, value in expected_header_values.items():
         if not re.search(rf"{symbol}\s*=\s*{re.escape(value)}", header):
@@ -112,9 +115,16 @@ def verify(output: Path | None) -> dict[str, object]:
         failures.append("manifest payload or endianness mismatch")
 
     paths = changed_patch_paths(patch)
-    changed_lines = sum(1 for line in patch.splitlines()
-                        if line[:1] in {"+", "-"} and not line.startswith(("+++", "---")))
-    prohibited = [p for p in paths if any(p.startswith(x) for x in manifest["prohibited_prefixes"])]
+    changed_lines = sum(
+        1
+        for line in patch.splitlines()
+        if line[:1] in {"+", "-"} and not line.startswith(("+++", "---"))
+    )
+    prohibited = [
+        p
+        for p in paths
+        if any(p.startswith(x) for x in manifest["prohibited_prefixes"])
+    ]
     if len(paths) > manifest["maximum_non_generated_files"]:
         failures.append("QEMU patch file budget exceeded")
     if changed_lines > manifest["maximum_changed_lines"]:
@@ -125,25 +135,69 @@ def verify(output: Path | None) -> dict[str, object]:
         failures.append("QEMU patch digest mismatch")
 
     physical_sources = subprocess.run(
-        ["git", "grep", "-l", "QemuEspNowRadio", "--", "firmware/domes/main/main.cpp",
-         "firmware/domes/main/platform/physical", "firmware/domes/main/transport/physicalEspNowRadio.hpp"],
-        cwd=ROOT, text=True, stdout=subprocess.PIPE, check=False).stdout.splitlines()
+        [
+            "git",
+            "grep",
+            "-l",
+            "QemuEspNowRadio",
+            "--",
+            "firmware/domes/main/main.cpp",
+            "firmware/domes/main/platform/physical",
+            "firmware/domes/main/transport/physicalEspNowRadio.hpp",
+        ],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        check=False,
+    ).stdout.splitlines()
     if physical_sources:
-        failures.append(f"QEMU adapter reachable from physical sources: {physical_sources}")
-    if '#error "QemuEspNowRadio is available only in the isolated QEMU image"' not in ADAPTER_HEADER.read_text():
+        failures.append(
+            f"QEMU adapter reachable from physical sources: {physical_sources}"
+        )
+    if (
+        '#error "QemuEspNowRadio is available only in the isolated QEMU image"'
+        not in ADAPTER_HEADER.read_text()
+    ):
         failures.append("adapter compile-time physical-image denial missing")
 
     rejection_cases: dict[str, bool] = {}
-    model = LinkModel(); model.version(2); rejection_cases["unknown_version"] = bool(model.sticky & 128)
-    model = LinkModel(); model.access(1, 4); rejection_cases["unaligned"] = bool(model.sticky & 2)
-    model = LinkModel(); model.access(0, 1); rejection_cases["narrow_access"] = bool(model.sticky & 2)
-    model = LinkModel(); model.access(0x200, 4, True); rejection_cases["rx_write"] = bool(model.sticky & 2)
-    model = LinkModel(); model.length(251); rejection_cases["over_length"] = bool(model.sticky & 32)
-    model = LinkModel(); model.submit(); rejection_cases["sequence"] = bool(model.sticky & 16)
-    model = LinkModel(); model.length(1); model.token(1); model.submit(); model.submit(); rejection_cases["overwrite"] = bool(model.sticky & 64)
-    model = LinkModel(); model.length(1); model.token(1); model.submit(); model.rx_ready = True; model.complete(); rejection_cases["overflow"] = bool(model.sticky & 1)
-    model = LinkModel(); model.complete(); rejection_cases["model_failure"] = bool(model.sticky & 8)
-    model = LinkModel(); model.consume(); rejection_cases["consume_sequence"] = bool(model.sticky & 16)
+    model = LinkModel()
+    model.version(2)
+    rejection_cases["unknown_version"] = bool(model.sticky & 128)
+    model = LinkModel()
+    model.access(1, 4)
+    rejection_cases["unaligned"] = bool(model.sticky & 2)
+    model = LinkModel()
+    model.access(0, 1)
+    rejection_cases["narrow_access"] = bool(model.sticky & 2)
+    model = LinkModel()
+    model.access(0x200, 4, True)
+    rejection_cases["rx_write"] = bool(model.sticky & 2)
+    model = LinkModel()
+    model.length(251)
+    rejection_cases["over_length"] = bool(model.sticky & 32)
+    model = LinkModel()
+    model.submit()
+    rejection_cases["sequence"] = bool(model.sticky & 16)
+    model = LinkModel()
+    model.length(1)
+    model.token(1)
+    model.submit()
+    model.submit()
+    rejection_cases["overwrite"] = bool(model.sticky & 64)
+    model = LinkModel()
+    model.length(1)
+    model.token(1)
+    model.submit()
+    model.rx_ready = True
+    model.complete()
+    rejection_cases["overflow"] = bool(model.sticky & 1)
+    model = LinkModel()
+    model.complete()
+    rejection_cases["model_failure"] = bool(model.sticky & 8)
+    model = LinkModel()
+    model.consume()
+    rejection_cases["consume_sequence"] = bool(model.sticky & 16)
     if not all(rejection_cases.values()):
         failures.append("one or more rejection cases did not fail closed")
 

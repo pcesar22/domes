@@ -31,16 +31,14 @@ void IRAM_ATTR QemuEspNowRadio::write(qemu_link::Register reg, uint32_t value) {
 
 void QemuEspNowRadio::packAddress(const EspNowAddress& address, uint32_t& low, uint32_t& high) {
     low = static_cast<uint32_t>(address[0]) | (static_cast<uint32_t>(address[1]) << 8U) |
-          (static_cast<uint32_t>(address[2]) << 16U) |
-          (static_cast<uint32_t>(address[3]) << 24U);
+          (static_cast<uint32_t>(address[2]) << 16U) | (static_cast<uint32_t>(address[3]) << 24U);
     high = static_cast<uint32_t>(address[4]) | (static_cast<uint32_t>(address[5]) << 8U);
 }
 
-void IRAM_ATTR QemuEspNowRadio::unpackAddress(uint32_t low, uint32_t high,
-                                              EspNowAddress& address) {
-    address = {static_cast<uint8_t>(low), static_cast<uint8_t>(low >> 8U),
+void IRAM_ATTR QemuEspNowRadio::unpackAddress(uint32_t low, uint32_t high, EspNowAddress& address) {
+    address = {static_cast<uint8_t>(low),        static_cast<uint8_t>(low >> 8U),
                static_cast<uint8_t>(low >> 16U), static_cast<uint8_t>(low >> 24U),
-               static_cast<uint8_t>(high), static_cast<uint8_t>(high >> 8U)};
+               static_cast<uint8_t>(high),       static_cast<uint8_t>(high >> 8U)};
 }
 
 EspNowRadioResult QemuEspNowRadio::init(void* context, ReceiveCallback receiveCallback,
@@ -56,14 +54,14 @@ EspNowRadioResult QemuEspNowRadio::init(void* context, ReceiveCallback receiveCa
     callbackContext_ = context;
     receiveCallback_ = receiveCallback;
     sendCallback_ = sendCallback;
-    eventQueue_ = xQueueCreateStatic(4, sizeof(DeferredEvent), eventQueueBytes_.data(),
-                                     &eventQueueStorage_);
+    eventQueue_ =
+        xQueueCreateStatic(4, sizeof(DeferredEvent), eventQueueBytes_.data(), &eventQueueStorage_);
     if (!eventQueue_) {
         return EspNowRadioResult::kError;
     }
     task_ = xTaskCreateStaticPinnedToCore(taskEntry, "qemu_radio", taskStack_.size(), this,
-                                         kRadioTaskPriority, taskStack_.data(), &taskStorage_,
-                                         kRadioTaskCore);
+                                          kRadioTaskPriority, taskStack_.data(), &taskStorage_,
+                                          kRadioTaskCore);
     if (!task_) {
         eventQueue_ = nullptr;
         return EspNowRadioResult::kError;
@@ -138,8 +136,7 @@ EspNowRadioResult QemuEspNowRadio::send(const EspNowAddress& destination, const 
                                         size_t len, EspNowCorrelationToken token) {
     if (!initialized_.load(std::memory_order_acquire) ||
         handoffFailed_.load(std::memory_order_acquire) || !data || len == 0 ||
-        len > kEspNowMaxPayload || token == 0 ||
-        read(qemu_link::Register::kStickyStatus) != 0 ||
+        len > kEspNowMaxPayload || token == 0 || read(qemu_link::Register::kStickyStatus) != 0 ||
         read(qemu_link::Register::kTxStatus) ==
             static_cast<uint32_t>(qemu_link::TxStatus::kPending)) {
         return EspNowRadioResult::kError;
@@ -149,8 +146,8 @@ EspNowRadioResult QemuEspNowRadio::send(const EspNowAddress& destination, const 
     packAddress(destination, low, high);
     write(qemu_link::Register::kTxDestinationLow, low);
     write(qemu_link::Register::kTxDestinationHigh, high);
-    auto* payload = reinterpret_cast<volatile uint32_t*>(
-        qemu_link::address(qemu_link::Register::kTxPayload));
+    auto* payload =
+        reinterpret_cast<volatile uint32_t*>(qemu_link::address(qemu_link::Register::kTxPayload));
     for (size_t index = 0; index < (len + 3U) / 4U; ++index) {
         uint32_t word = 0;
         const size_t start = index * 4U;
@@ -178,10 +175,9 @@ void IRAM_ATTR QemuEspNowRadio::interruptHandler(void* context) {
     auto* radio = static_cast<QemuEspNowRadio*>(context);
     BaseType_t higherPriorityTaskWoken = pdFALSE;
     const uint32_t status = read(qemu_link::Register::kInterruptStatus);
-    const EspNowCorrelationToken isrToken =
-        (status & qemu_link::kInterruptRxReady) != 0
-            ? read(qemu_link::Register::kRxCorrelation)
-            : read(qemu_link::Register::kTxCorrelation);
+    const EspNowCorrelationToken isrToken = (status & qemu_link::kInterruptRxReady) != 0
+                                                ? read(qemu_link::Register::kRxCorrelation)
+                                                : read(qemu_link::Register::kTxCorrelation);
     trace::KernelTrace::recordFromIsr(trace::KernelTrace::makeKernelEvent(
         trace::EventType::kSchedIsrEnter, 0, qemu_link::kInterruptSource, isrToken, true));
 
@@ -245,10 +241,9 @@ void QemuEspNowRadio::runTask() {
             continue;
         }
         if (trace::Recorder::isEnabled()) {
-            trace::Recorder::record(trace::makeEvent(trace::EventType::kSchedQueueReceive,
-                                                     trace::Category::kEspNow,
-                                                     TRACE_ID("QemuLink.TaskHandoff"),
-                                                     event.token));
+            trace::Recorder::record(
+                trace::makeEvent(trace::EventType::kSchedQueueReceive, trace::Category::kEspNow,
+                                 TRACE_ID("QemuLink.TaskHandoff"), event.token));
         }
         if (event.kind == EventKind::kTxComplete) {
             sendCallback_(callbackContext_, event.token, event.address, event.status);

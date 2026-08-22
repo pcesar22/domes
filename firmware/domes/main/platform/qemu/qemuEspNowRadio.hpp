@@ -4,13 +4,12 @@
 #error "QemuEspNowRadio is available only in the isolated QEMU image"
 #endif
 
-#include "platform/qemu/qemuLinkAbi.hpp"
-#include "transport/iEspNowRadio.hpp"
-
 #include "esp_intr_alloc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "platform/qemu/qemuLinkAbi.hpp"
+#include "transport/iEspNowRadio.hpp"
 
 #include <array>
 #include <atomic>
