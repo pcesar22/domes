@@ -6,6 +6,7 @@
   "changed_paths": [
     "tools/simulation/qualification/README.md",
     "tools/simulation/qualification/frozen-manifest.fixture.json",
+    "tools/simulation/qualification/operational-entry-report.json",
     "tools/simulation/qualification/path-policy-audit.json",
     "tools/simulation/qualification/prequalification-report.fixture.json",
     "tools/simulation/qualification/public-freeze-interface.fixture.json",

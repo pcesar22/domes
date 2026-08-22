@@ -3,14 +3,33 @@
   "kind": "vc-prequalification-public-freeze-interface",
   "specification_revision": "be347355d3747b849b0521e40c539aae88d33614",
   "creation_phase": "pre-held-out",
+  "controller_attestation": {
+    "kind": "domes-controller-terminal-child-attestation-v1",
+    "specification_revision": "be347355d3747b849b0521e40c539aae88d33614",
+    "task_issue": 165,
+    "parent_issue": 160,
+    "planning_issue": 159,
+    "terminal_child_issue": 171,
+    "terminal_task_key": "fs2h-candidate-acceptance",
+    "terminal_task_uid": "1211337a1d026c6f4bfb9f964887904ccce4af07d22e429f844ae17d94d707ee",
+    "terminal_work_class": "executed-validation",
+    "terminal_state": "accepted",
+    "terminal_commit": "1111111111111111111111111111111111111111",
+    "terminal_evidence_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "terminal_candidate_sha256": "99e09beda5b1a513435dacaec80b4ec4919c295e89b154a3f55e561b0dae097d",
+    "fs_wp_002g_terminal_issue": 164,
+    "fs_wp_002g_commit": "4444444444444444444444444444444444444444",
+    "fs_wp_002g_evidence_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+    "fs_wp_002g_campaign_sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
   "terminal_candidate": {
-    "issue": 9002,
+    "issue": 171,
     "artifact_class": "terminal-executed-validation",
     "commit": "1111111111111111111111111111111111111111",
     "evidence_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
-    "candidate_sha256": "c27a6a61f45c22d8c2b698ce868dbe76cd75c9acf0b56eb0bfa5490f4abf1249",
+    "candidate_sha256": "99e09beda5b1a513435dacaec80b4ec4919c295e89b154a3f55e561b0dae097d",
     "fs_wp_002g": {
-      "issue": 9001,
+      "issue": 164,
       "commit": "4444444444444444444444444444444444444444",
       "evidence_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
       "campaign_sha256": "6666666666666666666666666666666666666666666666666666666666666666"
@@ -22,7 +41,11 @@
     "firmware_image_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
     "hardware": {"id": "nff-v1", "sha256": "9999999999999999999999999999999999999999999999999999999999999999"},
     "configuration": {"id": "qualification-config-v1", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-    "prediction_envelope": {"id": "transport-scheduler-envelope-v1", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+    "prediction_envelope": {
+      "id": "transport-scheduler-envelope-v1",
+      "dimensions": ["scheduler", "transport", "stale-event", "recovery", "concurrency"],
+      "sha256": "9bd585a8e3c0399812b3e786519830c2713c17fdc9108620387f70206a17f8ea"
+    },
     "exclusions": ["analog-touch", "rf-coexistence", "power-and-thermal"],
     "fs_wp_002g_campaign_sha256": "6666666666666666666666666666666666666666666666666666666666666666"
   },

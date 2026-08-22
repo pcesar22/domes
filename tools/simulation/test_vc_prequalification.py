@@ -18,20 +18,28 @@ sys.modules[SPEC.name] = gate
 SPEC.loader.exec_module(gate)
 FIXTURE = MODULE.with_name("qualification") / "public-freeze-interface.fixture.json"
 SCHEMA = MODULE.with_name("qualification") / "qualification-manifest.schema.json"
+OPERATIONAL_REPORT = MODULE.with_name("qualification") / "operational-entry-report.json"
 
 
 def fixture() -> dict:
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
 
 
+ATTESTATION_SHA256 = gate.digest(fixture()["controller_attestation"])
+
+
+def freeze(value: dict | None = None) -> tuple[dict, dict]:
+    return gate.freeze(value if value is not None else fixture(), ATTESTATION_SHA256)
+
+
 class PrequalificationTests(unittest.TestCase):
     def assertRejected(self, value: dict) -> None:  # noqa: N802 - unittest idiom
         with self.assertRaises(gate.GateError):
-            gate.freeze(value)
+            freeze(value)
 
     def test_positive_freeze_is_canonical_complete_and_pre_result(self) -> None:
-        manifest, report = gate.freeze(fixture())
-        gate.verify_manifest(manifest)
+        manifest, report = freeze()
+        gate.verify_manifest(manifest, manifest["manifest_sha256"])
         self.assertEqual(
             manifest["manifest_sha256"],
             gate.digest({k: v for k, v in manifest.items() if k != "manifest_sha256"}),
@@ -60,6 +68,16 @@ class PrequalificationTests(unittest.TestCase):
         self.assertFalse(report["held_out_results_accessed"])
         self.assertEqual(report["sensitive_fields_seen"], [])
 
+    def test_operational_entry_stays_fail_closed_without_terminal_evidence(
+        self,
+    ) -> None:
+        report = json.loads(OPERATIONAL_REPORT.read_text(encoding="utf-8"))
+        self.assertEqual(report["entry_result"], "rejected")
+        self.assertFalse(report["manifest_created"])
+        self.assertFalse(report["held_out_results_accessed"])
+        self.assertIsNone(report["terminal_fs_wp_002h"]["terminal_commit"])
+        self.assertIsNone(report["terminal_fs_wp_002g"]["campaign_sha256"])
+
     def test_rejects_missing_terminal_child_and_issue_closure_only(self) -> None:
         missing = fixture()
         del missing["terminal_candidate"]
@@ -68,6 +86,20 @@ class PrequalificationTests(unittest.TestCase):
         closure["terminal_candidate"]["issue"] = 159
         closure["terminal_candidate"]["artifact_class"] = "issue-closed"
         self.assertRejected(closure)
+        relabeled_closure = fixture()
+        relabeled_closure["terminal_candidate"]["issue"] = 159
+        self.assertRejected(relabeled_closure)
+        closure_class_only = fixture()
+        closure_class_only["terminal_candidate"]["artifact_class"] = "issue-closed"
+        self.assertRejected(closure_class_only)
+
+    def test_rejects_unpinned_or_fabricated_controller_topology(self) -> None:
+        value = fixture()
+        with self.assertRaisesRegex(gate.GateError, "externally pinned"):
+            gate.freeze(value, "f" * 64)
+        value["controller_attestation"]["terminal_child_issue"] = 9002
+        with self.assertRaises(gate.GateError):
+            gate.freeze(value, gate.digest(value["controller_attestation"]))
 
     def test_rejects_intermediate_artifact_and_missing_fs2g_lineage(self) -> None:
         intermediate = fixture()
@@ -138,6 +170,9 @@ class PrequalificationTests(unittest.TestCase):
             "clock",
             "task",
             "entry",
+            "predictionEnvelope",
+            "mutationDefinition",
+            "corpusConstruction",
             "mutant",
             "heldOutScenario",
             "metric",
@@ -188,41 +223,77 @@ class PrequalificationTests(unittest.TestCase):
         self.assertRejected(duplicate)
 
     def test_rejects_duplicate_suppressed_or_incomplete_mutants(self) -> None:
-        manifest, _ = gate.freeze(fixture())
+        manifest, _ = freeze()
+        expected_sha256 = manifest["manifest_sha256"]
         duplicate = copy.deepcopy(manifest)
         duplicate["mutation_corpus"][1]["id"] = duplicate["mutation_corpus"][0]["id"]
         duplicate["manifest_sha256"] = gate.digest(
             {k: v for k, v in duplicate.items() if k != "manifest_sha256"}
         )
         with self.assertRaises(gate.GateError):
-            gate.verify_manifest(duplicate)
+            gate.verify_manifest(duplicate, expected_sha256)
         suppressed = copy.deepcopy(manifest)
         suppressed["mutation_corpus"][0]["suppressed"] = True
         suppressed["manifest_sha256"] = gate.digest(
             {k: v for k, v in suppressed.items() if k != "manifest_sha256"}
         )
         with self.assertRaises(gate.GateError):
-            gate.verify_manifest(suppressed)
+            gate.verify_manifest(suppressed, expected_sha256)
         incomplete = copy.deepcopy(manifest)
         incomplete["mutation_corpus"].pop()
         incomplete["manifest_sha256"] = gate.digest(
             {k: v for k, v in incomplete.items() if k != "manifest_sha256"}
         )
         with self.assertRaises(gate.GateError):
-            gate.verify_manifest(incomplete)
+            gate.verify_manifest(incomplete, expected_sha256)
 
     def test_rejects_post_freeze_edits_even_if_structurally_valid(self) -> None:
-        manifest, _ = gate.freeze(fixture())
+        manifest, _ = freeze()
+        expected_sha256 = manifest["manifest_sha256"]
         manifest["thresholds"]["complete_corpus_detection_percent_min"] = 96
-        with self.assertRaisesRegex(gate.GateError, "post-freeze manifest edit"):
-            gate.verify_manifest(manifest)
-        manifest, _ = gate.freeze(fixture())
+        with self.assertRaises(gate.GateError):
+            gate.verify_manifest(manifest, expected_sha256)
+
+    def test_external_pin_rejects_recomputed_digest_edits_across_manifest(self) -> None:
+        original, _ = freeze()
+        expected_sha256 = original["manifest_sha256"]
+        mutations = (
+            lambda value: value["mutation_corpus"][0].__setitem__(
+                "critical_seeded_fault", False
+            ),
+            lambda value: value["candidate"].__setitem__("model_sha256", "f" * 64),
+            lambda value: value["datasets"]["calibration"].pop(),
+            lambda value: value["held_out_scenarios"].pop(),
+            lambda value: value["entry"].__setitem__("result", "rejected"),
+            lambda value: value["invalidation_rules"].pop(),
+            lambda value: value.pop("candidate"),
+            lambda value: value.pop("entry"),
+            lambda value: value.pop("held_out_scenarios"),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                changed = copy.deepcopy(original)
+                mutate(changed)
+                changed["manifest_sha256"] = gate.digest(
+                    {k: v for k, v in changed.items() if k != "manifest_sha256"}
+                )
+                with self.assertRaises(gate.GateError):
+                    gate.verify_manifest(changed, expected_sha256)
+
+    def test_schema_is_enforced_during_verification(self) -> None:
+        manifest, _ = freeze()
+        expected_sha256 = manifest["manifest_sha256"]
+        manifest["mutation_corpus"][0]["undeclared"] = True
+        with self.assertRaisesRegex(gate.GateError, "schema violation"):
+            gate.verify_manifest(manifest, expected_sha256)
+        manifest, _ = freeze()
+        expected_sha256 = manifest["manifest_sha256"]
         manifest["metrics"][0]["bound"] = "relaxed"
         manifest["manifest_sha256"] = gate.digest(
             {k: v for k, v in manifest.items() if k != "manifest_sha256"}
         )
-        with self.assertRaisesRegex(gate.GateError, "metric or threshold"):
-            gate.verify_manifest(manifest)
+        with self.assertRaisesRegex(gate.GateError, "externally pinned"):
+            gate.verify_manifest(manifest, expected_sha256)
 
     def test_rejects_changed_invalidation_rules_and_extra_input_fields(self) -> None:
         value = fixture()
