@@ -329,6 +329,57 @@ void main() {
     await replacementRepository.events.close();
   });
 
+  test('late explicit disconnect cleanup cannot alter replacement', () async {
+    final oldDisconnectStarted = Completer<void>();
+    final releaseOldDisconnect = Completer<void>();
+    final oldTransport = _FakeTransport(
+      onDisconnect: () async {
+        oldDisconnectStarted.complete();
+        await releaseOldDisconnect.future;
+      },
+    );
+    final oldRepository = _FakeRepository();
+    final replacementTransport = _FakeTransport();
+    final replacementRepository = _FakeRepository();
+    var connects = 0;
+    final notifier = PodConnectionNotifier(
+      connector: (_) async {
+        connects++;
+        return connects == 1
+            ? (transport: oldTransport, repository: oldRepository)
+            : (
+                transport: replacementTransport,
+                repository: replacementRepository,
+              );
+      },
+    );
+    await notifier.connect(pod);
+
+    final staleDisconnect = notifier.disconnect();
+    await oldDisconnectStarted.future;
+    await notifier.connect(pod);
+    final replacement = notifier.state.repository;
+
+    expect(replacement, isNotNull);
+    expect(replacementRepository.events.hasListener, isTrue);
+    expect(replacementTransport.disconnectCalls, 0);
+    expect(notifier.state.isConnected, isTrue);
+
+    releaseOldDisconnect.complete();
+    await staleDisconnect;
+
+    expect(notifier.state.repository, same(replacement));
+    expect(replacementRepository.events.hasListener, isTrue);
+    expect(replacementTransport.disconnectCalls, 0);
+    expect(replacementTransport.connected, isTrue);
+    expect(notifier.state.isConnected, isTrue);
+    expect(notifier.state.error, isNull);
+
+    notifier.dispose();
+    await oldRepository.events.close();
+    await replacementRepository.events.close();
+  });
+
   test(
     'superseded command and stream callbacks cannot alter recovery',
     () async {
