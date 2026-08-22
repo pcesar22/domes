@@ -1686,9 +1686,9 @@ def _selected_flash(
 
 def _espnow_status_fields(output: str) -> tuple[str, int, int]:
     """Parse only the bounded fields required by the two-board acceptance drill."""
-    state = re.search(r"(?im)^State:\s*([a-z-]+)\s*$", output)
-    peers = re.search(r"(?im)^Peers:\s*(\d+)\s*$", output)
-    tx_fails = re.search(r"(?im)^TX fails:\s*(\d+)\s*$", output)
+    state = re.search(r"(?im)^\s*State:\s*([a-z-]+)\s*$", output)
+    peers = re.search(r"(?im)^\s*Peers:\s*(\d+)\s*$", output)
+    tx_fails = re.search(r"(?im)^\s*TX fails:\s*(\d+)\s*$", output)
     if state is None or peers is None or tx_fails is None:
         raise BrokerError("ESP-NOW status response is incomplete")
     return state.group(1).casefold(), int(peers.group(1)), int(tx_fails.group(1))
@@ -1819,6 +1819,8 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
         for state, peers, failures in final
     ):
         raise BrokerError("ESP-NOW simulated drill did not finish cleanly")
+    for board in (0, 1):
+        run_cli(board, "trace", "stop")
 
     encoded = ("\n".join(transcript) + "\n").encode()
     ensure_capability_evidence_budget(cap, len(encoded))
@@ -2360,6 +2362,17 @@ def _validate_trace_output(
     }
 
 
+def _trace_artifacts_ready(
+    completed: subprocess.CompletedProcess, output: Path
+) -> bool:
+    """Require trace artifacts only when the candidate command reports success."""
+    if completed.returncode != 0:
+        return False
+    if not (output / "trace.json.raw").is_file():
+        raise BrokerError("successful trace dump produced no raw trace artifact")
+    return True
+
+
 def _normalize_trace_artifacts(
     cap: Capability,
     candidate_source: Path,
@@ -2817,6 +2830,9 @@ def execute(cap: Capability, request: dict[str, Any]) -> dict[str, Any]:
     if build_provenance is not None:
         result["build_provenance"] = build_provenance
         result["inputs"] = inputs
+    if operation == "trace-dump" and not _trace_artifacts_ready(completed, output):
+        ensure_capability_evidence_budget(cap)
+        return result
     if operation == "trace-dump":
         raw = (output / "trace.json.raw").read_bytes()
         trace_relay, transcript_bytes, wire_identity = _validate_trace_transcript(
