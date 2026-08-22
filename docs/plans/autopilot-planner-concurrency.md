@@ -25,6 +25,8 @@ scheduler applied the same path-conflict rule to every role.
   ownership, surface, and open-PR snapshot instead of requiring direct GitHub access.
 - Return a first-attempt worker whose stack invalidates before any handoff to `agent:ready`,
   avoiding an impossible `agent:rework` contract that demands nonexistent judge evidence.
+- Reject planner fan-in nodes that cannot be represented by the current one-level PR stack;
+  planners must serialize joins while retaining fan-out where it remains executable.
 
 ## Verification
 
@@ -34,6 +36,7 @@ scheduler applied the same path-conflict rule to every role.
 - Review and stack tests distinguish a mergeable `BEHIND` state from a `DIRTY` conflict.
 - Planner prompt tests prove the authoritative tracker snapshot is structured and injected.
 - Stack-invalidation tests preserve the distinction between first-attempt and judged rework.
+- Planner semantics reject multi-parent joins before any partial task graph is materialized.
 - Contract validation and tooling/documentation verification pass.
 - The live controller dispatches queued planner issue #148 while worker #141 remains active.
 
