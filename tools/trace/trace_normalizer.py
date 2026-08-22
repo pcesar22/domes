@@ -171,6 +171,49 @@ def _validate_timestamp_order(timestamps: list[int]) -> None:
                 raise TraceNormalizationError("trace timestamps wrap more than once")
 
 
+def validate_scheduler_contract(events: list[Mapping[str, Any]]) -> None:
+    """Validate scheduler category, execution context, and task ownership."""
+    scheduler_contexts = {
+        TASK_CREATE: {0},
+        TASK_DELETE: {0},
+        TASK_READY: {0, 1},
+        TASK_BLOCK: {0},
+        SWITCH_IN: {0},
+        SWITCH_OUT: {0},
+        ISR_ENTER: {1},
+        ISR_EXIT: {1},
+        QUEUE_SEND: {0, 1, 2},
+        QUEUE_RECEIVE: {0, 1, 2},
+        TIMEOUT: {0},
+        CALLBACK_BEGIN: {2},
+        CALLBACK_END: {2},
+        CAUSAL_COMPLETE: {0},
+        SEM_TAKE: {0, 1, 2},
+        SEM_GIVE: {0, 1, 2},
+        TRACE_OVERHEAD: {0},
+    }
+    taskless_contexts = {ISR_ENTER, ISR_EXIT, CALLBACK_BEGIN, CALLBACK_END}
+    for event in events:
+        allowed = scheduler_contexts.get(event["type"])
+        if allowed is not None and event["context"] not in allowed:
+            raise TraceNormalizationError(
+                "scheduler event has an invalid execution context"
+            )
+        if allowed is not None and event["category"] != 0:
+            raise TraceNormalizationError(
+                "scheduler evidence event does not use the kernel category"
+            )
+        if event["type"] in taskless_contexts and event["task_id"] != 0:
+            raise TraceNormalizationError("ISR/callback event unexpectedly owns a task")
+        if event["type"] in (QUEUE_SEND, QUEUE_RECEIVE, SEM_TAKE, SEM_GIVE):
+            if (event["context"] == 0 and event["task_id"] == 0) or (
+                event["context"] != 0 and event["task_id"] != 0
+            ):
+                raise TraceNormalizationError(
+                    "synchronization event ownership/context is invalid"
+                )
+
+
 def normalize_trace(
     raw: bytes,
     manifest: Mapping[str, Any],
@@ -369,45 +412,7 @@ def normalize_trace(
                 "task catalog priority or affinity mapping is invalid"
             )
 
-    scheduler_contexts = {
-        TASK_CREATE: {0},
-        TASK_DELETE: {0},
-        TASK_READY: {0, 1},
-        TASK_BLOCK: {0},
-        SWITCH_IN: {0},
-        SWITCH_OUT: {0},
-        ISR_ENTER: {1},
-        ISR_EXIT: {1},
-        QUEUE_SEND: {0, 1},
-        QUEUE_RECEIVE: {0, 1},
-        TIMEOUT: {0},
-        CALLBACK_BEGIN: {2},
-        CALLBACK_END: {2},
-        CAUSAL_COMPLETE: {0},
-        SEM_TAKE: {0, 1},
-        SEM_GIVE: {0, 1},
-        TRACE_OVERHEAD: {0},
-    }
-    taskless_contexts = {ISR_ENTER, ISR_EXIT, CALLBACK_BEGIN, CALLBACK_END}
-    for event in events:
-        allowed = scheduler_contexts.get(event["type"])
-        if allowed is not None and event["context"] not in allowed:
-            raise TraceNormalizationError(
-                "scheduler event has an invalid execution context"
-            )
-        if allowed is not None and event["category"] != 0:
-            raise TraceNormalizationError(
-                "scheduler evidence event does not use the kernel category"
-            )
-        if event["type"] in taskless_contexts and event["task_id"] != 0:
-            raise TraceNormalizationError("ISR/callback event unexpectedly owns a task")
-        if event["type"] in (QUEUE_SEND, QUEUE_RECEIVE, SEM_TAKE, SEM_GIVE):
-            if (event["context"] == 0 and event["task_id"] == 0) or (
-                event["context"] == 1 and event["task_id"] != 0
-            ):
-                raise TraceNormalizationError(
-                    "synchronization event ownership/context is invalid"
-                )
+    validate_scheduler_contract(events)
 
     lifecycle_stacks = {
         (core, kind): [] for core in (0, 1) for kind in ("isr", "callback")

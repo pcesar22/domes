@@ -143,7 +143,7 @@ typedef struct _domes_trace_TraceSessionInfo {
     uint32_t buffer_size_bytes; /* Active capture capacity in bytes */
     uint32_t trace_event_format_version; /* 1 for scheduler/causality flags and IDs */
     pb_size_t objects_count;
-    domes_trace_ObjectEntry objects[8];
+    domes_trace_ObjectEntry objects[10];
     uint32_t discontinuity_count;
     char firmware_version[32]; /* Running esp_app_desc_t version */
     domes_trace_TraceSessionInfo_app_elf_sha256_t app_elf_sha256; /* Running esp_app_desc_t ELF SHA-256 (32 bytes) */
@@ -235,7 +235,7 @@ extern "C" {
 #define domes_trace_Event_init_default           {0, 0, _domes_trace_EventType_MIN, _domes_trace_Category_MIN, 0, 0}
 #define domes_trace_TaskEntry_init_default       {0, "", 0, 0}
 #define domes_trace_ObjectEntry_init_default     {0, _domes_trace_ObjectKind_MIN, ""}
-#define domes_trace_TraceSessionInfo_init_default {0, 0, 0, 0, 0, 0, {domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default}, 0, 0, 0, {domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default}, 0, "", {0, {0}}, {0, {0}}, {0, {0}}}
+#define domes_trace_TraceSessionInfo_init_default {0, 0, 0, 0, 0, 0, {domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default, domes_trace_TaskEntry_init_default}, 0, 0, 0, {domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default, domes_trace_ObjectEntry_init_default}, 0, "", {0, {0}}, {0, {0}}, {0, {0}}}
 #define domes_trace_TraceDataChunk_init_default  {0, 0, {0, {0}}}
 #define domes_trace_TraceDumpComplete_init_default {0, 0}
 #define domes_trace_TraceStatusResponse_init_default {0, 0, 0, 0, 0, 0, 0, 0}
@@ -244,7 +244,7 @@ extern "C" {
 #define domes_trace_Event_init_zero              {0, 0, _domes_trace_EventType_MIN, _domes_trace_Category_MIN, 0, 0}
 #define domes_trace_TaskEntry_init_zero          {0, "", 0, 0}
 #define domes_trace_ObjectEntry_init_zero        {0, _domes_trace_ObjectKind_MIN, ""}
-#define domes_trace_TraceSessionInfo_init_zero   {0, 0, 0, 0, 0, 0, {domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero}, 0, 0, 0, {domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero}, 0, "", {0, {0}}, {0, {0}}, {0, {0}}}
+#define domes_trace_TraceSessionInfo_init_zero   {0, 0, 0, 0, 0, 0, {domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero, domes_trace_TaskEntry_init_zero}, 0, 0, 0, {domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero, domes_trace_ObjectEntry_init_zero}, 0, "", {0, {0}}, {0, {0}}, {0, {0}}}
 #define domes_trace_TraceDataChunk_init_zero     {0, 0, {0, {0}}}
 #define domes_trace_TraceDumpComplete_init_zero  {0, 0}
 #define domes_trace_TraceStatusResponse_init_zero {0, 0, 0, 0, 0, 0, 0, 0}
@@ -410,7 +410,7 @@ extern const pb_msgdesc_t domes_trace_StreamBatch_msg;
 #define domes_trace_TaskEntry_size               35
 #define domes_trace_TraceDataChunk_size          271
 #define domes_trace_TraceDumpComplete_size       12
-#define domes_trace_TraceSessionInfo_size        965
+#define domes_trace_TraceSessionInfo_size        1019
 #define domes_trace_TraceStatusResponse_size     36
 
 #ifdef __cplusplus

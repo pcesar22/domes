@@ -5,11 +5,16 @@ import struct
 import unittest
 
 from tools.trace.trace_normalizer import (
+    CALLBACK_BEGIN,
+    CALLBACK_END,
     PROBE_OBJECTS,
+    QUEUE_SEND,
+    SEM_GIVE,
     TraceNormalizationError,
     normalize_trace,
     object_map_from_qemu_log,
     raw_from_qemu_log,
+    validate_scheduler_contract,
     validate_session,
 )
 
@@ -211,6 +216,23 @@ class TraceNormalizerTests(unittest.TestCase):
         wrong_context = self.raw + event(12, 0x16, 3, 0, task=0, flags=1)
         with self.assertRaises(TraceNormalizationError):
             normalize_trace(wrong_context, self.manifest, objects=PROBE_OBJECTS)
+
+    def test_accepts_taskless_callback_owned_queue_and_semaphore_edges(self):
+        events = [
+            {
+                "type": event_type,
+                "context": 2,
+                "category": 0,
+                "task_id": 0,
+            }
+            for event_type in (CALLBACK_BEGIN, QUEUE_SEND, SEM_GIVE, CALLBACK_END)
+        ]
+        validate_scheduler_contract(events)
+        events[1]["task_id"] = 1
+        with self.assertRaisesRegex(
+            TraceNormalizationError, "ownership/context"
+        ):
+            validate_scheduler_contract(events)
 
     def test_rejects_switch_below_highest_ready_priority(self):
         manifest = {

@@ -274,13 +274,14 @@ TEST(EspNowTransportTest, TimeoutPoisonsSessionUntilLifecycleRecovery) {
 TEST(EspNowTransportTest, EmitsOneCorrelationTokenAtEveryCallbackToTaskBoundary) {
     trace::Recorder::shutdown();
     ASSERT_EQ(trace::Recorder::init(4096), ESP_OK);
+    ASSERT_TRUE(trace::Recorder::registerTask(xTaskGetCurrentTaskHandle(), "espnow_test", 7, 1, 0));
     trace::Recorder::finalizeTaskCatalog();
     sim::globalTraceEvents().clear();
-    ASSERT_TRUE(trace::Recorder::setEnabled(true));
 
     FakeEspNowRadio radio;
     EspNowTransport transport(radio);
     ASSERT_EQ(transport.init(), TransportError::kOk);
+    ASSERT_TRUE(trace::Recorder::setEnabled(true));
     constexpr EspNowCorrelationToken kRxToken = 417;
     const uint8_t payload = 3;
     EspNowReceiveMetadata metadata{};
@@ -293,35 +294,69 @@ TEST(EspNowTransportTest, EmitsOneCorrelationTokenAtEveryCallbackToTaskBoundary)
     const EspNowCorrelationToken txToken = radio.sentTokens.back();
 
     const auto& events = sim::globalTraceEvents();
-    const auto causalTypesForToken = [&events](EspNowCorrelationToken token) {
-        std::vector<trace::EventType> types;
+    struct ExpectedBoundary {
+        trace::EventType type;
+        uint32_t objectId;
+        uint8_t context;
+        uint16_t taskId;
+        trace::ObjectKind objectKind;
+        bool operator==(const ExpectedBoundary&) const = default;
+    };
+    const auto causalBoundariesForToken = [&events](EspNowCorrelationToken token) {
+        std::vector<ExpectedBoundary> boundaries;
         for (const trace::TraceEvent& event : events) {
             if (event.arg2 == token && event.type() >= trace::EventType::kSemTake &&
                 event.type() <= trace::EventType::kCausalComplete) {
                 EXPECT_EQ(event.category(), trace::Category::kKernel)
                     << "causal trace type " << static_cast<int>(event.type())
                     << " must use the kernel category";
-                types.push_back(event.type());
+                trace::ObjectKind kind = trace::ObjectKind::kUnknown;
+                for (const auto& object : trace::KernelTrace::objects()) {
+                    if (object.valid && object.objectId == event.arg1) {
+                        kind = object.kind;
+                        break;
+                    }
+                }
+                boundaries.push_back(
+                    {event.type(), event.arg1, event.contextCode(), event.taskId, kind});
             }
         }
-        return types;
+        return boundaries;
     };
     const std::array rxTypes = {
-        trace::EventType::kCallbackBegin,  trace::EventType::kSchedQueueSend,
-        trace::EventType::kSemGive,        trace::EventType::kCallbackEnd,
-        trace::EventType::kSemTake,        trace::EventType::kSchedQueueReceive,
-        trace::EventType::kCausalComplete,
+        ExpectedBoundary{trace::EventType::kCallbackBegin, kEspNowCallbackTraceId, 2, 0,
+                         trace::ObjectKind::kCallback},
+        ExpectedBoundary{trace::EventType::kSchedQueueSend, kEspNowQueueTraceId, 2, 0,
+                         trace::ObjectKind::kQueue},
+        ExpectedBoundary{trace::EventType::kSemGive, kEspNowReadyTraceId, 2, 0,
+                         trace::ObjectKind::kSemaphore},
+        ExpectedBoundary{trace::EventType::kCallbackEnd, kEspNowCallbackTraceId, 2, 0,
+                         trace::ObjectKind::kCallback},
+        ExpectedBoundary{trace::EventType::kSemTake, kEspNowReadyTraceId, 0, 7,
+                         trace::ObjectKind::kSemaphore},
+        ExpectedBoundary{trace::EventType::kSchedQueueReceive, kEspNowQueueTraceId, 0, 7,
+                         trace::ObjectKind::kQueue},
+        ExpectedBoundary{trace::EventType::kCausalComplete, kEspNowCompleteTraceId, 0, 7,
+                         trace::ObjectKind::kAction},
     };
-    EXPECT_EQ(causalTypesForToken(kRxToken),
-              (std::vector<trace::EventType>(rxTypes.begin(), rxTypes.end())));
+    EXPECT_EQ(causalBoundariesForToken(kRxToken),
+              (std::vector<ExpectedBoundary>(rxTypes.begin(), rxTypes.end())));
     const std::array txTypes = {
-        trace::EventType::kSchedQueueSend,
-        trace::EventType::kCallbackBegin,
-        trace::EventType::kCallbackEnd,
-        trace::EventType::kCausalComplete,
+        ExpectedBoundary{trace::EventType::kSchedQueueSend, kEspNowQueueTraceId, 0, 7,
+                         trace::ObjectKind::kQueue},
+        ExpectedBoundary{trace::EventType::kCallbackBegin, kEspNowCallbackTraceId, 2, 0,
+                         trace::ObjectKind::kCallback},
+        ExpectedBoundary{trace::EventType::kSemGive, kEspNowReadyTraceId, 2, 0,
+                         trace::ObjectKind::kSemaphore},
+        ExpectedBoundary{trace::EventType::kCallbackEnd, kEspNowCallbackTraceId, 2, 0,
+                         trace::ObjectKind::kCallback},
+        ExpectedBoundary{trace::EventType::kSemTake, kEspNowReadyTraceId, 0, 7,
+                         trace::ObjectKind::kSemaphore},
+        ExpectedBoundary{trace::EventType::kCausalComplete, kEspNowCompleteTraceId, 0, 7,
+                         trace::ObjectKind::kAction},
     };
-    EXPECT_EQ(causalTypesForToken(txToken),
-              (std::vector<trace::EventType>(txTypes.begin(), txTypes.end())));
+    EXPECT_EQ(causalBoundariesForToken(txToken),
+              (std::vector<ExpectedBoundary>(txTypes.begin(), txTypes.end())));
 
     trace::Recorder::setEnabled(false);
     trace::Recorder::shutdown();

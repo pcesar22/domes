@@ -14,7 +14,9 @@ namespace domes::trace {
 class TraceBuffer;
 
 constexpr uint32_t kTraceEventFormatVersion = 1;
-constexpr size_t kMaxTraceObjects = 8;
+// The six acceptance-probe identities and four ESP-NOW causal identities fit
+// together while keeping worst-case TraceSessionInfo below one framed payload.
+constexpr size_t kMaxTraceObjects = 10;
 constexpr size_t kMaxTraceObjectNameLength = 16;
 
 enum class ObjectKind : uint8_t {
