@@ -21,6 +21,8 @@ scheduler applied the same path-conflict rule to every role.
   behind `main`; invalidate only actual conflicts, changed heads, or requested changes.
 - Preserve stacked-child validity across that harmless base advance so productive work is
   not discarded.
+- Hydrate network-isolated planners with a concise controller-captured issue, dependency,
+  ownership, surface, and open-PR snapshot instead of requiring direct GitHub access.
 
 ## Verification
 
@@ -28,6 +30,7 @@ scheduler applied the same path-conflict rule to every role.
   by a worker on the same surface.
 - Existing worker-overlap tests continue to prove mutation exclusion.
 - Review and stack tests distinguish a mergeable `BEHIND` state from a `DIRTY` conflict.
+- Planner prompt tests prove the authoritative tracker snapshot is structured and injected.
 - Contract validation and tooling/documentation verification pass.
 - The live controller dispatches queued planner issue #148 while worker #141 remains active.
 
