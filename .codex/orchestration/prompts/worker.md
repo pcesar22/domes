@@ -16,6 +16,12 @@ descends from the supplied base revision. The deterministic controller may repai
 the exact head for review, but only a human may approve or merge the pull request. When reworking
 after human review, inspect the current PR review feedback.
 
+After pushing and creating or updating the pull request, do not wait for CI and do not run a
+long-lived check watcher such as `gh pr checks --watch`. Record checks you already executed,
+confirm the remote head, and immediately return the structured handoff. The deterministic
+controller owns CI polling, failure dispatch, and retries; retaining this worker merely to watch
+checks withholds its concurrency slot and architectural-surface reservation from other work.
+
 Your Codex process remains workspace-write and has no direct `/dev` access. This implementation
 role never receives or requests a registered-hardware capability. Hardware and physical evidence
 are deliberately deferred until the pushed PR head passes a fresh independent safety review; a
