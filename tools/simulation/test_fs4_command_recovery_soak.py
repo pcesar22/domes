@@ -50,7 +50,11 @@ def manifest(log: bytes | None = None) -> dict:
         "specification_revision": soak.SPECIFICATION_REVISION,
         "tested_git_sha": "a" * 40,
         "predecessor_git_sha": soak.PREDECESSOR_REVISION,
-        "tool_versions": {"flutter": "3", "dart": "3", "python": "3"},
+        "tool_versions": soak._tool_versions(),
+        "flutter_lockfile": {
+            "path": str(soak.FLUTTER_LOCKFILE.relative_to(soak.REPO_ROOT)),
+            "sha256": hashlib.sha256(soak.FLUTTER_LOCKFILE.read_bytes()).hexdigest(),
+        },
         "invocation": "python3 tools/simulation/fs4_command_recovery_soak.py --cycles 1000",
         "scenario": {
             "path": str(soak.SCENARIO.relative_to(soak.REPO_ROOT)),
@@ -59,7 +63,14 @@ def manifest(log: bytes | None = None) -> dict:
         },
         "counts": {
             key: value[key]
-            for key in ("cycles", "faults", "reconnects", "completed_results", "per_identity", "per_stage")
+            for key in (
+                "cycles",
+                "faults",
+                "reconnects",
+                "completed_results",
+                "per_identity",
+                "per_stage",
+            )
         },
         "invariant_counters": value["invariant_counters"],
         "terminal_state": "disconnected",
@@ -89,6 +100,8 @@ def manifest(log: bytes | None = None) -> dict:
             "specification_revision",
             "tested_git_sha",
             "predecessor_git_sha",
+            "tool_versions",
+            "flutter_lockfile",
             "scenario",
             "counts",
             "invariant_counters",
@@ -150,6 +163,18 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(soak.SoakError, "verdict digest"):
             soak.validate_manifest(candidate, log_bytes())
 
+    def test_toolchain_mismatch_fails_closed(self) -> None:
+        candidate = manifest()
+        candidate["tool_versions"]["flutter"] = "different"
+        with self.assertRaisesRegex(soak.SoakError, "toolchain"):
+            soak.validate_manifest(candidate, log_bytes())
+
+    def test_lockfile_mismatch_fails_closed(self) -> None:
+        candidate = manifest()
+        candidate["flutter_lockfile"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(soak.SoakError, "lockfile"):
+            soak.validate_manifest(candidate, log_bytes())
+
     def test_physical_claim_fails_closed(self) -> None:
         candidate = manifest()
         candidate["physical_validation"] = "passed"
@@ -176,9 +201,9 @@ class ManifestTests(unittest.TestCase):
 
     def test_negative_predecessor_title_is_not_a_claim(self) -> None:
         candidate = manifest()
-        candidate["predecessor_reconciliation"][2]["title"] = (
-            "bundle evidence without issuing a physical or predictive trust verdict"
-        )
+        candidate["predecessor_reconciliation"][2][
+            "title"
+        ] = "bundle evidence without issuing a physical or predictive trust verdict"
         soak.validate_manifest(candidate, log_bytes())
 
     def test_empty_structured_fields_fail_closed(self) -> None:

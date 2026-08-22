@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -17,8 +18,12 @@ from typing import Any, Mapping, Sequence
 SPECIFICATION_REVISION = "be347355d3747b849b0521e40c539aae88d33614"
 PREDECESSOR_REVISION = "7d2a8466e3f96fa96a820a82589fba5c7de014f0"
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCENARIO = REPO_ROOT / "ios/domes_app/test/application/providers/fs4_command_recovery_soak_test.dart"
+SCENARIO = (
+    REPO_ROOT
+    / "ios/domes_app/test/application/providers/fs4_command_recovery_soak_test.dart"
+)
 APP_ROOT = REPO_ROOT / "ios/domes_app"
+FLUTTER_LOCKFILE = APP_ROOT / "pubspec.lock"
 IDENTITIES = tuple(f"soak-pod-{number}" for number in range(1, 7))
 STAGES = (
     "prepare_mode",
@@ -61,6 +66,7 @@ MANIFEST_FIELDS = {
     "tested_git_sha",
     "predecessor_git_sha",
     "tool_versions",
+    "flutter_lockfile",
     "invocation",
     "scenario",
     "counts",
@@ -111,17 +117,23 @@ def _git(*args: str) -> str:
     return _run(("git", *args)).strip()
 
 
-def _tool_versions() -> dict[str, str]:
+@functools.lru_cache(maxsize=1)
+def _tool_version_tuple() -> tuple[str, str, str]:
     try:
         flutter = json.loads(_run(("flutter", "--version", "--machine")))
     except (json.JSONDecodeError, SoakError) as error:
         raise SoakError(f"cannot identify the Flutter toolchain: {error}") from error
     dart = _run(("dart", "--version")).strip()
-    return {
-        "flutter": str(flutter.get("frameworkVersion", "")),
-        "dart": dart.removeprefix("Dart SDK version: "),
-        "python": sys.version.split()[0],
-    }
+    return (
+        str(flutter.get("frameworkVersion", "")),
+        dart.removeprefix("Dart SDK version: "),
+        sys.version.split()[0],
+    )
+
+
+def _tool_versions() -> dict[str, str]:
+    flutter, dart, python = _tool_version_tuple()
+    return {"flutter": flutter, "dart": dart, "python": python}
 
 
 def _reconcile_predecessors() -> list[dict[str, Any]]:
@@ -132,7 +144,9 @@ def _reconcile_predecessors() -> list[dict[str, Any]]:
     }
     records = []
     for number, scope_word in expected.items():
-        raw = _run(("gh", "issue", "view", str(number), "--json", "number,state,title,url"))
+        raw = _run(
+            ("gh", "issue", "view", str(number), "--json", "number,state,title,url")
+        )
         issue = json.loads(raw)
         if (
             not isinstance(issue, dict)
@@ -153,7 +167,10 @@ def _reconcile_predecessors() -> list[dict[str, Any]]:
 
 
 def _expected_totals(items: Sequence[str], cycles: int) -> dict[str, int]:
-    return {item: sum(1 for index in range(cycles) if items[index % len(items)] == item) for item in items}
+    return {
+        item: sum(1 for index in range(cycles) if items[index % len(items)] == item)
+        for item in items
+    }
 
 
 def parse_summary(log_text: str, cycles: int) -> dict[str, Any]:
@@ -186,7 +203,10 @@ def parse_summary(log_text: str, cycles: int) -> dict[str, Any]:
     counters = value["invariant_counters"]
     if not isinstance(counters, dict) or set(counters) != COUNTER_FIELDS:
         raise SoakError("invariant counter inventory mismatch")
-    if any(not isinstance(count, int) or isinstance(count, bool) or count != 0 for count in counters.values()):
+    if any(
+        not isinstance(count, int) or isinstance(count, bool) or count != 0
+        for count in counters.values()
+    ):
         raise SoakError("one or more lifecycle invariants are nonzero")
     if value["terminal_state"] != "disconnected":
         raise SoakError("campaign did not reach the declared terminal state")
@@ -228,7 +248,10 @@ def _require_nonempty_string(value: Any, field: str) -> str:
 def validate_manifest(manifest: Mapping[str, Any], log_bytes: bytes) -> None:
     if set(manifest) != MANIFEST_FIELDS:
         raise SoakError("manifest has missing or unexpected fields")
-    if manifest.get("schema_version") != 1 or manifest.get("campaign") != "fs4_command_recovery_soak":
+    if (
+        manifest.get("schema_version") != 1
+        or manifest.get("campaign") != "fs4_command_recovery_soak"
+    ):
         raise SoakError("manifest identity mismatch")
     if manifest.get("specification_revision") != SPECIFICATION_REVISION:
         raise SoakError("specification revision mismatch")
@@ -241,13 +264,28 @@ def validate_manifest(manifest: Mapping[str, Any], log_bytes: bytes) -> None:
         raise SoakError("manifest tool_versions inventory is incomplete")
     for name, version in tools.items():
         _require_nonempty_string(version, f"tool_versions.{name}")
+    if tools != _tool_versions():
+        raise SoakError("retained toolchain differs from the validating toolchain")
+    lockfile = manifest.get("flutter_lockfile")
+    expected_lockfile = {
+        "path": str(FLUTTER_LOCKFILE.relative_to(REPO_ROOT)),
+        "sha256": _sha256(FLUTTER_LOCKFILE.read_bytes()),
+    }
+    if lockfile != expected_lockfile:
+        raise SoakError("Flutter lockfile identity mismatch")
     _require_nonempty_string(manifest.get("invocation"), "invocation")
     _require_nonempty_string(manifest.get("claim_boundary"), "claim_boundary")
     ownership = manifest.get("ownership_and_gaps")
-    if not isinstance(ownership, dict) or set(ownership) != {"owned", "excluded", "unverified"}:
+    if not isinstance(ownership, dict) or set(ownership) != {
+        "owned",
+        "excluded",
+        "unverified",
+    }:
         raise SoakError("manifest ownership_and_gaps is incomplete")
     _require_nonempty_string(ownership.get("owned"), "ownership_and_gaps.owned")
-    _require_nonempty_string(ownership.get("unverified"), "ownership_and_gaps.unverified")
+    _require_nonempty_string(
+        ownership.get("unverified"), "ownership_and_gaps.unverified"
+    )
     excluded = ownership.get("excluded")
     if not isinstance(excluded, list) or len(excluded) != 3:
         raise SoakError("manifest ownership exclusions are incomplete")
@@ -259,38 +297,69 @@ def validate_manifest(manifest: Mapping[str, Any], log_bytes: bytes) -> None:
     expected_issues = [174, 175, 176]
     for expected_issue, record in zip(expected_issues, reconciliation, strict=True):
         if not isinstance(record, dict) or set(record) != {
-            "issue", "state", "title", "url", "artifacts_consumed"
+            "issue",
+            "state",
+            "title",
+            "url",
+            "artifacts_consumed",
         }:
             raise SoakError("manifest predecessor record is incomplete")
-        if record.get("issue") != expected_issue or record.get("artifacts_consumed") is not False:
+        if (
+            record.get("issue") != expected_issue
+            or record.get("artifacts_consumed") is not False
+        ):
             raise SoakError("manifest predecessor identity or ownership mismatch")
         for field in ("state", "title", "url"):
-            _require_nonempty_string(record.get(field), f"predecessor_reconciliation.{field}")
-    claim_fields = {key: value for key, value in manifest.items() if key != "physical_validation"}
-    if manifest.get("physical_validation") != "unverified" or _forbidden_claim(claim_fields):
+            _require_nonempty_string(
+                record.get(field), f"predecessor_reconciliation.{field}"
+            )
+    claim_fields = {
+        key: value for key, value in manifest.items() if key != "physical_validation"
+    }
+    if manifest.get("physical_validation") != "unverified" or _forbidden_claim(
+        claim_fields
+    ):
         raise SoakError("manifest attempts a physical or predictive claim")
     artifacts = manifest.get("artifact_hashes")
     if artifacts != {"raw_flutter_log_sha256": _sha256(log_bytes)}:
         raise SoakError("retained artifact hash mismatch")
     scenario = manifest.get("scenario")
-    if not isinstance(scenario, dict) or set(scenario) != {"path", "sha256", "inventory"}:
+    if not isinstance(scenario, dict) or set(scenario) != {
+        "path",
+        "sha256",
+        "inventory",
+    }:
         raise SoakError("scenario definition is incomplete")
     if scenario["inventory"] != list(STAGES):
         raise SoakError("scenario inventory contains foreign scope")
-    if scenario["path"] != str(SCENARIO.relative_to(REPO_ROOT)) or scenario["sha256"] != _sha256(SCENARIO.read_bytes()):
+    if scenario["path"] != str(SCENARIO.relative_to(REPO_ROOT)) or scenario[
+        "sha256"
+    ] != _sha256(SCENARIO.read_bytes()):
         raise SoakError("scenario definition digest mismatch")
     counts = manifest.get("counts")
-    if not isinstance(counts, dict) or set(counts) != {"cycles", "faults", "reconnects", "completed_results", "per_identity", "per_stage"}:
+    if not isinstance(counts, dict) or set(counts) != {
+        "cycles",
+        "faults",
+        "reconnects",
+        "completed_results",
+        "per_identity",
+        "per_stage",
+    }:
         raise SoakError("manifest count inventory mismatch")
     summary = parse_summary(log_bytes.decode(), counts.get("cycles", -1))
     expected_counts = {key: summary[key] for key in counts}
-    if counts != expected_counts or manifest.get("invariant_counters") != summary["invariant_counters"]:
+    if (
+        counts != expected_counts
+        or manifest.get("invariant_counters") != summary["invariant_counters"]
+    ):
         raise SoakError("manifest and raw log counters disagree")
     verdict = {
         "campaign": manifest["campaign"],
         "specification_revision": manifest["specification_revision"],
         "tested_git_sha": manifest["tested_git_sha"],
         "predecessor_git_sha": manifest["predecessor_git_sha"],
+        "tool_versions": manifest["tool_versions"],
+        "flutter_lockfile": manifest["flutter_lockfile"],
         "scenario": manifest["scenario"],
         "counts": manifest["counts"],
         "invariant_counters": manifest["invariant_counters"],
@@ -312,14 +381,18 @@ def run(cycles: int, specification_revision: str, output: Path) -> Path:
         raise SoakError(f"output directory is not empty: {output}")
     output.mkdir(parents=True, exist_ok=True)
     tested_sha = _git("rev-parse", "HEAD")
-    status_lines = _git("status", "--porcelain=v1", "--untracked-files=all").splitlines()
+    status_lines = _git(
+        "status", "--porcelain=v1", "--untracked-files=all"
+    ).splitlines()
     source_changes = [line for line in status_lines if not line.startswith("?? .tmp/")]
     if source_changes:
         raise SoakError("campaign must execute from a clean tested Git head")
     try:
         _run(("git", "merge-base", "--is-ancestor", PREDECESSOR_REVISION, tested_sha))
     except SoakError as error:
-        raise SoakError("tested head does not descend from the required predecessor") from error
+        raise SoakError(
+            "tested head does not descend from the required predecessor"
+        ) from error
     reconciliation = _reconcile_predecessors()
     flutter_command = (
         "flutter",
@@ -334,9 +407,18 @@ def run(cycles: int, specification_revision: str, output: Path) -> Path:
     scenario_bytes = SCENARIO.read_bytes()
     counts = {
         key: summary[key]
-        for key in ("cycles", "faults", "reconnects", "completed_results", "per_identity", "per_stage")
+        for key in (
+            "cycles",
+            "faults",
+            "reconnects",
+            "completed_results",
+            "per_identity",
+            "per_stage",
+        )
     }
-    invocation = shlex.join(("python3", str(Path(__file__).relative_to(REPO_ROOT)), *sys.argv[1:]))
+    invocation = shlex.join(
+        ("python3", str(Path(__file__).relative_to(REPO_ROOT)), *sys.argv[1:])
+    )
     manifest: dict[str, Any] = {
         "schema_version": 1,
         "campaign": "fs4_command_recovery_soak",
@@ -344,6 +426,10 @@ def run(cycles: int, specification_revision: str, output: Path) -> Path:
         "tested_git_sha": tested_sha,
         "predecessor_git_sha": PREDECESSOR_REVISION,
         "tool_versions": _tool_versions(),
+        "flutter_lockfile": {
+            "path": str(FLUTTER_LOCKFILE.relative_to(REPO_ROOT)),
+            "sha256": _sha256(FLUTTER_LOCKFILE.read_bytes()),
+        },
         "invocation": invocation,
         "scenario": {
             "path": str(SCENARIO.relative_to(REPO_ROOT)),
@@ -374,6 +460,8 @@ def run(cycles: int, specification_revision: str, output: Path) -> Path:
             "specification_revision",
             "tested_git_sha",
             "predecessor_git_sha",
+            "tool_versions",
+            "flutter_lockfile",
             "scenario",
             "counts",
             "invariant_counters",

@@ -9,6 +9,7 @@ import 'package:domes_app/data/protocol/config_protocol.dart';
 import 'package:domes_app/data/transport/frame_codec.dart';
 import 'package:domes_app/data/transport/transport.dart';
 import 'package:domes_app/domain/models/drill_config.dart';
+import 'package:domes_app/domain/models/drill_result.dart';
 import 'package:domes_app/domain/models/pod_device.dart';
 import 'package:domes_app/domain/repositories/pod_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -44,7 +45,7 @@ final class _RetainedStream extends Stream<AppTouchEvent> {
   void staleTouch() =>
       _data?.call(const AppTouchEvent(podId: 99, padIndex: 7, timestampUs: 1));
 
-  void failAmbiguously(String stage) {
+  void staleErrorCallback(String stage) {
     final handler = _error;
     if (handler != null) {
       Function.apply(handler, [
@@ -131,6 +132,7 @@ final class _FakeRepository implements PodRepository {
   final _RetainedStream touchEvents;
   String? _gatedCommand;
   Completer<void>? _gate;
+  int staleResponses = 0;
 
   void gate(String command) {
     expect(_gate, isNull);
@@ -139,12 +141,19 @@ final class _FakeRepository implements PodRepository {
 
   bool get commandIsPending => _gate != null;
 
-  void completeStaleResponse() {
+  void failCommandAmbiguously(String stage) {
     final gate = _gate;
     expect(gate, isNotNull);
     _gate = null;
-    gate!.complete();
+    gate!.completeError(
+      StateError('ambiguous command failure at $stage'),
+      StackTrace.current,
+    );
   }
+
+  // Models a response arriving from the poisoned command channel after its
+  // Future has already failed. It deliberately cannot complete that Future.
+  void deliverStaleResponse() => staleResponses++;
 
   Future<void> _beforeResponse(String command) async {
     if (_gatedCommand != command) return;
@@ -211,6 +220,22 @@ Future<void> _waitUntil(bool Function() predicate) async {
     await Future<void>.delayed(Duration.zero);
   }
   fail('condition did not become true');
+}
+
+bool _sameResults(List<RoundResult> actual, List<RoundResult> expected) {
+  if (actual.length != expected.length) return false;
+  for (var index = 0; index < actual.length; index++) {
+    final left = actual[index];
+    final right = expected[index];
+    if (left.roundIndex != right.roundIndex ||
+        left.podAddress != right.podAddress ||
+        left.hit != right.hit ||
+        left.reactionTime != right.reactionTime ||
+        left.timestamp != right.timestamp) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void main() {
@@ -343,10 +368,15 @@ void main() {
                 break;
             }
             await _waitUntil(() => repository.commandIsPending);
-            final completedBeforeFault = List.of(drill.state.results);
-            repository.touchEvents.failAmbiguously(stage);
+            final stateBeforeFault = drill.state;
+            final completedBeforeFault = List.of(stateBeforeFault.results);
+            repository.failCommandAmbiguously(stage);
             await _waitUntil(() => failures.length == beforeFailures + 1);
             final terminalAfterFault = drill.state;
+
+            if (!_sameResults(drill.state.results, completedBeforeFault)) {
+              duplicateOrLostResults++;
+            }
 
             if (multiPod.state[identity]!.isConnected) {
               quarantinedGenerationReuse++;
@@ -368,14 +398,17 @@ void main() {
               cleanupOrderViolations++;
             }
 
+            final staleResponsesBefore = repository.staleResponses;
             repository.touchEvents.staleTouch();
-            repository.completeStaleResponse();
+            repository.touchEvents.staleErrorCallback(stage);
+            repository.deliverStaleResponse();
             await operation;
             await Future<void>.delayed(Duration.zero);
             if (touches.length != beforeTouches ||
                 failures.length != beforeFailures + 1 ||
                 !identical(drill.state, terminalAfterFault) ||
-                drill.state.results.length != completedBeforeFault.length) {
+                !_sameResults(drill.state.results, completedBeforeFault) ||
+                repository.staleResponses != staleResponsesBefore + 1) {
               staleMutations++;
             }
             if (failures.length != beforeFailures + 1) {
