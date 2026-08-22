@@ -6281,9 +6281,38 @@ def render_dashboard(
 
     lines.extend(("", "QUEUE"))
     if eligible:
+        active_by_number = {item.ticket.number: item for item in active_items}
+        active_reservations = [
+            (
+                item.ticket.number,
+                allowed_surfaces(item.sections["Allowed architectural surfaces"]),
+            )
+            for item in active_items
+            if role_for(item.ticket) in SURFACE_RESERVING_ROLES
+        ]
         for item in eligible[:5]:
+            if item.ticket.number in active_by_number:
+                queue_state = "running"
+            else:
+                conflict = next(
+                    (
+                        issue
+                        for issue, surfaces in active_reservations
+                        if role_for(item.ticket) in SURFACE_RESERVING_ROLES
+                        and surfaces_overlap(
+                            allowed_surfaces(
+                                item.sections["Allowed architectural surfaces"]
+                            ),
+                            surfaces,
+                        )
+                    ),
+                    None,
+                )
+                queue_state = (
+                    f"surface-wait (active #{conflict})" if conflict else "ready"
+                )
             lines.append(
-                f"  ready #{item.ticket.number} {role_for(item.ticket)} | "
+                f"  {queue_state} #{item.ticket.number} {role_for(item.ticket)} | "
                 f"{_single_line(item.ticket.title)}"
             )
     else:
