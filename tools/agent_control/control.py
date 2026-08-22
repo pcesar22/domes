@@ -3224,6 +3224,11 @@ def result_state(
     ticket_sections: dict[str, str] | None = None,
     hardware_attested: bool = False,
 ) -> str:
+    worker_has_incomplete_evidence = role == "worker" and any(
+        isinstance(record, dict)
+        and record.get("status") in {"failed", "pending", "unavailable"}
+        for record in result.get("verification", [])
+    )
     if (
         role == "worker"
         and result["blockers"]
@@ -3234,6 +3239,16 @@ def result_state(
         )
     ):
         return "agent:blocked"
+    if (
+        role == "worker"
+        and result["blockers"]
+        and result.get("pull_request") is not None
+        and worker_has_incomplete_evidence
+    ):
+        # An existing PR does not make an incomplete or unpublished repair
+        # reviewable. Keep it in the worker loop instead of spending a judge
+        # cycle on the stale remote head.
+        return "agent:rework"
     if role == "planner" and result["blockers"]:
         return "agent:blocked"
     if role in NEXT_STATE:

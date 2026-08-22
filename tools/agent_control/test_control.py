@@ -740,9 +740,27 @@ class ResultSemanticsTest(unittest.TestCase):
         result = {
             "state": "agent_review",
             "pull_request": 144,
+            "verification": [
+                {
+                    "status": "passed",
+                }
+            ],
             "blockers": ["entry gate reports unmet product prerequisite"],
         }
         self.assertEqual("agent:agent-review", control.result_state("worker", result))
+
+    def test_worker_pr_with_incomplete_artifact_returns_to_rework(self) -> None:
+        result = {
+            "state": "agent_review",
+            "pull_request": 180,
+            "verification": [
+                {
+                    "status": "failed",
+                }
+            ],
+            "blockers": ["repaired file could not be committed and pushed"],
+        }
+        self.assertEqual("agent:rework", control.result_state("worker", result))
 
     def test_hardware_approval_routes_through_verification_then_final_judge(
         self,

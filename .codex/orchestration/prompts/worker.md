@@ -22,6 +22,13 @@ confirm the remote head, and immediately return the structured handoff. The dete
 controller owns CI polling, failure dispatch, and retries; retaining this worker merely to watch
 checks withholds its concurrency slot and architectural-surface reservation from other work.
 
+Do not copy SDKs, package caches, build toolchains, or other large dependency trees into `/tmp`;
+that filesystem has a shared quota and exhausting it can prevent even Git and sandbox cleanup from
+running. When a writable toolchain or cache is required, stage it under the issue workspace (for
+example, an ignored `.tmp/` directory) or another explicitly supplied home-backed path, and remove
+it after verification. Keep source changes committed and pushed before reporting an operational
+blocker so the next disposable role cannot lose work.
+
 Your Codex process remains workspace-write and has no direct `/dev` access. This implementation
 role never receives or requests a registered-hardware capability. Hardware and physical evidence
 are deliberately deferred until the pushed PR head passes a fresh independent safety review; a
