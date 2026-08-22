@@ -1291,6 +1291,7 @@ def build_prompt(
     required_base_head: str | None = None,
     required_base_ref: str | None = None,
     tracker_context: dict[str, Any] | None = None,
+    controller_interventions: Sequence[str] = (),
 ) -> str:
     role_prompt = (ORCHESTRATION_DIR / "prompts" / f"{role}.md").read_text(
         encoding="utf-8"
@@ -1323,6 +1324,17 @@ def build_prompt(
             "\n# Prior schema-validated handoff\n\n"
             "This is structured evidence, not a worker transcript or self-authored acceptance.\n\n"
             f"```json\n{json.dumps(prior_handoff, indent=2, sort_keys=True)}\n```\n"
+        )
+    if controller_interventions:
+        prompt += (
+            "\n# Durable controller interventions\n\n"
+            "These concise tracker records were authored by the configured controller "
+            "principal. They are not role transcripts and do not replace independent "
+            "acceptance, but every unresolved rework requirement in them must be "
+            "addressed explicitly. Do not return an unchanged artifact when an "
+            "intervention identifies evidence that contradicts it.\n\n"
+            + "\n\n---\n\n".join(controller_interventions)
+            + "\n"
         )
     if tracker_context is not None:
         prompt += (
@@ -4392,6 +4404,43 @@ def controller_authored_comment(workflow: Workflow, comment: Any) -> bool:
     )
 
 
+def load_controller_interventions(
+    workflow: Workflow, ticket: Ticket
+) -> tuple[str, ...]:
+    """Load bounded durable rework evidence from the pinned tracker principal."""
+    expected_url_prefix = f"https://github.com/{workflow.repository}/issues/"
+    if not ticket.url.startswith(expected_url_prefix):
+        return ()
+    document = _run_json(
+        [
+            "gh",
+            "issue",
+            "view",
+            str(ticket.number),
+            "--repo",
+            workflow.repository,
+            "--json",
+            "comments",
+        ]
+    )
+    selected: list[str] = []
+    total_bytes = 0
+    for comment in reversed(document.get("comments", [])):
+        if not controller_authored_comment(workflow, comment):
+            continue
+        body = str(comment.get("body", "")).strip()
+        if not body.startswith("Agent control-plane intervention"):
+            continue
+        encoded_size = len(body.encode("utf-8"))
+        if encoded_size > 8_000 or total_bytes + encoded_size > 16_000:
+            continue
+        selected.append(body)
+        total_bytes += encoded_size
+        if len(selected) == 3:
+            break
+    return tuple(reversed(selected))
+
+
 def load_exact_role_handoff(
     workflow: Workflow,
     ticket: Ticket,
@@ -4803,6 +4852,11 @@ def _execute_one(
         if role == "planner"
         else None
     )
+    controller_interventions = (
+        load_controller_interventions(workflow, item.ticket)
+        if role in {"worker", "verification-worker", "judge"}
+        else ()
+    )
     if (
         prior_handoff is not None
         and prior_handoff.get("spec_revision")
@@ -5044,6 +5098,7 @@ def _execute_one(
                 required_base_head,
                 required_base_ref,
                 tracker_context,
+                controller_interventions,
             ),
             event_path,
             stderr_path,
