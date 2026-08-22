@@ -23,8 +23,14 @@ class SystemInfoNotifier extends StateNotifier<AsyncValue<AppSystemInfo>> {
     state = const AsyncValue.loading();
     try {
       final info = await repo.getSystemInfo();
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.data(info);
     } catch (e, st) {
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.error(e, st);
     }
   }
@@ -54,8 +60,14 @@ class SystemModeNotifier extends StateNotifier<AsyncValue<AppModeInfo>> {
     state = const AsyncValue.loading();
     try {
       final mode = await repo.getSystemMode();
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.data(mode);
     } catch (e, st) {
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.error(e, st);
     }
   }
@@ -66,8 +78,18 @@ class SystemModeNotifier extends StateNotifier<AsyncValue<AppModeInfo>> {
 
     try {
       await repo.setSystemMode(mode);
-      await loadMode();
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
+      final currentMode = await repo.getSystemMode();
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
+      state = AsyncValue.data(currentMode);
     } catch (e, st) {
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.error(e, st);
     }
   }

@@ -23,8 +23,14 @@ class LedNotifier extends StateNotifier<AsyncValue<AppLedPattern>> {
     state = const AsyncValue.loading();
     try {
       final pattern = await repo.getLedPattern();
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.data(pattern);
     } catch (e, st) {
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.error(e, st);
     }
   }
@@ -36,8 +42,14 @@ class LedNotifier extends StateNotifier<AsyncValue<AppLedPattern>> {
 
     try {
       final result = await repo.setLedPattern(pattern);
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.data(result);
     } catch (e, st) {
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.error(e, st);
     }
   }
