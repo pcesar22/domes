@@ -3,6 +3,8 @@
 #include "interfaces/iAudioDriver.hpp"
 #include "sim/simLog.hpp"
 
+#include <atomic>
+
 namespace sim {
 
 class SimAudioDriver : public domes::IAudioDriver {
@@ -35,8 +37,8 @@ public:
         return ESP_OK;
     }
 
-    void setVolume(uint8_t volume) override { volume_ = volume; }
-    uint8_t getVolume() const override { return volume_; }
+    void setVolume(uint8_t volume) override { volume_.store(volume, std::memory_order_relaxed); }
+    uint8_t getVolume() const override { return volume_.load(std::memory_order_relaxed); }
     bool isInitialized() const override { return initialized_; }
     bool isStarted() const override { return started_; }
 
@@ -49,7 +51,7 @@ private:
     SimLog& log_;
     bool initialized_ = false;
     bool started_ = false;
-    uint8_t volume_ = 100;
+    std::atomic<uint8_t> volume_{100};
     int startCount_ = 0;
     int stopCount_ = 0;
 };

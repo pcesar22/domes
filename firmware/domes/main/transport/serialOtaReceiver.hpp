@@ -26,6 +26,7 @@ namespace domes {
 
 class LedService;  // Forward declaration
 class ImuService;  // Forward declaration
+class FeedbackController;
 
 /**
  * @brief FreeRTOS task that receives OTA updates via serial transport
@@ -154,6 +155,12 @@ public:
     void setInjectableTouchDriver(InjectableTouchDriver* driver) {
         if (configHandler_) {
             configHandler_->setInjectableTouchDriver(driver);
+        }
+    }
+
+    void setFeedbackController(FeedbackController* controller) {
+        if (configHandler_) {
+            configHandler_->setFeedbackController(controller);
         }
     }
 

@@ -52,8 +52,8 @@ mod protocol;
 mod transport;
 
 use anyhow::Context;
-use clap::{Parser, Subcommand};
-use proto::config::{Feature, SystemMode};
+use clap::{Parser, Subcommand, ValueEnum};
+use proto::config::{Feature, FeedbackProbe, SystemMode};
 use std::path::PathBuf;
 use std::time::Duration;
 use transport::{BleTransport, SerialTransport};
@@ -107,6 +107,18 @@ enum Commands {
     Feature {
         #[command(subcommand)]
         action: FeatureAction,
+    },
+
+    /// Read or set the device-owned audio software gain
+    Audio {
+        #[command(subcommand)]
+        action: AudioAction,
+    },
+
+    /// Trigger one bounded known feedback probe
+    Feedback {
+        #[command(subcommand)]
+        action: FeedbackAction,
     },
 
     /// Manage the WiFi runtime feature flag
@@ -181,6 +193,38 @@ enum Commands {
         #[arg(short = 'n', long, value_parser = clap::value_parser!(u32).range(1..))]
         count: Option<u32>,
     },
+}
+
+#[derive(Subcommand)]
+enum AudioAction {
+    /// Read the device-owned 0-100 software gain
+    GetVolume,
+    /// Persist and apply the device-owned 0-100 software gain
+    SetVolume {
+        #[arg(value_parser = clap::value_parser!(u8).range(0..=100))]
+        volume: u8,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum FeedbackProbeArg {
+    Beep,
+    Haptic,
+}
+
+impl From<FeedbackProbeArg> for FeedbackProbe {
+    fn from(value: FeedbackProbeArg) -> Self {
+        match value {
+            FeedbackProbeArg::Beep => FeedbackProbe::EmbeddedBeep,
+            FeedbackProbeArg::Haptic => FeedbackProbe::FixedHaptic,
+        }
+    }
+}
+
+#[derive(Subcommand)]
+enum FeedbackAction {
+    /// Ask firmware to queue/trigger a known probe; this is not physical confirmation
+    Play { probe: FeedbackProbeArg },
 }
 
 #[derive(Subcommand)]
@@ -808,6 +852,35 @@ fn main() -> anyhow::Result<()> {
                             prefix,
                             state.feature.cli_name(),
                             if state.enabled { "enabled" } else { "disabled" }
+                        );
+                    }
+                },
+
+                Commands::Audio { action } => match action {
+                    AudioAction::GetVolume => {
+                        let volume = commands::audio_volume_get(transport)?;
+                        println!("{}Audio software gain: {}/100", prefix, volume);
+                    }
+                    AudioAction::SetVolume { volume } => {
+                        let applied = commands::audio_volume_set(transport, *volume)?;
+                        println!(
+                            "{}Audio software gain applied and persisted: {}/100",
+                            prefix, applied
+                        );
+                    }
+                },
+
+                Commands::Feedback { action } => match action {
+                    FeedbackAction::Play { probe } => {
+                        let generated: FeedbackProbe = (*probe).into();
+                        commands::feedback_play(transport, generated)?;
+                        let name = match probe {
+                            FeedbackProbeArg::Beep => "embedded beep",
+                            FeedbackProbeArg::Haptic => "fixed haptic effect",
+                        };
+                        println!(
+                            "{}Accepted {} command; physical output remains unverified",
+                            prefix, name
                         );
                     }
                 },

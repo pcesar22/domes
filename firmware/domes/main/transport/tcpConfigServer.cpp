@@ -176,6 +176,7 @@ void TcpConfigServer::handleClient(int clientSock) {
     handler.setEspNowService(espNowService_);
     handler.setOtaManager(otaManager_);
     handler.setInjectableTouchDriver(injectableTouch_);
+    handler.setFeedbackController(feedback_);
 
     // Frame decoder
     FrameDecoder decoder;

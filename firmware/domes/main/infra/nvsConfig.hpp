@@ -7,6 +7,7 @@
  * Provides type-safe access to ESP-IDF NVS with proper error handling.
  */
 
+#include "infra/configKeys.hpp"
 #include "interfaces/iConfigStorage.hpp"
 #include "nvs.h"
 
@@ -15,32 +16,6 @@ namespace domes::infra {
 /**
  * @brief NVS namespace names for DOMES configuration
  */
-namespace nvs_ns {
-constexpr const char* kConfig = "config";            ///< User settings (brightness, volume)
-constexpr const char* kStats = "stats";              ///< Runtime statistics
-constexpr const char* kCalibration = "calibration";  ///< Sensor calibration data
-}  // namespace nvs_ns
-
-/**
- * @brief Configuration keys within "config" namespace
- */
-namespace config_key {
-constexpr const char* kBrightness = "brightness";        ///< uint8_t 0-255
-constexpr const char* kVolume = "volume";                ///< uint8_t 0-100
-constexpr const char* kTouchThreshold = "touch_thresh";  ///< uint16_t
-constexpr const char* kPodId = "pod_id";                 ///< uint8_t
-constexpr const char* kAutoUpdate = "auto_update";       ///< uint8_t (0=disabled, 1=enabled)
-}  // namespace config_key
-
-/**
- * @brief Statistics keys within "stats" namespace
- */
-namespace stats_key {
-constexpr const char* kBootCount = "boot_count";      ///< uint32_t
-constexpr const char* kTotalRuntime = "runtime_s";    ///< uint32_t seconds
-constexpr const char* kTouchEvents = "touch_events";  ///< uint32_t
-}  // namespace stats_key
-
 /**
  * @brief NVS-backed configuration storage implementation
  *

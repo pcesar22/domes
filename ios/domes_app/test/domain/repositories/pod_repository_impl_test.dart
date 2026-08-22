@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:domes_app/data/proto/generated/config.pbenum.dart';
+import 'package:domes_app/data/proto/generated/config.pb.dart';
 import 'package:domes_app/data/transport/frame_codec.dart';
 import 'package:domes_app/data/transport/transport.dart';
 import 'package:domes_app/domain/repositories/pod_repository_impl.dart';
@@ -12,6 +12,8 @@ final class _FakeTransport extends Transport {
 
   Frame commandResponse;
   int? expectedResponseType;
+  int? requestType;
+  Uint8List? requestPayload;
   final StreamController<Frame> events = StreamController<Frame>.broadcast();
 
   @override
@@ -20,6 +22,8 @@ final class _FakeTransport extends Transport {
     Uint8List payload, {
     required int expectedResponseType,
   }) async {
+    requestType = msgType;
+    requestPayload = payload;
     this.expectedResponseType = expectedResponseType;
     return commandResponse;
   }
@@ -85,6 +89,25 @@ void main() {
     expect(event.podId, 2);
     expect(event.padIndex, 1);
     expect(event.timestampUs, 42);
+    await transport.events.close();
+  });
+
+  test('sets device-owned volume through generated status envelope', () async {
+    final response = (SetAudioVolumeResponse()..volume = 55).writeToBuffer();
+    final transport = _FakeTransport(
+      Frame(
+        msgType: MsgType.MSG_TYPE_SET_AUDIO_VOLUME_RSP.value,
+        payload: Uint8List.fromList([Status.STATUS_OK.value, ...response]),
+      ),
+    );
+    final repository = PodRepositoryImpl(transport);
+
+    expect(await repository.setAudioVolume(55), 55);
+    expect(transport.requestType, MsgType.MSG_TYPE_SET_AUDIO_VOLUME_REQ.value);
+    expect(
+      SetAudioVolumeRequest.fromBuffer(transport.requestPayload!).volume,
+      55,
+    );
     await transport.events.close();
   });
 }
