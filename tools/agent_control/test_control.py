@@ -1025,6 +1025,46 @@ class StackedPullRequestTest(unittest.TestCase):
             ):
                 control.stack_context(workflow, item, (parent, child))
 
+    def test_stack_context_accepts_reviewed_parent_behind_main(self) -> None:
+        workflow = control.load_workflow()
+        parent, child, parent_pr = self.parent_and_child()
+        behind = pull_request(
+            control.load_autopilot_policy(),
+            number=parent_pr.number,
+            head=parent_pr.head_oid,
+            head_ref=parent_pr.head_ref,
+            merge_state="BEHIND",
+        )
+        with (
+            mock.patch.object(
+                control,
+                "load_latest_artifact_handoff",
+                return_value={
+                    "issue": parent.number,
+                    "spec_revision": self.revision,
+                    "pull_request": parent_pr.number,
+                    "commit": parent_pr.head_oid,
+                },
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=behind),
+            mock.patch.object(
+                control,
+                "load_exact_role_handoff",
+                return_value={
+                    "verdict": "approve",
+                    "pull_request": parent_pr.number,
+                    "commit": parent_pr.head_oid,
+                },
+            ),
+        ):
+            self.assertIsNotNone(
+                control.stack_context(
+                    workflow,
+                    control.validate_ticket(child, check_revision=False),
+                    (parent, child),
+                )
+            )
+
     def test_stack_context_requires_exact_judge_and_required_ci(self) -> None:
         workflow = control.load_workflow()
         parent, child, parent_pr = self.parent_and_child()
@@ -1739,11 +1779,34 @@ class AutopilotReviewTest(unittest.TestCase):
         transition.assert_not_called()
         comment.assert_not_called()
 
-    def test_human_review_behind_pull_request_returns_to_rework(self) -> None:
+    def test_human_review_behind_pull_request_remains_reviewable(self) -> None:
         workflow = control.load_workflow()
         policy = control.load_autopilot_policy()
         ticket = automated_ticket(40, self.revision, label="agent:human-review")
         pr = pull_request(policy, merge_state="BEHIND")
+        artifact = {"commit": pr.head_oid, "pull_request": pr.number}
+        validation = control.TicketValidation(
+            ticket, control.parse_sections(ticket.body), (), ()
+        )
+        with (
+            mock.patch.object(control, "validate_ticket", return_value=validation),
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=pr),
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            result = control.reconcile_human_reviews(workflow, (ticket,))
+        self.assertEqual([], result)
+        transition.assert_not_called()
+        comment.assert_not_called()
+
+    def test_human_review_conflicting_pull_request_returns_to_rework(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        ticket = automated_ticket(40, self.revision, label="agent:human-review")
+        pr = pull_request(policy, merge_state="DIRTY")
         artifact = {"commit": pr.head_oid, "pull_request": pr.number}
         validation = control.TicketValidation(
             ticket, control.parse_sections(ticket.body), (), ()
