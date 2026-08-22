@@ -55,7 +55,9 @@ def _timestamp_order(timestamps: list[int]) -> None:
                 raise RuntimeTraceError("trace timestamps wrap more than once")
 
 
-def _catalog(session: Mapping[str, Any]) -> tuple[dict[int, dict[str, Any]], dict[int, dict[str, Any]]]:
+def _catalog(
+    session: Mapping[str, Any],
+) -> tuple[dict[int, dict[str, Any]], dict[int, dict[str, Any]]]:
     tasks: dict[int, dict[str, Any]] = {}
     task_names: set[str] = set()
     raw_tasks = session.get("tasks")
@@ -125,9 +127,10 @@ def _complete_chains(
         cursor = 0
         positions: list[int] = []
         for event in candidates:
-            if cursor < len(expected) and (
-                event["type"], event["arg1"]
-            ) == expected[cursor]:
+            if (
+                cursor < len(expected)
+                and (event["type"], event["arg1"]) == expected[cursor]
+            ):
                 positions.append(event["sequence"])
                 cursor += 1
         if cursor == len(expected):
@@ -239,7 +242,10 @@ def normalize_runtime(
         (event_types["EVENT_TYPE_SEM_GIVE"], reverse_names["EspNow.RxReady"]),
         (event_types["EVENT_TYPE_CALLBACK_END"], reverse_names["EspNow.RxCallback"]),
         (event_types["EVENT_TYPE_SEM_TAKE"], reverse_names["EspNow.RxReady"]),
-        (event_types["EVENT_TYPE_SCHED_QUEUE_RECEIVE"], reverse_names["EspNow.RxQueue"]),
+        (
+            event_types["EVENT_TYPE_SCHED_QUEUE_RECEIVE"],
+            reverse_names["EspNow.RxQueue"],
+        ),
         (event_types["EVENT_TYPE_CAUSAL_COMPLETE"], reverse_names["EspNow.RxDispatch"]),
     ]
     tx_chains = _complete_chains(events, tx_expected, "tx")
