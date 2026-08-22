@@ -1827,17 +1827,18 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
     wait_for_peers("simulated drill")
 
     # Peer discovery and the full drill take long enough to saturate the fixed
-    # trace ring with scheduler events. Start a bounded capture only after the
-    # peers have converged and the simulated drill is already running. This
-    # retains causal drill traffic without manufacturing dropped-event evidence.
+    # trace ring with scheduler events. Wait through the fixed role/join settle
+    # period, then capture the first peer-directed drill round. This retains
+    # complete RX/TX causal traffic without manufacturing overflow evidence.
+    time.sleep(2.4)
     for board in (0, 1):
         run_cli(board, "trace", "stop")
         run_cli(board, "trace", "clear")
     run_both("trace", "start")
-    # Retain a short, concurrent window after peer convergence. Immediate stop
-    # captures only command/scheduler traffic; 100 ms covers the configured
-    # simulated exchange while remaining below the fixed trace-ring capacity.
-    time.sleep(0.1)
+    # Concurrent start/stop prevents one board from accumulating the other
+    # board's command latency. The 500 ms window covers the simulated exchange
+    # while remaining below the fixed 2,048-event trace-ring capacity.
+    time.sleep(0.5)
     run_both("trace", "stop")
 
     time.sleep(35)
