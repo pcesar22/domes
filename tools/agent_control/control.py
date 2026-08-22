@@ -3293,6 +3293,16 @@ def validate_result_semantics(
                 + ", ".join(sorted(duplicate_hardware_operations))
             )
         task_dependencies = {task["key"]: tuple(task["dependencies"]) for task in tasks}
+        fan_in = sorted(
+            key
+            for key, dependencies in task_dependencies.items()
+            if len(dependencies) > 1
+        )
+        if fan_in:
+            raise ControlError(
+                "planner result contains multi-parent task dependencies unsupported "
+                "by one-level review stacks; serialize each join: " + ", ".join(fan_in)
+            )
         unknown = sorted(
             {
                 dependency

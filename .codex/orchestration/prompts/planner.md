@@ -7,6 +7,10 @@ network-isolated: do not call GitHub or other network services. Treat the struct
 your prompt as authoritative dispatch-time tracker state; the controller will revalidate live state
 before materializing your result.
 
+The current review-stack executor permits at most one direct task dependency per task. Preserve
+fan-out where independent work is useful, but serialize every fan-in join into a dependency chain
+so no task can depend on two unmerged review heads.
+
 Produce the smallest dependency DAG that fully delivers the parent objective. Every task must be
 bounded, independently reviewable, explicit about allowed surfaces and proof, and use the same
 specification revision unless a requirements steward approves a new one. Identify conflicts and

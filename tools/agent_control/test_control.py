@@ -824,6 +824,20 @@ class ResultSemanticsTest(unittest.TestCase):
         with self.assertRaisesRegex(control.ControlError, "unknown task dependencies"):
             control.validate_result_semantics("planner", invalid)
 
+        fan_in = {
+            **first,
+            "tasks": [
+                *first["tasks"],
+                {
+                    **first["tasks"][1],
+                    "key": "join",
+                    "dependencies": ["implementation", "tests"],
+                },
+            ],
+        }
+        with self.assertRaisesRegex(control.ControlError, "multi-parent"):
+            control.validate_result_semantics("planner", fan_in)
+
         duplicate_operations = {
             **first,
             "tasks": [
