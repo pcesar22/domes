@@ -73,7 +73,7 @@ public:
      *
      * Must be called once during startup before any trace operations.
      *
-     * @param bufferSize Requested initialization-time ring buffer capacity (default 32 KiB)
+     * @param bufferSize Requested initialization-time ring buffer capacity (default 96 KiB)
      * @return ESP_OK on success, error code otherwise
      */
     static esp_err_t init(size_t bufferSize = TraceBuffer::kDefaultBufferSize);

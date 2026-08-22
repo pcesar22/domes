@@ -7,7 +7,7 @@ domes.trace.TaskEntry.name  max_size:16
 # TraceSessionInfo: bounded catalogs that fit the shared 1024-byte frame payload
 domes.trace.TraceSessionInfo.tasks  max_count:16
 domes.trace.ObjectEntry.name  max_size:16
-domes.trace.TraceSessionInfo.objects  max_count:8
+domes.trace.TraceSessionInfo.objects  max_count:10
 domes.trace.TraceSessionInfo.firmware_version  max_size:32
 domes.trace.TraceSessionInfo.app_elf_sha256  max_size:32
 domes.trace.TraceSessionInfo.app_image_sha256  max_size:32
