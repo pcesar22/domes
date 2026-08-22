@@ -488,6 +488,44 @@ class TicketValidationTest(unittest.TestCase):
             control.reserved_mutation_surfaces((planner_item, worker_item)),
         )
 
+    def test_planner_tracker_context_contains_authoritative_task_graph(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(7, self.revision, label="agent:running")
+        pull = {
+            "number": 91,
+            "title": "bounded implementation",
+            "head": "codex/issue-7",
+            "head_oid": "b" * 40,
+            "base": "main",
+            "base_oid": self.revision,
+            "draft": False,
+            "merge_state": "CLEAN",
+            "url": "https://example.invalid/pull/91",
+        }
+        context = control.build_planner_tracker_context(
+            workflow, (ticket,), (pull,), revision=self.revision
+        )
+        self.assertEqual(self.revision, context["base_revision"])
+        self.assertEqual(7, context["issues"][0]["number"])
+        self.assertEqual("agent:running", context["issues"][0]["labels"][0])
+        self.assertEqual(
+            [91], [item["number"] for item in context["open_pull_requests"]]
+        )
+        self.assertNotIn("body", context["issues"][0])
+
+    def test_planner_prompt_uses_controller_tracker_snapshot(self) -> None:
+        ticket = make_ticket(8, self.revision, label="agent:plan")
+        item = control.validate_ticket(ticket, check_revision=False)
+        tracker = {
+            "base_revision": self.revision,
+            "issues": [],
+            "open_pull_requests": [],
+        }
+        prompt = control.build_prompt(item, "planner", tracker_context=tracker)
+        self.assertIn("Controller-captured tracker snapshot", prompt)
+        self.assertIn("instead of attempting network access", prompt)
+        self.assertIn(self.revision, prompt)
+
     def test_rendered_queue_contains_no_ticket_body(self) -> None:
         ticket = make_ticket(7, self.revision)
         eligible, blockers = control.eligible_queue([ticket], check_revision=False)

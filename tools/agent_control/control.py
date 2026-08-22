@@ -1278,6 +1278,7 @@ def build_prompt(
     controller_evidence: dict[str, Any] | None = None,
     required_base_head: str | None = None,
     required_base_ref: str | None = None,
+    tracker_context: dict[str, Any] | None = None,
 ) -> str:
     role_prompt = (ORCHESTRATION_DIR / "prompts" / f"{role}.md").read_text(
         encoding="utf-8"
@@ -1311,6 +1312,14 @@ def build_prompt(
             "This is structured evidence, not a worker transcript or self-authored acceptance.\n\n"
             f"```json\n{json.dumps(prior_handoff, indent=2, sort_keys=True)}\n```\n"
         )
+    if tracker_context is not None:
+        prompt += (
+            "\n# Controller-captured tracker snapshot\n\n"
+            "The deterministic controller captured this authoritative tracker state "
+            "immediately before dispatch. Use it instead of attempting network access. "
+            "Materialization revalidates live state after you return.\n\n"
+            f"```json\n{json.dumps(tracker_context, indent=2, sort_keys=True)}\n```\n"
+        )
     if hardware_capability is not None:
         prompt += (
             "\n# Registered hardware capability envelope\n\n"
@@ -1329,6 +1338,60 @@ def build_prompt(
             f"```json\n{json.dumps(controller_evidence, indent=2, sort_keys=True)}\n```\n"
         )
     return prompt
+
+
+def build_planner_tracker_context(
+    workflow: Workflow,
+    tickets: Sequence[Ticket],
+    pull_requests: Sequence[dict[str, Any]],
+    *,
+    revision: str | None = None,
+) -> dict[str, Any]:
+    """Build the concise tracker state a network-isolated planner must rehydrate."""
+    issues: list[dict[str, Any]] = []
+    for ticket in tickets:
+        if not any(label.startswith(STATE_PREFIX) for label in ticket.labels):
+            continue
+        sections = parse_sections(ticket.body)
+        dependencies = sorted(
+            {
+                int(value)
+                for value in ISSUE_REFERENCE.findall(sections.get("Dependencies", ""))
+            }
+        )
+        issues.append(
+            {
+                "number": ticket.number,
+                "title": ticket.title,
+                "state": ticket.state,
+                "labels": sorted(ticket.labels),
+                "url": ticket.url,
+                "specification_revision": sections.get("Specification revision", ""),
+                "goal": sections.get("Goal", ""),
+                "work_package": sections.get("Work package", ""),
+                "work_class": sections.get("Work class", ""),
+                "autonomy_policy": sections.get("Autonomy policy", ""),
+                "dependencies": dependencies,
+                "allowed_surfaces": (
+                    list(allowed_surfaces(sections["Allowed architectural surfaces"]))
+                    if sections.get("Allowed architectural surfaces")
+                    else []
+                ),
+                "existing_pull_request": sections.get("Existing pull request", ""),
+                "contract_sha256": hashlib.sha256(
+                    ticket.body.encode("utf-8")
+                ).hexdigest(),
+            }
+        )
+    return {
+        "repository": workflow.repository,
+        "base_revision": revision or origin_main_revision(workflow),
+        "issues": sorted(issues, key=lambda value: int(value["number"])),
+        "open_pull_requests": sorted(
+            (dict(item) for item in pull_requests),
+            key=lambda value: int(value["number"]),
+        ),
+    }
 
 
 def registered_hardware_preflight() -> dict[str, Any]:
@@ -4633,6 +4696,15 @@ def _execute_one(
         role,
         item.source_state or item.ticket.agent_state,
     )
+    tracker_context = (
+        build_planner_tracker_context(
+            workflow,
+            load_live_tickets(workflow),
+            load_open_pull_request_snapshot(workflow),
+        )
+        if role == "planner"
+        else None
+    )
     if (
         prior_handoff is not None
         and prior_handoff.get("spec_revision")
@@ -4873,6 +4945,7 @@ def _execute_one(
                 controller_evidence,
                 required_base_head,
                 required_base_ref,
+                tracker_context,
             ),
             event_path,
             stderr_path,
