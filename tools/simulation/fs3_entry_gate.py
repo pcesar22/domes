@@ -29,7 +29,7 @@ import qemu_feasibility as feasibility
 import qemu_runtime as runtime
 
 SPEC_REVISION = "498ae0203dc8b7048682fbff718a0629243a98a8"
-REQUIRED_BASE_REVISION = "6f197670a49bc8b83753d1dfab0dd1f789b5f4db"
+REQUIRED_BASE_REVISION = "be347355d3747b849b0521e40c539aae88d33614"
 REPOSITORY = "pcesar22/domes"
 PR_NUMBERS = (105, 107, 115, 130)
 ISSUE_NUMBERS = (101, 114, 123)
