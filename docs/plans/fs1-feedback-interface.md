@@ -4,7 +4,7 @@ Status: implemented and software-verified; awaiting independent review
 Current phase: publication
 Specification revision: `93b8e7d3d95001290e2cebde7851f9b686f1d921`
 Repository state: PR 145, corrected implementation commit
-`637ac13d4f17b3c0495982673a80eed9a0053051`, required base
+`19379f6681336fcaeb6bf6b787a2e4238fc96eab`, required base
 `d9f84e4eca153d1f637b869681eae6e04a6adac6`
 Last updated: 2026-08-21; issue 138 and its resumable PR 145 are the sole live owners of this slice
 
@@ -57,7 +57,7 @@ physical feedback result.
 The prior reviewed head `fa616e9afa765e0f90a509e920fa48837027f915` passed exact-head Software
 CI run [32548799633](https://github.com/pcesar22/domes/actions/runs/32548799633), including the
 macOS iOS no-codesign build. That CI result is historical evidence only and does not verify corrected
-implementation commit `637ac13d4f17b3c0495982673a80eed9a0053051`. Fresh local rework evidence is
+implementation commit `19379f6681336fcaeb6bf6b787a2e4238fc96eab`. Fresh local rework evidence is
 retained under `/tmp/domes-issue138-rework/`; the final pushed-head CI URL and result are recorded in
 PR 145 and the worker handoff because a commit cannot contain the identifier of its own future CI
 run. The rework environment uses Rust 1.92.0, Flutter 3.44.8/Dart 3.12.2, Dart `protoc_plugin`
@@ -125,7 +125,7 @@ accepted command upgrades any entry.
   searched for or invoked.
 - Final pre-publication reconciliation found issue 138 open, PR 145 as the only PR owning this
   slice, base branch `main`, and no competing controller workspace. Corrected implementation commit
-  `637ac13d4f17b3c0495982673a80eed9a0053051` descends from required base
+  `19379f6681336fcaeb6bf6b787a2e4238fc96eab` descends from required base
   `d9f84e4eca153d1f637b869681eae6e04a6adac6` through reconciliation commit
   `67684fd18b32f9ff05bc7a990f29a6f8226b1a08`.
 
