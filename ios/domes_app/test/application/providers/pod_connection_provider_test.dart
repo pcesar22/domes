@@ -11,10 +11,18 @@ import 'package:domes_app/domain/repositories/pod_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final class _FakeTransport extends Transport {
+  _FakeTransport({this.onDisconnect});
+
+  final Future<void> Function()? onDisconnect;
   bool connected = true;
+  int disconnectCalls = 0;
 
   @override
-  Future<void> disconnect() async => connected = false;
+  Future<void> disconnect() async {
+    disconnectCalls++;
+    await onDisconnect?.call();
+    connected = false;
+  }
 
   @override
   bool get isConnected => connected;
@@ -46,47 +54,60 @@ final class _FakeTransport extends Transport {
 }
 
 final class _FakeRepository implements PodRepository {
-  final StreamController<AppTouchEvent> events =
-      StreamController<AppTouchEvent>.broadcast();
+  _FakeRepository({void Function()? onCancel, this.infoResult})
+    : events = StreamController<AppTouchEvent>.broadcast(onCancel: onCancel);
+
+  final StreamController<AppTouchEvent> events;
+  final Completer<AppSystemInfo>? infoResult;
+  final List<String> calls = [];
+
+  Future<T> _fail<T>(String operation) {
+    calls.add(operation);
+    return Future<T>.error(StateError('$operation failed ambiguously'));
+  }
 
   @override
   Stream<AppTouchEvent> get touchEvents => events.stream;
 
   @override
-  Future<AppModeInfo> getSystemMode() => throw UnsupportedError('not used');
+  Future<AppModeInfo> getSystemMode() => _fail('getSystemMode');
 
   @override
-  Future<AppSystemInfo> getSystemInfo() => throw UnsupportedError('not used');
+  Future<AppSystemInfo> getSystemInfo() {
+    if (infoResult == null) return _fail('getSystemInfo');
+    calls.add('getSystemInfo');
+    return infoResult!.future;
+  }
 
   @override
-  Future<AppLedPattern> getLedPattern() => throw UnsupportedError('not used');
+  Future<AppLedPattern> getLedPattern() => _fail('getLedPattern');
 
   @override
-  Future<List<AppFeatureState>> listFeatures() =>
-      throw UnsupportedError('not used');
+  Future<List<AppFeatureState>> listFeatures() => _fail('listFeatures');
 
   @override
   Future<AppLedPattern> setLedPattern(AppLedPattern pattern) =>
-      throw UnsupportedError('not used');
+      _fail('setLedPattern');
 
   @override
   Future<AppFeatureState> setFeature(Feature feature, bool enabled) =>
-      throw UnsupportedError('not used');
+      _fail('setFeature');
 
   @override
   Future<(SystemMode, bool)> setSystemMode(SystemMode mode) =>
-      throw UnsupportedError('not used');
+      _fail('setSystemMode');
 
   @override
-  Future<int> getAudioVolume() => throw UnsupportedError('not used');
+  Future<int> getAudioVolume() => _fail('getAudioVolume');
 
   @override
-  Future<int> setAudioVolume(int volume) => throw UnsupportedError('not used');
+  Future<int> setAudioVolume(int volume) => _fail('setAudioVolume');
 
   @override
-  Future<bool> triggerFeedback(FeedbackProbe probe) =>
-      throw UnsupportedError('not used');
+  Future<bool> triggerFeedback(FeedbackProbe probe) => _fail('triggerFeedback');
 }
+
+typedef _Operation = Future<Object?> Function(PodRepository repository);
 
 void main() {
   const pod = PodDevice(name: 'Pod 1', address: 'pod-1');
@@ -138,4 +159,171 @@ void main() {
     notifier.dispose();
     await repository.events.close();
   });
+
+  final operations = <String, _Operation>{
+    'listFeatures': (repo) => repo.listFeatures(),
+    'setFeature': (repo) => repo.setFeature(Feature.FEATURE_LED_EFFECTS, true),
+    'getLedPattern': (repo) => repo.getLedPattern(),
+    'setLedPattern': (repo) => repo.setLedPattern(AppLedPattern.off()),
+    'getSystemMode': (repo) => repo.getSystemMode(),
+    'setSystemMode': (repo) => repo.setSystemMode(SystemMode.SYSTEM_MODE_IDLE),
+    'getSystemInfo': (repo) => repo.getSystemInfo(),
+    'getAudioVolume': (repo) => repo.getAudioVolume(),
+    'setAudioVolume': (repo) => repo.setAudioVolume(50),
+    'triggerFeedback': (repo) =>
+        repo.triggerFeedback(FeedbackProbe.FEEDBACK_PROBE_EMBEDDED_BEEP),
+  };
+
+  for (final operation in operations.entries) {
+    test(
+      '${operation.key} failure quarantines the current generation once',
+      () async {
+        final transport = _FakeTransport();
+        final repository = _FakeRepository();
+        final notifier = PodConnectionNotifier(
+          connector: (_) async =>
+              (transport: transport, repository: repository),
+        );
+        var errorTransitions = 0;
+        notifier.addListener((state) {
+          if (state.error != null) errorTransitions++;
+        });
+        await notifier.connect(pod);
+        final exposed = notifier.state.repository!;
+
+        await expectLater(operation.value(exposed), throwsStateError);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(notifier.state.repository, isNull);
+        expect(notifier.state.isConnected, isFalse);
+        expect(errorTransitions, 1);
+        expect(repository.calls, [operation.key]);
+        expect(transport.disconnectCalls, 1);
+
+        await expectLater(operation.value(exposed), throwsStateError);
+        await Future<void>.delayed(Duration.zero);
+        expect(errorTransitions, 1);
+        expect(transport.disconnectCalls, 1);
+        expect(repository.calls, [operation.key, operation.key]);
+
+        notifier.dispose();
+        await repository.events.close();
+      },
+    );
+  }
+
+  test('reconnect waits for cancel then disconnect cleanup ordering', () async {
+    final lifecycle = <String>[];
+    final disconnectGate = Completer<void>();
+    final oldTransport = _FakeTransport(
+      onDisconnect: () async {
+        lifecycle.add('disconnect');
+        await disconnectGate.future;
+      },
+    );
+    final oldRepository = _FakeRepository(
+      onCancel: () => lifecycle.add('cancel'),
+    );
+    final replacementTransport = _FakeTransport();
+    final replacementRepository = _FakeRepository();
+    var connects = 0;
+    final notifier = PodConnectionNotifier(
+      connector: (_) async {
+        connects++;
+        lifecycle.add('connect:$connects');
+        return connects == 1
+            ? (transport: oldTransport, repository: oldRepository)
+            : (
+                transport: replacementTransport,
+                repository: replacementRepository,
+              );
+      },
+    );
+    await notifier.connect(pod);
+
+    await expectLater(
+      notifier.state.repository!.getSystemInfo(),
+      throwsStateError,
+    );
+    final reconnect = notifier.connect(pod);
+    await Future<void>.delayed(Duration.zero);
+    expect(connects, 1);
+    expect(lifecycle, ['connect:1', 'cancel', 'disconnect']);
+
+    disconnectGate.complete();
+    await reconnect;
+    expect(lifecycle, ['connect:1', 'cancel', 'disconnect', 'connect:2']);
+    expect(notifier.state.repository, isNotNull);
+    expect(notifier.state.isConnected, isTrue);
+
+    notifier.dispose();
+    await oldRepository.events.close();
+    await replacementRepository.events.close();
+  });
+
+  test(
+    'superseded command and stream callbacks cannot alter recovery',
+    () async {
+      final delayedSuccess = Completer<AppSystemInfo>();
+      final delayedError = Completer<AppSystemInfo>();
+      final repositories = [
+        _FakeRepository(infoResult: delayedSuccess),
+        _FakeRepository(infoResult: delayedError),
+        _FakeRepository(),
+      ];
+      final transports = [_FakeTransport(), _FakeTransport(), _FakeTransport()];
+      var next = 0;
+      final notifier = PodConnectionNotifier(
+        connector: (_) async {
+          final index = next++;
+          return (
+            transport: transports[index],
+            repository: repositories[index],
+          );
+        },
+      );
+
+      await notifier.connect(pod);
+      final staleSuccess = notifier.state.repository!.getSystemInfo();
+      await notifier.connect(pod);
+      delayedSuccess.complete(
+        const AppSystemInfo(
+          firmwareVersion: 'stale',
+          uptimeS: 1,
+          freeHeap: 2,
+          bootCount: 3,
+          mode: SystemMode.SYSTEM_MODE_IDLE,
+          featureMask: 0,
+        ),
+      );
+      await staleSuccess;
+      repositories[0].events.add(
+        const AppTouchEvent(podId: 1, padIndex: 0, timestampUs: 1),
+      );
+      repositories[0].events.addError(
+        StateError('retained stale stream error'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(notifier.state.repository, isNotNull);
+      expect(notifier.state.error, isNull);
+
+      final staleError = notifier.state.repository!.getSystemInfo();
+      await notifier.connect(pod);
+      delayedError.completeError(StateError('late command failure'));
+      await expectLater(staleError, throwsStateError);
+      repositories[1].events.addError(StateError('late stream failure'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(notifier.state.repository, isNotNull);
+      expect(notifier.state.error, isNull);
+      expect(notifier.state.isConnected, isTrue);
+      expect(repositories[0].calls, ['getSystemInfo']);
+      expect(repositories[1].calls, ['getSystemInfo']);
+
+      notifier.dispose();
+      for (final repository in repositories) {
+        await repository.events.close();
+      }
+    },
+  );
 }

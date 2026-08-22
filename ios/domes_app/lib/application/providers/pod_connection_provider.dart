@@ -8,6 +8,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/proto/generated/config.pb.dart';
 import '../../data/protocol/config_protocol.dart';
 import '../../data/transport/ble_transport.dart';
 import '../../data/transport/transport.dart';
@@ -45,6 +46,7 @@ class PodConnectionNotifier extends StateNotifier<ConnectedPodState> {
 
   final SinglePodConnector _connector;
   StreamSubscription<AppTouchEvent>? _connectionSubscription;
+  Future<void> _cleanupBarrier = Future<void>.value();
   int _generation = 0;
 
   /// Connect to a pod.
@@ -58,6 +60,8 @@ class PodConnectionNotifier extends StateNotifier<ConnectedPodState> {
 
     Transport? pendingTransport;
     try {
+      await _cleanupBarrier;
+      if (!mounted || generation != _generation) return;
       await _connectionSubscription?.cancel();
       _connectionSubscription = null;
       await previous?.disconnect();
@@ -66,7 +70,10 @@ class PodConnectionNotifier extends StateNotifier<ConnectedPodState> {
       final connected = await _connector(pod);
       final transport = connected.transport;
       pendingTransport = transport;
-      final repository = connected.repository;
+      final repository = _QuarantiningPodRepository(
+        connected.repository,
+        (error) => _quarantine(pod, transport, generation, error),
+      );
       if (!mounted || generation != _generation) {
         await transport.disconnect();
         return;
@@ -101,12 +108,21 @@ class PodConnectionNotifier extends StateNotifier<ConnectedPodState> {
     int generation,
     Object error,
   ) {
+    _quarantine(pod, transport, generation, error);
+  }
+
+  void _quarantine(
+    PodDevice pod,
+    Transport transport,
+    int generation,
+    Object error,
+  ) {
     if (!mounted || generation != _generation) return;
 
     _generation++;
     final subscription = _connectionSubscription;
     _connectionSubscription = null;
-    unawaited(_cleanupFailedConnection(subscription, transport));
+    _cleanupBarrier = _cleanupFailedConnection(subscription, transport);
     state = ConnectedPodState(
       device: pod.copyWith(connectionState: PodConnectionState.disconnected),
       error: '$error',
@@ -134,6 +150,7 @@ class PodConnectionNotifier extends StateNotifier<ConnectedPodState> {
     _generation++;
     final transport = state.transport;
     try {
+      await _cleanupBarrier;
       await _connectionSubscription?.cancel();
       _connectionSubscription = null;
       await transport?.disconnect();
@@ -182,3 +199,58 @@ final podConnectionProvider =
 final podRepositoryProvider = Provider<PodRepository?>((ref) {
   return ref.watch(podConnectionProvider).repository;
 });
+
+final class _QuarantiningPodRepository implements PodRepository {
+  _QuarantiningPodRepository(this._delegate, this._onFailure);
+
+  final PodRepository _delegate;
+  final void Function(Object error) _onFailure;
+
+  Future<T> _guard<T>(Future<T> Function() operation) async {
+    try {
+      return await operation();
+    } catch (error) {
+      _onFailure(error);
+      rethrow;
+    }
+  }
+
+  @override
+  Stream<AppTouchEvent> get touchEvents => _delegate.touchEvents;
+
+  @override
+  Future<List<AppFeatureState>> listFeatures() =>
+      _guard(_delegate.listFeatures);
+
+  @override
+  Future<AppFeatureState> setFeature(Feature feature, bool enabled) =>
+      _guard(() => _delegate.setFeature(feature, enabled));
+
+  @override
+  Future<AppLedPattern> getLedPattern() => _guard(_delegate.getLedPattern);
+
+  @override
+  Future<AppLedPattern> setLedPattern(AppLedPattern pattern) =>
+      _guard(() => _delegate.setLedPattern(pattern));
+
+  @override
+  Future<AppModeInfo> getSystemMode() => _guard(_delegate.getSystemMode);
+
+  @override
+  Future<(SystemMode, bool)> setSystemMode(SystemMode mode) =>
+      _guard(() => _delegate.setSystemMode(mode));
+
+  @override
+  Future<AppSystemInfo> getSystemInfo() => _guard(_delegate.getSystemInfo);
+
+  @override
+  Future<int> getAudioVolume() => _guard(_delegate.getAudioVolume);
+
+  @override
+  Future<int> setAudioVolume(int volume) =>
+      _guard(() => _delegate.setAudioVolume(volume));
+
+  @override
+  Future<bool> triggerFeedback(FeedbackProbe probe) =>
+      _guard(() => _delegate.triggerFeedback(probe));
+}

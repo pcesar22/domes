@@ -24,8 +24,14 @@ class FeatureNotifier extends StateNotifier<AsyncValue<List<AppFeatureState>>> {
     state = const AsyncValue.loading();
     try {
       final features = await repo.listFeatures();
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.data(features);
     } catch (e, st) {
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.error(e, st);
     }
   }
@@ -37,8 +43,18 @@ class FeatureNotifier extends StateNotifier<AsyncValue<List<AppFeatureState>>> {
 
     try {
       await repo.setFeature(feature, enabled);
-      await loadFeatures(); // Refresh full list
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
+      final features = await repo.listFeatures();
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
+      state = AsyncValue.data(features);
     } catch (e, st) {
+      if (!mounted || !identical(repo, _ref.read(podRepositoryProvider))) {
+        return;
+      }
       state = AsyncValue.error(e, st);
     }
   }
