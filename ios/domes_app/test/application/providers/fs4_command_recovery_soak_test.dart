@@ -2,23 +2,26 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:domes_app/application/providers/drill_provider.dart';
 import 'package:domes_app/application/providers/multi_pod_provider.dart';
 import 'package:domes_app/data/proto/generated/config.pb.dart';
 import 'package:domes_app/data/protocol/config_protocol.dart';
 import 'package:domes_app/data/transport/frame_codec.dart';
 import 'package:domes_app/data/transport/transport.dart';
+import 'package:domes_app/domain/models/drill_config.dart';
 import 'package:domes_app/domain/models/pod_device.dart';
 import 'package:domes_app/domain/repositories/pod_repository.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _cycles = int.fromEnvironment('FS4_SOAK_CYCLES', defaultValue: 1000);
 const _identities = <String>[
-  'sim-pod-1',
-  'sim-pod-2',
-  'sim-pod-3',
-  'sim-pod-4',
-  'sim-pod-5',
-  'sim-pod-6',
+  'soak-pod-1',
+  'soak-pod-2',
+  'soak-pod-3',
+  'soak-pod-4',
+  'soak-pod-5',
+  'soak-pod-6',
 ];
 const _stages = <String>[
   'prepare_mode',
@@ -41,11 +44,11 @@ final class _RetainedStream extends Stream<AppTouchEvent> {
   void staleTouch() =>
       _data?.call(const AppTouchEvent(podId: 99, padIndex: 7, timestampUs: 1));
 
-  void staleError() {
+  void failAmbiguously(String stage) {
     final handler = _error;
     if (handler != null) {
       Function.apply(handler, [
-        StateError('stale callback'),
+        StateError('ambiguous command failure at $stage'),
         StackTrace.current,
       ]);
     }
@@ -123,27 +126,49 @@ final class _FakeTransport extends Transport {
 
 final class _FakeRepository implements PodRepository {
   _FakeRepository(this.touchEvents);
-  @override
-  final Stream<AppTouchEvent> touchEvents;
-  Object? nextFailure;
-  int commandCalls = 0;
 
-  void _check() {
-    commandCalls++;
-    final failure = nextFailure;
-    nextFailure = null;
-    if (failure != null) throw failure;
+  @override
+  final _RetainedStream touchEvents;
+  String? _gatedCommand;
+  Completer<void>? _gate;
+
+  void gate(String command) {
+    expect(_gate, isNull);
+    _gatedCommand = command;
+  }
+
+  bool get commandIsPending => _gate != null;
+
+  void completeStaleResponse() {
+    final gate = _gate;
+    expect(gate, isNotNull);
+    _gate = null;
+    gate!.complete();
+  }
+
+  Future<void> _beforeResponse(String command) async {
+    if (_gatedCommand != command) return;
+    _gatedCommand = null;
+    final gate = _gate = Completer<void>();
+    await gate.future;
   }
 
   @override
   Future<AppLedPattern> setLedPattern(AppLedPattern pattern) async {
-    _check();
+    final command = pattern.patternType == LedPatternType.LED_PATTERN_OFF
+        ? 'led_off'
+        : pattern.color == (0, 255, 0, 0)
+        ? 'led_green'
+        : 'led_red';
+    await _beforeResponse(command);
     return pattern;
   }
 
   @override
   Future<(SystemMode, bool)> setSystemMode(SystemMode mode) async {
-    _check();
+    await _beforeResponse(
+      mode == SystemMode.SYSTEM_MODE_GAME ? 'mode_game' : 'mode_idle',
+    );
     return (mode, true);
   }
 
@@ -168,171 +193,272 @@ final class _FakeRepository implements PodRepository {
       throw UnsupportedError('not used');
 }
 
-Future<void> _command(
-  MultiPodNotifier notifier,
-  String address,
-  String stage,
-) => stage.endsWith('mode')
-    ? notifier.setMode(
-        address,
-        stage == 'cleanup_mode'
-            ? SystemMode.SYSTEM_MODE_IDLE
-            : SystemMode.SYSTEM_MODE_GAME,
-      )
-    : notifier.setLedPattern(
-        address,
-        stage == 'arm_target'
-            ? AppLedPattern.solid(0, 255, 0)
-            : stage == 'miss_feedback'
-            ? AppLedPattern.solid(255, 0, 0)
-            : AppLedPattern.off(),
-      );
+String _commandForStage(String stage) => switch (stage) {
+  'prepare_mode' => 'mode_game',
+  'prepare_clear' ||
+  'hit_clear' ||
+  'miss_clear' ||
+  'cleanup_clear' => 'led_off',
+  'arm_target' => 'led_green',
+  'miss_feedback' => 'led_red',
+  'cleanup_mode' => 'mode_idle',
+  _ => throw StateError('unknown stage $stage'),
+};
+
+Future<void> _waitUntil(bool Function() predicate) async {
+  for (var attempt = 0; attempt < 2000; attempt++) {
+    if (predicate()) return;
+    await Future<void>.delayed(Duration.zero);
+  }
+  fail('condition did not become true');
+}
 
 void main() {
-  test('six-identity command quarantine and recovery soak', () async {
-    expect(_cycles, greaterThanOrEqualTo(1000));
-    final lifecycle = <String>[];
-    final current = <String, _FakeRepository>{};
-    final retained = <_RetainedStream>[];
-    final generations = <String, int>{};
-    final identityTotals = {for (final id in _identities) id: 0};
-    final stageTotals = {for (final stage in _stages) stage: 0};
-    final results = <String>{};
-    var activeSubscriptions = 0;
-    var duplicateOrLostResults = 0;
-    var staleMutations = 0;
-    var duplicateFailureEvents = 0;
-    var cleanupOrderViolations = 0;
-    var healthyPeerMutations = 0;
-    var quarantinedGenerationReuse = 0;
-    var reconnects = 0;
+  test(
+    'six-identity production drill command recovery soak',
+    () async {
+      await runZoned(
+        () async {
+          expect(_cycles, greaterThanOrEqualTo(1000));
+          final lifecycle = <String>[];
+          final current = <String, _FakeRepository>{};
+          final generations = <String, int>{};
+          final identityTotals = {for (final id in _identities) id: 0};
+          final stageTotals = {for (final stage in _stages) stage: 0};
+          var activeSubscriptions = 0;
+          var duplicateOrLostResults = 0;
+          var staleMutations = 0;
+          var duplicateFailureEvents = 0;
+          var cleanupOrderViolations = 0;
+          var healthyPeerMutations = 0;
+          var quarantinedGenerationReuse = 0;
+          var reconnects = 0;
+          var completedResults = 0;
 
-    final notifier = MultiPodNotifier(
-      connector: (pod) async {
-        final generation = (generations[pod.address] ?? 0) + 1;
-        generations[pod.address] = generation;
-        late final _RetainedStream stream;
-        stream = _RetainedStream(() {
-          activeSubscriptions--;
-          lifecycle.add('cancel:${pod.address}:$generation');
-        });
-        final repository = _FakeRepository(stream);
-        current[pod.address] = repository;
-        retained.add(stream);
-        activeSubscriptions++;
-        lifecycle.add('connect:${pod.address}:$generation');
-        return (
-          transport: _FakeTransport(
-            () => lifecycle.add('disconnect:${pod.address}:$generation'),
-          ),
-          repository: repository,
-        );
-      },
-    );
-    for (final identity in _identities) {
-      await notifier.connectPod(PodDevice(name: identity, address: identity));
-    }
-    final failures = <PodConnectionFailure>[];
-    final touches = <PodTouchEvent>[];
-    final failureSubscription = notifier.connectionFailures.listen(
-      failures.add,
-    );
-    final touchSubscription = notifier.touchEvents.listen(touches.add);
+          final multiPod = MultiPodNotifier(
+            connector: (pod) async {
+              final generation = (generations[pod.address] ?? 0) + 1;
+              generations[pod.address] = generation;
+              late final _RetainedStream stream;
+              stream = _RetainedStream(() {
+                activeSubscriptions--;
+                lifecycle.add('cancel:${pod.address}:$generation');
+              });
+              final repository = _FakeRepository(stream);
+              current[pod.address] = repository;
+              activeSubscriptions++;
+              lifecycle.add('connect:${pod.address}:$generation');
+              return (
+                transport: _FakeTransport(
+                  () => lifecycle.add('disconnect:${pod.address}:$generation'),
+                ),
+                repository: repository,
+              );
+            },
+          );
+          final container = ProviderContainer(
+            overrides: [
+              drillProvider.overrideWith(
+                (ref) => DrillNotifier(ref, multiPod: multiPod),
+              ),
+            ],
+          );
+          final drill = container.read(drillProvider.notifier);
+          for (final identity in _identities) {
+            await multiPod.connectPod(
+              PodDevice(name: identity, address: identity),
+            );
+          }
+          final failures = <PodConnectionFailure>[];
+          final touches = <PodTouchEvent>[];
+          final failureSubscription = multiPod.connectionFailures.listen(
+            failures.add,
+          );
+          final touchSubscription = multiPod.touchEvents.listen(touches.add);
 
-    for (var cycle = 0; cycle < _cycles; cycle++) {
-      final identity = _identities[cycle % _identities.length];
-      final stage = _stages[cycle % _stages.length];
-      final healthyBefore = {
-        for (final peer in _identities.where((id) => id != identity))
-          peer: generations[peer],
-      };
-      final generation = generations[identity]!;
-      final resultId = '$cycle:$identity:$stage';
-      if (!results.add(resultId)) duplicateOrLostResults++;
-      identityTotals[identity] = identityTotals[identity]! + 1;
-      stageTotals[stage] = stageTotals[stage]! + 1;
-      final beforeLog = lifecycle.length;
-      final beforeFailures = failures.length;
-      final beforeTouches = touches.length;
-      final oldStream = retained.lastWhere(
-        (stream) => identical(current[identity]!.touchEvents, stream),
+          Future<void> start(String identity, {int rounds = 2}) async {
+            await drill.startDrill(
+              DrillConfig(
+                roundCount: rounds,
+                timeout: const Duration(milliseconds: 1),
+                minDelay: Duration.zero,
+                maxDelay: Duration.zero,
+                podAddresses: [identity],
+              ),
+            );
+          }
+
+          for (var cycle = 0; cycle < _cycles; cycle++) {
+            final identity = _identities[cycle % _identities.length];
+            final stage = _stages[cycle % _stages.length];
+            final repository = current[identity]!;
+            final generation = generations[identity]!;
+            final healthyBefore = {
+              for (final peer in _identities.where((id) => id != identity))
+                peer: generations[peer],
+            };
+            final beforeLog = lifecycle.length;
+            final beforeFailures = failures.length;
+            final beforeTouches = touches.length;
+            Future<void>? operation;
+
+            switch (stage) {
+              case 'prepare_mode':
+              case 'prepare_clear':
+              case 'arm_target':
+                repository.gate(_commandForStage(stage));
+                operation = start(identity);
+                break;
+              case 'hit_clear':
+                await start(identity);
+                await _waitUntil(
+                  () => drill.state.phase == DrillPhase.waitingTouch,
+                );
+                final retained = List.of(drill.state.results);
+                repository.gate(_commandForStage(stage));
+                drill.recordTouch(identity);
+                if (drill.state.results.length != retained.length + 1) {
+                  duplicateOrLostResults++;
+                }
+                break;
+              case 'miss_feedback':
+                repository.gate(_commandForStage(stage));
+                operation = start(identity);
+                break;
+              case 'miss_clear':
+                await start(identity);
+                await _waitUntil(
+                  () => drill.state.phase == DrillPhase.waitingTouch,
+                );
+                repository.gate(_commandForStage(stage));
+                break;
+              case 'cleanup_clear':
+              case 'cleanup_mode':
+                await start(identity, rounds: 1);
+                await _waitUntil(
+                  () => drill.state.phase == DrillPhase.waitingTouch,
+                );
+                repository.gate(_commandForStage(stage));
+                drill.recordTouch(identity);
+                break;
+            }
+            await _waitUntil(() => repository.commandIsPending);
+            final completedBeforeFault = List.of(drill.state.results);
+            repository.touchEvents.failAmbiguously(stage);
+            await _waitUntil(() => failures.length == beforeFailures + 1);
+            final terminalAfterFault = drill.state;
+
+            if (multiPod.state[identity]!.isConnected) {
+              quarantinedGenerationReuse++;
+            }
+            final reconnect = multiPod.connectPod(
+              PodDevice(name: identity, address: identity),
+            );
+            await reconnect;
+            reconnects++;
+            final cycleLog = lifecycle.sublist(beforeLog);
+            final cancel = cycleLog.indexOf('cancel:$identity:$generation');
+            final disconnect = cycleLog.indexOf(
+              'disconnect:$identity:$generation',
+            );
+            final connect = cycleLog.indexOf(
+              'connect:$identity:${generation + 1}',
+            );
+            if (cancel < 0 || disconnect <= cancel || connect <= disconnect) {
+              cleanupOrderViolations++;
+            }
+
+            repository.touchEvents.staleTouch();
+            repository.completeStaleResponse();
+            await operation;
+            await Future<void>.delayed(Duration.zero);
+            if (touches.length != beforeTouches ||
+                failures.length != beforeFailures + 1 ||
+                !identical(drill.state, terminalAfterFault) ||
+                drill.state.results.length != completedBeforeFault.length) {
+              staleMutations++;
+            }
+            if (failures.length != beforeFailures + 1) {
+              duplicateFailureEvents++;
+            }
+            for (final entry in healthyBefore.entries) {
+              if (generations[entry.key] != entry.value ||
+                  !multiPod.state[entry.key]!.isConnected) {
+                healthyPeerMutations++;
+              }
+            }
+            if (generations[identity] == generation ||
+                !multiPod.state[identity]!.isConnected) {
+              quarantinedGenerationReuse++;
+            }
+
+            await start(identity, rounds: 1);
+            await _waitUntil(
+              () => drill.state.phase == DrillPhase.waitingTouch,
+            );
+            drill.recordTouch(identity);
+            await _waitUntil(() => drill.state.phase == DrillPhase.finished);
+            if (drill.state.results.length != 1) {
+              duplicateOrLostResults++;
+            } else {
+              completedResults++;
+            }
+            identityTotals[identity] = identityTotals[identity]! + 1;
+            stageTotals[stage] = stageTotals[stage]! + 1;
+          }
+
+          if (completedResults != _cycles) duplicateOrLostResults++;
+          drill.stopDrill();
+          await multiPod.disconnectAll();
+          final counters = <String, int>{
+            'duplicate_or_lost_results': duplicateOrLostResults,
+            'stale_mutations': staleMutations,
+            'duplicate_failure_events': duplicateFailureEvents,
+            'cleanup_order_violations': cleanupOrderViolations,
+            'leaked_subscriptions': activeSubscriptions,
+            'healthy_peer_mutations': healthyPeerMutations,
+            'quarantined_generation_reuse': quarantinedGenerationReuse,
+          };
+          expect(counters.values, everyElement(0));
+          expect(reconnects, _cycles);
+          expect(multiPod.state, isEmpty);
+          expect(failures, hasLength(_cycles));
+          expect(touches, isEmpty);
+
+          final summary = <String, Object>{
+            'schema_version': 1,
+            'scenario': 'fs4_command_recovery_soak',
+            'identities': _identities,
+            'stages': _stages,
+            'cycles': _cycles,
+            'faults': _cycles,
+            'reconnects': reconnects,
+            'completed_results': completedResults,
+            'per_identity': identityTotals,
+            'per_stage': stageTotals,
+            'terminal_state': 'disconnected',
+            'invariant_counters': counters,
+          };
+          // ignore: avoid_print
+          print('FS4_COMMAND_RECOVERY_SOAK ${jsonEncode(summary)}');
+
+          await touchSubscription.cancel();
+          await failureSubscription.cancel();
+          container.dispose();
+          multiPod.dispose();
+        },
+        zoneSpecification: ZoneSpecification(
+          createTimer: (self, parent, zone, duration, callback) =>
+              parent.createTimer(
+                zone,
+                duration == const Duration(milliseconds: 500)
+                    ? Duration.zero
+                    : duration,
+                callback,
+              ),
+        ),
       );
-      current[identity]!.nextFailure = StateError(
-        'ambiguous command cycle=$cycle stage=$stage',
-      );
-
-      await expectLater(_command(notifier, identity, stage), throwsStateError);
-      await Future<void>.delayed(Duration.zero);
-      if (failures.length != beforeFailures + 1) duplicateFailureEvents++;
-      if (notifier.state[identity]!.isConnected) quarantinedGenerationReuse++;
-
-      oldStream.staleTouch();
-      oldStream.staleError();
-      await Future<void>.delayed(Duration.zero);
-      if (touches.length != beforeTouches ||
-          failures.length != beforeFailures + 1) {
-        staleMutations++;
-      }
-
-      await notifier.connectPod(PodDevice(name: identity, address: identity));
-      reconnects++;
-      final cycleLog = lifecycle.sublist(beforeLog);
-      final cancel = cycleLog.indexOf('cancel:$identity:$generation');
-      final disconnect = cycleLog.indexOf('disconnect:$identity:$generation');
-      final connect = cycleLog.indexOf('connect:$identity:${generation + 1}');
-      if (cancel < 0 || disconnect <= cancel || connect <= disconnect) {
-        cleanupOrderViolations++;
-      }
-      for (final entry in healthyBefore.entries) {
-        if (generations[entry.key] != entry.value ||
-            !notifier.state[entry.key]!.isConnected) {
-          healthyPeerMutations++;
-        }
-      }
-      await _command(notifier, identity, stage);
-      if (generations[identity] == generation ||
-          !notifier.state[identity]!.isConnected) {
-        quarantinedGenerationReuse++;
-      }
-    }
-
-    if (results.length != _cycles) duplicateOrLostResults++;
-    await notifier.disconnectAll();
-    final counters = <String, int>{
-      'duplicate_or_lost_results': duplicateOrLostResults,
-      'stale_mutations': staleMutations,
-      'duplicate_failure_events': duplicateFailureEvents,
-      'cleanup_order_violations': cleanupOrderViolations,
-      'leaked_subscriptions': activeSubscriptions,
-      'healthy_peer_mutations': healthyPeerMutations,
-      'quarantined_generation_reuse': quarantinedGenerationReuse,
-    };
-    expect(counters.values, everyElement(0));
-    expect(reconnects, _cycles);
-    expect(notifier.state, isEmpty);
-    expect(failures, hasLength(_cycles));
-    expect(touches, isEmpty);
-
-    final summary = <String, Object>{
-      'schema_version': 1,
-      'scenario': 'fs4_command_recovery_soak',
-      'identities': _identities,
-      'stages': _stages,
-      'cycles': _cycles,
-      'faults': _cycles,
-      'reconnects': reconnects,
-      'completed_results': results.length,
-      'per_identity': identityTotals,
-      'per_stage': stageTotals,
-      'terminal_state': 'disconnected',
-      'invariant_counters': counters,
-    };
-    // The runner extracts this single canonical payload from the raw Flutter log.
-    // ignore: avoid_print
-    print('FS4_COMMAND_RECOVERY_SOAK ${jsonEncode(summary)}');
-
-    await touchSubscription.cancel();
-    await failureSubscription.cancel();
-    notifier.dispose();
-  });
+    },
+    timeout: const Timeout(Duration(minutes: 10)),
+  );
 }

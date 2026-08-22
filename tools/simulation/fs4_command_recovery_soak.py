@@ -19,7 +19,7 @@ PREDECESSOR_REVISION = "7d2a8466e3f96fa96a820a82589fba5c7de014f0"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCENARIO = REPO_ROOT / "ios/domes_app/test/application/providers/fs4_command_recovery_soak_test.dart"
 APP_ROOT = REPO_ROOT / "ios/domes_app"
-IDENTITIES = tuple(f"sim-pod-{number}" for number in range(1, 7))
+IDENTITIES = tuple(f"soak-pod-{number}" for number in range(1, 7))
 STAGES = (
     "prepare_mode",
     "prepare_clear",
@@ -203,7 +203,24 @@ def _forbidden_claim(value: Any) -> bool:
                 return True
     elif isinstance(value, list):
         return any(_forbidden_claim(item) for item in value)
+    elif isinstance(value, str):
+        lowered = value.lower()
+        if "predictive" in lowered:
+            return True
+        if "physical" in lowered:
+            positive_verdict = re.search(
+                r"\b(passed|verified|validated|complete|confirmed|established|successful)\b",
+                lowered,
+            )
+            if "unverified" not in lowered or positive_verdict:
+                return True
     return False
+
+
+def _require_nonempty_string(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise SoakError(f"manifest {field} must be a nonempty string")
+    return value
 
 
 def validate_manifest(manifest: Mapping[str, Any], log_bytes: bytes) -> None:
@@ -217,6 +234,36 @@ def validate_manifest(manifest: Mapping[str, Any], log_bytes: bytes) -> None:
         raise SoakError("tested Git SHA is invalid")
     if manifest.get("predecessor_git_sha") != PREDECESSOR_REVISION:
         raise SoakError("predecessor revision mismatch")
+    tools = manifest.get("tool_versions")
+    if not isinstance(tools, dict) or set(tools) != {"flutter", "dart", "python"}:
+        raise SoakError("manifest tool_versions inventory is incomplete")
+    for name, version in tools.items():
+        _require_nonempty_string(version, f"tool_versions.{name}")
+    _require_nonempty_string(manifest.get("invocation"), "invocation")
+    _require_nonempty_string(manifest.get("claim_boundary"), "claim_boundary")
+    ownership = manifest.get("ownership_and_gaps")
+    if not isinstance(ownership, dict) or set(ownership) != {"owned", "excluded", "unverified"}:
+        raise SoakError("manifest ownership_and_gaps is incomplete")
+    _require_nonempty_string(ownership.get("owned"), "ownership_and_gaps.owned")
+    _require_nonempty_string(ownership.get("unverified"), "ownership_and_gaps.unverified")
+    excluded = ownership.get("excluded")
+    if not isinstance(excluded, list) or len(excluded) != 3:
+        raise SoakError("manifest ownership exclusions are incomplete")
+    for index, item in enumerate(excluded):
+        _require_nonempty_string(item, f"ownership_and_gaps.excluded[{index}]")
+    reconciliation = manifest.get("predecessor_reconciliation")
+    if not isinstance(reconciliation, list) or len(reconciliation) != 3:
+        raise SoakError("manifest predecessor_reconciliation is incomplete")
+    expected_issues = [174, 175, 176]
+    for expected_issue, record in zip(expected_issues, reconciliation, strict=True):
+        if not isinstance(record, dict) or set(record) != {
+            "issue", "state", "title", "url", "artifacts_consumed"
+        }:
+            raise SoakError("manifest predecessor record is incomplete")
+        if record.get("issue") != expected_issue or record.get("artifacts_consumed") is not False:
+            raise SoakError("manifest predecessor identity or ownership mismatch")
+        for field in ("state", "title", "url"):
+            _require_nonempty_string(record.get(field), f"predecessor_reconciliation.{field}")
     claim_fields = {key: value for key, value in manifest.items() if key != "physical_validation"}
     if manifest.get("physical_validation") != "unverified" or _forbidden_claim(claim_fields):
         raise SoakError("manifest attempts a physical or predictive claim")
@@ -314,7 +361,7 @@ def run(cycles: int, specification_revision: str, output: Path) -> Path:
                 "issues 174-176 qualification, diagnostics, and bundling",
                 "ESP-NOW and QEMU scheduler fault campaigns",
             ],
-            "unverified": "physical six-node fault, timing, soak, peripheral, RF, and recovery validation",
+            "unverified": "physical six-node fault, timing, soak, peripheral, RF, and recovery validation remains unverified",
         },
         "predecessor_reconciliation": reconciliation,
     }

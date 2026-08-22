@@ -68,10 +68,19 @@ def manifest(log: bytes | None = None) -> dict:
         "claim_boundary": "deterministic software regression evidence only",
         "ownership_and_gaps": {
             "owned": "command recovery",
-            "excluded": [],
-            "unverified": "physical validation",
+            "excluded": ["normal qualification", "diagnostics", "bundling"],
+            "unverified": "physical validation unverified",
         },
-        "predecessor_reconciliation": [],
+        "predecessor_reconciliation": [
+            {
+                "issue": issue,
+                "state": "OPEN",
+                "title": f"issue {issue}",
+                "url": f"https://example.test/{issue}",
+                "artifacts_consumed": False,
+            }
+            for issue in (174, 175, 176)
+        ],
     }
     verdict = {
         key: result[key]
@@ -149,9 +158,35 @@ class ManifestTests(unittest.TestCase):
 
     def test_predictive_field_fails_closed(self) -> None:
         candidate = manifest()
-        candidate["ownership_and_gaps"]["predictive_verdict"] = "passed"
+        candidate["ownership_and_gaps"]["owned"] = "predictive verdict passed"
         with self.assertRaisesRegex(soak.SoakError, "physical or predictive"):
             soak.validate_manifest(candidate, log_bytes())
+
+    def test_claim_value_fails_closed(self) -> None:
+        for claim in (
+            "physical validation passed",
+            "physical validation passed but unverified",
+            "predictive verdict passed",
+        ):
+            with self.subTest(claim=claim):
+                candidate = manifest()
+                candidate["claim_boundary"] = claim
+                with self.assertRaisesRegex(soak.SoakError, "physical or predictive"):
+                    soak.validate_manifest(candidate, log_bytes())
+
+    def test_empty_structured_fields_fail_closed(self) -> None:
+        for field, replacement in (
+            ("tool_versions", {}),
+            ("invocation", ""),
+            ("claim_boundary", ""),
+            ("ownership_and_gaps", {}),
+            ("predecessor_reconciliation", []),
+        ):
+            with self.subTest(field=field):
+                candidate = manifest()
+                candidate[field] = replacement
+                with self.assertRaises(soak.SoakError):
+                    soak.validate_manifest(candidate, log_bytes())
 
     def test_unexpected_manifest_field_fails_closed(self) -> None:
         candidate = manifest()
