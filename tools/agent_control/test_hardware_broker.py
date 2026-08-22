@@ -310,6 +310,7 @@ class HardwareBrokerTest(unittest.TestCase):
             enabled = {0: False, 1: False}
             drill = {"active": False}
             commands = []
+            sleeps = []
 
             def run(_cap, argv, _name, _timeout):
                 board = int(argv[argv.index("--port") + 1][-1])
@@ -340,6 +341,7 @@ class HardwareBrokerTest(unittest.TestCase):
                 return 0, "ok\n", ""
 
             def sleep(seconds):
+                sleeps.append(seconds)
                 if seconds == 35:
                     enabled[0] = False
                     enabled[1] = False
@@ -388,6 +390,8 @@ class HardwareBrokerTest(unittest.TestCase):
             self.assertCountEqual(
                 [(0, ["trace", "start"]), (1, ["trace", "start"])], trace_starts
             )
+            self.assertIn(2.4, sleeps)
+            self.assertIn(0.5, sleeps)
             self.assertTrue(
                 (evidence / f"espnow-regression-{'b' * 16}.jsonl").is_file()
             )
