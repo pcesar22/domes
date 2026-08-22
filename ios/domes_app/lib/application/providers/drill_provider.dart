@@ -93,6 +93,9 @@ class DrillNotifier extends StateNotifier<DrillState> {
   late final StreamSubscription<PodTouchEvent> _touchSubscription;
   late final StreamSubscription<PodConnectionFailure>
   _connectionFailureSubscription;
+  late final StreamSubscription<PodConnectionFailure>
+  _lifecycleFailureSubscription;
+  Map<String, int> _participantConnectionGenerations = const {};
   int _generation = 0;
   Future<void> _cleanupTail = Future<void>.value();
 
@@ -104,6 +107,9 @@ class DrillNotifier extends StateNotifier<DrillState> {
     );
     _connectionFailureSubscription = _multiPod.connectionFailures.listen(
       _handleConnectionFailure,
+    );
+    _lifecycleFailureSubscription = _multiPod.lifecycleFailures.listen(
+      _handleLifecycleFailure,
     );
   }
 
@@ -126,6 +132,10 @@ class DrillNotifier extends StateNotifier<DrillState> {
     }
 
     final generation = ++_generation;
+    _participantConnectionGenerations = {
+      for (final address in config.podAddresses)
+        address: ?_multiPod.activeConnectionGeneration(address),
+    };
 
     _drillStartTime = DateTime.now();
 
@@ -432,6 +442,18 @@ class DrillNotifier extends StateNotifier<DrillState> {
     );
   }
 
+  void _handleLifecycleFailure(PodConnectionFailure failure) {
+    if (!mounted || !state.isRunning) return;
+    if (_participantConnectionGenerations[failure.address] !=
+        failure.generation) {
+      return;
+    }
+    _failSession(
+      _generation,
+      'Pod ${failure.address} connection failed: ${failure.error}',
+    );
+  }
+
   void _failSession(int generation, String message) {
     if (!_isCurrent(generation)) return;
     final config = state.config;
@@ -442,6 +464,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
 
   void _cancelSession() {
     _generation++;
+    _participantConnectionGenerations = const {};
     _delayTimer?.cancel();
     _timeoutTimer?.cancel();
     _ledOffTimer?.cancel();
@@ -480,6 +503,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
     unawaited(_scheduleCleanup(config));
     unawaited(_touchSubscription.cancel());
     unawaited(_connectionFailureSubscription.cancel());
+    unawaited(_lifecycleFailureSubscription.cancel());
     super.dispose();
   }
 }
