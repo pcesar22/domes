@@ -3258,13 +3258,35 @@ def claim_for_dispatch(workflow: Workflow, item: TicketValidation) -> TicketVali
 
 def worker_evidence_requires_rework(result: dict[str, Any]) -> bool:
     """Whether a worker handoff contains known-incomplete acceptance evidence."""
-    statuses = {
-        str(record.get("status"))
-        for record in result.get("verification", [])
-        if isinstance(record, dict)
-    }
-    return bool(statuses & {"failed", "pending"}) or bool(
-        result.get("blockers") and "unavailable" in statuses
+    records = [
+        record for record in result.get("verification", []) if isinstance(record, dict)
+    ]
+    incomplete = any(
+        record.get("status") == "failed"
+        or (
+            record.get("status") == "pending"
+            and not _controller_owned_ci_observation(record)
+        )
+        for record in records
+    )
+    unavailable = any(record.get("status") == "unavailable" for record in records)
+    return incomplete or bool(result.get("blockers") and unavailable)
+
+
+def _controller_owned_ci_observation(record: dict[str, Any]) -> bool:
+    """Identify a pending PR/CI snapshot that the controller must reconcile."""
+    text = " ".join(
+        str(record.get(field, "")) for field in ("command_or_observation", "artifact")
+    ).casefold()
+    return bool(
+        record.get("level") == "automated"
+        and (
+            re.search(
+                r"\b(?:ci|github actions|github checks?|pull[- ]request checks?|pr checks?)\b",
+                text,
+            )
+            or "/checks" in text
+        )
     )
 
 
@@ -6402,17 +6424,11 @@ def reconcile_human_reviews(
                     + "; ".join(validation.errors)
                 )
             artifact = load_latest_artifact_handoff(workflow, ticket)
-            if worker_evidence_requires_rework(artifact):
-                transition(workflow, ticket, "agent:rework")
-                post_controller_comment(
-                    workflow,
-                    ticket,
-                    "Agent control-plane transition (evidence integrity)",
-                    "The implementation handoff contains incomplete verification; "
-                    "returning it to rework before human acceptance.",
-                )
-                results.append({"issue": ticket.number, "state": "agent:rework"})
-                continue
+            # Human review is reached only after worker admission, independent
+            # judgment, and controller-owned exact-head CI. Do not retroactively
+            # reinterpret an older worker's local/pending observation here; live
+            # head, stack, mergeability, and review state are the authorities for
+            # this lifecycle phase.
             pull_request_number = artifact.get("pull_request")
             if not isinstance(pull_request_number, int) or pull_request_number < 1:
                 raise ControlError(
