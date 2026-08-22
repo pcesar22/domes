@@ -793,6 +793,38 @@ class ResultSemanticsTest(unittest.TestCase):
         }
         self.assertEqual("agent:agent-review", control.result_state("worker", result))
 
+    def test_controller_owned_pending_ci_can_reach_judge(self) -> None:
+        result = {
+            "state": "agent_review",
+            "pull_request": 180,
+            "verification": [
+                {
+                    "status": "pending",
+                    "level": "automated",
+                    "command_or_observation": (
+                        "Exact-head CI snapshot: QEMU Runtime remains in progress"
+                    ),
+                    "artifact": "https://github.com/example/repo/pull/180/checks",
+                }
+            ],
+            "blockers": [],
+        }
+        self.assertFalse(control.worker_evidence_requires_rework(result))
+        self.assertEqual("agent:agent-review", control.result_state("worker", result))
+
+    def test_pending_worker_verification_still_requires_rework(self) -> None:
+        result = {
+            "verification": [
+                {
+                    "status": "pending",
+                    "level": "automated",
+                    "command_or_observation": "full Flutter test suite",
+                }
+            ],
+            "blockers": [],
+        }
+        self.assertTrue(control.worker_evidence_requires_rework(result))
+
     def test_controller_policy_pass_supersedes_only_sandbox_limitation(self) -> None:
         commit = "c" * 40
         result = {
@@ -2475,6 +2507,38 @@ class AutopilotReviewTest(unittest.TestCase):
         ticket = automated_ticket(38, self.revision, label="agent:human-review")
         pr = pull_request(policy)
         artifact = {"commit": pr.head_oid, "pull_request": pr.number}
+        validation = control.TicketValidation(
+            ticket, control.parse_sections(ticket.body), (), ()
+        )
+        with (
+            mock.patch.object(control, "validate_ticket", return_value=validation),
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=pr),
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            result = control.reconcile_human_reviews(workflow, (ticket,))
+        self.assertEqual([], result)
+        transition.assert_not_called()
+        comment.assert_not_called()
+
+    def test_human_review_does_not_reapply_worker_admission_predicate(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        ticket = automated_ticket(38, self.revision, label="agent:human-review")
+        pr = pull_request(policy)
+        artifact = {
+            "commit": pr.head_oid,
+            "pull_request": pr.number,
+            "verification": [
+                {
+                    "status": "failed",
+                    "command_or_observation": "local environment-only check",
+                }
+            ],
+        }
         validation = control.TicketValidation(
             ticket, control.parse_sections(ticket.body), (), ()
         )
