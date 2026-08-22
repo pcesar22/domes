@@ -28,4 +28,13 @@ abstract class PodRepository {
 
   /// Get system info.
   Future<AppSystemInfo> getSystemInfo();
+
+  /// Read the device-owned 0-100 audio software gain.
+  Future<int> getAudioVolume();
+
+  /// Persist and apply the device-owned 0-100 audio software gain.
+  Future<int> setAudioVolume(int volume);
+
+  /// Request one known probe. True means accepted, never physically observed.
+  Future<bool> triggerFeedback(FeedbackProbe probe);
 }

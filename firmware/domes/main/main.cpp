@@ -32,6 +32,7 @@
 #include "runtime/runtimeTraceRegistration.hpp"
 #include "services/audioService.hpp"
 #include "services/espNowService.hpp"
+#include "services/feedbackController.hpp"
 #include "services/githubClient.hpp"
 #include "services/imuService.hpp"
 #include "services/ledService.hpp"
@@ -95,6 +96,7 @@ static domes::LedStripDriver<pins::kLedCount>* ledDriver = nullptr;
 static domes::infra::TaskManager taskManager;
 static domes::runtime::RuntimeAssembly runtimeAssembly;
 static domes::infra::NvsConfig configStorage;
+static domes::infra::NvsConfig feedbackStorage;
 static domes::GithubClient* githubClient = nullptr;
 static domes::OtaManager* otaManager = nullptr;
 static domes::UartTransport* uartTransport = nullptr;
@@ -104,15 +106,16 @@ static domes::SerialOtaReceiver* bleOtaReceiver =
     nullptr;  // Reuses SerialOtaReceiver with BLE transport
 static domes::EspNowTransport* espNowTransport = nullptr;
 static domes::EspNowService* espNowService = nullptr;
-static domes::config::FeatureManager* featureManager = nullptr;          // Runtime feature toggles
-static domes::config::ModeManager* modeManager = nullptr;                // System mode manager
-static domes::LedService* ledService = nullptr;                          // LED pattern service
-static i2c_master_bus_handle_t i2cBus = nullptr;                         // I2C master bus
-static domes::Lis2dw12Driver* imuDriver = nullptr;                       // LIS2DW12 IMU driver
-static domes::ImuService* imuService = nullptr;                          // IMU triage service
-static domes::Drv2605lDriver* hapticDriver = nullptr;                    // DRV2605L haptic driver
-static domes::Max98357aDriver* audioDriver = nullptr;                    // MAX98357A audio driver
-static domes::AudioService* audioService = nullptr;                      // Audio playback service
+static domes::config::FeatureManager* featureManager = nullptr;  // Runtime feature toggles
+static domes::config::ModeManager* modeManager = nullptr;        // System mode manager
+static domes::LedService* ledService = nullptr;                  // LED pattern service
+static i2c_master_bus_handle_t i2cBus = nullptr;                 // I2C master bus
+static domes::Lis2dw12Driver* imuDriver = nullptr;               // LIS2DW12 IMU driver
+static domes::ImuService* imuService = nullptr;                  // IMU triage service
+static domes::Drv2605lDriver* hapticDriver = nullptr;            // DRV2605L haptic driver
+static domes::Max98357aDriver* audioDriver = nullptr;            // MAX98357A audio driver
+static domes::AudioService* audioService = nullptr;              // Audio playback service
+static domes::FeedbackController* feedbackController = nullptr;
 static domes::TouchDriver<pins::kTouchPadCount>* touchDriver = nullptr;  // Touch pad driver
 static domes::InjectableTouchDriver* injectableTouchDriver = nullptr;  // Touch injection decorator
 static domes::TouchService* touchService = nullptr;                    // Touch monitoring service
@@ -635,6 +638,24 @@ static esp_err_t initAudioService() {
         return err;
     }
     audioService = runtimeAssembly.handles().audio;
+
+    static domes::FeedbackController controller(
+        *featureManager, feedbackStorage, [](uint8_t volume) { audioService->setVolume(volume); },
+        [] { return audioService->getVolume(); }, [] { return audioService->playAsset("beep"); },
+        [] {
+            return hapticDriver ? hapticDriver->playEffect(domes::HapticEffect::kSharpClick100)
+                                : ESP_ERR_INVALID_STATE;
+        });
+    if (controller.initialize() != domes::FeedbackController::Result::kOk) {
+        ESP_LOGE(kTag, "Failed to restore persisted audio software gain");
+        return ESP_FAIL;
+    }
+    feedbackController = &controller;
+#ifdef CONFIG_DOMES_WIFI_AUTO_CONNECT
+    if (tcpConfigServer) {
+        tcpConfigServer->setFeedbackController(feedbackController);
+    }
+#endif
     ESP_LOGI(kTag, "Audio service started");
     return ESP_OK;
 }
@@ -805,6 +826,9 @@ static esp_err_t initSerialOta(uint8_t podId = 0) {
     if (injectableTouchDriver) {
         serialOtaReceiver->setInjectableTouchDriver(injectableTouchDriver);
     }
+    if (feedbackController) {
+        serialOtaReceiver->setFeedbackController(feedbackController);
+    }
 
     // Create receiver task
     const esp_err_t espErr = taskManager.createTask(domes::infra::task::kSerialOta, receiver);
@@ -904,6 +928,9 @@ static esp_err_t initTcpConfigServer() {
     }
     if (injectableTouchDriver) {
         tcpConfigServer->setInjectableTouchDriver(injectableTouchDriver);
+    }
+    if (feedbackController) {
+        tcpConfigServer->setFeedbackController(feedbackController);
     }
 
     // Create server task
@@ -1402,6 +1429,9 @@ extern "C" void app_main() {
         }
         if (bleOtaReceiver && injectableTouchDriver) {
             bleOtaReceiver->setInjectableTouchDriver(injectableTouchDriver);
+        }
+        if (bleOtaReceiver && feedbackController) {
+            bleOtaReceiver->setFeedbackController(feedbackController);
         }
     }
     vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to flush logs

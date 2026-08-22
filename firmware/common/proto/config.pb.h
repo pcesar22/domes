@@ -66,7 +66,14 @@ typedef enum _domes_config_MsgType {
     domes_config_MsgType_MSG_TYPE_SET_SIM_MODE_REQ = 78,
     domes_config_MsgType_MSG_TYPE_SET_SIM_MODE_RSP = 79,
     /* Device-originated touch notification (0x50) */
-    domes_config_MsgType_MSG_TYPE_TOUCH_EVENT_NTF = 80
+    domes_config_MsgType_MSG_TYPE_TOUCH_EVENT_NTF = 80,
+    /* Bounded feedback interface commands in reserved config-command gaps. */
+    domes_config_MsgType_MSG_TYPE_GET_AUDIO_VOLUME_REQ = 44,
+    domes_config_MsgType_MSG_TYPE_GET_AUDIO_VOLUME_RSP = 45,
+    domes_config_MsgType_MSG_TYPE_SET_AUDIO_VOLUME_REQ = 46,
+    domes_config_MsgType_MSG_TYPE_SET_AUDIO_VOLUME_RSP = 47,
+    domes_config_MsgType_MSG_TYPE_TRIGGER_FEEDBACK_REQ = 74,
+    domes_config_MsgType_MSG_TYPE_TRIGGER_FEEDBACK_RSP = 75
 } domes_config_MsgType;
 
 /* Status codes for responses */
@@ -76,7 +83,11 @@ typedef enum _domes_config_Status {
     domes_config_Status_STATUS_INVALID_FEATURE = 2,
     domes_config_Status_STATUS_BUSY = 3,
     domes_config_Status_STATUS_INVALID_PATTERN = 4,
-    domes_config_Status_STATUS_NO_DATA = 5
+    domes_config_Status_STATUS_NO_DATA = 5,
+    domes_config_Status_STATUS_INVALID_VALUE = 6,
+    domes_config_Status_STATUS_DISABLED = 7,
+    domes_config_Status_STATUS_REJECTED = 8,
+    domes_config_Status_STATUS_STORAGE_ERROR = 9
 } domes_config_Status;
 
 /* LED pattern types */
@@ -98,6 +109,14 @@ typedef enum _domes_config_Feature {
     domes_config_Feature_FEATURE_HAPTIC = 6,
     domes_config_Feature_FEATURE_AUDIO = 7
 } domes_config_Feature;
+
+/* Known software feedback probes. Acceptance means that firmware queued or
+ triggered the request; it never represents sensed physical completion. */
+typedef enum _domes_config_FeedbackProbe {
+    domes_config_FeedbackProbe_FEEDBACK_PROBE_UNKNOWN = 0,
+    domes_config_FeedbackProbe_FEEDBACK_PROBE_EMBEDDED_BEEP = 1,
+    domes_config_FeedbackProbe_FEEDBACK_PROBE_FIXED_HAPTIC = 2
+} domes_config_FeedbackProbe;
 
 /* System operating modes */
 typedef enum _domes_config_SystemMode {
@@ -179,6 +198,18 @@ typedef struct _domes_config_GetLedPatternRequest { /* Empty - returns current p
     char dummy_field;
 } domes_config_GetLedPatternRequest;
 
+typedef struct _domes_config_GetAudioVolumeRequest { /* Empty - returns the device-owned software gain. */
+    char dummy_field;
+} domes_config_GetAudioVolumeRequest;
+
+typedef struct _domes_config_SetAudioVolumeRequest {
+    uint32_t volume; /* Software gain, valid range 0-100. */
+} domes_config_SetAudioVolumeRequest;
+
+typedef struct _domes_config_TriggerFeedbackRequest {
+    domes_config_FeedbackProbe probe;
+} domes_config_TriggerFeedbackRequest;
+
 /* Response messages */
 typedef struct _domes_config_ListFeaturesResponse {
     pb_size_t features_count;
@@ -205,6 +236,19 @@ typedef struct _domes_config_GetLedPatternResponse {
     bool has_pattern;
     domes_config_LedPattern pattern;
 } domes_config_GetLedPatternResponse;
+
+typedef struct _domes_config_GetAudioVolumeResponse {
+    uint32_t volume; /* Applied software gain, range 0-100. */
+} domes_config_GetAudioVolumeResponse;
+
+typedef struct _domes_config_SetAudioVolumeResponse {
+    uint32_t volume; /* Applied and persisted software gain, range 0-100. */
+} domes_config_SetAudioVolumeResponse;
+
+typedef struct _domes_config_TriggerFeedbackResponse {
+    domes_config_FeedbackProbe probe;
+    bool accepted; /* Queued/triggered acceptance, not physical completion. */
+} domes_config_TriggerFeedbackResponse;
 
 /* IMU triage mode messages */
 typedef struct _domes_config_SetImuTriageRequest {
@@ -453,8 +497,8 @@ extern "C" {
 #define _domes_config_MsgType_ARRAYSIZE ((domes_config_MsgType)(domes_config_MsgType_MSG_TYPE_TOUCH_EVENT_NTF+1))
 
 #define _domes_config_Status_MIN domes_config_Status_STATUS_OK
-#define _domes_config_Status_MAX domes_config_Status_STATUS_NO_DATA
-#define _domes_config_Status_ARRAYSIZE ((domes_config_Status)(domes_config_Status_STATUS_NO_DATA+1))
+#define _domes_config_Status_MAX domes_config_Status_STATUS_STORAGE_ERROR
+#define _domes_config_Status_ARRAYSIZE ((domes_config_Status)(domes_config_Status_STATUS_STORAGE_ERROR+1))
 
 #define _domes_config_LedPatternType_MIN domes_config_LedPatternType_LED_PATTERN_OFF
 #define _domes_config_LedPatternType_MAX domes_config_LedPatternType_LED_PATTERN_COLOR_CYCLE
@@ -463,6 +507,10 @@ extern "C" {
 #define _domes_config_Feature_MIN domes_config_Feature_FEATURE_UNKNOWN
 #define _domes_config_Feature_MAX domes_config_Feature_FEATURE_AUDIO
 #define _domes_config_Feature_ARRAYSIZE ((domes_config_Feature)(domes_config_Feature_FEATURE_AUDIO+1))
+
+#define _domes_config_FeedbackProbe_MIN domes_config_FeedbackProbe_FEEDBACK_PROBE_UNKNOWN
+#define _domes_config_FeedbackProbe_MAX domes_config_FeedbackProbe_FEEDBACK_PROBE_FIXED_HAPTIC
+#define _domes_config_FeedbackProbe_ARRAYSIZE ((domes_config_FeedbackProbe)(domes_config_FeedbackProbe_FEEDBACK_PROBE_FIXED_HAPTIC+1))
 
 #define _domes_config_SystemMode_MIN domes_config_SystemMode_SYSTEM_MODE_BOOTING
 #define _domes_config_SystemMode_MAX domes_config_SystemMode_SYSTEM_MODE_ERROR
@@ -486,8 +534,16 @@ extern "C" {
 
 
 
+#define domes_config_TriggerFeedbackRequest_probe_ENUMTYPE domes_config_FeedbackProbe
 
 
+
+
+
+
+
+
+#define domes_config_TriggerFeedbackResponse_probe_ENUMTYPE domes_config_FeedbackProbe
 
 
 
@@ -541,11 +597,17 @@ extern "C" {
 #define domes_config_LedPattern_init_default     {_domes_config_LedPatternType_MIN, false, domes_config_Color_init_default, 0, {domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default, domes_config_Color_init_default}, 0, 0}
 #define domes_config_SetLedPatternRequest_init_default {false, domes_config_LedPattern_init_default}
 #define domes_config_GetLedPatternRequest_init_default {0}
+#define domes_config_GetAudioVolumeRequest_init_default {0}
+#define domes_config_SetAudioVolumeRequest_init_default {0}
+#define domes_config_TriggerFeedbackRequest_init_default {_domes_config_FeedbackProbe_MIN}
 #define domes_config_ListFeaturesResponse_init_default {0, {domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default, domes_config_FeatureState_init_default}, 0}
 #define domes_config_SetFeatureResponse_init_default {false, domes_config_FeatureState_init_default}
 #define domes_config_GetFeatureResponse_init_default {false, domes_config_FeatureState_init_default}
 #define domes_config_SetLedPatternResponse_init_default {false, domes_config_LedPattern_init_default}
 #define domes_config_GetLedPatternResponse_init_default {false, domes_config_LedPattern_init_default}
+#define domes_config_GetAudioVolumeResponse_init_default {0}
+#define domes_config_SetAudioVolumeResponse_init_default {0}
+#define domes_config_TriggerFeedbackResponse_init_default {_domes_config_FeedbackProbe_MIN, 0}
 #define domes_config_SetImuTriageRequest_init_default {0}
 #define domes_config_SetImuTriageResponse_init_default {0}
 #define domes_config_GetModeRequest_init_default {0}
@@ -591,11 +653,17 @@ extern "C" {
 #define domes_config_LedPattern_init_zero        {_domes_config_LedPatternType_MIN, false, domes_config_Color_init_zero, 0, {domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero, domes_config_Color_init_zero}, 0, 0}
 #define domes_config_SetLedPatternRequest_init_zero {false, domes_config_LedPattern_init_zero}
 #define domes_config_GetLedPatternRequest_init_zero {0}
+#define domes_config_GetAudioVolumeRequest_init_zero {0}
+#define domes_config_SetAudioVolumeRequest_init_zero {0}
+#define domes_config_TriggerFeedbackRequest_init_zero {_domes_config_FeedbackProbe_MIN}
 #define domes_config_ListFeaturesResponse_init_zero {0, {domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero, domes_config_FeatureState_init_zero}, 0}
 #define domes_config_SetFeatureResponse_init_zero {false, domes_config_FeatureState_init_zero}
 #define domes_config_GetFeatureResponse_init_zero {false, domes_config_FeatureState_init_zero}
 #define domes_config_SetLedPatternResponse_init_zero {false, domes_config_LedPattern_init_zero}
 #define domes_config_GetLedPatternResponse_init_zero {false, domes_config_LedPattern_init_zero}
+#define domes_config_GetAudioVolumeResponse_init_zero {0}
+#define domes_config_SetAudioVolumeResponse_init_zero {0}
+#define domes_config_TriggerFeedbackResponse_init_zero {_domes_config_FeedbackProbe_MIN, 0}
 #define domes_config_SetImuTriageRequest_init_zero {0}
 #define domes_config_SetImuTriageResponse_init_zero {0}
 #define domes_config_GetModeRequest_init_zero    {0}
@@ -650,12 +718,18 @@ extern "C" {
 #define domes_config_LedPattern_period_ms_tag    4
 #define domes_config_LedPattern_brightness_tag   5
 #define domes_config_SetLedPatternRequest_pattern_tag 1
+#define domes_config_SetAudioVolumeRequest_volume_tag 1
+#define domes_config_TriggerFeedbackRequest_probe_tag 1
 #define domes_config_ListFeaturesResponse_features_tag 1
 #define domes_config_ListFeaturesResponse_pod_id_tag 2
 #define domes_config_SetFeatureResponse_feature_tag 1
 #define domes_config_GetFeatureResponse_feature_tag 1
 #define domes_config_SetLedPatternResponse_pattern_tag 1
 #define domes_config_GetLedPatternResponse_pattern_tag 1
+#define domes_config_GetAudioVolumeResponse_volume_tag 1
+#define domes_config_SetAudioVolumeResponse_volume_tag 1
+#define domes_config_TriggerFeedbackResponse_probe_tag 1
+#define domes_config_TriggerFeedbackResponse_accepted_tag 2
 #define domes_config_SetImuTriageRequest_enabled_tag 1
 #define domes_config_SetImuTriageResponse_enabled_tag 1
 #define domes_config_GetModeResponse_mode_tag    1
@@ -799,6 +873,21 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  pattern,           1)
 #define domes_config_GetLedPatternRequest_CALLBACK NULL
 #define domes_config_GetLedPatternRequest_DEFAULT NULL
 
+#define domes_config_GetAudioVolumeRequest_FIELDLIST(X, a) \
+
+#define domes_config_GetAudioVolumeRequest_CALLBACK NULL
+#define domes_config_GetAudioVolumeRequest_DEFAULT NULL
+
+#define domes_config_SetAudioVolumeRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   volume,            1)
+#define domes_config_SetAudioVolumeRequest_CALLBACK NULL
+#define domes_config_SetAudioVolumeRequest_DEFAULT NULL
+
+#define domes_config_TriggerFeedbackRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UENUM,    probe,             1)
+#define domes_config_TriggerFeedbackRequest_CALLBACK NULL
+#define domes_config_TriggerFeedbackRequest_DEFAULT NULL
+
 #define domes_config_ListFeaturesResponse_FIELDLIST(X, a) \
 X(a, STATIC,   REPEATED, MESSAGE,  features,          1) \
 X(a, STATIC,   SINGULAR, UINT32,   pod_id,            2)
@@ -829,6 +918,22 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  pattern,           1)
 #define domes_config_GetLedPatternResponse_CALLBACK NULL
 #define domes_config_GetLedPatternResponse_DEFAULT NULL
 #define domes_config_GetLedPatternResponse_pattern_MSGTYPE domes_config_LedPattern
+
+#define domes_config_GetAudioVolumeResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   volume,            1)
+#define domes_config_GetAudioVolumeResponse_CALLBACK NULL
+#define domes_config_GetAudioVolumeResponse_DEFAULT NULL
+
+#define domes_config_SetAudioVolumeResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   volume,            1)
+#define domes_config_SetAudioVolumeResponse_CALLBACK NULL
+#define domes_config_SetAudioVolumeResponse_DEFAULT NULL
+
+#define domes_config_TriggerFeedbackResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UENUM,    probe,             1) \
+X(a, STATIC,   SINGULAR, BOOL,     accepted,          2)
+#define domes_config_TriggerFeedbackResponse_CALLBACK NULL
+#define domes_config_TriggerFeedbackResponse_DEFAULT NULL
 
 #define domes_config_SetImuTriageRequest_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, BOOL,     enabled,           1)
@@ -1089,11 +1194,17 @@ extern const pb_msgdesc_t domes_config_GetFeatureRequest_msg;
 extern const pb_msgdesc_t domes_config_LedPattern_msg;
 extern const pb_msgdesc_t domes_config_SetLedPatternRequest_msg;
 extern const pb_msgdesc_t domes_config_GetLedPatternRequest_msg;
+extern const pb_msgdesc_t domes_config_GetAudioVolumeRequest_msg;
+extern const pb_msgdesc_t domes_config_SetAudioVolumeRequest_msg;
+extern const pb_msgdesc_t domes_config_TriggerFeedbackRequest_msg;
 extern const pb_msgdesc_t domes_config_ListFeaturesResponse_msg;
 extern const pb_msgdesc_t domes_config_SetFeatureResponse_msg;
 extern const pb_msgdesc_t domes_config_GetFeatureResponse_msg;
 extern const pb_msgdesc_t domes_config_SetLedPatternResponse_msg;
 extern const pb_msgdesc_t domes_config_GetLedPatternResponse_msg;
+extern const pb_msgdesc_t domes_config_GetAudioVolumeResponse_msg;
+extern const pb_msgdesc_t domes_config_SetAudioVolumeResponse_msg;
+extern const pb_msgdesc_t domes_config_TriggerFeedbackResponse_msg;
 extern const pb_msgdesc_t domes_config_SetImuTriageRequest_msg;
 extern const pb_msgdesc_t domes_config_SetImuTriageResponse_msg;
 extern const pb_msgdesc_t domes_config_GetModeRequest_msg;
@@ -1141,11 +1252,17 @@ extern const pb_msgdesc_t domes_config_TouchEventNotification_msg;
 #define domes_config_LedPattern_fields &domes_config_LedPattern_msg
 #define domes_config_SetLedPatternRequest_fields &domes_config_SetLedPatternRequest_msg
 #define domes_config_GetLedPatternRequest_fields &domes_config_GetLedPatternRequest_msg
+#define domes_config_GetAudioVolumeRequest_fields &domes_config_GetAudioVolumeRequest_msg
+#define domes_config_SetAudioVolumeRequest_fields &domes_config_SetAudioVolumeRequest_msg
+#define domes_config_TriggerFeedbackRequest_fields &domes_config_TriggerFeedbackRequest_msg
 #define domes_config_ListFeaturesResponse_fields &domes_config_ListFeaturesResponse_msg
 #define domes_config_SetFeatureResponse_fields &domes_config_SetFeatureResponse_msg
 #define domes_config_GetFeatureResponse_fields &domes_config_GetFeatureResponse_msg
 #define domes_config_SetLedPatternResponse_fields &domes_config_SetLedPatternResponse_msg
 #define domes_config_GetLedPatternResponse_fields &domes_config_GetLedPatternResponse_msg
+#define domes_config_GetAudioVolumeResponse_fields &domes_config_GetAudioVolumeResponse_msg
+#define domes_config_SetAudioVolumeResponse_fields &domes_config_SetAudioVolumeResponse_msg
+#define domes_config_TriggerFeedbackResponse_fields &domes_config_TriggerFeedbackResponse_msg
 #define domes_config_SetImuTriageRequest_fields &domes_config_SetImuTriageRequest_msg
 #define domes_config_SetImuTriageResponse_fields &domes_config_SetImuTriageResponse_msg
 #define domes_config_GetModeRequest_fields &domes_config_GetModeRequest_msg
@@ -1196,6 +1313,8 @@ extern const pb_msgdesc_t domes_config_TouchEventNotification_msg;
 #define domes_config_EspNowBenchResponse_size    48
 #define domes_config_EspNowPeer_size             25
 #define domes_config_FeatureState_size           4
+#define domes_config_GetAudioVolumeRequest_size  0
+#define domes_config_GetAudioVolumeResponse_size 6
 #define domes_config_GetCrashDumpRequest_size    0
 #define domes_config_GetEspNowStatusRequest_size 0
 #define domes_config_GetEspNowStatusResponse_size 269
@@ -1218,6 +1337,8 @@ extern const pb_msgdesc_t domes_config_TouchEventNotification_msg;
 #define domes_config_SelfTestRequest_size        0
 #define domes_config_SelfTestResponse_size       712
 #define domes_config_SelfTestResult_size         68
+#define domes_config_SetAudioVolumeRequest_size  6
+#define domes_config_SetAudioVolumeResponse_size 6
 #define domes_config_SetAutoUpdateRequest_size   2
 #define domes_config_SetAutoUpdateResponse_size  2
 #define domes_config_SetFeatureRequest_size      4
@@ -1236,6 +1357,8 @@ extern const pb_msgdesc_t domes_config_TouchEventNotification_msg;
 #define domes_config_SimulateTouchResponse_size  0
 #define domes_config_TaskHealth_size             35
 #define domes_config_TouchEventNotification_size 23
+#define domes_config_TriggerFeedbackRequest_size 2
+#define domes_config_TriggerFeedbackResponse_size 4
 
 #ifdef __cplusplus
 } /* extern "C" */
