@@ -4478,6 +4478,36 @@ def count_role_comments(workflow: Workflow, ticket: Ticket, role: str) -> int:
     )
 
 
+def count_current_ci_repair_dispatches(workflow: Workflow, ticket: Ticket) -> int:
+    """Count only CI-failure repairs since the latest implementation artifact."""
+    document = _run_json(
+        [
+            "gh",
+            "issue",
+            "view",
+            str(ticket.number),
+            "--repo",
+            workflow.repository,
+            "--json",
+            "comments",
+        ]
+    )
+    attempts = 0
+    for comment in reversed(document.get("comments", [])):
+        if not controller_authored_comment(workflow, comment):
+            continue
+        body = str(comment.get("body", ""))
+        if "Agent control-plane transition (worker)" in body:
+            break
+        if (
+            "Agent control-plane transition (ci)" in body
+            and "Required checks failed; dispatching bounded verification repair."
+            in body
+        ):
+            attempts += 1
+    return attempts
+
+
 def load_latest_artifact_handoff(workflow: Workflow, ticket: Ticket) -> dict[str, Any]:
     state_root = Path(
         os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")
@@ -6005,7 +6035,7 @@ def reconcile_ci_ticket(
             "checks": records,
         }
     if ci_state == "failed":
-        attempts = count_role_comments(workflow, ticket, "verification-worker")
+        attempts = count_current_ci_repair_dispatches(workflow, ticket)
         if attempts >= policy.max_ci_repair_cycles:
             transition(workflow, ticket, "agent:blocked")
             post_controller_comment(
