@@ -253,7 +253,7 @@ class EntryGateTests(unittest.TestCase):
             "cmake": "firmware/domes/main/CMakeLists.txt",
         }
         originals = {
-            name: gate._git_file(gate.SPEC_REVISION, path)
+            name: (MODULE_PATH.parents[2] / path).read_text(encoding="utf-8")
             for name, path in paths.items()
         }
         path_to_name = {path: name for name, path in paths.items()}
