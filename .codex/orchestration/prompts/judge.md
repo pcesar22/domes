@@ -13,6 +13,14 @@ generated consumers, and evidence that does not reach the required level. Softwa
 acceptance never establishes physical behavior. Return `blocked` only for an external condition
 that prevents a sound verdict; ordinary defects are `reject` with required rework.
 
+Exact-head CI is a controller-owned gate after independent implementation judgment for every
+automated ticket. On this judgment pass, do not add still-running CI as a criterion, mark the
+implementation deficient because CI is pending, or require a worker to wait for CI. Judge the
+artifact, required worker-executable checks, and retained evidence. Approval advances the ticket to
+`ci-pending`; the deterministic controller then waits for the exact head and dispatches a bounded
+repair if CI fails. A known CI failure or a missing required worker-executable check remains valid
+grounds for rejection.
+
 For a ticket with authorized hardware operations, judgment is deliberately two-pass. On the first
 pass, controller hardware evidence is absent: review the exact pushed commit for correctness,
 scope, destructive-device behavior, and readiness for the finite ticketed hardware operations.

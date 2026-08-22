@@ -1727,6 +1727,17 @@ class AutopilotReviewTest(unittest.TestCase):
         self.assertIn("controller owns CI polling", prompt)
         self.assertIn("never an\nimplementation-worker blocker", prompt)
 
+    def test_judge_prompt_defers_controller_owned_ci_for_software(self) -> None:
+        ticket = automated_ticket(30, self.revision, label="agent:agent-review")
+        item = control.validate_ticket(ticket, check_revision=False)
+        prompt = control.build_prompt(item, "judge")
+        self.assertIn(
+            "CI is a controller-owned gate after independent implementation judgment",
+            prompt,
+        )
+        self.assertIn("do not add still-running CI as a criterion", prompt)
+        self.assertIn("Approval advances the ticket to\n`ci-pending`", prompt)
+
     def test_trusted_controller_intervention_is_bounded_and_prompted(self) -> None:
         workflow = control.load_workflow()
         fixture = automated_ticket(31, self.revision, label="agent:rework")
