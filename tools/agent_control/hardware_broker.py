@@ -1698,6 +1698,15 @@ def _espnow_status_fields(output: str) -> tuple[str, int, int]:
     return state.group(1).casefold(), int(peers.group(1)), int(tx_fails.group(1))
 
 
+def _espnow_packet_counts(output: str) -> tuple[int, int]:
+    """Parse monotonic radio counters used to bound traced drill capture."""
+    tx_packets = re.search(r"(?im)^\s*TX packets:\s*(\d+)\s*$", output)
+    rx_packets = re.search(r"(?im)^\s*RX packets:\s*(\d+)\s*$", output)
+    if tx_packets is None or rx_packets is None:
+        raise BrokerError("ESP-NOW status response omits packet counters")
+    return int(tx_packets.group(1)), int(rx_packets.group(1))
+
+
 def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str, Any]:
     """Run the fixed two-NFF benchmark and simulated-drill acceptance lifecycle."""
     if set(cap.boards) != {0, 1}:
@@ -1759,6 +1768,9 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
 
     def status(board: int) -> tuple[str, int, int]:
         return _espnow_status_fields(run_cli(board, "espnow", "status"))
+
+    def packet_counts_both() -> tuple[tuple[int, int], tuple[int, int]]:
+        return tuple(_espnow_packet_counts(output) for output in run_both("espnow", "status"))  # type: ignore[return-value]
 
     def wait_for_disabled(phase: str) -> None:
         for _attempt in range(20):
@@ -1826,20 +1838,29 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
         run_cli(board, "feature", "enable", "esp-now")
     wait_for_peers("simulated drill")
 
-    # Peer discovery and the full drill take long enough to saturate the fixed
-    # trace ring with scheduler events. Wait through the fixed role/join settle
-    # period, then capture the first peer-directed drill round. This retains
-    # complete RX/TX causal traffic without manufacturing overflow evidence.
-    time.sleep(2.4)
-    for board in (0, 1):
-        run_cli(board, "trace", "stop")
-        run_cli(board, "trace", "clear")
-    run_both("trace", "start")
-    # Concurrent start/stop prevents one board from accumulating the other
-    # board's command latency. The 500 ms window covers the simulated exchange
-    # while remaining below the fixed 2,048-event trace-ring capacity.
-    time.sleep(0.5)
-    run_both("trace", "stop")
+    # The simulated drill and scheduler traffic can fill the fixed 1,024-event
+    # trace ring in well under a second. Capture bounded windows and use the
+    # monotonic packet counters as an objective trigger: the baseline is read
+    # only after both recorders start, and a window is retained only when both
+    # pods completed TX and RX traffic while tracing was enabled.
+    traced_drill = False
+    for _attempt in range(20):
+        run_both("trace", "stop")
+        run_both("trace", "clear")
+        run_both("trace", "start")
+        before = packet_counts_both()
+        time.sleep(0.05)
+        after = packet_counts_both()
+        run_both("trace", "stop")
+        if all(
+            after[board][0] > before[board][0] and after[board][1] > before[board][1]
+            for board in (0, 1)
+        ):
+            traced_drill = True
+            break
+        time.sleep(0.05)
+    if not traced_drill:
+        raise BrokerError("simulated drill produced no bounded traced peer exchange")
 
     time.sleep(35)
     final = [status(board) for board in (0, 1)]
