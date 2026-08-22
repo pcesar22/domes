@@ -1,10 +1,15 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:domes_app/application/providers/drill_provider.dart';
 import 'package:domes_app/application/providers/multi_pod_provider.dart';
 import 'package:domes_app/data/proto/generated/config.pb.dart';
 import 'package:domes_app/data/protocol/config_protocol.dart';
+import 'package:domes_app/data/transport/frame_codec.dart';
+import 'package:domes_app/data/transport/transport.dart';
 import 'package:domes_app/domain/models/drill_config.dart';
+import 'package:domes_app/domain/models/pod_device.dart';
+import 'package:domes_app/domain/repositories/pod_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -84,6 +89,94 @@ final class _FakeMultiPodNotifier extends MultiPodNotifier {
 
   int get greenCalls =>
       ledCalls.where((pattern) => pattern.color == (0, 255, 0, 0)).length;
+}
+
+final class _LifecycleTransport extends Transport {
+  bool connected = true;
+
+  @override
+  Future<void> disconnect() async => connected = false;
+
+  @override
+  bool get isConnected => connected;
+
+  @override
+  Future<Frame> receiveFrame(Duration timeout) =>
+      throw UnsupportedError('not used');
+
+  @override
+  Future<Frame> transactFrame(
+    int msgType,
+    Uint8List payload,
+    Duration timeout, {
+    void Function()? onFrameSent,
+  }) => throw UnsupportedError('not used');
+
+  @override
+  Future<Frame> sendCommand(
+    int msgType,
+    Uint8List payload, {
+    required int expectedResponseType,
+  }) => throw UnsupportedError('not used');
+
+  @override
+  Future<void> sendFrame(int msgType, Uint8List payload) async {}
+
+  @override
+  Stream<Frame> get unsolicitedFrames => const Stream.empty();
+}
+
+final class _LifecycleRepository implements PodRepository {
+  final StreamController<AppTouchEvent> events =
+      StreamController<AppTouchEvent>.broadcast();
+  Completer<void>? modeGate;
+  Completer<void>? nextLedGate;
+
+  @override
+  Stream<AppTouchEvent> get touchEvents => events.stream;
+
+  @override
+  Future<AppLedPattern> setLedPattern(AppLedPattern pattern) async {
+    final gate = nextLedGate;
+    nextLedGate = null;
+    await gate?.future;
+    return pattern;
+  }
+
+  @override
+  Future<(SystemMode, bool)> setSystemMode(SystemMode mode) async {
+    await modeGate?.future;
+    return (mode, true);
+  }
+
+  @override
+  Future<AppModeInfo> getSystemMode() => throw UnsupportedError('not used');
+
+  @override
+  Future<AppSystemInfo> getSystemInfo() => throw UnsupportedError('not used');
+
+  @override
+  Future<AppLedPattern> getLedPattern() => throw UnsupportedError('not used');
+
+  @override
+  Future<List<AppFeatureState>> listFeatures() =>
+      throw UnsupportedError('not used');
+
+  @override
+  Future<AppFeatureState> setFeature(Feature feature, bool enabled) =>
+      throw UnsupportedError('not used');
+
+  @override
+  Future<int> getAudioVolume() => throw UnsupportedError('not used');
+
+  @override
+  Future<int> setAudioVolume(int volume) => throw UnsupportedError('not used');
+
+  @override
+  Future<bool> triggerFeedback(FeedbackProbe probe) =>
+      throw UnsupportedError('not used');
+
+  Future<void> close() => events.close();
 }
 
 void main() {
@@ -745,6 +838,315 @@ void main() {
       expect(container.read(drillProvider).phase, DrillPhase.waitingTouch);
       expect(container.read(drillProvider).results, isEmpty);
     });
+  });
+
+  group('integrated operator lifecycle races', () {
+    test(
+      'real lifecycle operations terminate once in every active phase',
+      () async {
+        const addresses = ['pod-1', 'pod-2'];
+        const actions = [
+          'disconnectPod',
+          'disconnectAll',
+          'replacement connect',
+        ];
+        const phases = [
+          DrillPhase.preparing,
+          DrillPhase.waitingDelay,
+          DrillPhase.waitingTouch,
+          DrillPhase.roundComplete,
+        ];
+
+        for (final action in actions) {
+          for (final phase in phases) {
+            final repositories = <String, _LifecycleRepository>{};
+            final allRepositories = <_LifecycleRepository>[];
+            final multiPod = MultiPodNotifier(
+              connector: (pod) async {
+                final repository = _LifecycleRepository();
+                repositories[pod.address] = repository;
+                allRepositories.add(repository);
+                return (
+                  transport: _LifecycleTransport(),
+                  repository: repository,
+                );
+              },
+            );
+            for (final address in addresses) {
+              await multiPod.connectPod(
+                PodDevice(name: address, address: address),
+              );
+            }
+            final raceContainer = ProviderContainer(
+              overrides: [
+                drillProvider.overrideWith(
+                  (ref) => DrillNotifier(ref, multiPod: multiPod),
+                ),
+              ],
+            );
+            final raceNotifier = raceContainer.read(drillProvider.notifier);
+            var terminalEvents = 0;
+            final terminalSubscription = raceContainer.listen<DrillState>(
+              drillProvider,
+              (_, next) {
+                if (next.phase == DrillPhase.error) terminalEvents++;
+              },
+            );
+
+            Future<void> waitForPhase(DrillPhase expected) async {
+              for (var attempt = 0; attempt < 20; attempt++) {
+                if (raceContainer.read(drillProvider).phase == expected) return;
+                await Future<void>.delayed(const Duration(milliseconds: 2));
+              }
+              fail(
+                'action=$action expected=$expected '
+                'actual=${raceContainer.read(drillProvider).phase}',
+              );
+            }
+
+            const delayedConfig = DrillConfig(
+              roundCount: 3,
+              timeout: Duration(milliseconds: 40),
+              minDelay: Duration(milliseconds: 40),
+              maxDelay: Duration(milliseconds: 40),
+              podAddresses: addresses,
+            );
+            const immediateConfig = DrillConfig(
+              roundCount: 3,
+              timeout: Duration(milliseconds: 40),
+              minDelay: Duration.zero,
+              maxDelay: Duration.zero,
+              podAddresses: addresses,
+            );
+
+            if (phase == DrillPhase.preparing) {
+              repositories['pod-1']!.modeGate = Completer<void>();
+              unawaited(raceNotifier.startDrill(delayedConfig));
+              await waitForPhase(phase);
+            } else if (phase == DrillPhase.waitingDelay) {
+              await raceNotifier.startDrill(delayedConfig);
+              await waitForPhase(phase);
+            } else {
+              await raceNotifier.startDrill(immediateConfig);
+              await waitForPhase(DrillPhase.waitingTouch);
+              if (phase == DrillPhase.roundComplete) {
+                final target = raceContainer
+                    .read(drillProvider)
+                    .activePodAddress!;
+                repositories[target]!.nextLedGate = Completer<void>();
+                raceNotifier.recordTouch(target);
+                await waitForPhase(phase);
+              }
+            }
+
+            final beforeFailure = raceContainer.read(drillProvider);
+            final failedAddress =
+                phase == DrillPhase.preparing || action == 'disconnectAll'
+                ? 'pod-1'
+                : beforeFailure.activePodAddress ?? 'pod-1';
+            final retainedResults = List.of(beforeFailure.results);
+            final peerAddress = addresses.firstWhere(
+              (address) => address != failedAddress,
+            );
+            final peerTransport = multiPod.state[peerAddress]!.transport;
+
+            if (action == 'disconnectPod') {
+              await multiPod.disconnectPod(failedAddress);
+            } else if (action == 'disconnectAll') {
+              await multiPod.disconnectAll();
+            } else {
+              await multiPod.connectPod(
+                PodDevice(name: failedAddress, address: failedAddress),
+              );
+            }
+            await Future<void>.delayed(Duration.zero);
+            await Future<void>.delayed(Duration.zero);
+
+            final failed = raceContainer.read(drillProvider);
+            expect(failed.phase, DrillPhase.error, reason: '$action $phase');
+            expect(failed.errorMessage, contains(failedAddress));
+            expect(failed.results, retainedResults);
+            expect(terminalEvents, 1, reason: '$action $phase');
+            if (action != 'disconnectAll') {
+              expect(
+                multiPod.state[peerAddress]!.transport,
+                same(peerTransport),
+              );
+              expect(multiPod.state[peerAddress]!.isConnected, isTrue);
+            }
+
+            repositories['pod-1']?.modeGate?.complete();
+            for (final repository in allRepositories) {
+              repository.nextLedGate?.complete();
+            }
+            await Future<void>.delayed(const Duration(milliseconds: 70));
+            expect(raceContainer.read(drillProvider), same(failed));
+            expect(terminalEvents, 1, reason: 'stale work: $action $phase');
+
+            terminalSubscription.close();
+            raceContainer.dispose();
+            multiPod.dispose();
+            for (final repository in allRepositories) {
+              await repository.close();
+            }
+          }
+        }
+      },
+    );
+
+    test(
+      'software-only six-identity real-provider lifecycle regression',
+      () async {
+        const identities = [
+          'sim-pod-1',
+          'sim-pod-2',
+          'sim-pod-3',
+          'sim-pod-4',
+          'sim-pod-5',
+          'sim-pod-6',
+        ];
+        const lifecycleCycles = 60;
+        final allRepositories = <_LifecycleRepository>[];
+        final multiPod = MultiPodNotifier(
+          connector: (pod) async {
+            final repository = _LifecycleRepository();
+            allRepositories.add(repository);
+            return (transport: _LifecycleTransport(), repository: repository);
+          },
+        );
+        for (final identity in identities) {
+          await multiPod.connectPod(
+            PodDevice(name: identity, address: identity),
+          );
+        }
+        final stressContainer = ProviderContainer(
+          overrides: [
+            drillProvider.overrideWith(
+              (ref) => DrillNotifier(ref, multiPod: multiPod),
+            ),
+          ],
+        );
+        final stressNotifier = stressContainer.read(drillProvider.notifier);
+        var terminalEvents = 0;
+        var duplicateTerminalEvents = 0;
+        var reconnects = 0;
+        var retainedResults = 0;
+        var staleMutations = 0;
+        var duplicateResults = 0;
+        var lostResults = 0;
+        var peerMutations = 0;
+        final terminalSubscription = stressContainer.listen<DrillState>(
+          drillProvider,
+          (_, next) {
+            if (next.phase == DrillPhase.error) terminalEvents++;
+          },
+        );
+
+        Future<void> waitForPhase(DrillPhase expected, int cycle) async {
+          for (var attempt = 0; attempt < 20; attempt++) {
+            if (stressContainer.read(drillProvider).phase == expected) return;
+            await Future<void>.delayed(Duration.zero);
+          }
+          fail(
+            'cycle=$cycle expected=$expected '
+            'actual=${stressContainer.read(drillProvider).phase}',
+          );
+        }
+
+        const config = DrillConfig(
+          roundCount: 2,
+          timeout: Duration(seconds: 1),
+          minDelay: Duration.zero,
+          maxDelay: Duration.zero,
+          podAddresses: identities,
+        );
+        for (var cycle = 0; cycle < lifecycleCycles; cycle++) {
+          await stressNotifier.startDrill(config);
+          await waitForPhase(DrillPhase.waitingTouch, cycle);
+          stressNotifier.simulateTouch();
+          await waitForPhase(DrillPhase.waitingTouch, cycle);
+
+          final failedAddress = identities[cycle % identities.length];
+          final peersBefore = {
+            for (final peer in identities.where(
+              (peer) => peer != failedAddress,
+            ))
+              peer: multiPod.state[peer]!.transport,
+          };
+          final terminalsBefore = terminalEvents;
+          if ((cycle ~/ identities.length).isEven) {
+            await multiPod.disconnectPod(failedAddress);
+            await multiPod.connectPod(
+              PodDevice(name: failedAddress, address: failedAddress),
+            );
+          } else {
+            await multiPod.connectPod(
+              PodDevice(name: failedAddress, address: failedAddress),
+            );
+          }
+          reconnects++;
+          await Future<void>.delayed(Duration.zero);
+          await Future<void>.delayed(Duration.zero);
+
+          final failed = stressContainer.read(drillProvider);
+          expect(failed.phase, DrillPhase.error, reason: 'cycle=$cycle');
+          expect(failed.errorMessage, contains(failedAddress));
+          retainedResults += failed.results.length;
+          final indexes = failed.results.map((result) => result.roundIndex);
+          duplicateResults += failed.results.length - indexes.toSet().length;
+          lostResults += 1 - indexes.toSet().length;
+          if (terminalEvents - terminalsBefore != 1) {
+            duplicateTerminalEvents++;
+          }
+          for (final peer in peersBefore.entries) {
+            if (!identical(multiPod.state[peer.key]!.transport, peer.value) ||
+                !multiPod.state[peer.key]!.isConnected) {
+              peerMutations++;
+            }
+          }
+
+          final terminal = stressContainer.read(drillProvider);
+          stressNotifier.recordTouch(
+            terminal.activePodAddress ?? failedAddress,
+          );
+          await Future<void>.delayed(Duration.zero);
+          if (!identical(stressContainer.read(drillProvider), terminal)) {
+            staleMutations++;
+          }
+        }
+
+        await multiPod.disconnectAll();
+        await Future<void>.delayed(Duration.zero);
+        expect(terminalEvents, lifecycleCycles);
+        expect(duplicateTerminalEvents, 0);
+        expect(reconnects, lifecycleCycles);
+        expect(retainedResults, lifecycleCycles);
+        expect(staleMutations, 0);
+        expect(duplicateResults, 0);
+        expect(lostResults, 0);
+        expect(peerMutations, 0);
+        expect(multiPod.state, isEmpty);
+        // Software-only fake-provider evidence; no physical behavior is claimed.
+        // ignore: avoid_print
+        print(
+          'FS4_REAL_PROVIDER_LIFECYCLE_SOFTWARE_ONLY '
+          'identities=${identities.length} fault_types=2 '
+          'lifecycle_cycles=$lifecycleCycles terminal_events=$terminalEvents '
+          'reconnects=$reconnects retained_results=$retainedResults '
+          'duplicate_terminal_events=$duplicateTerminalEvents '
+          'stale_mutations=$staleMutations duplicate_results=$duplicateResults '
+          'lost_results=$lostResults peer_mutations=$peerMutations '
+          'terminal=disconnected',
+        );
+
+        terminalSubscription.close();
+        stressContainer.dispose();
+        multiPod.dispose();
+        for (final repository in allRepositories) {
+          await repository.close();
+        }
+      },
+    );
   });
 
   group('DrillNotifier.simulateTouch', () {
