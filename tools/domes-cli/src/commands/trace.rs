@@ -344,14 +344,17 @@ fn validate_session_binding(session: &TraceSessionInfo, events: &[TraceEvent]) -
     let has_acceptance_object = session.objects.iter().any(|object| {
         ACCEPTANCE_OBJECTS
             .iter()
-            .any(|(_, _, expected_name)| object.name == *expected_name)
+            .any(|(expected_id, _, expected_name)| {
+                object.object_id == *expected_id || object.name == *expected_name
+            })
     });
     if has_acceptance_object {
         let expected_objects = match session.objects.len() {
+            4 => &ACCEPTANCE_OBJECTS[6..],
             6 => &ACCEPTANCE_OBJECTS[..6],
             10 => ACCEPTANCE_OBJECTS,
             count => anyhow::bail!(
-                "Trace acceptance object catalog must contain exactly 6 or 10 entries, got {}",
+                "Trace acceptance object catalog must contain exactly 4, 6, or 10 entries, got {}",
                 count
             ),
         };
@@ -1797,6 +1800,67 @@ mod tests {
     }
 
     #[test]
+    fn session_binding_decodes_complete_four_object_rx_and_tx_chains() {
+        let (mut session, events) = physical_correlation_session();
+        session.objects.drain(..6);
+        let decoded = decode_trace_events(&encoded_events(&events)).unwrap();
+        validate_session_binding(&session, &decoded).unwrap();
+
+        let mut wrong_mapping = session.clone();
+        wrong_mapping.objects[0].name = "wrong_queue".into();
+        assert!(validate_session_binding(&wrong_mapping, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("acceptance object mapping"));
+
+        let mut all_names_wrong = session.clone();
+        for (index, object) in all_names_wrong.objects.iter_mut().enumerate() {
+            object.name = format!("object_{index}");
+        }
+        assert!(validate_session_binding(&all_names_wrong, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("acceptance object mapping"));
+
+        let mut wrong_kind = session.clone();
+        wrong_kind.objects[0].kind = 2;
+        assert!(validate_session_binding(&wrong_kind, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("acceptance object mapping"));
+
+        let mut wrong_context = events.clone();
+        wrong_context[1].flags = 1;
+        assert!(validate_session_binding(&session, &wrong_context)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid context or task ownership"));
+
+        let mut wrong_owner = events.clone();
+        wrong_owner[1].task_id = 7;
+        assert!(validate_session_binding(&session, &wrong_owner)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid context or task ownership"));
+
+        let mut zero_token = events.clone();
+        zero_token[1].arg2 = 0;
+        assert!(validate_session_binding(&session, &zero_token)
+            .unwrap_err()
+            .to_string()
+            .contains("zero token"));
+
+        let mut reordered = events;
+        reordered.swap(2, 3);
+        reordered[2].timestamp = 102;
+        reordered[3].timestamp = 103;
+        assert!(validate_session_binding(&session, &reordered)
+            .unwrap_err()
+            .to_string()
+            .contains("callback chain is malformed"));
+    }
+
+    #[test]
     fn session_binding_rejects_acceptance_catalog_hybrids() {
         let (session, events) = physical_correlation_session();
         let mut probe_only = session.clone();
@@ -1811,7 +1875,7 @@ mod tests {
             assert!(validate_session_binding(&hybrid, &events)
                 .unwrap_err()
                 .to_string()
-                .contains("exactly 6 or 10 entries"));
+                .contains("exactly 4, 6, or 10 entries"));
         }
     }
 

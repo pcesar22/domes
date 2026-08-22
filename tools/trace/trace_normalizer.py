@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 FORMAT_VERSION = 1
-NORMALIZER_VERSION = "1.0.1"
+NORMALIZER_VERSION = "1.0.2"
 EVENT_SIZE = 16
 MAX_TRACE_DUMP_BYTES = 32 * 1024
 TRACE_LINE = re.compile(r"DOMES_QEMU_TRACE schema=(\d+) index=(\d+) raw=([0-9a-f]{32})")
@@ -357,7 +357,7 @@ def normalize_trace(
         raise TraceNormalizationError(
             "trace has malformed stable object mappings"
         ) from error
-    if object_ids not in (PROBE_OBJECTS, PHYSICAL_OBJECTS):
+    if object_ids not in (ESP_NOW_OBJECTS, PROBE_OBJECTS, PHYSICAL_OBJECTS):
         raise TraceNormalizationError("trace has invalid stable object mappings")
     required_tasks = [
         task for task in manifest.get("tasks", []) if task.get("presence") == "required"
@@ -457,7 +457,10 @@ def normalize_trace(
         (CAUSAL_COMPLETE, 5),
     ]
     actual_causal = [(event["type"], event["arg1"]) for event in causal]
-    if actual_causal != required:
+    has_probe_objects = all(
+        object_ids.get(key) == value for key, value in PROBE_OBJECTS.items()
+    )
+    if has_probe_objects and actual_causal != required:
         raise TraceNormalizationError(
             "causal chain is missing, duplicated, reordered, or contains extra edges"
         )
@@ -626,7 +629,9 @@ def normalize_trace(
         if event["type"] in (ISR_ENTER, ISR_EXIT, CALLBACK_BEGIN, CALLBACK_END)
     }
     completions = [event for event in explicit if event["type"] == CAUSAL_COMPLETE]
-    if len(irq_cores) != 1 or len(completions) != 1 or completions[0]["task_id"] != 1:
+    if has_probe_objects and (
+        len(irq_cores) != 1 or len(completions) != 1 or completions[0]["task_id"] != 1
+    ):
         raise TraceNormalizationError(
             "causal ownership does not resolve to one ISR core and main task"
         )
@@ -653,7 +658,7 @@ def normalize_trace(
         ):
             raise TraceNormalizationError("task-side causal event is not owned by main")
     overhead_events = [event for event in events if event["type"] == TRACE_OVERHEAD]
-    if (
+    if has_probe_objects and (
         len(overhead_events) != 1
         or overhead_events[0]["task_id"] != 1
         or overhead_events[0]["context"] != 0
@@ -691,12 +696,16 @@ def normalize_trace(
         "objects": {str(key): object_ids[key] for key in sorted(object_ids)},
         "dropped_count": dropped,
         "discontinuity_count": discontinuities,
-        "causal_id": 1,
+        "causal_id": 1 if has_probe_objects else None,
         "causal_positions": positions,
-        "overhead_us": {
-            "disabled_32_records": overhead_events[0]["arg1"],
-            "enabled_32_records": overhead_events[0]["arg2"],
-        },
+        "overhead_us": (
+            {
+                "disabled_32_records": overhead_events[0]["arg1"],
+                "enabled_32_records": overhead_events[0]["arg2"],
+            }
+            if has_probe_objects
+            else None
+        ),
         "events": events,
     }
     normalized["normalized_sha256"] = hashlib.sha256(_canonical(normalized)).hexdigest()
@@ -888,7 +897,7 @@ def validate_session(
         object_id: {"kind": object_kinds[object_id], "name": object_names[object_id]}
         for object_id in sorted(object_names)
     }
-    if resolved_objects not in (PROBE_OBJECTS, PHYSICAL_OBJECTS):
+    if resolved_objects not in (ESP_NOW_OBJECTS, PROBE_OBJECTS, PHYSICAL_OBJECTS):
         raise TraceNormalizationError(
             "session object IDs, kinds, or names are unresolved"
         )
