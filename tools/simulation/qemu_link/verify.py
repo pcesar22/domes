@@ -88,7 +88,7 @@ def symbol(text: str, name: str) -> int:
 class QtestClient:
     """Minimal qtest socket client that exercises the compiled patched device."""
 
-    def __init__(self, binary: Path):
+    def __init__(self, binary: Path, extra_args: list[str] | None = None):
         self.temp = tempfile.TemporaryDirectory(prefix="domes-link-qtest-")
         self.socket_path = Path(self.temp.name) / "qtest.sock"
         self.process = subprocess.Popen(
@@ -99,6 +99,7 @@ class QtestClient:
                 "-display",
                 "none",
                 "-S",
+                *(extra_args or []),
                 "-qtest",
                 f"unix:{self.socket_path},server=on,wait=off",
             ],
@@ -242,6 +243,82 @@ def run_qtest_rejections(binary: Path, abi: dict[str, object]) -> dict[str, bool
     cases["consume_sequence"] = qtest_case(
         binary, lambda c: (c.write(registers["rx_consume"], 1), bit(c, "sequence"))[1]
     )
+    return cases
+
+
+def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str, bool]:
+    """Exercise production wire bytes through the in-process QEMU actor model."""
+    registers = {name: int(value, 0) for name, value in abi["registers"].items()}
+    client = QtestClient(
+        binary,
+        [
+            "-global",
+            "domes-link.scenario-model=1",
+            "-global",
+            "domes-link.dut-role=1",
+        ],
+    )
+
+    def submit(payload: bytes, token: int) -> None:
+        client.write(registers["tx_destination_low"], 2)
+        client.write(registers["tx_destination_high"], 0x200)
+        for offset in range(0, len(payload), 4):
+            client.write(
+                registers["tx_payload"] + offset,
+                int.from_bytes(payload[offset : offset + 4], "little"),
+            )
+        client.write(registers["tx_length"], len(payload))
+        client.write(registers["tx_correlation"], token)
+        client.write(registers["tx_submit"], 1)
+
+    def wait_for(expected_status: int) -> bool:
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if client.read(registers["tx_status"]) == expected_status:
+                return True
+            time.sleep(0.005)
+        return False
+
+    cases: dict[str, bool] = {}
+    try:
+        mac = bytes((2, 0, 0, 0, 0, 1))
+        ping = bytes((2,)) + mac + (1).to_bytes(4, "little")
+        submit(ping, 41)
+        cases["ping_to_pong"] = (
+            wait_for(2)
+            and client.read(registers["rx_length"]) == 11
+            and (client.read(registers["rx_payload"]) & 0xFF) == 3
+            and client.read(registers["rx_correlation"]) == 41
+        )
+        client.write(registers["rx_consume"], 1)
+        client.write(registers["interrupt_ack"], abi["interrupt_bits"]["tx_complete"])
+
+        arm = (
+            bytes((0x11,))
+            + mac
+            + (2).to_bytes(4, "little")
+            + (7).to_bytes(4, "little")
+            + (3000).to_bytes(4, "little")
+            + bytes((3,))
+        )
+        submit(arm, 42)
+        cases["arm_to_touch_event"] = (
+            wait_for(2)
+            and client.read(registers["rx_length"]) == 20
+            and (client.read(registers["rx_payload"]) & 0xFF) == 0x20
+            and (client.read(registers["rx_payload"] + 8) >> 24) == 7
+            and client.read(registers["rx_correlation"]) == 42
+        )
+        client.write(registers["rx_consume"], 1)
+        client.write(registers["interrupt_ack"], abi["interrupt_bits"]["tx_complete"])
+
+        submit(bytes((0xFF,)) + mac + (3).to_bytes(4, "little"), 43)
+        cases["unexpected_wire_fails_closed"] = wait_for(3) and bool(
+            client.read(registers["sticky_status"])
+            & abi["sticky_bits"]["model_failure"]
+        )
+    finally:
+        client.close()
     return cases
 
 
@@ -452,10 +529,14 @@ def verify(
         failures.append("adapter compile-time physical-image denial missing")
 
     qtest = None
+    actor_qtest = None
     if qemu_binary:
         qtest = run_qtest_rejections(qemu_binary.resolve(), abi)
         if not all(qtest.values()):
             failures.append("one or more patched-device qtest rejections failed")
+        actor_qtest = run_qtest_functional_actor(qemu_binary.resolve(), abi)
+        if not all(actor_qtest.values()):
+            failures.append("one or more functional-actor qtest cases failed")
     runtime = None
     if runtime_log:
         runtime = validate_runtime_log(runtime_log)
@@ -473,6 +554,7 @@ def verify(
         "changed_line_count": changed_lines,
         "prohibited_paths": prohibited,
         "qtest_rejection_cases": qtest,
+        "qtest_functional_actor_cases": actor_qtest,
         "runtime_trace": runtime,
         "physical_source_closure": "denied" if not physical_sources else "reachable",
         "failures": failures,

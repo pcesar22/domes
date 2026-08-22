@@ -1,12 +1,13 @@
 diff --git a/hw/misc/domes_link.c b/hw/misc/domes_link.c
 new file mode 100644
-index 0000000..4898d99
+index 0000000000..fe642931fd
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,256 @@
+@@ -0,0 +1,385 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
++#include "hw/qdev-properties.h"
 +#include "qemu/module.h"
 +
 +#define MAGIC 0x444c4e4b
@@ -43,6 +44,87 @@ index 0000000..4898d99
 +#define ST_OVERWRITE BIT(6)
 +#define ST_UNKNOWN_VERSION BIT(7)
 +enum { TX_IDLE, TX_PENDING, TX_SUCCESS, TX_FAILURE };
++enum { SCENARIO_LOOPBACK, SCENARIO_FUNCTIONAL_PEER_V1 };
++enum { DUT_ROLE_MASTER = 1, DUT_ROLE_SLAVE = 2 };
++enum { MSG_BEACON = 0x01, MSG_PING = 0x02, MSG_PONG = 0x03,
++       MSG_JOIN_GAME = 0x10, MSG_ARM_TOUCH = 0x11, MSG_SET_COLOR = 0x12,
++       MSG_STOP_ALL = 0x13, MSG_SIMULATE_TOUCH = 0x14,
++       MSG_TOUCH_EVENT = 0x20, MSG_TIMEOUT_EVENT = 0x21 };
++
++static const uint8_t actor_mac[6] = { 0x02, 0, 0, 0, 0, 0x02 };
++
++static bool event_before(const DomesLinkEvent *a, const DomesLinkEvent *b)
++{
++    if (a->deadline_ns != b->deadline_ns) return a->deadline_ns < b->deadline_ns;
++    if (a->event_class_priority != b->event_class_priority) {
++        return a->event_class_priority < b->event_class_priority;
++    }
++    if (a->source_id != b->source_id) return a->source_id < b->source_id;
++    if (a->destination_id != b->destination_id) return a->destination_id < b->destination_id;
++    return a->sequence < b->sequence;
++}
++
++static bool enqueue_event(DomesLinkState *s, DomesLinkEvent event)
++{
++    uint32_t index;
++    if (s->event_count == DOMES_LINK_EVENT_CAPACITY) {
++        s->sticky |= ST_OVERFLOW;
++        return false;
++    }
++    event.sequence = s->next_sequence++;
++    for (index = s->event_count; index > 0 && event_before(&event, &s->events[index - 1]); index--) {
++        s->events[index] = s->events[index - 1];
++    }
++    s->events[index] = event;
++    s->event_count++;
++    return true;
++}
++
++static uint32_t wire_size(uint8_t type)
++{
++    switch (type) {
++    case MSG_BEACON: case MSG_PING: case MSG_PONG: case MSG_JOIN_GAME: case MSG_STOP_ALL:
++        return 11;
++    case MSG_ARM_TOUCH: case MSG_TOUCH_EVENT: return 20;
++    case MSG_SET_COLOR: return 14;
++    case MSG_SIMULATE_TOUCH: return 16;
++    case MSG_TIMEOUT_EVENT: return 15;
++    default: return 0;
++    }
++}
++
++static bool actor_transition(DomesLinkState *s, DomesLinkEvent *event)
++{
++    uint8_t type = s->tx_payload[0];
++    uint32_t expected = wire_size(type);
++    uint8_t response = 0;
++    if (!expected || expected != s->tx_length || (s->dut_role != DUT_ROLE_MASTER &&
++                                                  s->dut_role != DUT_ROLE_SLAVE)) {
++        return false;
++    }
++    if (type == MSG_PING) response = MSG_PONG;
++    else if (type == MSG_BEACON) response = MSG_BEACON;
++    else if (s->dut_role == DUT_ROLE_MASTER &&
++             (type == MSG_ARM_TOUCH || type == MSG_SIMULATE_TOUCH)) response = MSG_TOUCH_EVENT;
++    else if (type == MSG_JOIN_GAME || type == MSG_SET_COLOR || type == MSG_STOP_ALL) return true;
++    else return false;
++
++    event->deadline_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->peer_delay_ns;
++    event->event_class_priority = 1;
++    event->source_id = 2;
++    event->destination_id = 1;
++    event->correlation = s->tx_correlation;
++    event->length = wire_size(response);
++    event->payload[0] = response;
++    memcpy(&event->payload[1], actor_mac, sizeof(actor_mac));
++    stl_le_p(&event->payload[7], event->deadline_ns / 1000);
++    if (response == MSG_TOUCH_EVENT) {
++        memcpy(&event->payload[11], &s->tx_payload[11], 4);
++        stl_le_p(&event->payload[15], 500);
++        event->payload[19] = type == MSG_SIMULATE_TOUCH ? s->tx_payload[15] : 0;
++    }
++    return true;
++}
 +
 +static void update_irq(DomesLinkState *s)
 +{
@@ -99,9 +181,35 @@ index 0000000..4898d99
 +    }
 +}
 +
++static void deliver_due(void *opaque)
++{
++    DomesLinkState *s = opaque;
++    int64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++    while (s->event_count && s->events[0].deadline_ns <= now_ns) {
++        DomesLinkEvent event = s->events[0];
++        memmove(&s->events[0], &s->events[1],
++                (s->event_count - 1) * sizeof(s->events[0]));
++        s->event_count--;
++        if (s->irq_status & IRQ_RX) {
++            s->sticky |= ST_OVERFLOW | ST_OVERWRITE;
++            break;
++        }
++        s->rx_source_low = 0x00000002;
++        s->rx_source_high = 0x00000200;
++        s->rx_rssi = (uint8_t)-42;
++        s->rx_length = event.length;
++        s->rx_correlation = event.correlation;
++        memcpy(s->rx_payload, event.payload, event.length);
++        s->irq_status |= IRQ_RX;
++    }
++    if (s->event_count) timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
++    update_irq(s);
++}
++
 +static void complete(void *opaque)
 +{
 +    DomesLinkState *s = opaque;
++    DomesLinkEvent event = { 0 };
 +    if (s->tx_status != TX_PENDING || !s->tx_correlation || !s->tx_length ||
 +        s->tx_length > DOMES_LINK_MAX_PAYLOAD) {
 +        s->sticky |= ST_MODEL_FAILURE;
@@ -112,16 +220,25 @@ index 0000000..4898d99
 +    }
 +    s->tx_status = TX_SUCCESS;
 +    s->irq_status |= IRQ_TX;
-+    if (s->irq_status & IRQ_RX) {
-+        s->sticky |= ST_OVERFLOW | ST_OVERWRITE;
-+    } else {
-+        s->rx_source_low = 0x00000002;
-+        s->rx_source_high = 0x00000200;
-+        s->rx_rssi = (uint8_t)-42;
-+        s->rx_length = s->tx_length;
-+        s->rx_correlation = s->tx_correlation;
-+        memcpy(s->rx_payload, s->tx_payload, s->tx_length);
-+        s->irq_status |= IRQ_RX;
++    if (s->scenario_model == SCENARIO_LOOPBACK) {
++        if (s->irq_status & IRQ_RX) {
++            s->sticky |= ST_OVERFLOW | ST_OVERWRITE;
++        } else {
++            s->rx_source_low = 0x00000002;
++            s->rx_source_high = 0x00000200;
++            s->rx_rssi = (uint8_t)-42;
++            s->rx_length = s->tx_length;
++            s->rx_correlation = s->tx_correlation;
++            memcpy(s->rx_payload, s->tx_payload, s->tx_length);
++            s->irq_status |= IRQ_RX;
++        }
++    } else if (s->scenario_model != SCENARIO_FUNCTIONAL_PEER_V1 ||
++               !actor_transition(s, &event)) {
++        s->sticky |= ST_MODEL_FAILURE;
++        s->tx_status = TX_FAILURE;
++    } else if (event.length && enqueue_event(s, event)) {
++        timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
++        deliver_due(s);
 +    }
 +    update_irq(s);
 +}
@@ -220,8 +337,11 @@ index 0000000..4898d99
 +    s->tx_correlation = 0; s->tx_status = TX_IDLE;
 +    s->rx_source_low = s->rx_source_high = s->rx_rssi = s->rx_length = 0;
 +    s->rx_correlation = s->irq_status = s->irq_mask = s->sticky = 0;
++    s->event_count = s->next_sequence = 0;
 +    memset(s->tx_payload, 0, sizeof(s->tx_payload));
 +    memset(s->rx_payload, 0, sizeof(s->rx_payload));
++    memset(s->events, 0, sizeof(s->events));
++    timer_del(s->delivery_timer);
 +    update_irq(s);
 +}
 +
@@ -229,12 +349,14 @@ index 0000000..4898d99
 +{
 +    DomesLinkState *s = DOMES_LINK(dev);
 +    s->completion_bh = qemu_bh_new(complete, s);
++    s->delivery_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, deliver_due, s);
 +}
 +
 +static void link_finalize(Object *obj)
 +{
 +    DomesLinkState *s = DOMES_LINK(obj);
 +    qemu_bh_delete(s->completion_bh);
++    timer_free(s->delivery_timer);
 +}
 +
 +static void link_init(Object *obj)
@@ -250,6 +372,13 @@ index 0000000..4898d99
 +    DeviceClass *dc = DEVICE_CLASS(klass);
 +    ResettableClass *rc = RESETTABLE_CLASS(klass);
 +    dc->realize = link_realize;
++    static const Property properties[] = {
++        DEFINE_PROP_UINT32("scenario-model", DomesLinkState, scenario_model, SCENARIO_LOOPBACK),
++        DEFINE_PROP_UINT32("dut-role", DomesLinkState, dut_role, DUT_ROLE_MASTER),
++        DEFINE_PROP_UINT64("peer-delay-ns", DomesLinkState, peer_delay_ns, 0),
++        DEFINE_PROP_END_OF_LIST(),
++    };
++    device_class_set_props(dc, properties);
 +    rc->phases.hold = link_reset;
 +}
 +
@@ -261,7 +390,7 @@ index 0000000..4898d99
 +static void link_register_types(void) { type_register_static(&link_info); }
 +type_init(link_register_types)
 diff --git a/hw/misc/meson.build b/hw/misc/meson.build
-index 4c2b5b3..dca3900 100644
+index 4c2b5b3cae..dca39005d1 100644
 --- a/hw/misc/meson.build
 +++ b/hw/misc/meson.build
 @@ -159,6 +159,7 @@ system_ss.add(when: 'CONFIG_RISCV_ESP32C3', if_true: files(
@@ -273,7 +402,7 @@ index 4c2b5b3..dca3900 100644
    'ssi_psram.c',
    'esp_sha.c',
 diff --git a/hw/xtensa/esp32s3.c b/hw/xtensa/esp32s3.c
-index 091657e..c21cf04 100644
+index 091657e842..c21cf04bb5 100644
 --- a/hw/xtensa/esp32s3.c
 +++ b/hw/xtensa/esp32s3.c
 @@ -62,6 +62,7 @@
@@ -321,26 +450,41 @@ index 091657e..c21cf04 100644
 -
 diff --git a/include/hw/misc/domes_link.h b/include/hw/misc/domes_link.h
 new file mode 100644
-index 0000000..e7c686c
+index 0000000000..61b520bd68
 --- /dev/null
 +++ b/include/hw/misc/domes_link.h
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,34 @@
 +#pragma once
 +#include "hw/sysbus.h"
 +#include "qemu/main-loop.h"
++#include "qemu/timer.h"
 +
 +#define TYPE_DOMES_LINK "domes-link"
 +OBJECT_DECLARE_SIMPLE_TYPE(DomesLinkState, DOMES_LINK)
 +#define DOMES_LINK_MMIO_SIZE 0x1000
 +#define DOMES_LINK_MAX_PAYLOAD 250
++#define DOMES_LINK_EVENT_CAPACITY 8
++
++typedef struct DomesLinkEvent {
++    int64_t deadline_ns;
++    uint32_t event_class_priority;
++    uint32_t source_id, destination_id, sequence;
++    uint32_t correlation, length;
++    uint8_t payload[DOMES_LINK_MAX_PAYLOAD];
++} DomesLinkEvent;
 +
 +struct DomesLinkState {
 +    SysBusDevice parent_obj;
 +    MemoryRegion mmio;
 +    qemu_irq irq;
 +    QEMUBH *completion_bh;
++    QEMUTimer *delivery_timer;
 +    uint32_t tx_destination_low, tx_destination_high, tx_length, tx_correlation, tx_status;
 +    uint32_t rx_source_low, rx_source_high, rx_rssi, rx_length, rx_correlation;
 +    uint32_t irq_status, irq_mask, sticky;
 +    uint8_t tx_payload[256], rx_payload[256];
++    DomesLinkEvent events[DOMES_LINK_EVENT_CAPACITY];
++    uint32_t event_count, next_sequence;
++    uint32_t scenario_model, dut_role;
++    uint64_t peer_delay_ns;
 +};

@@ -24,5 +24,19 @@
   "sticky_bits": {
     "overflow": 1, "invalid_access": 2, "exhausted": 4, "model_failure": 8,
     "sequence": 16, "truncated": 32, "overwrite": 64, "unknown_version": 128
+  },
+  "deterministic_peer_model": {
+    "schema_version": 1,
+    "model": "functional-peer-v1",
+    "activation": "pre-reset QOM properties only",
+    "scenario_model_value": 1,
+    "dut_roles": {"master": 1, "slave": 2},
+    "event_capacity": 8,
+    "event_order": [
+      "deadline_ns", "event_class_priority", "source_id", "destination_id", "sequence"
+    ],
+    "clock": "QEMU_CLOCK_VIRTUAL",
+    "codec": "peer-drill-legacy-v1",
+    "runtime_input": "denied"
   }
 }

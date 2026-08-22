@@ -27,6 +27,8 @@ class QemuLinkVerificationTest(unittest.TestCase):
         abi = MODULE.json.loads(MODULE.ABI.read_text())
         cases = MODULE.run_qtest_rejections(binary, abi)
         self.assertTrue(all(cases.values()), cases)
+        actor_cases = MODULE.run_qtest_functional_actor(binary, abi)
+        self.assertTrue(all(actor_cases.values()), actor_cases)
 
     def test_runtime_validator_rejects_hard_coded_result_without_trace(self):
         with tempfile.TemporaryDirectory() as directory:
