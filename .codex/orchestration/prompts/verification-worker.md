@@ -18,6 +18,12 @@ judge can approve the new head. The
 host broker owns and revalidates the registered CP2102N endpoints and
 retains device evidence. Never invoke a device path or hardware tool directly.
 
+For a ticket-authorized `espnow-regression`, first request an ordinary `flash` for both board
+aliases, then request the fleet-wide regression without a board argument. The broker performs the
+fixed disabled lifecycle, complementary-role discovery, three simulation-off bidirectional
+benchmark sessions, and the separate simulated drill. Request `trace-dump` for each board afterward
+when the ticket requires retained trace artifacts.
+
 The broker cannot perform `hw-test`, erase, NVS/factory reset, eFuse, secure boot, encryption, key,
 release, or arbitrary command execution. For `flash` and `ota`, pass no path; the broker builds the
 pushed, judge-approved source in its private clean clone. `flash-trace-acceptance` is a separate finite profile

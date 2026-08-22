@@ -42,6 +42,7 @@ OPERATIONS = frozenset(
         "trace-clear",
         "trace-status",
         "trace-dump",
+        "espnow-regression",
         "flash",
         "flash-trace-acceptance",
         "ota",
@@ -1683,6 +1684,175 @@ def _selected_flash(
     raise BrokerError("no successful board-local flash provenance is available")
 
 
+def _espnow_status_fields(output: str) -> tuple[str, int, int]:
+    """Parse only the bounded fields required by the two-board acceptance drill."""
+    state = re.search(r"(?im)^State:\s*([a-z-]+)\s*$", output)
+    peers = re.search(r"(?im)^Peers:\s*(\d+)\s*$", output)
+    tx_fails = re.search(r"(?im)^TX fails:\s*(\d+)\s*$", output)
+    if state is None or peers is None or tx_fails is None:
+        raise BrokerError("ESP-NOW status response is incomplete")
+    return state.group(1).casefold(), int(peers.group(1)), int(tx_fails.group(1))
+
+
+def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str, Any]:
+    """Run the fixed two-NFF benchmark and simulated-drill acceptance lifecycle."""
+    if set(cap.boards) != {0, 1}:
+        raise BrokerError("ESP-NOW regression requires both registered board aliases")
+
+    selected_flashes: dict[str, dict[str, Any]] = {}
+    for board in (0, 1):
+        head, profile, image_sha256, _provenance = _selected_flash(cap, board)
+        if head != artifact_head or profile != "default":
+            raise BrokerError(
+                "ESP-NOW regression requires an exact-head default flash on both boards"
+            )
+        selected_flashes[str(board)] = {
+            "artifact_head": head,
+            "build_profile": profile,
+            "domes_bin_sha256": image_sha256,
+        }
+
+    cli = _cli_path(cap)
+    transcript: list[str] = []
+    invocation = 0
+
+    def run_cli(board: int, *arguments: str, timeout: float = 90) -> str:
+        nonlocal invocation
+        invocation += 1
+        port = _verified_port(cap, board)
+        returncode, stdout, stderr = _run_with_bounded_logs(
+            cap,
+            _resource_limited(cap, [cli, "--port", port, *arguments]),
+            f"espnow-regression-{invocation:03d}",
+            timeout,
+        )
+        transcript.append(
+            json.dumps(
+                {
+                    "board": board,
+                    "arguments": list(arguments),
+                    "returncode": returncode,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                },
+                sort_keys=True,
+            )
+        )
+        if returncode:
+            raise BrokerError("ESP-NOW regression command failed")
+        return stdout
+
+    def status(board: int) -> tuple[str, int, int]:
+        return _espnow_status_fields(run_cli(board, "espnow", "status"))
+
+    def wait_for_disabled(phase: str) -> None:
+        for _attempt in range(20):
+            states = (status(0)[0], status(1)[0])
+            if states == ("disabled", "disabled"):
+                return
+            time.sleep(1)
+        raise BrokerError(f"ESP-NOW did not reach disabled state during {phase}")
+
+    def wait_for_peers(phase: str) -> tuple[int, int]:
+        for _attempt in range(30):
+            first, second = status(0), status(1)
+            if (
+                {first[0], second[0]} == {"master", "slave"}
+                and first[1] == 1
+                and second[1] == 1
+            ):
+                return (0, 1) if first[0] == "master" else (1, 0)
+            time.sleep(1)
+        raise BrokerError(f"ESP-NOW peers did not converge during {phase}")
+
+    for board in (0, 1):
+        run_cli(board, "feature", "disable", "esp-now")
+    wait_for_disabled("initial benchmark state")
+    for board in (0, 1):
+        run_cli(board, "espnow", "sim-mode", "off")
+
+    run_cli(0, "feature", "enable", "esp-now")
+    time.sleep(1)
+    run_cli(0, "feature", "disable", "esp-now")
+    wait_for_disabled("single-board discovery cancellation")
+
+    benchmark_count = 0
+    for session in range(1, 4):
+        for board in (0, 1):
+            run_cli(board, "feature", "enable", "esp-now")
+        master, slave = wait_for_peers(f"benchmark session {session}")
+        for board in (slave, master):
+            output = run_cli(board, "espnow", "bench", "--rounds", "100", timeout=180)
+            if (
+                not re.search(
+                    r"(?m)^Rounds:\s*100/100 completed \(0 failed\)\s*$", output
+                )
+                or "Mean RTT:" not in output
+            ):
+                raise BrokerError("ESP-NOW benchmark did not complete 100/100 rounds")
+            benchmark_count += 1
+        for board in (0, 1):
+            run_cli(board, "feature", "disable", "esp-now")
+        wait_for_disabled(f"benchmark session {session}")
+
+    for board in (0, 1):
+        run_cli(board, "trace", "stop")
+        run_cli(board, "trace", "clear")
+        run_cli(board, "trace", "start")
+        run_cli(
+            board,
+            "espnow",
+            "sim-mode",
+            "on",
+            "--delay-ms",
+            "100",
+            "--pad",
+            "0",
+        )
+    for board in (0, 1):
+        run_cli(board, "feature", "enable", "esp-now")
+    wait_for_peers("simulated drill")
+    time.sleep(35)
+    final = [status(board) for board in (0, 1)]
+    if any(
+        state != "disabled" or peers != 1 or failures != 0
+        for state, peers, failures in final
+    ):
+        raise BrokerError("ESP-NOW simulated drill did not finish cleanly")
+
+    encoded = ("\n".join(transcript) + "\n").encode()
+    ensure_capability_evidence_budget(cap, len(encoded))
+    transcript_path = cap.evidence / f"espnow-regression-{artifact_head[:16]}.jsonl"
+    transcript_path.write_bytes(encoded)
+    os.chmod(transcript_path, 0o600)
+    digest = hashlib.sha256(encoded).hexdigest()
+    summary = {
+        "kind": "controller-two-board-espnow-regression-v1",
+        "artifact_head": artifact_head,
+        "boards": [0, 1],
+        "selected_flashes": selected_flashes,
+        "benchmark_sessions": 3,
+        "benchmarks": benchmark_count,
+        "rounds_per_benchmark": 100,
+        "benchmark_failures": 0,
+        "discovery_cancellation": "passed",
+        "drill": "passed",
+        "final_states": [record[0] for record in final],
+        "final_peer_counts": [record[1] for record in final],
+        "final_tx_failures": [record[2] for record in final],
+        "transcript_sha256": digest,
+    }
+    return {
+        "returncode": 0,
+        "artifact_head": artifact_head,
+        "stdout": json.dumps(summary, sort_keys=True),
+        "stderr": "",
+        "artifact_id": f"espnow-regression-{digest[:16]}",
+        "sha256": digest,
+        "espnow_regression": summary,
+    }
+
+
 def _bwrap(cap: Capability) -> str:
     return _trusted_path(cap, "bwrap")
 
@@ -2457,6 +2627,12 @@ def execute(cap: Capability, request: dict[str, Any]) -> dict[str, Any]:
             "artifact_head": artifact_head,
             "returncode": 0,
         }
+    if operation == "espnow-regression":
+        result = _execute_espnow_regression(cap, artifact_head)
+        if _workspace_head(cap) != artifact_head:
+            raise BrokerError("workspace artifact changed during hardware operation")
+        ensure_capability_evidence_budget(cap)
+        return result
     port = _verified_port(
         cap, request.get("board")
     )  # identity is checked immediately before action
@@ -2746,6 +2922,7 @@ def _append_manifest(
         "trace_relay": result.get("trace_relay"),
         "normalization": result.get("normalization"),
         "trace_identity": result.get("trace_identity"),
+        "espnow_regression": result.get("espnow_regression"),
     }
     previous = ""
     if manifest.is_file():

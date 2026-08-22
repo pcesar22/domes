@@ -67,7 +67,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.timeout is not None
         else (
             1800.0
-            if args.operation in {"flash", "flash-trace-acceptance", "ota"}
+            if args.operation
+            in {"flash", "flash-trace-acceptance", "ota", "espnow-regression"}
             else 60.0
         )
     )

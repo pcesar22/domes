@@ -164,6 +164,7 @@ HARDWARE_OPERATIONS = frozenset(
         "trace-clear",
         "trace-status",
         "trace-dump",
+        "espnow-regression",
         "flash",
         "flash-trace-acceptance",
         "ota",
@@ -3951,7 +3952,7 @@ def attest_hardware_manifest(
                 f"issue #{item.ticket.number}: hardware manifest artifact binding is invalid"
             )
         if (
-            operation not in {"artifact-hash", "invalid"}
+            operation not in {"artifact-hash", "espnow-regression", "invalid"}
             and event.get("board") not in allowed_boards
         ):
             raise ControlError(
@@ -4268,6 +4269,52 @@ def attest_hardware_manifest(
                 "replay_sha256": normalization["replay_sha256"],
                 "semantic_sha256": normalization["semantic_sha256"],
             }
+        elif operation == "espnow-regression":
+            regression = event.get("espnow_regression")
+            selected = (
+                {
+                    str(board): {
+                        "artifact_head": active_board_images[board]["artifact_head"],
+                        "build_profile": active_board_images[board]["build_profile"],
+                        "domes_bin_sha256": active_board_images[board][
+                            "domes_bin_sha256"
+                        ],
+                    }
+                    for board in (0, 1)
+                }
+                if set(active_board_images) >= {0, 1}
+                else None
+            )
+            valid = (
+                isinstance(regression, dict)
+                and regression.get("kind")
+                == "controller-two-board-espnow-regression-v1"
+                and regression.get("artifact_head") == artifact_head
+                and regression.get("boards") == [0, 1]
+                and regression.get("selected_flashes") == selected
+                and regression.get("benchmark_sessions") == 3
+                and regression.get("benchmarks") == 6
+                and regression.get("rounds_per_benchmark") == 100
+                and regression.get("benchmark_failures") == 0
+                and regression.get("discovery_cancellation") == "passed"
+                and regression.get("drill") == "passed"
+                and regression.get("final_states") == ["disabled", "disabled"]
+                and regression.get("final_peer_counts") == [1, 1]
+                and regression.get("final_tx_failures") == [0, 0]
+                and re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(regression.get("transcript_sha256", "")),
+                )
+                is not None
+                and event.get("artifact_sha256") == regression.get("transcript_sha256")
+                and event.get("artifact_id")
+                == f"espnow-regression-{str(regression.get('transcript_sha256'))[:16]}"
+            )
+            if not valid:
+                raise ControlError(
+                    f"issue #{item.ticket.number}: ESP-NOW regression artifact binding is invalid"
+                )
+            event_summary["espnow_regression"] = regression
         previous = str(event_digest)
     unrestored = sorted(
         board

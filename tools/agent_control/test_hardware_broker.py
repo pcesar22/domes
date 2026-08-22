@@ -121,6 +121,100 @@ class HardwareBrokerTest(unittest.TestCase):
                     self.request(ordinary, operation="flash-trace-acceptance", board=0),
                 )
 
+    def test_espnow_regression_is_explicit_and_status_parser_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cap = self.capability(Path(directory), ["espnow-regression"])
+            self.assertEqual(
+                ("espnow-regression", None),
+                broker.validate_request(
+                    cap,
+                    self.request(cap, operation="espnow-regression"),
+                ),
+            )
+        self.assertEqual(
+            ("master", 1, 0),
+            broker._espnow_status_fields("State: master\nPeers: 1\nTX fails: 0\n"),
+        )
+        with self.assertRaisesRegex(broker.BrokerError, "incomplete"):
+            broker._espnow_status_fields("State: master\nPeers: 1\n")
+
+    def test_espnow_regression_runs_fixed_two_board_lifecycle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "evidence"
+            evidence.mkdir()
+            cap = broker.Capability(
+                101,
+                "a" * 40,
+                "b" * 40,
+                root,
+                evidence,
+                ("espnow-regression",),
+                (0, 1),
+                "token",
+            )
+            enabled = {0: False, 1: False}
+            drill = {"active": False}
+
+            def run(_cap, argv, _name, _timeout):
+                board = int(argv[argv.index("--port") + 1][-1])
+                command = argv[argv.index("--port") + 2 :]
+                if command[:2] == ["feature", "enable"]:
+                    enabled[board] = True
+                elif command[:2] == ["feature", "disable"]:
+                    enabled[board] = False
+                elif command[:3] == ["espnow", "sim-mode", "on"]:
+                    drill["active"] = True
+                if command == ["espnow", "status"]:
+                    if enabled[board]:
+                        state = "master" if board == 0 else "slave"
+                        peers = 1 if all(enabled.values()) else 0
+                    else:
+                        state = "disabled"
+                        peers = 1 if drill["active"] else 0
+                    return 0, f"State: {state}\nPeers: {peers}\nTX fails: 0\n", ""
+                if command[:2] == ["espnow", "bench"]:
+                    return (
+                        0,
+                        "Rounds: 100/100 completed (0 failed)\nMean RTT: 1 ms\n",
+                        "",
+                    )
+                return 0, "ok\n", ""
+
+            def sleep(seconds):
+                if seconds == 35:
+                    enabled[0] = False
+                    enabled[1] = False
+
+            selected = (
+                "b" * 40,
+                "default",
+                "c" * 64,
+                {"source_head": "b" * 40},
+            )
+            with (
+                mock.patch.object(broker, "_selected_flash", return_value=selected),
+                mock.patch.object(broker, "_cli_path", return_value="/trusted/cli"),
+                mock.patch.object(
+                    broker,
+                    "_verified_port",
+                    side_effect=lambda _cap, board: f"/dev/fake{board}",
+                ),
+                mock.patch.object(
+                    broker, "_resource_limited", side_effect=lambda _cap, argv: argv
+                ),
+                mock.patch.object(broker, "_run_with_bounded_logs", side_effect=run),
+                mock.patch.object(broker.time, "sleep", side_effect=sleep),
+            ):
+                result = broker._execute_espnow_regression(cap, "b" * 40)
+            summary = result["espnow_regression"]
+            self.assertEqual(6, summary["benchmarks"])
+            self.assertEqual("passed", summary["drill"])
+            self.assertEqual(["disabled", "disabled"], summary["final_states"])
+            self.assertTrue(
+                (evidence / f"espnow-regression-{'b' * 16}.jsonl").is_file()
+            )
+
     def test_path_escape_and_wrong_ticket_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             cap = self.capability(Path(directory), ["artifact-hash"])

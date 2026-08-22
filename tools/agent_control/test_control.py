@@ -3575,6 +3575,134 @@ class ReviewFixRegressionTest(unittest.TestCase):
                     item, root, manifest, checkpoint_head, artifact_head, trusted_tools
                 )
 
+    def test_espnow_regression_attestation_requires_two_exact_head_flashes(
+        self,
+    ) -> None:
+        ticket = self.hardware_ticket(612)
+        ticket = control.Ticket(
+            ticket.number,
+            ticket.title,
+            ticket.body.replace(
+                "trace-status", "trace-status, flash, espnow-regression"
+            ).replace("## Hardware boards\n\n0", "## Hardware boards\n\n0, 1"),
+            ticket.state,
+            ticket.labels,
+            ticket.url,
+        )
+        item = control.validate_ticket(ticket, check_revision=False)
+        checkpoint_head = "b" * 40
+        artifact_head = "c" * 40
+        provenance = {
+            "kind": "controller-bwrap-clean-clone-idf-build",
+            "source_head": artifact_head,
+            "build_profile": "default",
+            "idf_version": "v5.4.4",
+            "idf_revision": "d" * 40,
+            "idf_export_sha256": "1" * 64,
+            "idf_py_sha256": "2" * 64,
+            "bwrap_sha256": "0" * 64,
+            "submodules_sha256": "3" * 64,
+            "sdkconfig_defaults_sha256": "4" * 64,
+            "sdkconfig_sha256": "5" * 64,
+            "stdout_sha256": "9" * 64,
+            "stderr_sha256": "a" * 64,
+        }
+        trusted_tools = self.complete_build_provenance(provenance)
+        inputs = [
+            {"offset": offset, "artifact": artifact, "sha256": digit * 64}
+            for offset, artifact, digit in (
+                ("0x0", "bootloader/bootloader.bin", "6"),
+                ("0x8000", "partition_table/partition-table.bin", "7"),
+                ("0x20000", "domes.bin", "8"),
+            )
+        ]
+        selected = {
+            str(board): {
+                "artifact_head": artifact_head,
+                "build_profile": "default",
+                "domes_bin_sha256": "8" * 64,
+            }
+            for board in (0, 1)
+        }
+        regression = {
+            "kind": "controller-two-board-espnow-regression-v1",
+            "artifact_head": artifact_head,
+            "boards": [0, 1],
+            "selected_flashes": selected,
+            "benchmark_sessions": 3,
+            "benchmarks": 6,
+            "rounds_per_benchmark": 100,
+            "benchmark_failures": 0,
+            "discovery_cancellation": "passed",
+            "drill": "passed",
+            "final_states": ["disabled", "disabled"],
+            "final_peer_counts": [1, 1],
+            "final_tx_failures": [0, 0],
+            "transcript_sha256": "f" * 64,
+        }
+        events = [
+            {
+                "issue": ticket.number,
+                "spec_revision": self.revision,
+                "pr_head": checkpoint_head,
+                "artifact_head": artifact_head,
+                "operation": "flash",
+                "board": board,
+                "returncode": 0,
+                "error": None,
+                "build_provenance": json.loads(json.dumps(provenance)),
+                "inputs": json.loads(json.dumps(inputs)),
+            }
+            for board in (0, 1)
+        ]
+        events.append(
+            {
+                "issue": ticket.number,
+                "spec_revision": self.revision,
+                "pr_head": checkpoint_head,
+                "artifact_head": artifact_head,
+                "operation": "espnow-regression",
+                "board": None,
+                "returncode": 0,
+                "error": None,
+                "artifact_id": f"espnow-regression-{'f' * 16}",
+                "artifact_sha256": "f" * 64,
+                "espnow_regression": regression,
+            }
+        )
+        previous = ""
+        for event in events:
+            event["previous_event_sha256"] = previous
+            event["event_sha256"] = hashlib.sha256(
+                json.dumps(event, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            previous = event["event_sha256"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "hardware-evidence" / "run-1" / "broker-manifest.jsonl"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(
+                "".join(json.dumps(event) + "\n" for event in events),
+                encoding="utf-8",
+            )
+            attestation = control.attest_hardware_manifest(
+                item, root, manifest, checkpoint_head, artifact_head, trusted_tools
+            )
+            self.assertEqual(regression, attestation["events"][-1]["espnow_regression"])
+            events[-1]["espnow_regression"]["benchmarks"] = 5
+            events[-1].pop("event_sha256")
+            events[-1]["event_sha256"] = hashlib.sha256(
+                json.dumps(events[-1], sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            manifest.write_text(
+                "".join(json.dumps(event) + "\n" for event in events),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(control.ControlError, "artifact binding"):
+                control.attest_hardware_manifest(
+                    item, root, manifest, checkpoint_head, artifact_head, trusted_tools
+                )
+
     def test_trace_dump_requires_latest_board_flash_and_candidate_cli_binding(
         self,
     ) -> None:
