@@ -179,28 +179,80 @@ def load_result(
     }
     if not required_aggregate.issubset(aggregate):
         raise ResultError(f"{expected_path} aggregate result is incomplete")
-    identities = {pod["identity"] for pod in fixture["pods"]}
     tokens: set[int] = set()
+    hit_reactions: list[int] = []
+    hits = 0
     for index, (actual, source) in enumerate(
         zip(rounds, fixture["rounds"], strict=True)
     ):
-        if not isinstance(actual, dict) or actual.get("index") != index:
+        if (
+            not isinstance(actual, dict)
+            or type(actual.get("index")) is not int
+            or actual["index"] != index
+        ):
             raise ResultError(f"{expected_path} round {index} is missing or ambiguous")
         if not {"target_identity", "round_token", "hit", "reaction_time_us"}.issubset(
             actual
         ):
             raise ResultError(f"{expected_path} round {index} is incomplete")
-        if actual.get("target_identity") not in identities:
-            raise ResultError(f"{expected_path} round {index} has wrong pod identity")
+        if actual.get("target_identity") != source["target_identity"]:
+            raise ResultError(
+                f"{expected_path} round {index} does not match its fixture pod identity"
+            )
         token = actual.get("round_token")
-        if expected_path == "fixed" and (not isinstance(token, int) or token <= 0):
-            raise ResultError(f"fixed round {index} token is missing or ambiguous")
-        if expected_path == "fixed" and token in tokens:
-            raise ResultError(f"fixed round {index} token is duplicated")
         if expected_path == "fixed":
+            if type(token) is int and token in tokens:
+                raise ResultError(f"fixed round {index} token is duplicated")
+            if type(token) is not int or token != source["round_token"]:
+                raise ResultError(
+                    f"fixed round {index} does not match its fixture token"
+                )
             tokens.add(token)
-        if expected_path == "mobile" and token is not None:
+        elif token is not None:
             raise ResultError(f"mobile round {index} claims an unavailable round token")
+
+        hit = actual.get("hit")
+        reaction = actual.get("reaction_time_us")
+        if not isinstance(hit, bool):
+            raise ResultError(f"{expected_path} round {index} hit must be boolean")
+        if hit:
+            if (
+                type(reaction) is not int
+                or reaction <= 0
+                or reaction >= source["timeout_us"]
+                or reaction
+                % fixture["paths"][expected_path]["result"]["reaction_resolution_us"]
+                != 0
+            ):
+                raise ResultError(
+                    f"{expected_path} round {index} hit timing is missing or outside its boundary"
+                )
+            hits += 1
+            hit_reactions.append(reaction)
+        elif reaction is not None:
+            raise ResultError(
+                f"{expected_path} round {index} miss has ambiguous reaction timing"
+            )
+
+    expected_aggregate: dict[str, int | None] = {
+        "hits": hits,
+        "misses": len(rounds) - hits,
+        "average_reaction_us": (
+            sum(hit_reactions) // len(hit_reactions) if hit_reactions else None
+        ),
+        "best_reaction_us": min(hit_reactions) if hit_reactions else None,
+        "worst_reaction_us": max(hit_reactions) if hit_reactions else None,
+    }
+    for field, expected in expected_aggregate.items():
+        actual = aggregate[field]
+        if expected is not None and type(actual) is not int:
+            raise ResultError(f"{expected_path} aggregate {field} must be an integer")
+        if expected is None and actual is not None:
+            raise ResultError(f"{expected_path} aggregate {field} must be null")
+        if actual != expected:
+            raise ResultError(
+                f"{expected_path} aggregate {field} is inconsistent with its rounds"
+            )
     return result
 
 

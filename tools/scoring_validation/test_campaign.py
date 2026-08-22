@@ -9,6 +9,7 @@ from campaign import (
     ResultError,
     compare_results,
     load_fixture,
+    load_result,
     run_campaign,
     validate_fixture,
 )
@@ -60,6 +61,15 @@ class CampaignTest(unittest.TestCase):
             ],
             "schema_version": 1,
         }
+
+    def assert_result_rejected(self, name: str, mutate, message: str) -> None:
+        candidate = self.path_result(name)
+        mutate(candidate)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / f"{name}.json"
+            path.write_text(json.dumps(candidate))
+            with self.assertRaisesRegex(ResultError, message):
+                load_result(path, name, self.fixture, self.digest)
 
     def test_repeated_independent_outputs_and_verdict_are_identical(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -159,6 +169,90 @@ class CampaignTest(unittest.TestCase):
             mobile.write_text(json.dumps(candidate))
             with self.assertRaisesRegex(ResultError, "clock provenance"):
                 run_campaign(FIXTURE, [fixed, fixed], [mobile, mobile], root / "out")
+
+    def test_malformed_result_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixed.json"
+            path.write_text('{"schema_version":')
+            with self.assertRaisesRegex(ResultError, "missing or malformed"):
+                load_result(path, "fixed", self.fixture, self.digest)
+
+    def test_incomplete_result_round_is_rejected(self) -> None:
+        self.assert_result_rejected(
+            "mobile",
+            lambda value: value["rounds"][0].pop("reaction_time_us"),
+            "round 0 is incomplete",
+        )
+
+    def test_duplicate_fixed_result_token_is_rejected(self) -> None:
+        self.assert_result_rejected(
+            "fixed",
+            lambda value: value["rounds"][1].update(round_token=1),
+            "token is duplicated",
+        )
+
+    def test_incorrect_fixed_result_token_is_rejected(self) -> None:
+        self.assert_result_rejected(
+            "fixed",
+            lambda value: value["rounds"][1].update(round_token=99),
+            "fixture token",
+        )
+
+    def test_wrong_known_result_pod_is_rejected(self) -> None:
+        self.assert_result_rejected(
+            "mobile",
+            lambda value: value["rounds"][0].update(target_identity="peer-pod-1"),
+            "fixture pod identity",
+        )
+
+    def test_missing_hit_reaction_time_is_rejected(self) -> None:
+        self.assert_result_rejected(
+            "mobile",
+            lambda value: value["rounds"][0].update(reaction_time_us=None),
+            "hit timing is missing",
+        )
+
+    def test_ambiguous_miss_reaction_time_is_rejected(self) -> None:
+        self.assert_result_rejected(
+            "fixed",
+            lambda value: value["rounds"][2].update(reaction_time_us=1000),
+            "miss has ambiguous reaction timing",
+        )
+
+    def test_boundary_result_reaction_time_is_rejected(self) -> None:
+        self.assert_result_rejected(
+            "fixed",
+            lambda value: value["rounds"][0].update(reaction_time_us=3000000),
+            "outside its boundary",
+        )
+
+    def test_sub_resolution_result_reaction_time_is_rejected(self) -> None:
+        self.assert_result_rejected(
+            "mobile",
+            lambda value: value["rounds"][0].update(reaction_time_us=1001),
+            "outside its boundary",
+        )
+
+    def test_non_boolean_result_hit_is_rejected(self) -> None:
+        self.assert_result_rejected(
+            "mobile",
+            lambda value: value["rounds"][0].update(hit=1),
+            "hit must be boolean",
+        )
+
+    def test_non_integer_aggregate_is_rejected(self) -> None:
+        self.assert_result_rejected(
+            "fixed",
+            lambda value: value["aggregate"].update(hits=True),
+            "aggregate hits must be an integer",
+        )
+
+    def test_inconsistent_aggregate_is_rejected(self) -> None:
+        self.assert_result_rejected(
+            "mobile",
+            lambda value: value["aggregate"].update(average_reaction_us=1),
+            "aggregate average_reaction_us is inconsistent",
+        )
 
 
 if __name__ == "__main__":

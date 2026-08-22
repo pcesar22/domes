@@ -1,4 +1,4 @@
-$ cmake -S firmware/test_app -B /tmp/domes-issue-132-host-tests -DCMAKE_BUILD_TYPE=Debug
+$ cmake -S firmware/test_app -B /tmp/domes-issue-132-host-tests.Pu678D -DCMAKE_BUILD_TYPE=Debug
 -- The CXX compiler identification is GNU 15.2.1
 -- The C compiler identification is GNU 15.2.1
 -- Detecting CXX compiler ABI info
@@ -19,24 +19,24 @@ $ cmake -S firmware/test_app -B /tmp/domes-issue-132-host-tests -DCMAKE_BUILD_TY
 -- Found Threads: TRUE
 -- Configuring done
 -- Generating done
--- Build files have been written to: /tmp/domes-issue-132-host-tests
-$ cmake --build /tmp/domes-issue-132-host-tests -j16
-[  1%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest.dir/src/gtest-all.cc.o
-[  3%] Building CXX object common/CMakeFiles/domes_common.dir/protocol/otaProtocol.cpp.o
-[  4%] Building C object common/CMakeFiles/domes_common.dir/proto/peer_drill.pb.c.o
-[  6%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/third_party/nanopb/pb_common.c.o
-[  7%] Building C object common/CMakeFiles/domes_common.dir/proto/trace.pb.c.o
-[  9%] Building C object common/CMakeFiles/domes_common.dir/proto/config.pb.c.o
-[ 10%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/third_party/nanopb/pb_decode.c.o
-[ 12%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/third_party/nanopb/pb_encode.c.o
+-- Build files have been written to: /tmp/domes-issue-132-host-tests.Pu678D
+$ cmake --build /tmp/domes-issue-132-host-tests.Pu678D -j16
+[  1%] Building C object common/CMakeFiles/domes_common.dir/proto/peer_drill.pb.c.o
+[  3%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/third_party/nanopb/pb_common.c.o
+[  6%] Building C object common/CMakeFiles/domes_common.dir/proto/config.pb.c.o
+[  6%] Building CXX object common/CMakeFiles/domes_common.dir/protocol/otaProtocol.cpp.o
+[  7%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest.dir/src/gtest-all.cc.o
+[  9%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/third_party/nanopb/pb_encode.c.o
+[ 10%] Building C object common/CMakeFiles/domes_common.dir/proto/trace.pb.c.o
+[ 12%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/third_party/nanopb/pb_decode.c.o
 [ 13%] Linking CXX static library libdomes_common.a
 [ 13%] Built target domes_common
-[ 18%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/config/featureManager.cpp.o
-[ 18%] Building CXX object CMakeFiles/trace_generator.dir/main/generate_trace.cpp.o
-[ 18%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/game/gameEngine.cpp.o
-[ 20%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/kernelTrace.cpp.o
+[ 21%] Building CXX object CMakeFiles/trace_generator.dir/sim/hostTraceBuffer.cpp.o
+[ 21%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/game/gameEngine.cpp.o
+[ 21%] Building CXX object CMakeFiles/trace_generator.dir/main/generate_trace.cpp.o
+[ 21%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/config/featureManager.cpp.o
 [ 21%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/config/modeManager.cpp.o
-[ 23%] Building CXX object CMakeFiles/trace_generator.dir/sim/hostTraceBuffer.cpp.o
+[ 23%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/kernelTrace.cpp.o
 [ 24%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/traceDumpSnapshot.cpp.o
 [ 26%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/traceCommandHandler.cpp.o
 [ 27%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/traceRecorder.cpp.o
@@ -44,36 +44,36 @@ $ cmake --build /tmp/domes-issue-132-host-tests -j16
 [ 29%] Built target trace_generator
 [ 30%] Linking CXX static library ../../../lib/libgtest.a
 [ 30%] Built target gtest
-[ 32%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o
-[ 33%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/src/gmock-all.cc.o
+[ 32%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/src/gmock-all.cc.o
+[ 33%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o
 [ 35%] Linking CXX static library ../../../lib/libgtest_main.a
 [ 35%] Built target gtest_main
 [ 36%] Linking CXX static library ../../../lib/libgmock.a
 [ 36%] Built target gmock
-[ 43%] Building CXX object CMakeFiles/test_app.dir/main/test_main.cpp.o
-[ 43%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_protocol.cpp.o
+[ 38%] Building CXX object CMakeFiles/test_app.dir/main/test_main.cpp.o
+[ 40%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/src/gmock_main.cc.o
+[ 41%] Building CXX object CMakeFiles/test_app.dir/main/test_crc32.cpp.o
 [ 43%] Building CXX object CMakeFiles/test_app.dir/main/test_frame_codec.cpp.o
-[ 43%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/src/gmock_main.cc.o
-[ 44%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_boot_verification.cpp.o
-[ 46%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_session_coordinator.cpp.o
-[ 49%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_state_machine.cpp.o
-[ 49%] Building CXX object CMakeFiles/test_app.dir/main/test_crc32.cpp.o
+[ 44%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_session_coordinator.cpp.o
+[ 47%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_protocol.cpp.o
+[ 47%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_state_machine.cpp.o
+[ 49%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_boot_verification.cpp.o
+[ 52%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/transport/espNowTransport.cpp.o
 [ 52%] Building CXX object CMakeFiles/test_app.dir/main/test_esp_now_transport.cpp.o
-[ 52%] Building CXX object CMakeFiles/test_app.dir/main/test_esp_now_protocol.cpp.o
-[ 53%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/transport/espNowTransport.cpp.o
-[ 56%] Building CXX object CMakeFiles/test_app.dir/main/test_platform_inputs.cpp.o
+[ 53%] Building CXX object CMakeFiles/test_app.dir/main/test_esp_now_protocol.cpp.o
 [ 56%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/platform/qemu/deterministicPlatformInputs.cpp.o
-[ 58%] Building CXX object CMakeFiles/test_app.dir/main/test_qemu_peripheral_adapters.cpp.o
-[ 60%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/platform/qemu/qemuPeripheralAdapters.cpp.o
+[ 56%] Building CXX object CMakeFiles/test_app.dir/main/test_platform_inputs.cpp.o
+[ 61%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/platform/qemu/qemuPeripheralAdapters.cpp.o
+[ 61%] Building CXX object CMakeFiles/test_app.dir/main/test_qemu_peripheral_adapters.cpp.o
 [ 61%] Building CXX object CMakeFiles/test_app.dir/main/test_task_start_evidence.cpp.o
 [ 63%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/infra/taskStartEvidence.cpp.o
 [ 64%] Building CXX object CMakeFiles/test_app.dir/main/test_version_parser.cpp.o
 [ 66%] Building CXX object CMakeFiles/test_app.dir/main/test_release_metadata.cpp.o
 [ 67%] Building CXX object CMakeFiles/test_app.dir/main/test_restart_snapshot_record.cpp.o
 [ 69%] Building CXX object CMakeFiles/test_app.dir/main/test_config_protocol.cpp.o
-[ 70%] Building CXX object CMakeFiles/test_app.dir/main/test_feature_manager.cpp.o
+[ 72%] Building CXX object CMakeFiles/test_app.dir/main/test_feature_manager.cpp.o
 [ 72%] Building CXX object CMakeFiles/test_app.dir/main/test_mode_manager.cpp.o
-[ 73%] Building CXX object CMakeFiles/test_app.dir/main/test_game_engine.cpp.o
+[ 75%] Building CXX object CMakeFiles/test_app.dir/main/test_game_engine.cpp.o
 [ 75%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_buffer.cpp.o
 [ 76%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_command_handler.cpp.o
 [ 78%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_stream_writer.cpp.o
@@ -93,9 +93,9 @@ $ cmake --build /tmp/domes-issue-132-host-tests -j16
 [ 98%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/firmware/domes/main/trace/traceRecorder.cpp.o
 [100%] Linking CXX executable test_app
 [100%] Built target test_app
-$ ctest --test-dir /tmp/domes-issue-132-host-tests --output-on-failure --no-tests=error
-Internal ctest changing into directory: /tmp/domes-issue-132-host-tests
-Test project /tmp/domes-issue-132-host-tests
+$ ctest --test-dir /tmp/domes-issue-132-host-tests.Pu678D --output-on-failure
+Internal ctest changing into directory: /tmp/domes-issue-132-host-tests.Pu678D
+Test project /tmp/domes-issue-132-host-tests.Pu678D
         Start   1: Crc32.EmptyBufferReturns0x00000000
   1/321 Test   #1: Crc32.EmptyBufferReturns0x00000000 ...................................................................................   Passed    0.00 sec
         Start   2: Crc32.Of123456789MatchesIEEE802_3CheckValue
@@ -741,4 +741,4 @@ Test project /tmp/domes-issue-132-host-tests
 
 100% tests passed, 0 tests failed out of 321
 
-Total Test time (real) =   0.96 sec
+Total Test time (real) =   0.92 sec

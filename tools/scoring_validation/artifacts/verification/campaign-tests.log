@@ -1,17 +1,55 @@
+$ DOMES_FIXED_SCORING_RESULT=tools/scoring_validation/artifacts/fixed-run-1.json /tmp/domes-issue-132-host-tests.Pu678D/test_app --gtest_filter=SimDrillTest.FixedTwoPodScoringFixture
+Note: Google Test filter = SimDrillTest.FixedTwoPodScoringFixture
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from SimDrillTest
+[ RUN      ] SimDrillTest.FixedTwoPodScoringFixture
+[       OK ] SimDrillTest.FixedTwoPodScoringFixture (0 ms)
+[----------] 1 test from SimDrillTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+$ DOMES_FIXED_SCORING_RESULT=tools/scoring_validation/artifacts/fixed-run-2.json /tmp/domes-issue-132-host-tests.Pu678D/test_app --gtest_filter=SimDrillTest.FixedTwoPodScoringFixture
+Note: Google Test filter = SimDrillTest.FixedTwoPodScoringFixture
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from SimDrillTest
+[ RUN      ] SimDrillTest.FixedTwoPodScoringFixture
+[       OK ] SimDrillTest.FixedTwoPodScoringFixture (0 ms)
+[----------] 1 test from SimDrillTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (0 ms total)
+[  PASSED  ] 1 test.
+$ python3 tools/scoring_validation/campaign.py --fixture tools/scoring_validation/fixtures/fixed_two_pod_v1.json --fixed-result tools/scoring_validation/artifacts/fixed-run-1.json --fixed-result tools/scoring_validation/artifacts/fixed-run-2.json --mobile-result tools/scoring_validation/artifacts/mobile-run-1.json --mobile-result tools/scoring_validation/artifacts/mobile-run-2.json --output-dir tools/scoring_validation/artifacts
+{"comparison_verdict_sha256": ["4b4b031802c3452234b1afa76bed453f791fe591f64f2acd3b0bf430f797ef05", "4b4b031802c3452234b1afa76bed453f791fe591f64f2acd3b0bf430f797ef05"], "divergences": [{"field": "rounds[0].round_token", "fixed": 1, "mobile": null, "reason": "unavailable_in_mobile_result"}, {"field": "rounds[1].round_token", "fixed": 2, "mobile": null, "reason": "unavailable_in_mobile_result"}, {"field": "rounds[2].round_token", "fixed": 3, "mobile": null, "reason": "unavailable_in_mobile_result"}, {"field": "rounds[3].round_token", "fixed": 4, "mobile": null, "reason": "unavailable_in_mobile_result"}, {"field": "rounds[4].round_token", "fixed": 5, "mobile": null, "reason": "unavailable_in_mobile_result"}, {"field": "rounds[5].round_token", "fixed": 6, "mobile": null, "reason": "unavailable_in_mobile_result"}], "fixture_id": "fixed-two-pod-mobile-v1", "fixture_sha256": "5bf359be3b254608bf737d1a5f5a17139b6d6fdd32a30c863003a6332c0fdd2e", "matches": ["aggregate.hits", "aggregate.misses", "aggregate.average_reaction_us", "aggregate.best_reaction_us", "aggregate.worst_reaction_us", "rounds[0].target_identity", "rounds[0].hit", "rounds[0].reaction_time_us", "rounds[1].target_identity", "rounds[1].hit", "rounds[1].reaction_time_us", "rounds[2].target_identity", "rounds[2].hit", "rounds[2].reaction_time_us", "rounds[3].target_identity", "rounds[3].hit", "rounds[3].reaction_time_us", "rounds[4].target_identity", "rounds[4].hit", "rounds[4].reaction_time_us", "rounds[5].target_identity", "rounds[5].hit", "rounds[5].reaction_time_us"], "normalized_output_sha256": ["c4e22820ff91344b8c87db7e16d59e9dcb9583c05937fe94709f90a9ca392176", "c4e22820ff91344b8c87db7e16d59e9dcb9583c05937fe94709f90a9ca392176"], "provenance_limitations": ["mobile production results do not retain round tokens", "mobile fixture durations exercise DrillResult scoring but not DateTime.now capture", "simulated monotonic and host wall clocks have different origins and are not physically equivalent", "BLE, ESP-NOW, touch, and wall-clock equivalence are unverified"], "schema_version": 1, "status": "diverged"}
 $ python3 -m unittest discover -s tools/scoring_validation -p 'test_*.py' -v
 test_ambiguous_identity_is_rejected (test_campaign.CampaignTest.test_ambiguous_identity_is_rejected) ... ok
+test_ambiguous_miss_reaction_time_is_rejected (test_campaign.CampaignTest.test_ambiguous_miss_reaction_time_is_rejected) ... ok
+test_boundary_result_reaction_time_is_rejected (test_campaign.CampaignTest.test_boundary_result_reaction_time_is_rejected) ... ok
+test_duplicate_fixed_result_token_is_rejected (test_campaign.CampaignTest.test_duplicate_fixed_result_token_is_rejected) ... ok
 test_duplicate_token_is_rejected (test_campaign.CampaignTest.test_duplicate_token_is_rejected) ... ok
 test_every_changed_independent_field_is_reported (test_campaign.CampaignTest.test_every_changed_independent_field_is_reported) ... ok
 test_generated_cpp_binding_is_current (test_campaign.CampaignTest.test_generated_cpp_binding_is_current) ... ok
 test_incomplete_fixture_is_rejected (test_campaign.CampaignTest.test_incomplete_fixture_is_rejected) ... ok
+test_incomplete_result_round_is_rejected (test_campaign.CampaignTest.test_incomplete_result_round_is_rejected) ... ok
+test_inconsistent_aggregate_is_rejected (test_campaign.CampaignTest.test_inconsistent_aggregate_is_rejected) ... ok
+test_incorrect_fixed_result_token_is_rejected (test_campaign.CampaignTest.test_incorrect_fixed_result_token_is_rejected) ... ok
 test_malformed_json_is_rejected (test_campaign.CampaignTest.test_malformed_json_is_rejected) ... ok
+test_malformed_result_is_rejected (test_campaign.CampaignTest.test_malformed_result_is_rejected) ... ok
 test_missing_clock_provenance_is_rejected (test_campaign.CampaignTest.test_missing_clock_provenance_is_rejected) ... ok
+test_missing_hit_reaction_time_is_rejected (test_campaign.CampaignTest.test_missing_hit_reaction_time_is_rejected) ... ok
+test_non_boolean_result_hit_is_rejected (test_campaign.CampaignTest.test_non_boolean_result_hit_is_rejected) ... ok
+test_non_integer_aggregate_is_rejected (test_campaign.CampaignTest.test_non_integer_aggregate_is_rejected) ... ok
 test_repeated_independent_outputs_and_verdict_are_identical (test_campaign.CampaignTest.test_repeated_independent_outputs_and_verdict_are_identical) ... ok
 test_result_without_clock_provenance_is_rejected (test_campaign.CampaignTest.test_result_without_clock_provenance_is_rejected) ... ok
+test_sub_resolution_result_reaction_time_is_rejected (test_campaign.CampaignTest.test_sub_resolution_result_reaction_time_is_rejected) ... ok
+test_wrong_known_result_pod_is_rejected (test_campaign.CampaignTest.test_wrong_known_result_pod_is_rejected) ... ok
 test_wrong_pod_is_rejected (test_campaign.CampaignTest.test_wrong_pod_is_rejected) ... ok
 
 ----------------------------------------------------------------------
-Ran 10 tests in 0.004s
+Ran 22 tests in 0.007s
 
 OK
 $ sha256sum tools/scoring_validation/fixtures/fixed_two_pod_v1.json tools/scoring_validation/artifacts/normalized-run-1.json tools/scoring_validation/artifacts/normalized-run-2.json tools/scoring_validation/artifacts/verdict.json
