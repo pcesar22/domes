@@ -27,6 +27,7 @@ struct TouchScenario {
 
 struct RoundResult {
     uint16_t targetPodId;
+    uint32_t roundToken;
     bool hit;
     uint32_t reactionTimeUs;
     uint8_t padIndex;
@@ -57,6 +58,26 @@ struct DrillResult {
             }
         }
         return hits > 0 ? static_cast<uint32_t>(sum / hits) : 0;
+    }
+
+    uint32_t bestReactionUs() const {
+        uint32_t best = 0;
+        for (const auto& r : rounds) {
+            if (r.hit && (best == 0 || r.reactionTimeUs < best)) {
+                best = r.reactionTimeUs;
+            }
+        }
+        return best;
+    }
+
+    uint32_t worstReactionUs() const {
+        uint32_t worst = 0;
+        for (const auto& r : rounds) {
+            if (r.hit && r.reactionTimeUs > worst) {
+                worst = r.reactionTimeUs;
+            }
+        }
+        return worst;
     }
 };
 
@@ -95,7 +116,7 @@ public:
             masterReceived.clear();
             uint32_t roundToken = nextRoundToken_++;
 
-            RoundResult roundResult{step.targetPodId, false, 0, 0};
+            RoundResult roundResult{step.targetPodId, roundToken, false, 0, 0};
 
             // Find target pod
             PodInstance* targetPod = findPod(step.targetPodId);
