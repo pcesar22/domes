@@ -225,8 +225,17 @@ class HardwareBrokerTest(unittest.TestCase):
             self.assertEqual(["disabled", "disabled"], summary["final_states"])
             self.assertEqual(
                 [(0, ["trace", "stop"]), (1, ["trace", "stop"])],
-                commands[-2:],
+                [command for command in commands if command[1] == ["trace", "stop"]][
+                    -2:
+                ],
             )
+            first_trace_start = commands.index((0, ["trace", "start"]))
+            simulated_peer_status = max(
+                index
+                for index, command in enumerate(commands[:first_trace_start])
+                if command[1] == ["espnow", "status"]
+            )
+            self.assertLess(simulated_peer_status, first_trace_start)
             self.assertTrue(
                 (evidence / f"espnow-regression-{'b' * 16}.jsonl").is_file()
             )
@@ -709,8 +718,9 @@ class HardwareBrokerTest(unittest.TestCase):
             ):
                 argv, inputs = broker._flash_argv(cap, project, build, "/dev/fake")
             self.assertIn("0x20000", argv)
-            self.assertNotIn("ota_data_initial.bin", argv)
-            self.assertEqual(3, len(inputs))
+            self.assertIn("0xf000", argv)
+            self.assertEqual(4, len(inputs))
+            self.assertIn("ota_data_initial.bin", {item["artifact"] for item in inputs})
             for offset, name in (("0x9000", "nvs.bin"), ("0x20000", "renamed.bin")):
                 rejected = dict(layout)
                 rejected[offset] = name if offset not in rejected else name
