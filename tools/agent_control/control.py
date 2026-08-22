@@ -5619,17 +5619,39 @@ def verify_worker_artifact(
         raise ControlError(
             f"issue #{item.ticket.number}: worker changed the existing pull request"
         )
-    pull_request = load_pull_request(workflow, pull_request_number)
     expected_base = stack.base_ref if stack is not None else workflow.base_branch
-    if (
-        pull_request.state != "OPEN"
-        or pull_request.is_draft
-        or pull_request.base_ref != expected_base
-        or pull_request.head_oid != commit
-    ):
+    pull_request: PullRequest | None = None
+    observed: list[str] = []
+    for attempt in range(3):
+        try:
+            candidate = load_pull_request(workflow, pull_request_number)
+        except TrackerError as error:
+            observed.append(str(error))
+        else:
+            pull_request = candidate
+            if (
+                candidate.state == "OPEN"
+                and not candidate.is_draft
+                and candidate.base_ref == expected_base
+                and candidate.head_oid == commit
+            ):
+                break
+            observed.append(
+                "state="
+                f"{candidate.state}, draft={candidate.is_draft}, "
+                f"base={candidate.base_ref}, head={candidate.head_oid}"
+            )
+        if attempt < 2:
+            time.sleep(
+                min(2**attempt, workflow.max_retry_backoff_seconds)
+            )
+    else:
+        detail = observed[-1] if observed else "no tracker response"
         raise ControlError(
-            f"issue #{item.ticket.number}: pull request does not match worker artifact"
+            f"issue #{item.ticket.number}: pull request does not match worker "
+            f"artifact after bounded tracker reconciliation ({detail})"
         )
+    assert pull_request is not None
     pr_violations = paths_outside_surfaces(pull_request.files, surfaces)
     if pr_violations:
         raise ControlError(

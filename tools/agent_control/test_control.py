@@ -1791,6 +1791,35 @@ class AutopilotReviewTest(unittest.TestCase):
                 required_base_head="b" * 40,
             )
 
+    def test_worker_artifact_retries_stale_pull_request_head(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(43, self.revision, label="agent:rework")
+        item = control.validate_ticket(ticket, check_revision=False)
+        current = pull_request(control.load_autopilot_policy(), head="c" * 40)
+        stale = pull_request(
+            control.load_autopilot_policy(),
+            number=current.number,
+            head="d" * 40,
+        )
+        result = {"commit": current.head_oid, "pull_request": current.number}
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with (
+            mock.patch.object(
+                control, "load_pull_request", side_effect=(stale, current)
+            ) as load,
+            mock.patch.object(control, "_git", return_value=completed),
+            mock.patch.object(control.time, "sleep") as sleep,
+        ):
+            control.verify_worker_artifact(
+                workflow,
+                Path("/unused"),
+                item,
+                result,
+                required_base_head="b" * 40,
+            )
+        self.assertEqual(2, load.call_count)
+        sleep.assert_called_once_with(1)
+
     def test_required_ci_reports_green_pending_failed_and_missing(self) -> None:
         policy = control.load_autopilot_policy()
         green = pull_request(policy)
