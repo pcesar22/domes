@@ -89,9 +89,12 @@ Autonomous tickets also contain `Autonomy policy`, `Work package`, and controlle
 the pinned specification. `software-review-required` permits autonomous implementation, PR
 publication, independent agent judgment, and CI repair. It never permits GitHub approval or merge;
 those remain human actions. Planner children inherit that policy and remain blocked on their parent
-until the complete DAG has been materialized. A planner child explicitly marked `plan` receives a
-fresh planner context; it may only decompose its inherited bounded objective and cannot expand the
-parent's accepted surfaces, hardware operations, or autonomy policy.
+until the complete DAG has been materialized. Planner execution itself may run ahead of nonterminal
+dependencies because it is read-only; the controller copies the planning ticket's external
+dependencies onto every materialized child so implementation remains gated. A planner child
+explicitly marked `plan` receives a fresh planner context; it may only decompose its inherited
+bounded objective and cannot expand the parent's accepted surfaces, hardware operations, or
+autonomy policy.
 
 An implementation dependency does not globally idle delivery while a human reviews its parent.
 The controller may execute one automated software child with no hardware operations on the exact

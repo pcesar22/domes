@@ -963,9 +963,20 @@ def eligible_queue(
             continue
         if ticket.number in cycle_nodes:
             reasons.append("dependency cycle")
-        dependencies_ok, dependency_error = stack_dependency_status(None, item, tickets)
-        if not dependencies_ok and dependency_error:
-            reasons.append(dependency_error)
+        if ticket.agent_state == "agent:plan":
+            missing = [
+                number for number in item.dependencies if number not in by_number
+            ]
+            if missing:
+                reasons.append(
+                    f"dependency #{missing[0]} was not returned by the tracker"
+                )
+        else:
+            dependencies_ok, dependency_error = stack_dependency_status(
+                None, item, tickets
+            )
+            if not dependencies_ok and dependency_error:
+                reasons.append(dependency_error)
         if reasons:
             blockers[ticket.number] = reasons
         else:
@@ -1316,6 +1327,10 @@ def build_prompt(
             "immediately before dispatch. Use it instead of attempting network access. "
             "Materialization revalidates live state after you return.\n\n"
             f"```json\n{json.dumps(tracker_context, indent=2, sort_keys=True)}\n```\n"
+            "Planning may proceed while the planning ticket's declared dependencies "
+            "are nonterminal. The controller will copy those dependencies onto every "
+            "materialized child, so design the DAG now without weakening or omitting "
+            "the parent ticket's external gates.\n"
         )
     if hardware_capability is not None:
         prompt += (
@@ -3603,6 +3618,9 @@ def materialize_plan(
         (label for label in parent.ticket.labels if label.startswith("priority:p")),
         "priority:p2",
     )
+    inherited_dependencies = tuple(
+        dict.fromkeys((parent.ticket.number, *parent.dependencies))
+    )
     for task in topological_tasks(result["tasks"]):
         uid = task_uid(parent, plan_hash, task)
         marker = (
@@ -3630,7 +3648,7 @@ def materialize_plan(
                 required_behavior=task["required_behavior"],
                 acceptance_checks=task["acceptance_checks"],
                 allowed_surface_values=task["allowed_surfaces"],
-                dependencies=(parent.ticket.number,),
+                dependencies=inherited_dependencies,
                 required_proof=task["required_proof"],
                 work_package=parent.sections.get("Work package", task["key"]),
                 work_class=parent.sections.get("Work class", "software"),
@@ -3659,7 +3677,7 @@ def materialize_plan(
 
     for task in topological_tasks(result["tasks"]):
         child = created_by_key[task["key"]]
-        dependencies = [parent.ticket.number]
+        dependencies = list(inherited_dependencies)
         dependencies.extend(task_numbers[key] for key in task["dependencies"])
         contract = render_ticket_contract(
             spec_revision=result["spec_revision"],
