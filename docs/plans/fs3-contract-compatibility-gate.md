@@ -4,12 +4,14 @@
 
 The FS3 peer/drill software baseline at specification revision
 `6f197670a49bc8b83753d1dfab0dd1f789b5f4db` is **accepted as internally compatible**.
-The retained rerun executed at descendant revision
-`d2f40a1785ca732cc65914e78812a8e6c62e98a2`, which descends from required base revision
+The retained rerun executed the already-committed runner at descendant revision
+`1d24d66018d010cc9618dab42cb8c85d85f6b331`, which descends from required base revision
 `be347355d3747b849b0521e40c539aae88d33614`, on 2026-08-22 UTC. Before running any consumer
 check, it compared every covered working-tree source to its pinned Git object and found no drift.
 Protocol generation, 48 focused firmware/simulator tests, 3 Rust CLI contract tests, 3 Dart
-contract tests, 13 mobile scoring/result tests, and 22 scoring validation tests passed.
+contract tests, 13 mobile scoring/result tests, 22 scoring validation tests, and 2 retained
+negative-path checks passed. The later artifact-only commit retains this exact run without changing
+the executed runner.
 
 This verdict accepts only the pinned software compatibility baseline. It does not authorize FS3
 convergence work until this artifact is reviewed and merged. PR #107 is excluded as authority.
@@ -37,7 +39,7 @@ The complete pinned/current object map and generated prost SHA-256 are retained 
 The exact invocation in the workspace-write worker was:
 
 ```bash
-DOMES_FLUTTER_ROOT=/tmp/domes-fs3-flutter-3448 \
+DOMES_FLUTTER_ROOT=/tmp/domes-fs3-flutter-3448-correct \
 DOMES_PUB_CACHE=/tmp/domes-fs3-pub-cache \
 tools/scoring_validation/run_fs3_contract_gate.sh 2>&1 | \
   tee tools/scoring_validation/artifacts/verification/fs3-contract-gate.log
@@ -66,7 +68,8 @@ Snapshot reconciled from GitHub on 2026-08-22 UTC:
 | Issue #114 | Closed and labeled `agent:blocked` | Its physical FS-WP-003A acceptance is unverified; closure is not physical evidence |
 | Issue #106 | Open and labeled `agent:blocked` | Blocked; do not resume |
 | Issue #116 | Open and labeled `agent:blocked` | Blocked; do not resume |
-| Issues #141-143 | Open and labeled `agent:ready` | Scheduler-owned; this gate neither duplicates nor activates them |
+| Issue #141 | Open and labeled `agent:human-review` | Scheduler-owned; this gate neither duplicates nor activates it |
+| Issues #142-143 | Open and labeled `agent:ready` | Scheduler-owned; this gate neither duplicates nor activates them |
 
 ## Fail-closed and evidence boundary
 
@@ -74,9 +77,11 @@ Snapshot reconciled from GitHub on 2026-08-22 UTC:
 missing or is not an ancestor, any mapped source differs from its pinned Git object, generated
 nanopb or Dart bindings drift, generated prost is absent, the version-1 radio mapping or
 RoundTokenSequence tests fail, any firmware/simulator/Rust/Dart consumer rejects the baseline, or
-the scoring fixture and fail-closed validation checks fail. Its error trap records the exact exit
-status, source line, and failing command in the retained log. A failure is a stop condition and
-does not authorize dependent work.
+the scoring fixture and fail-closed validation checks fail. Ordinary command failures are recorded
+by the error trap. Deliberate source-drift and missing-artifact branches use a shared failure path
+that records the exact source or artifact, check, exit status, and source line before terminating.
+Focused negative-path tests exercise both retained records and prove that neither output contains
+an accepted verdict. A failure is a stop condition and does not authorize dependent work.
 
 Any later change to `peer_drill.proto`, nanopb/prost/Dart generation or artifacts, the ESP-NOW
 version-1 mapping, production token sequencing, mapped consumer/runtime code, focused contract

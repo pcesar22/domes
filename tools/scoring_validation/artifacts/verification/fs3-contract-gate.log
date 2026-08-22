@@ -1,7 +1,7 @@
 FS3_CONTRACT_COMPATIBILITY_GATE
 SPEC_REVISION=6f197670a49bc8b83753d1dfab0dd1f789b5f4db
-EXECUTED_HEAD=d2f40a1785ca732cc65914e78812a8e6c62e98a2
-UTC_STARTED=2026-08-22T06:18:53Z
+EXECUTED_HEAD=1d24d66018d010cc9618dab42cb8c85d85f6b331
+UTC_STARTED=2026-08-22T07:14:42Z
 
 $ git cat-file -e 6f197670a49bc8b83753d1dfab0dd1f789b5f4db\^\{commit\}
 EXIT_STATUS=0
@@ -75,11 +75,11 @@ $ rustc --version
 rustc 1.92.0 (ded5c06cf 2025-12-08)
 EXIT_STATUS=0
 
-$ /tmp/domes-fs3-flutter-3448/bin/cache/dart-sdk/bin/dart --version
+$ /tmp/domes-fs3-flutter-3448-correct/bin/cache/dart-sdk/bin/dart --version
 Dart SDK version: 3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on "linux_x64"
 EXIT_STATUS=0
 
-$ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448/bin/flutter --suppress-analytics --version
+$ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448-correct/bin/flutter --suppress-analytics --version
 Flutter 3.44.8 • channel stable • https://github.com/flutter/flutter.git
 Framework • revision 058e0af2c2 (4 weeks ago) • 2026-07-23 10:56:21 -0700
 Engine • hash 13ffd72b2f9a5ca4db2a74ea52d5353ec2e8f939 (revision 0cd610717b) (29 days ago) • 2026-07-23 16:11:34.000Z
@@ -87,13 +87,13 @@ Tools • Dart 3.12.2 • DevTools 2.57.0
 EXIT_STATUS=0
 
 $ tools/generate_protocols.sh --check all
-Writing to /tmp/tmp.xQY4pYq80f/nanopb/config.pb.h and /tmp/tmp.xQY4pYq80f/nanopb/config.pb.c
-Writing to /tmp/tmp.xQY4pYq80f/nanopb/peer_drill.pb.h and /tmp/tmp.xQY4pYq80f/nanopb/peer_drill.pb.c
-Writing to /tmp/tmp.xQY4pYq80f/nanopb/trace.pb.h and /tmp/tmp.xQY4pYq80f/nanopb/trace.pb.c
+Writing to /tmp/tmp.sa8lP7mpU4/nanopb/config.pb.h and /tmp/tmp.sa8lP7mpU4/nanopb/config.pb.c
+Writing to /tmp/tmp.sa8lP7mpU4/nanopb/peer_drill.pb.h and /tmp/tmp.sa8lP7mpU4/nanopb/peer_drill.pb.c
+Writing to /tmp/tmp.sa8lP7mpU4/nanopb/trace.pb.h and /tmp/tmp.sa8lP7mpU4/nanopb/trace.pb.c
 Protocol bindings are current (all).
 EXIT_STATUS=0
 
-$ cmake -S firmware/test_app -B /tmp/tmp.YAA7vZQjVJ/firmware-test-app -DCMAKE_BUILD_TYPE=Release
+$ cmake -S firmware/test_app -B /tmp/tmp.cJcRYdJpGc/firmware-test-app -DCMAKE_BUILD_TYPE=Release
 -- The CXX compiler identification is GNU 15.2.1
 -- The C compiler identification is GNU 15.2.1
 -- Detecting CXX compiler ABI info
@@ -106,37 +106,37 @@ $ cmake -S firmware/test_app -B /tmp/tmp.YAA7vZQjVJ/firmware-test-app -DCMAKE_BU
 -- Check for working C compiler: /usr/bin/cc - skipped
 -- Detecting C compile features
 -- Detecting C compile features - done
--- Found Python3: /usr/bin/python3 (found version "3.14.3") found components: Interpreter
+-- Found Python3: /usr/bin/python3 (found version "3.14.3") found components: Interpreter 
 -- Looking for pthread.h
 -- Looking for pthread.h - found
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
--- Found Threads: TRUE
+-- Found Threads: TRUE  
 -- Configuring done
 -- Generating done
--- Build files have been written to: /tmp/tmp.YAA7vZQjVJ/firmware-test-app
+-- Build files have been written to: /tmp/tmp.cJcRYdJpGc/firmware-test-app
 EXIT_STATUS=0
 
-$ cmake --build /tmp/tmp.YAA7vZQjVJ/firmware-test-app --parallel
-[  4%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest.dir/src/gtest-all.cc.o
+$ cmake --build /tmp/tmp.cJcRYdJpGc/firmware-test-app --parallel
+[  1%] Building C object common/CMakeFiles/domes_common.dir/proto/peer_drill.pb.c.o
+[  3%] Building CXX object common/CMakeFiles/domes_common.dir/protocol/otaProtocol.cpp.o
 [  4%] Building C object common/CMakeFiles/domes_common.dir/proto/config.pb.c.o
-[  4%] Building CXX object common/CMakeFiles/domes_common.dir/protocol/otaProtocol.cpp.o
-[  7%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/third_party/nanopb/pb_common.c.o
-[  6%] Building C object common/CMakeFiles/domes_common.dir/proto/peer_drill.pb.c.o
+[  6%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/third_party/nanopb/pb_common.c.o
+[  7%] Building C object common/CMakeFiles/domes_common.dir/proto/trace.pb.c.o
 [  9%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/third_party/nanopb/pb_encode.c.o
-[ 10%] Building C object common/CMakeFiles/domes_common.dir/proto/trace.pb.c.o
-[ 12%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/third_party/nanopb/pb_decode.c.o
+[ 10%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/third_party/nanopb/pb_decode.c.o
+[ 12%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest.dir/src/gtest-all.cc.o
 [ 13%] Linking CXX static library libdomes_common.a
 [ 13%] Built target domes_common
-[ 16%] Building CXX object CMakeFiles/trace_generator.dir/sim/hostTraceBuffer.cpp.o
-[ 16%] Building CXX object CMakeFiles/trace_generator.dir/main/generate_trace.cpp.o
-[ 18%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/kernelTrace.cpp.o
+[ 15%] Building CXX object CMakeFiles/trace_generator.dir/main/generate_trace.cpp.o
+[ 18%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceDumpSnapshot.cpp.o
 [ 19%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/config/featureManager.cpp.o
-[ 21%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/game/gameEngine.cpp.o
-[ 22%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/config/modeManager.cpp.o
-[ 25%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceDumpSnapshot.cpp.o
-[ 25%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceRecorder.cpp.o
-[ 27%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp.o
+[ 19%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/config/modeManager.cpp.o
+[ 21%] Building CXX object CMakeFiles/trace_generator.dir/sim/hostTraceBuffer.cpp.o
+[ 22%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/kernelTrace.cpp.o
+[ 25%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp.o
+[ 25%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/game/gameEngine.cpp.o
+[ 27%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceRecorder.cpp.o
 /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp: In member function ‘bool domes::trace::CommandHandler::sendSessionInfo(uint32_t, uint32_t, uint32_t, uint32_t)’:
 /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
   413 |             std::strncpy(msg.objects[objectIdx].name, entry.name,
@@ -154,52 +154,52 @@ $ cmake --build /tmp/tmp.YAA7vZQjVJ/firmware-test-app --parallel
 [ 28%] Built target trace_generator
 [ 30%] Linking CXX static library ../../../lib/libgtest.a
 [ 30%] Built target gtest
-[ 31%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o
-[ 33%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/src/gmock-all.cc.o
+[ 31%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/src/gmock-all.cc.o
+[ 33%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o
 [ 34%] Linking CXX static library ../../../lib/libgtest_main.a
 [ 34%] Built target gtest_main
 [ 36%] Linking CXX static library ../../../lib/libgmock.a
 [ 36%] Built target gmock
-[ 37%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/src/gmock_main.cc.o
 [ 39%] Building CXX object CMakeFiles/test_app.dir/main/test_crc32.cpp.o
-[ 40%] Building CXX object CMakeFiles/test_app.dir/main/test_main.cpp.o
+[ 39%] Building CXX object CMakeFiles/test_app.dir/main/test_main.cpp.o
+[ 42%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_protocol.cpp.o
 [ 42%] Building CXX object CMakeFiles/test_app.dir/main/test_frame_codec.cpp.o
-[ 46%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_protocol.cpp.o
-[ 46%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_state_machine.cpp.o
-[ 46%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_boot_verification.cpp.o
-[ 48%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_session_coordinator.cpp.o
+[ 43%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/src/gmock_main.cc.o
+[ 45%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_boot_verification.cpp.o
+[ 46%] Building CXX object CMakeFiles/test_app.dir/main/test_esp_now_protocol.cpp.o
+[ 48%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_state_machine.cpp.o
+[ 50%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_session_coordinator.cpp.o
 [ 51%] Building CXX object CMakeFiles/test_app.dir/main/test_esp_now_transport.cpp.o
-[ 51%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/transport/espNowTransport.cpp.o
-[ 53%] Building CXX object CMakeFiles/test_app.dir/main/test_platform_inputs.cpp.o
-[ 54%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/platform/qemu/deterministicPlatformInputs.cpp.o
-[ 56%] Building CXX object CMakeFiles/test_app.dir/main/test_qemu_peripheral_adapters.cpp.o
-[ 57%] Building CXX object CMakeFiles/test_app.dir/main/test_esp_now_protocol.cpp.o
+[ 53%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/transport/espNowTransport.cpp.o
+[ 54%] Building CXX object CMakeFiles/test_app.dir/main/test_platform_inputs.cpp.o
+[ 56%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/platform/qemu/deterministicPlatformInputs.cpp.o
+[ 57%] Building CXX object CMakeFiles/test_app.dir/main/test_qemu_peripheral_adapters.cpp.o
 [ 59%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/platform/qemu/qemuPeripheralAdapters.cpp.o
-[ 62%] Building CXX object CMakeFiles/test_app.dir/main/test_task_start_evidence.cpp.o
-[ 62%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/infra/taskStartEvidence.cpp.o
-[ 63%] Building CXX object CMakeFiles/test_app.dir/main/test_release_metadata.cpp.o
-[ 65%] Building CXX object CMakeFiles/test_app.dir/main/test_restart_snapshot_record.cpp.o
-[ 66%] Building CXX object CMakeFiles/test_app.dir/main/test_config_protocol.cpp.o
+[ 60%] Building CXX object CMakeFiles/test_app.dir/main/test_task_start_evidence.cpp.o
+[ 62%] Building CXX object CMakeFiles/test_app.dir/main/test_release_metadata.cpp.o
+[ 65%] Building CXX object CMakeFiles/test_app.dir/main/test_version_parser.cpp.o
+[ 65%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/infra/taskStartEvidence.cpp.o
+[ 68%] Building CXX object CMakeFiles/test_app.dir/main/test_config_protocol.cpp.o
+[ 68%] Building CXX object CMakeFiles/test_app.dir/main/test_restart_snapshot_record.cpp.o
 [ 69%] Building CXX object CMakeFiles/test_app.dir/main/test_feedback_controller.cpp.o
-[ 69%] Building CXX object CMakeFiles/test_app.dir/main/test_version_parser.cpp.o
 [ 71%] Building CXX object CMakeFiles/test_app.dir/main/test_feature_manager.cpp.o
 [ 72%] Building CXX object CMakeFiles/test_app.dir/main/test_mode_manager.cpp.o
 [ 74%] Building CXX object CMakeFiles/test_app.dir/main/test_game_engine.cpp.o
 [ 75%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_buffer.cpp.o
-[ 78%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_stream_writer.cpp.o
+[ 77%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_stream_writer.cpp.o
+[ 78%] Building CXX object CMakeFiles/test_app.dir/main/test_multi_pod_sim.cpp.o
 [ 80%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_command_handler.cpp.o
-[ 80%] Building CXX object CMakeFiles/test_app.dir/main/test_multi_pod_sim.cpp.o
+[ 81%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/config/modeManager.cpp.o
 [ 83%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/config/featureManager.cpp.o
-[ 83%] Building CXX object CMakeFiles/test_app.dir/main/test_sim_drill.cpp.o
-[ 84%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/services/releaseMetadata.cpp.o
-[ 86%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/config/modeManager.cpp.o
-[ 87%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/services/firmwareVersion.cpp.o
+[ 84%] Building CXX object CMakeFiles/test_app.dir/main/test_sim_drill.cpp.o
+[ 86%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/services/firmwareVersion.cpp.o
+[ 87%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/services/releaseMetadata.cpp.o
 [ 89%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/game/gameEngine.cpp.o
-[ 90%] Building CXX object CMakeFiles/test_app.dir/sim/hostTraceBuffer.cpp.o
 [ 92%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/kernelTrace.cpp.o
-[ 93%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp.o
-[ 95%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceRecorder.cpp.o
-[ 96%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceDumpSnapshot.cpp.o
+[ 92%] Building CXX object CMakeFiles/test_app.dir/sim/hostTraceBuffer.cpp.o
+[ 93%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceDumpSnapshot.cpp.o
+[ 95%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp.o
+[ 96%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceRecorder.cpp.o
 /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp: In member function ‘bool domes::trace::CommandHandler::sendSessionInfo(uint32_t, uint32_t, uint32_t, uint32_t)’:
 /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
   413 |             std::strncpy(msg.objects[objectIdx].name, entry.name,
@@ -214,6 +214,7 @@ $ cmake --build /tmp/tmp.YAA7vZQjVJ/firmware-test-app --parallel
 /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
 /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
 [ 98%] Linking CXX static library ../../../lib/libgmock_main.a
+[ 98%] Built target gmock_main
 In file included from /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/test_app/main/test_ota_boot_verification.cpp:6:
 /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/test_app/../domes/main/services/otaBootVerification.hpp: In member function ‘virtual void OtaBootVerification_RejectsPassingOrTruncatedReason_Test::TestBody()’:
 /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/test_app/../domes/main/services/otaBootVerification.hpp:159:62: warning: ‘ota verify failed: ’ directive output truncated writing 19 bytes into a region of size 8 [-Wformat-truncation=]
@@ -226,12 +227,11 @@ In function ‘bool domes::formatOtaSelfTestRestartReason(const OtaSelfTestResul
       |                   ~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   160 |                                 otaSelfTestStageName(result.stage));
       |                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-[ 98%] Built target gmock_main
 [100%] Linking CXX executable test_app
 [100%] Built target test_app
 EXIT_STATUS=0
 
-$ /tmp/tmp.YAA7vZQjVJ/firmware-test-app/test_app --gtest_filter=EspNowProtocolTest.\*:PlatformInputsTest.RoundTokenSequencePreservesSeedPlusOneAndSkipsZero:MultiPodSimTest.\*:SimDrillTest.\*
+$ /tmp/tmp.cJcRYdJpGc/firmware-test-app/test_app --gtest_filter=EspNowProtocolTest.\*:PlatformInputsTest.RoundTokenSequencePreservesSeedPlusOneAndSkipsZero:MultiPodSimTest.\*:SimDrillTest.\*
 Note: Google Test filter = EspNowProtocolTest.*:PlatformInputsTest.RoundTokenSequencePreservesSeedPlusOneAndSkipsZero:MultiPodSimTest.*:SimDrillTest.*
 [==========] Running 48 tests from 4 test suites.
 [----------] Global test environment set-up.
@@ -348,129 +348,129 @@ Note: Google Test filter = EspNowProtocolTest.*:PlatformInputsTest.RoundTokenSeq
 [  PASSED  ] 48 tests.
 EXIT_STATUS=0
 
-$ env CARGO_TARGET_DIR=/tmp/tmp.YAA7vZQjVJ/cargo-target cargo test --manifest-path tools/domes-cli/Cargo.toml --locked --bin domes-cli protocol::peer_contract::tests
+$ env CARGO_TARGET_DIR=/tmp/tmp.cJcRYdJpGc/cargo-target cargo test --manifest-path tools/domes-cli/Cargo.toml --locked --bin domes-cli protocol::peer_contract::tests
    Compiling unicode-ident v1.0.22
    Compiling proc-macro2 v1.0.105
    Compiling libc v0.2.180
    Compiling memchr v2.7.6
    Compiling cfg-if v1.0.4
    Compiling pkg-config v0.3.32
-   Compiling serde_core v1.0.228
    Compiling pin-project-lite v0.2.16
-   Compiling futures-sink v0.3.31
    Compiling futures-core v0.3.31
-   Compiling getrandom v0.3.4
+   Compiling serde_core v1.0.228
+   Compiling futures-sink v0.3.31
    Compiling either v1.15.0
-   Compiling serde v1.0.228
+   Compiling getrandom v0.3.4
    Compiling anyhow v1.0.100
-   Compiling futures-task v0.3.31
-   Compiling futures-io v0.3.31
-   Compiling pin-utils v0.1.0
+   Compiling serde v1.0.228
    Compiling slab v0.4.11
-   Compiling typenum v1.19.0
+   Compiling pin-utils v0.1.0
+   Compiling futures-io v0.3.31
+   Compiling futures-task v0.3.31
    Compiling hashbrown v0.16.1
-   Compiling futures-channel v0.3.31
-   Compiling equivalent v1.0.2
-   Compiling regex-syntax v0.8.8
    Compiling thiserror v2.0.18
+   Compiling regex-syntax v0.8.8
+   Compiling futures-channel v0.3.31
+   Compiling typenum v1.19.0
+   Compiling equivalent v1.0.2
    Compiling itertools v0.14.0
    Compiling version_check v0.9.5
-   Compiling anstyle v1.0.13
    Compiling once_cell v1.21.3
+   Compiling anstyle v1.0.13
    Compiling autocfg v1.5.0
    Compiling rustix v1.1.3
-   Compiling log v0.4.29
    Compiling bitflags v2.10.0
+   Compiling log v0.4.29
    Compiling generic-array v0.14.7
-   Compiling libdbus-sys v0.2.7
    Compiling aho-corasick v1.1.4
-   Compiling utf8parse v0.2.2
-   Compiling heck v0.5.0
    Compiling prettyplease v0.2.37
+   Compiling heck v0.5.0
+   Compiling libdbus-sys v0.2.7
    Compiling num-traits v0.2.19
    Compiling bytes v1.11.0
+   Compiling utf8parse v0.2.2
    Compiling quote v1.0.40
    Compiling indexmap v2.13.0
-   Compiling crossbeam-utils v0.8.21
    Compiling linux-raw-sys v0.11.0
+   Compiling crossbeam-utils v0.8.21
    Compiling anstyle-parse v0.2.7
    Compiling syn v2.0.114
    Compiling libudev-sys v0.1.4
-   Compiling parking_lot_core v0.9.12
-   Compiling is_terminal_polyfill v1.70.2
-   Compiling anstyle-query v1.1.5
-   Compiling fixedbitset v0.5.7
-   Compiling fastrand v2.3.0
    Compiling colorchoice v1.0.4
+   Compiling anstyle-query v1.1.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling parking_lot_core v0.9.12
+   Compiling fixedbitset v0.5.7
    Compiling scopeguard v1.2.0
+   Compiling fastrand v2.3.0
    Compiling anstream v0.6.21
    Compiling petgraph v0.7.1
-   Compiling multimap v0.10.1
-   Compiling xml v1.2.1
-   Compiling smallvec v1.15.1
-   Compiling predicates-core v1.0.9
    Compiling zmij v1.0.20
-   Compiling block-buffer v0.10.4
+   Compiling smallvec v1.15.1
+   Compiling multimap v0.10.1
+   Compiling predicates-core v1.0.9
+   Compiling xml v1.2.1
    Compiling crypto-common v0.1.7
-   Compiling lock_api v0.4.14
-   Compiling toml_write v0.1.2
-   Compiling crc32fast v1.5.0
-   Compiling assert_cmd v2.1.2
-   Compiling normalize-line-endings v0.3.0
+   Compiling block-buffer v0.10.4
    Compiling regex-automata v0.4.13
+   Compiling lock_api v0.4.14
+   Compiling crc32fast v1.5.0
+   Compiling toml_write v0.1.2
    Compiling socket2 v0.6.1
    Compiling mio v1.1.1
-   Compiling float-cmp v0.10.0
-   Compiling uuid v1.19.0
    Compiling strsim v0.11.1
-   Compiling winnow v0.7.15
+   Compiling uuid v1.19.0
+   Compiling float-cmp v0.10.0
    Compiling tokio v1.49.0
-   Compiling clap_lex v0.7.7
-   Compiling thiserror v1.0.69
-   Compiling serde_json v1.0.149
-   Compiling tempfile v3.24.0
    Compiling bitflags v1.3.2
-   Compiling termtree v0.5.1
-   Compiling difflib v0.4.0
    Compiling hashbrown v0.14.5
-   Compiling nix v0.26.4
+   Compiling serde_json v1.0.149
+   Compiling clap_lex v0.7.7
+   Compiling winnow v0.7.15
+   Compiling assert_cmd v2.1.2
+   Compiling difflib v0.4.0
+   Compiling termtree v0.5.1
+   Compiling normalize-line-endings v0.3.0
+   Compiling thiserror v1.0.69
    Compiling predicates-tree v1.0.12
    Compiling clap_builder v4.5.54
+   Compiling tempfile v3.24.0
+   Compiling nix v0.26.4
    Compiling libudev v0.3.0
+   Compiling dashmap v6.1.0
    Compiling wait-timeout v0.2.1
    Compiling digest v0.10.7
-   Compiling jiff v0.2.18
+   Compiling cpufeatures v0.2.17
    Compiling static_assertions v1.1.0
    Compiling itoa v1.0.17
-   Compiling cpufeatures v0.2.17
+   Compiling jiff v0.2.18
    Compiling sha2 v0.10.9
    Compiling crossbeam-channel v0.5.15
    Compiling hex v0.4.3
-   Compiling dashmap v6.1.0
    Compiling regex v1.12.2
    Compiling bstr v1.12.1
    Compiling futures-macro v0.3.31
    Compiling serde_derive v1.0.228
    Compiling prost-derive v0.13.5
    Compiling thiserror-impl v2.0.18
-   Compiling thiserror-impl v1.0.69
    Compiling async-trait v0.1.89
    Compiling clap_derive v4.5.49
+   Compiling thiserror-impl v1.0.69
    Compiling env_filter v0.1.4
    Compiling predicates v3.1.3
    Compiling futures-util v0.3.31
    Compiling tokio-util v0.7.18
-   Compiling unescaper v0.1.8
    Compiling tokio-stream v0.1.18
+   Compiling unescaper v0.1.8
    Compiling serialport v4.8.1
    Compiling prost v0.13.5
-   Compiling prost-types v0.13.5
    Compiling clap v4.5.54
+   Compiling prost-types v0.13.5
    Compiling env_logger v0.11.8
    Compiling prost-build v0.13.5
-   Compiling toml_datetime v0.6.11
    Compiling serde-xml-rs v0.8.2
    Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
    Compiling toml_edit v0.22.27
    Compiling domes-cli v0.1.0 (/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/tools/domes-cli)
    Compiling dbus v0.9.10
@@ -481,8 +481,8 @@ $ env CARGO_TARGET_DIR=/tmp/tmp.YAA7vZQjVJ/cargo-target cargo test --manifest-pa
    Compiling bluez-generated v0.4.0
    Compiling bluez-async v0.8.2
    Compiling btleplug v0.11.8
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.61s
-     Running unittests src/main.rs (/tmp/tmp.YAA7vZQjVJ/cargo-target/debug/deps/domes_cli-1af9525c85a1a62c)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.28s
+     Running unittests src/main.rs (/tmp/tmp.cJcRYdJpGc/cargo-target/debug/deps/domes_cli-1af9525c85a1a62c)
 
 running 3 tests
 test protocol::peer_contract::tests::malformed_unknown_truncated_and_oversized_fail_closed ... ok
@@ -494,7 +494,7 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 102 filtered out; fi
 EXIT_STATUS=0
 GENERATED_PROST sha256=0c65a33209823c944bbd921f8de7ec274e149b7d3ba04ef824bb81332c7bd98f artifact=Cargo OUT_DIR/domes.peer.rs (ephemeral build artifact)
 
-$ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448/bin/flutter --suppress-analytics pub get --directory ios/domes_app --enforce-lockfile
+$ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448-correct/bin/flutter --suppress-analytics pub get --directory ios/domes_app --enforce-lockfile
 Resolving dependencies in `ios/domes_app`...
 Downloading packages...
   _fe_analyzer_shared 85.0.0 (105.0.0 available)
@@ -548,7 +548,7 @@ Got dependencies in `ios/domes_app`!
 Try `flutter pub outdated` for more information.
 EXIT_STATUS=0
 
-$ bash -c cd\ ios/domes_app\ \&\&\ exec\ \"\$@\" _ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448/bin/flutter --suppress-analytics test test/data/protocol/peer_contract_test.dart
+$ bash -c cd\ ios/domes_app\ \&\&\ exec\ \"\$@\" _ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448-correct/bin/flutter --suppress-analytics test test/data/protocol/peer_contract_test.dart
 Resolving dependencies...
 Downloading packages...
   _fe_analyzer_shared 85.0.0 (105.0.0 available)
@@ -607,7 +607,7 @@ Try `flutter pub outdated` for more information.
 00:00 +3: All tests passed!
 EXIT_STATUS=0
 
-$ bash -c cd\ ios/domes_app\ \&\&\ exec\ \"\$@\" _ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448/bin/flutter --suppress-analytics test test/domain/models/drill_result_test.dart
+$ bash -c cd\ ios/domes_app\ \&\&\ exec\ \"\$@\" _ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448-correct/bin/flutter --suppress-analytics test test/domain/models/drill_result_test.dart
 Resolving dependencies...
 Downloading packages...
   _fe_analyzer_shared 85.0.0 (105.0.0 available)
@@ -704,11 +704,15 @@ test_wrong_known_result_pod_is_rejected (test_campaign.CampaignTest.test_wrong_k
 test_wrong_pod_is_rejected (test_campaign.CampaignTest.test_wrong_pod_is_rejected) ... ok
 
 ----------------------------------------------------------------------
-Ran 22 tests in 0.005s
+Ran 22 tests in 0.006s
 
 OK
 EXIT_STATUS=0
 
+$ bash tools/scoring_validation/test_fs3_gate_failure.sh
+FS3_GATE_NEGATIVE_PATH_TESTS=PASS cases=2
+EXIT_STATUS=0
+
 GATE_VERDICT=ACCEPTED_SOFTWARE_COMPATIBILITY
 PHYSICAL_EVIDENCE=UNVERIFIED
-UTC_FINISHED=2026-08-22T06:19:32Z
+UTC_FINISHED=2026-08-22T07:15:24Z
