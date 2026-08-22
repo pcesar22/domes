@@ -3256,6 +3256,18 @@ def claim_for_dispatch(workflow: Workflow, item: TicketValidation) -> TicketVali
     )
 
 
+def worker_evidence_requires_rework(result: dict[str, Any]) -> bool:
+    """Whether a worker handoff contains known-incomplete acceptance evidence."""
+    statuses = {
+        str(record.get("status"))
+        for record in result.get("verification", [])
+        if isinstance(record, dict)
+    }
+    return bool(statuses & {"failed", "pending"}) or bool(
+        result.get("blockers") and "unavailable" in statuses
+    )
+
+
 def result_state(
     role: str,
     result: dict[str, Any],
@@ -3264,11 +3276,6 @@ def result_state(
     ticket_sections: dict[str, str] | None = None,
     hardware_attested: bool = False,
 ) -> str:
-    worker_has_incomplete_evidence = role == "worker" and any(
-        isinstance(record, dict)
-        and record.get("status") in {"failed", "pending", "unavailable"}
-        for record in result.get("verification", [])
-    )
     if (
         role == "worker"
         and result["blockers"]
@@ -3281,13 +3288,18 @@ def result_state(
         return "agent:blocked"
     if (
         role == "worker"
-        and result["blockers"]
         and result.get("pull_request") is not None
-        and worker_has_incomplete_evidence
+        and worker_evidence_requires_rework(result)
     ):
-        # An existing PR does not make an incomplete or unpublished repair
-        # reviewable. Keep it in the worker loop instead of spending a judge
-        # cycle on the stale remote head.
+        # An existing PR does not make failed, pending, or blocker-bound
+        # unavailable evidence reviewable. Keep it in the worker loop instead
+        # of spending a judge cycle on a known-incomplete artifact.
+        return "agent:rework"
+    if (
+        role == "worker"
+        and not result["blockers"]
+        and worker_evidence_requires_rework(result)
+    ):
         return "agent:rework"
     if role == "planner" and result["blockers"]:
         return "agent:blocked"
@@ -6089,6 +6101,16 @@ def reconcile_ci_ticket(
             + "; ".join(validation.errors)
         )
     artifact = load_latest_artifact_handoff(workflow, ticket)
+    if worker_evidence_requires_rework(artifact):
+        transition(workflow, ticket, "agent:rework")
+        post_controller_comment(
+            workflow,
+            ticket,
+            "Agent control-plane transition (evidence integrity)",
+            "The implementation handoff contains failed, pending, or blocker-bound "
+            "unavailable verification; returning it to rework before CI.",
+        )
+        return {"issue": ticket.number, "state": "agent:rework"}
     artifact_head = str(artifact.get("commit", ""))
     judge = load_exact_role_handoff(
         workflow,
@@ -6279,6 +6301,17 @@ def reconcile_human_reviews(
                     + "; ".join(validation.errors)
                 )
             artifact = load_latest_artifact_handoff(workflow, ticket)
+            if worker_evidence_requires_rework(artifact):
+                transition(workflow, ticket, "agent:rework")
+                post_controller_comment(
+                    workflow,
+                    ticket,
+                    "Agent control-plane transition (evidence integrity)",
+                    "The implementation handoff contains incomplete verification; "
+                    "returning it to rework before human acceptance.",
+                )
+                results.append({"issue": ticket.number, "state": "agent:rework"})
+                continue
             pull_request_number = artifact.get("pull_request")
             if not isinstance(pull_request_number, int) or pull_request_number < 1:
                 raise ControlError(

@@ -762,6 +762,28 @@ class ResultSemanticsTest(unittest.TestCase):
         }
         self.assertEqual("agent:rework", control.result_state("worker", result))
 
+    def test_worker_failed_evidence_without_blocker_returns_to_rework(self) -> None:
+        result = {
+            "state": "agent_review",
+            "pull_request": 185,
+            "verification": [
+                {"status": "failed", "command_or_observation": "pre-commit"},
+                {"status": "passed", "command_or_observation": "split hooks"},
+                {"status": "unavailable", "level": "physical"},
+            ],
+            "blockers": [],
+        }
+        self.assertEqual("agent:rework", control.result_state("worker", result))
+
+    def test_expected_unavailable_evidence_can_reach_judge(self) -> None:
+        result = {
+            "state": "agent_review",
+            "pull_request": 185,
+            "verification": [{"status": "unavailable", "level": "physical"}],
+            "blockers": [],
+        }
+        self.assertEqual("agent:agent-review", control.result_state("worker", result))
+
     def test_hardware_approval_routes_through_verification_then_final_judge(
         self,
     ) -> None:
@@ -2280,6 +2302,36 @@ class AutopilotReviewTest(unittest.TestCase):
         comment.assert_called_once()
         transition.assert_called_once_with(workflow, ticket, "agent:human-review")
         run.assert_not_called()
+
+    def test_ci_rejects_known_failed_worker_evidence_before_judge(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        ticket = automated_ticket(33, self.revision, label="agent:ci-pending")
+        validation = control.TicketValidation(
+            ticket, control.parse_sections(ticket.body), (), ()
+        )
+        artifact = {
+            "commit": "c" * 40,
+            "pull_request": 185,
+            "verification": [
+                {"status": "failed", "command_or_observation": "pre-commit"}
+            ],
+            "blockers": [],
+        }
+        with (
+            mock.patch.object(control, "validate_ticket", return_value=validation),
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "load_exact_role_handoff") as judge,
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            result = control.reconcile_ci_ticket(workflow, policy, ticket)
+        self.assertEqual({"issue": ticket.number, "state": "agent:rework"}, result)
+        transition.assert_called_once_with(workflow, ticket, "agent:rework")
+        comment.assert_called_once()
+        judge.assert_not_called()
 
     def test_complete_issue_closes_and_sets_done_in_one_request(self) -> None:
         workflow = control.load_workflow()
