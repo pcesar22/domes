@@ -1698,15 +1698,6 @@ def _espnow_status_fields(output: str) -> tuple[str, int, int]:
     return state.group(1).casefold(), int(peers.group(1)), int(tx_fails.group(1))
 
 
-def _espnow_packet_counts(output: str) -> tuple[int, int]:
-    """Parse monotonic radio counters used to bound traced drill capture."""
-    tx_packets = re.search(r"(?im)^\s*TX packets:\s*(\d+)\s*$", output)
-    rx_packets = re.search(r"(?im)^\s*RX packets:\s*(\d+)\s*$", output)
-    if tx_packets is None or rx_packets is None:
-        raise BrokerError("ESP-NOW status response omits packet counters")
-    return int(tx_packets.group(1)), int(rx_packets.group(1))
-
-
 def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str, Any]:
     """Run the fixed two-NFF benchmark and simulated-drill acceptance lifecycle."""
     if set(cap.boards) != {0, 1}:
@@ -1768,9 +1759,6 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
 
     def status(board: int) -> tuple[str, int, int]:
         return _espnow_status_fields(run_cli(board, "espnow", "status"))
-
-    def packet_counts_both() -> tuple[tuple[int, int], tuple[int, int]]:
-        return tuple(_espnow_packet_counts(output) for output in run_both("espnow", "status"))  # type: ignore[return-value]
 
     def wait_for_disabled(phase: str) -> None:
         for _attempt in range(20):
@@ -1839,28 +1827,19 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
     wait_for_peers("simulated drill")
 
     # The simulated drill and scheduler traffic can fill the fixed 1,024-event
-    # trace ring in well under a second. Capture bounded windows and use the
-    # monotonic packet counters as an objective trigger: the baseline is read
-    # only after both recorders start, and a window is retained only when both
-    # pods completed TX and RX traffic while tracing was enabled.
-    traced_drill = False
-    for _attempt in range(20):
-        run_both("trace", "stop")
-        run_both("trace", "clear")
-        run_both("trace", "start")
-        before = packet_counts_both()
-        time.sleep(0.05)
-        after = packet_counts_both()
-        run_both("trace", "stop")
-        if all(
-            after[board][0] > before[board][0] and after[board][1] > before[board][1]
-            for board in (0, 1)
-        ):
-            traced_drill = True
-            break
-        time.sleep(0.05)
-    if not traced_drill:
-        raise BrokerError("simulated drill produced no bounded traced peer exchange")
+    # trace ring in well under a second. While sim mode and the peer drill are
+    # active, run one explicit supported ping/pong round between the assigned
+    # roles. This gives both recorders complete TX and RX causal chains without
+    # depending on host polling latency or retaining the full drill.
+    run_both("trace", "stop")
+    run_both("trace", "clear")
+    run_both("trace", "start")
+    traced_output = run_cli(slave, "espnow", "bench", "--rounds", "1", timeout=30)
+    run_both("trace", "stop")
+    if not re.search(
+        r"(?m)^\s*Rounds:\s*1/1 completed \(0 failed\)\s*$", traced_output
+    ):
+        raise BrokerError("simulated drill trace probe did not complete 1/1 round")
 
     time.sleep(35)
     final = [status(board) for board in (0, 1)]
@@ -1886,6 +1865,7 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
         "benchmark_failures": 0,
         "discovery_cancellation": "passed",
         "drill": "passed",
+        "traced_probe_rounds": 1,
         "final_states": [record[0] for record in final],
         "final_peer_counts": [record[1] for record in final],
         "final_tx_failures": [record[2] for record in final],
