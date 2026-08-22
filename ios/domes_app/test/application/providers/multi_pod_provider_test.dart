@@ -55,8 +55,71 @@ final class _FakeTransport extends Transport {
   Stream<Frame> get unsolicitedFrames => const Stream.empty();
 }
 
+final class _RetainedCallbackStream extends Stream<AppTouchEvent> {
+  _RetainedCallbackStream({this.onCancel});
+
+  final void Function()? onCancel;
+  void Function(AppTouchEvent)? _onData;
+  Function? _onError;
+
+  void emit(AppTouchEvent event) => _onData?.call(event);
+
+  void emitError(Object error, StackTrace stackTrace) {
+    final handler = _onError;
+    if (handler != null) Function.apply(handler, [error, stackTrace]);
+  }
+
+  @override
+  StreamSubscription<AppTouchEvent> listen(
+    void Function(AppTouchEvent event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    _onData = onData;
+    _onError = onError;
+    return _RetainedCallbackSubscription(onCancel);
+  }
+}
+
+final class _RetainedCallbackSubscription
+    implements StreamSubscription<AppTouchEvent> {
+  _RetainedCallbackSubscription(this._onCancel);
+
+  final void Function()? _onCancel;
+  bool _isPaused = false;
+
+  @override
+  Future<void> cancel() async => _onCancel?.call();
+
+  @override
+  void onData(void Function(AppTouchEvent data)? handleData) {}
+
+  @override
+  void onError(Function? handleError) {}
+
+  @override
+  void onDone(void Function()? handleDone) {}
+
+  @override
+  void pause([Future<void>? resumeSignal]) => _isPaused = true;
+
+  @override
+  void resume() => _isPaused = false;
+
+  @override
+  bool get isPaused => _isPaused;
+
+  @override
+  Future<E> asFuture<E>([E? futureValue]) => Completer<E>().future;
+}
+
 final class _FakeRepository implements PodRepository {
-  _FakeRepository({void Function()? onListen, void Function()? onCancel}) {
+  _FakeRepository({
+    void Function()? onListen,
+    void Function()? onCancel,
+    this.retainedCallbackStream,
+  }) {
     eventController = StreamController<AppTouchEvent>.broadcast(
       onListen: onListen,
       onCancel: onCancel,
@@ -64,21 +127,33 @@ final class _FakeRepository implements PodRepository {
   }
 
   late final StreamController<AppTouchEvent> eventController;
+  final _RetainedCallbackStream? retainedCallbackStream;
   (SystemMode, bool) modeResult = (SystemMode.SYSTEM_MODE_GAME, true);
   AppLedPattern? ledResult;
   AppLedPattern? lastLedPattern;
+  Object? modeError;
+  Object? ledError;
+  int modeCalls = 0;
+  int ledCalls = 0;
 
   @override
-  Stream<AppTouchEvent> get touchEvents => eventController.stream;
+  Stream<AppTouchEvent> get touchEvents =>
+      retainedCallbackStream ?? eventController.stream;
 
   @override
   Future<AppLedPattern> setLedPattern(AppLedPattern pattern) async {
+    ledCalls++;
     lastLedPattern = pattern;
+    if (ledError case final error?) throw error;
     return ledResult ?? pattern;
   }
 
   @override
-  Future<(SystemMode, bool)> setSystemMode(SystemMode mode) async => modeResult;
+  Future<(SystemMode, bool)> setSystemMode(SystemMode mode) async {
+    modeCalls++;
+    if (modeError case final error?) throw error;
+    return modeResult;
+  }
 
   @override
   Future<AppModeInfo> getSystemMode() => throw UnsupportedError('not used');
@@ -135,19 +210,31 @@ void main() {
     expect(repository.lastLedPattern, same(pattern));
   });
 
-  test('requires a successful mode transition response', () async {
-    repository.modeResult = (SystemMode.SYSTEM_MODE_IDLE, false);
+  test(
+    'rejected mode transition quarantines its connected generation',
+    () async {
+      repository.modeResult = (SystemMode.SYSTEM_MODE_GAME, false);
 
-    await expectLater(
-      notifier.setMode('pod-1', SystemMode.SYSTEM_MODE_GAME),
-      throwsA(isA<StateError>()),
-    );
+      await expectLater(
+        notifier.setMode('pod-1', SystemMode.SYSTEM_MODE_GAME),
+        throwsA(isA<StateError>()),
+      );
 
+      expect(repository.modeCalls, 1);
+      expect(notifier.state['pod-1']!.isConnected, isFalse);
+    },
+  );
+
+  test('reported mode mismatch quarantines its connected generation', () async {
     repository.modeResult = (SystemMode.SYSTEM_MODE_IDLE, true);
+
     await expectLater(
       notifier.setMode('pod-1', SystemMode.SYSTEM_MODE_GAME),
       throwsA(isA<StateError>()),
     );
+
+    expect(repository.modeCalls, 1);
+    expect(notifier.state['pod-1']!.isConnected, isFalse);
   });
 
   test('requires the reported LED state to match the request', () async {
@@ -158,6 +245,151 @@ void main() {
       throwsA(isA<StateError>()),
     );
   });
+
+  test(
+    'set-mode failure quarantines once and reconnects after cleanup',
+    () async {
+      final lifecycle = <String>[];
+      final oldTransport = _FakeTransport(
+        onDisconnect: () => lifecycle.add('disconnect:pod-1:1'),
+      )..disconnectGate = Completer<void>();
+      final staleCallbacks = _RetainedCallbackStream(
+        onCancel: () => lifecycle.add('cancel:pod-1:1'),
+      );
+      final oldRepository = _FakeRepository(
+        retainedCallbackStream: staleCallbacks,
+      );
+      final newTransport = _FakeTransport();
+      final newRepository = _FakeRepository();
+      final healthyTransport = _FakeTransport();
+      final healthyRepository = _FakeRepository();
+      final commandError = StateError('ambiguous mode response');
+      oldRepository.modeError = commandError;
+      var affectedConnections = 0;
+      final localNotifier = MultiPodNotifier(
+        connector: (pod) async {
+          if (pod.address == 'healthy') {
+            return (transport: healthyTransport, repository: healthyRepository);
+          }
+          affectedConnections++;
+          lifecycle.add('connect:pod-1:$affectedConnections');
+          return affectedConnections == 1
+              ? (transport: oldTransport, repository: oldRepository)
+              : (transport: newTransport, repository: newRepository);
+        },
+      );
+      const affected = PodDevice(name: 'Pod 1', address: 'pod-1');
+      const healthy = PodDevice(name: 'Healthy', address: 'healthy');
+      await localNotifier.connectPod(affected);
+      await localNotifier.connectPod(healthy);
+      final failures = <PodConnectionFailure>[];
+      final touches = <PodTouchEvent>[];
+      final failureSubscription = localNotifier.connectionFailures.listen(
+        failures.add,
+      );
+      final touchSubscription = localNotifier.touchEvents.listen(touches.add);
+
+      final command = localNotifier.setMode(
+        affected.address,
+        SystemMode.SYSTEM_MODE_GAME,
+      );
+      final commandExpectation = expectLater(
+        command,
+        throwsA(same(commandError)),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(localNotifier.state[affected.address]!.isConnected, isFalse);
+      expect(
+        localNotifier.state[affected.address]!.error,
+        contains('$commandError'),
+      );
+      expect(localNotifier.state[healthy.address]!.isConnected, isTrue);
+      expect(oldRepository.modeCalls, 1, reason: 'commands are never retried');
+      expect(failures, isEmpty, reason: 'failure follows cleanup');
+
+      final reconnect = localNotifier.connectPod(affected);
+      await Future<void>.delayed(Duration.zero);
+      expect(affectedConnections, 1, reason: 'reconnect awaits cleanup');
+
+      staleCallbacks.emitError(
+        StateError('stale generation'),
+        StackTrace.current,
+      );
+      staleCallbacks.emit(
+        const AppTouchEvent(podId: 1, padIndex: 7, timestampUs: 101),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(failures, isEmpty, reason: 'stale error emits no terminal event');
+      expect(touches, isEmpty, reason: 'stale touch cannot escape generation');
+      expect(
+        localNotifier.state[affected.address]!.error,
+        contains('$commandError'),
+        reason: 'stale callbacks cannot mutate disconnected state',
+      );
+
+      oldTransport.disconnectGate!.complete();
+      await commandExpectation;
+      await reconnect;
+      await Future<void>.delayed(Duration.zero);
+
+      expect(lifecycle, [
+        'connect:pod-1:1',
+        'cancel:pod-1:1',
+        'disconnect:pod-1:1',
+        'connect:pod-1:2',
+      ]);
+      expect(failures, hasLength(1));
+      expect(failures.single.address, affected.address);
+      expect(failures.single.error, same(commandError));
+      expect(localNotifier.state[affected.address]!.isConnected, isTrue);
+      expect(localNotifier.state[healthy.address]!.isConnected, isTrue);
+
+      await localNotifier.setMode(
+        affected.address,
+        SystemMode.SYSTEM_MODE_GAME,
+      );
+      expect(newRepository.modeCalls, 1);
+
+      await touchSubscription.cancel();
+      await failureSubscription.cancel();
+      localNotifier.dispose();
+      await oldRepository.eventController.close();
+      await newRepository.eventController.close();
+      await healthyRepository.eventController.close();
+    },
+  );
+
+  test(
+    'set-LED failure disconnects and emits one address-bound failure',
+    () async {
+      final commandError = TimeoutException('LED response timed out');
+      repository.ledError = commandError;
+      final failures = <PodConnectionFailure>[];
+      final subscription = notifier.connectionFailures.listen(failures.add);
+
+      await expectLater(
+        notifier.setLedPattern('pod-1', AppLedPattern.solid(1, 2, 3)),
+        throwsA(same(commandError)),
+      );
+      repository.eventController.addError(StateError('stale stream failure'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        repository.ledCalls,
+        1,
+        reason: 'ambiguous commands are not retried',
+      );
+      expect(transport.disconnectCalls, 1);
+      expect(notifier.state['pod-1']!.isConnected, isFalse);
+      expect(notifier.state['pod-1']!.error, contains('$commandError'));
+      expect(failures, hasLength(1));
+      expect(failures.single.address, 'pod-1');
+      expect(failures.single.error, same(commandError));
+
+      await subscription.cancel();
+    },
+  );
 
   test('associates touch events with their connection address', () async {
     final received = notifier.touchEvents.first;
