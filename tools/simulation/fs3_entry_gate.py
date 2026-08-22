@@ -226,8 +226,10 @@ def _structured_payloads(issue: Mapping[str, Any]) -> list[dict[str, Any]]:
             r"```json\s*(.*?)\s*```", str(comment.get("body", "")), re.DOTALL
         ):
             try:
-                payload = json.loads(encoded)
-            except json.JSONDecodeError:
+                payload = json.loads(
+                    encoded, object_pairs_hook=_reject_duplicate_json_keys
+                )
+            except (json.JSONDecodeError, ValueError):
                 continue
             if isinstance(payload, dict):
                 result.append({**payload, "_comment_url": comment.get("url")})

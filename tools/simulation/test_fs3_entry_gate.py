@@ -206,6 +206,68 @@ class EntryGateTests(unittest.TestCase):
                     )
                 )
 
+    def test_tracker_payloads_reject_duplicate_identity_keys(self) -> None:
+        commit = "1" * 40
+        encoded = json.dumps(judgment(commit=commit)).replace(
+            f'"commit": "{commit}"',
+            f'"commit": "{"0" * 40}", "commit": "{commit}"',
+        )
+        issue = {
+            "comments": [
+                {
+                    "author": {"login": gate.TRACKER_ACTOR},
+                    "url": "https://tracker.example/judgment",
+                    "body": f"```json\n{encoded}\n```",
+                }
+            ]
+        }
+        self.assertEqual(gate._structured_payloads(issue), [])
+        self.assertIsNone(
+            gate._latest_judgment(
+                issue,
+                commit,
+                issue_number=101,
+                pull_request=105,
+                spec_revision=gate.DEPENDENCY_JUDGMENTS[101]["spec_revision"],
+            )
+        )
+
+    def test_tracker_payloads_reject_duplicate_authority_keys(self) -> None:
+        old_head = "1" * 40
+        replacement_head = "2" * 40
+        encoded = json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "fs-wp-003a-pr-disposition",
+                "issue": 114,
+                "spec_revision": gate.FS3_JUDGMENT["spec_revision"],
+                "legacy_pull_request": 107,
+                "legacy_head": old_head,
+                "disposition": "superseded",
+                "replacement_pull_request": 115,
+                "replacement_head": replacement_head,
+                "acceptance_authority": {
+                    "actor": gate.TRACKER_ACTOR,
+                    "role": "controller",
+                    "decision": "accepted",
+                },
+            }
+        ).replace(
+            f'"actor": "{gate.TRACKER_ACTOR}"',
+            f'"actor": "untrusted", "actor": "{gate.TRACKER_ACTOR}"',
+        )
+        issue = {
+            "comments": [
+                {
+                    "author": {"login": gate.TRACKER_ACTOR},
+                    "url": "https://tracker.example/disposition",
+                    "body": f"```json\n{encoded}\n```",
+                }
+            ]
+        }
+        self.assertEqual(gate._structured_payloads(issue), [])
+        self.assertIsNone(gate._pr107_disposition(issue, old_head, replacement_head))
+
     def test_runtime_artifact_must_be_distinct_and_digest_bound(self) -> None:
         content = b'{"runtime":"evidence"}'
         artifact = {
