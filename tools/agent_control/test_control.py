@@ -1598,6 +1598,8 @@ class AutopilotReviewTest(unittest.TestCase):
         self.assertIn(f"Current required base revision: `{'b' * 40}`", prompt)
         self.assertIn("Required pull-request base branch: `main`", prompt)
         self.assertIn("reconciliation-only commit is valid", prompt)
+        self.assertIn("do not run a\nlong-lived check watcher", prompt)
+        self.assertIn("controller owns CI polling", prompt)
         self.assertIn("never an\nimplementation-worker blocker", prompt)
 
     def test_hardware_implementation_blocker_routes_to_independent_judge(self) -> None:
