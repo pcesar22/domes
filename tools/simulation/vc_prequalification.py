@@ -493,9 +493,7 @@ def validate_public_input(
         calibration = {identity(item) for item in datasets["calibration"]}
         held_out = {identity(item) for item in datasets["held_out"]}
         if calibration & held_out:
-            raise GateError(
-                f"calibration and held-out {namespace} identities overlap"
-            )
+            raise GateError(f"calibration and held-out {namespace} identities overlap")
 
     clock = value["clock_correlation"]
     _exact(clock, {"method", "method_sha256", "uncertainty_ns"}, "clock_correlation")
