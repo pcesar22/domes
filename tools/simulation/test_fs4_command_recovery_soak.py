@@ -10,6 +10,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 MODULE_PATH = Path(__file__).with_name("fs4_command_recovery_soak.py")
 SPEC = importlib.util.spec_from_file_location("fs4_command_recovery_soak", MODULE_PATH)
@@ -147,6 +148,15 @@ class SummaryTests(unittest.TestCase):
 
 
 class ManifestTests(unittest.TestCase):
+    def setUp(self) -> None:
+        toolchain = mock.patch.object(
+            soak,
+            "_tool_version_tuple",
+            return_value=("3.44.9", "3.12.2", sys.version.split()[0]),
+        )
+        toolchain.start()
+        self.addCleanup(toolchain.stop)
+
     def test_accepts_complete_manifest_and_recomputes_log_hash(self) -> None:
         log = log_bytes()
         soak.validate_manifest(manifest(log), log)
