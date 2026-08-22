@@ -3985,6 +3985,7 @@ def attest_hardware_manifest(
                 {
                     ("0x0", "bootloader/bootloader.bin"),
                     ("0x8000", "partition_table/partition-table.bin"),
+                    ("0xf000", "ota_data_initial.bin"),
                     ("0x20000", "domes.bin"),
                 }
                 if operation in {"flash", "flash-trace-acceptance"}
@@ -4124,8 +4125,13 @@ def attest_hardware_manifest(
                 or candidate_cli.get("cc_sha256") != trusted_tools["cc"]["sha256"]
                 or candidate_cli.get("rustc_sha256") != trusted_tools["rustc"]["sha256"]
                 or not isinstance(normalization, dict)
-                or normalization.get("kind") != "controller-bwrap-trace-normalizer-v1"
+                or normalization.get("kind")
+                not in {
+                    "controller-bwrap-trace-normalizer-v1",
+                    "controller-bwrap-runtime-trace-normalizer-v1",
+                }
                 or normalization.get("source_head") != artifact_head
+                or normalization.get("build_profile") != active["build_profile"]
                 or normalization.get("raw_sha256") != trace_hashes["raw_sha256"]
                 or normalization.get("session_sha256") != trace_hashes["session_sha256"]
                 or any(
@@ -4151,6 +4157,19 @@ def attest_hardware_manifest(
                 or trace_hashes["raw_sha256"] not in private_trace_hashes
                 or trace_hashes["session_sha256"] not in private_trace_hashes
                 or not isinstance(normalization.get("summary"), dict)
+                or (
+                    active["build_profile"] == "default"
+                    and (
+                        normalization["kind"]
+                        != "controller-bwrap-runtime-trace-normalizer-v1"
+                        or normalization["summary"].get("tx_complete_count", 0) < 1
+                        or normalization["summary"].get("rx_complete_count", 0) < 1
+                    )
+                )
+                or (
+                    active["build_profile"] == "trace-acceptance"
+                    and normalization["kind"] != "controller-bwrap-trace-normalizer-v1"
+                )
                 or not isinstance(trace_identity, dict)
                 or trace_identity.get("registered_device_match") is not True
                 or trace_identity.get("candidate_file_sha256")

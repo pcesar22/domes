@@ -1834,6 +1834,10 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
         run_cli(board, "trace", "stop")
         run_cli(board, "trace", "clear")
     run_both("trace", "start")
+    # Retain a short, concurrent window after peer convergence. Immediate stop
+    # captures only command/scheduler traffic; 100 ms covers the configured
+    # simulated exchange while remaining below the fixed trace-ring capacity.
+    time.sleep(0.1)
     run_both("trace", "stop")
 
     time.sleep(35)
@@ -2401,17 +2405,31 @@ def _normalize_trace_artifacts(
     trace_hashes: dict[str, str],
     device_uid: str,
     source_head: str,
+    build_profile: str,
 ) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
-    """Run the judged normalizer privately and retain only content-addressed IDs."""
-    normalizer = candidate_source / "tools" / "trace" / "trace_normalizer.py"
+    """Run the profile-correct normalizer and retain content-addressed IDs."""
+    acceptance_normalizer = candidate_source / "tools" / "trace" / "trace_normalizer.py"
+    runtime_normalizer = (
+        Path(__file__).resolve().with_name("runtime_trace_normalizer.py")
+    )
     trace_proto = candidate_source / "firmware" / "common" / "proto" / "trace.proto"
+    trace_names = candidate_source / "tools" / "trace" / "trace_names.json"
+    if build_profile not in {"default", "trace-acceptance"}:
+        raise BrokerError("selected trace build profile is invalid")
+    normalizer = (
+        acceptance_normalizer
+        if build_profile == "trace-acceptance"
+        else runtime_normalizer
+    )
     if (
         not normalizer.is_file()
         or normalizer.is_symlink()
         or not trace_proto.is_file()
         or trace_proto.is_symlink()
+        or not trace_names.is_file()
+        or trace_names.is_symlink()
     ):
-        raise BrokerError("candidate trace normalizer inputs are unavailable")
+        raise BrokerError("trace normalizer inputs are unavailable")
     normalized = cap.evidence / (
         f"normalized-trace-{trace_hashes['raw_sha256'][:16]}-{secrets.token_hex(4)}"
     )
@@ -2419,6 +2437,26 @@ def _normalize_trace_artifacts(
     python = _trusted_path(cap, "python3")
     if not Path(python).is_relative_to("/usr"):
         raise BrokerError("trusted normalizer Python is outside the system mount")
+    normalizer_mount = (
+        "/src/tools/trace/trace_normalizer.py"
+        if build_profile == "trace-acceptance"
+        else "/controller/runtime_trace_normalizer.py"
+    )
+    runtime_mounts = (
+        ["--dir", "/controller", "--ro-bind", str(runtime_normalizer), normalizer_mount]
+        if build_profile == "default"
+        else []
+    )
+    runtime_arguments = (
+        [
+            "--trace-proto",
+            "/src/firmware/common/proto/trace.proto",
+            "--trace-names",
+            "/src/tools/trace/trace_names.json",
+        ]
+        if build_profile == "default"
+        else []
+    )
     argv = _resource_limited(
         cap,
         [
@@ -2430,6 +2468,7 @@ def _normalize_trace_artifacts(
             "--ro-bind",
             str(candidate_source),
             "/src",
+            *runtime_mounts,
             "--dir",
             "/input",
             "--ro-bind",
@@ -2462,11 +2501,12 @@ def _normalize_trace_artifacts(
             "/out",
             "--",
             python,
-            "/src/tools/trace/trace_normalizer.py",
+            normalizer_mount,
             "--raw",
             "/input/trace.raw",
             "--session",
             "/input/session.json",
+            *runtime_arguments,
             "--output-prefix",
             "/out/trace",
         ],
@@ -2478,7 +2518,11 @@ def _normalize_trace_artifacts(
         60,
     )
     if returncode or len(stdout) > 65536 or len(stderr) > 65536:
-        raise BrokerError("sandboxed trace normalization failed")
+        detail = next(
+            (line.strip() for line in reversed(stderr.splitlines()) if line.strip()),
+            "unknown validation error",
+        )
+        raise BrokerError(f"sandboxed trace normalization failed: {detail[:240]}")
     expected = {"trace.replay.json", "trace.semantic.json"}
     if {path.name for path in normalized.iterdir()} != expected:
         raise BrokerError("trace normalizer produced unexpected files")
@@ -2500,15 +2544,33 @@ def _normalize_trace_artifacts(
         os.chmod(path, 0o400)
     replay = documents["replay"]
     semantic = documents["semantic"]
+    expected_replay_kind = (
+        "replay-normalized-trace"
+        if build_profile == "trace-acceptance"
+        else "replay-normalized-runtime-trace"
+    )
+    expected_semantic_kind = (
+        "cross-target-semantic-projection"
+        if build_profile == "trace-acceptance"
+        else "runtime-correlation-semantic-projection"
+    )
     if (
-        replay.get("artifact_kind") != "replay-normalized-trace"
+        replay.get("artifact_kind") != expected_replay_kind
         or replay.get("raw_sha256") != trace_hashes["raw_sha256"]
         or replay.get("dropped_count") != 0
         or replay.get("discontinuity_count") != 0
         or not isinstance(replay.get("events"), list)
         or len(replay["events"]) == 0
-        or semantic.get("artifact_kind") != "cross-target-semantic-projection"
+        or semantic.get("artifact_kind") != expected_semantic_kind
         or semantic.get("raw_sha256") != trace_hashes["raw_sha256"]
+        or (
+            build_profile == "default"
+            and (
+                not isinstance(replay.get("correlation"), dict)
+                or replay["correlation"].get("tx_complete_count", 0) < 1
+                or replay["correlation"].get("rx_complete_count", 0) < 1
+            )
+        )
     ):
         raise BrokerError("normalized trace semantics are inconsistent")
     python_version = subprocess.run(
@@ -2522,8 +2584,13 @@ def _normalize_trace_artifacts(
     if python_version.returncode or not python_version.stdout.strip():
         raise BrokerError("trusted normalizer Python version is unavailable")
     provenance: dict[str, Any] = {
-        "kind": "controller-bwrap-trace-normalizer-v1",
+        "kind": (
+            "controller-bwrap-trace-normalizer-v1"
+            if build_profile == "trace-acceptance"
+            else "controller-bwrap-runtime-trace-normalizer-v1"
+        ),
         "source_head": source_head,
+        "build_profile": build_profile,
         "normalizer_sha256": _sha256_file(normalizer),
         "trace_proto_sha256": _sha256_file(trace_proto),
         "python_sha256": str((cap.tools or {})["python3"]["sha256"]),
@@ -2538,6 +2605,17 @@ def _normalize_trace_artifacts(
             "event_count": len(replay["events"]),
             "causal_positions": replay.get("causal_positions"),
             "overhead_us": replay.get("overhead_us"),
+            "duration_us": replay.get("duration_us"),
+            "tx_complete_count": (
+                replay.get("correlation", {}).get("tx_complete_count")
+                if isinstance(replay.get("correlation"), dict)
+                else None
+            ),
+            "rx_complete_count": (
+                replay.get("correlation", {}).get("rx_complete_count")
+                if isinstance(replay.get("correlation"), dict)
+                else None
+            ),
             "normalized_sha256": replay.get("normalized_sha256"),
         },
     }
@@ -2869,6 +2947,7 @@ def execute(cap: Capability, request: dict[str, Any]) -> dict[str, Any]:
             trace_hashes,
             wire_identity["device_uid"],
             selected_head,
+            build_profile,
         )
         transcript_path = cap.evidence / (
             f"trace-relay-{trace_relay['transcript_sha256']}.bin"
