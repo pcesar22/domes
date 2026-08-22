@@ -1,0 +1,139 @@
+{
+  "fixture_id": "fixed-two-pod-mobile-v1",
+  "fixture_sha256": "5bf359be3b254608bf737d1a5f5a17139b6d6fdd32a30c863003a6332c0fdd2e",
+  "paths": {
+    "fixed": {
+      "aggregate": {
+        "average_reaction_us": 1025000,
+        "best_reaction_us": 1000,
+        "hits": 4,
+        "misses": 2,
+        "worst_reaction_us": 2999000
+      },
+      "clock_provenance": {
+        "kind": "simulated_monotonic",
+        "origin": "SimClock::nowUs",
+        "unit": "microseconds"
+      },
+      "fixture_id": "fixed-two-pod-mobile-v1",
+      "fixture_sha256": "5bf359be3b254608bf737d1a5f5a17139b6d6fdd32a30c863003a6332c0fdd2e",
+      "path": "fixed",
+      "result_provenance": {
+        "origin": "sim::DrillOrchestrator::execute",
+        "reaction_resolution_us": 1000
+      },
+      "rounds": [
+        {
+          "hit": true,
+          "index": 0,
+          "reaction_time_us": 1000,
+          "round_token": 1,
+          "target_identity": "local-pod-0"
+        },
+        {
+          "hit": true,
+          "index": 1,
+          "reaction_time_us": 100000,
+          "round_token": 2,
+          "target_identity": "peer-pod-1"
+        },
+        {
+          "hit": false,
+          "index": 2,
+          "reaction_time_us": null,
+          "round_token": 3,
+          "target_identity": "local-pod-0"
+        },
+        {
+          "hit": false,
+          "index": 3,
+          "reaction_time_us": null,
+          "round_token": 4,
+          "target_identity": "peer-pod-1"
+        },
+        {
+          "hit": true,
+          "index": 4,
+          "reaction_time_us": 2999000,
+          "round_token": 5,
+          "target_identity": "peer-pod-1"
+        },
+        {
+          "hit": true,
+          "index": 5,
+          "reaction_time_us": 1000000,
+          "round_token": 6,
+          "target_identity": "local-pod-0"
+        }
+      ],
+      "schema_version": 1
+    },
+    "mobile": {
+      "aggregate": {
+        "average_reaction_us": 1025000,
+        "best_reaction_us": 1000,
+        "hits": 4,
+        "misses": 2,
+        "worst_reaction_us": 2999000
+      },
+      "clock_provenance": {
+        "kind": "host_wall_clock",
+        "origin": "DateTime.now",
+        "unit": "milliseconds"
+      },
+      "fixture_id": "fixed-two-pod-mobile-v1",
+      "fixture_sha256": "5bf359be3b254608bf737d1a5f5a17139b6d6fdd32a30c863003a6332c0fdd2e",
+      "path": "mobile",
+      "result_provenance": {
+        "origin": "DrillResult getters",
+        "reaction_resolution_us": 1000
+      },
+      "rounds": [
+        {
+          "hit": true,
+          "index": 0,
+          "reaction_time_us": 1000,
+          "round_token": null,
+          "target_identity": "local-pod-0"
+        },
+        {
+          "hit": true,
+          "index": 1,
+          "reaction_time_us": 100000,
+          "round_token": null,
+          "target_identity": "peer-pod-1"
+        },
+        {
+          "hit": false,
+          "index": 2,
+          "reaction_time_us": null,
+          "round_token": null,
+          "target_identity": "local-pod-0"
+        },
+        {
+          "hit": false,
+          "index": 3,
+          "reaction_time_us": null,
+          "round_token": null,
+          "target_identity": "peer-pod-1"
+        },
+        {
+          "hit": true,
+          "index": 4,
+          "reaction_time_us": 2999000,
+          "round_token": null,
+          "target_identity": "peer-pod-1"
+        },
+        {
+          "hit": true,
+          "index": 5,
+          "reaction_time_us": 1000000,
+          "round_token": null,
+          "target_identity": "local-pod-0"
+        }
+      ],
+      "schema_version": 1
+    }
+  },
+  "schema_version": 1
+}
