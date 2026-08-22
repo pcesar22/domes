@@ -1,0 +1,1 @@
+{"baseline_identity_sha256":"5004dea8ac8f27c0dda455d6d6af2ba1b798ef6fd901d68789da4ea64805880c","candidate_identity_sha256":"8236b2b685be2807bd6da6a97515ef605ce1ac4dacb38040572fa9d80abe7f03","changed_field":"scenario_seed","failure":"replay identity mismatch: scenario_seed","schema_version":1,"status":"REJECTED"}
