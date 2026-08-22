@@ -9,7 +9,6 @@
 
 #include "config.hpp"
 #include "config.pb.h"
-#include "feedbackCommandHandler.hpp"
 
 #include "drivers/injectableTouchDriver.hpp"
 #include "esp_heap_caps.h"
@@ -17,6 +16,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "feedbackCommandHandler.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "infra/appMetadata.hpp"

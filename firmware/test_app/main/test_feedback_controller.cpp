@@ -1,5 +1,5 @@
-#include "config/feedbackCommandHandler.hpp"
 #include "config/featureManager.hpp"
+#include "config/feedbackCommandHandler.hpp"
 #include "interfaces/iAudioDriver.hpp"
 #include "pb_decode.h"
 #include "pb_encode.h"
@@ -177,8 +177,7 @@ TEST(FeedbackController, PlaybackReadsRemainRaceSafeDuringVolumeUpdates) {
     for (uint8_t value = 0; value <= 100; value += 10) {
         writers.emplace_back([&controller, value] {
             uint8_t applied = 0;
-            EXPECT_EQ(controller.setVolume(value, applied),
-                      domes::FeedbackController::Result::kOk);
+            EXPECT_EQ(controller.setVolume(value, applied), domes::FeedbackController::Result::kOk);
             EXPECT_LE(applied, 100);
         });
     }
@@ -200,8 +199,7 @@ TEST(FeedbackCommandHandler, DecodesRoutesAndSerializesStatusEnvelope) {
     domes::config::FeedbackCommandHandler handler(&fixture.controller);
     domes::config::FeedbackCommandHandler::Response response;
 
-    domes_config_SetAudioVolumeRequest setRequest =
-        domes_config_SetAudioVolumeRequest_init_zero;
+    domes_config_SetAudioVolumeRequest setRequest = domes_config_SetAudioVolumeRequest_init_zero;
     setRequest.volume = 64;
     std::array<uint8_t, domes_config_SetAudioVolumeRequest_size> requestBytes{};
     pb_ostream_t output = pb_ostream_from_buffer(requestBytes.data(), requestBytes.size());
@@ -211,8 +209,7 @@ TEST(FeedbackCommandHandler, DecodesRoutesAndSerializesStatusEnvelope) {
     EXPECT_EQ(response.type, domes::config::MsgType::kSetAudioVolumeRsp);
     ASSERT_GT(response.length, 1u);
     EXPECT_EQ(response.payload[0], static_cast<uint8_t>(domes::config::Status::kOk));
-    domes_config_SetAudioVolumeResponse setBody =
-        domes_config_SetAudioVolumeResponse_init_zero;
+    domes_config_SetAudioVolumeResponse setBody = domes_config_SetAudioVolumeResponse_init_zero;
     pb_istream_t input = pb_istream_from_buffer(response.payload.data() + 1, response.length - 1);
     ASSERT_TRUE(pb_decode(&input, domes_config_SetAudioVolumeResponse_fields, &setBody));
     EXPECT_EQ(setBody.volume, 64u);

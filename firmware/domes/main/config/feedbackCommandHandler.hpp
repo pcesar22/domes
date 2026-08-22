@@ -69,8 +69,8 @@ private:
     }
 
     static bool encodeVolume(Response& response, uint8_t volume, bool get) {
-        pb_ostream_t stream = pb_ostream_from_buffer(response.payload.data() + 1,
-                                                     response.payload.size() - 1);
+        pb_ostream_t stream =
+            pb_ostream_from_buffer(response.payload.data() + 1, response.payload.size() - 1);
         if (get) {
             domes_config_GetAudioVolumeResponse body =
                 domes_config_GetAudioVolumeResponse_init_zero;
@@ -92,8 +92,8 @@ private:
 
     bool handleGetVolume(Response& response) const {
         uint8_t volume = 0;
-        const auto result = controller_ ? controller_->getVolume(volume)
-                                        : FeedbackController::Result::kUnavailable;
+        const auto result =
+            controller_ ? controller_->getVolume(volume) : FeedbackController::Result::kUnavailable;
         beginResponse(response, MsgType::kGetAudioVolumeRsp, toStatus(result));
         return encodeVolume(response, volume, true);
     }
@@ -112,8 +112,7 @@ private:
     }
 
     bool handleTrigger(const uint8_t* payload, size_t length, Response& response) const {
-        domes_config_TriggerFeedbackRequest request =
-            domes_config_TriggerFeedbackRequest_init_zero;
+        domes_config_TriggerFeedbackRequest request = domes_config_TriggerFeedbackRequest_init_zero;
         pb_istream_t stream = pb_istream_from_buffer(payload, length);
         FeedbackProbe probe = FeedbackProbe::kUnknown;
         FeedbackController::ProbeResult result{FeedbackController::Result::kInvalid, false};
@@ -125,12 +124,11 @@ private:
         }
 
         beginResponse(response, MsgType::kTriggerFeedbackRsp, toStatus(result.result));
-        domes_config_TriggerFeedbackResponse body =
-            domes_config_TriggerFeedbackResponse_init_zero;
+        domes_config_TriggerFeedbackResponse body = domes_config_TriggerFeedbackResponse_init_zero;
         body.probe = static_cast<domes_config_FeedbackProbe>(probe);
         body.accepted = result.accepted;
-        pb_ostream_t output = pb_ostream_from_buffer(response.payload.data() + 1,
-                                                     response.payload.size() - 1);
+        pb_ostream_t output =
+            pb_ostream_from_buffer(response.payload.data() + 1, response.payload.size() - 1);
         if (!pb_encode(&output, domes_config_TriggerFeedbackResponse_fields, &body)) {
             return false;
         }
