@@ -5642,9 +5642,7 @@ def verify_worker_artifact(
                 f"base={candidate.base_ref}, head={candidate.head_oid}"
             )
         if attempt < 2:
-            time.sleep(
-                min(2**attempt, workflow.max_retry_backoff_seconds)
-            )
+            time.sleep(min(2**attempt, workflow.max_retry_backoff_seconds))
     else:
         detail = observed[-1] if observed else "no tracker response"
         raise ControlError(
@@ -6054,21 +6052,34 @@ def mark_review_ready(
 
 
 def hardware_attestation_matches_artifact(issue: int, artifact_head: str) -> bool:
-    """Return whether private hardware evidence is bound to this exact artifact."""
+    """Return whether complete private hardware evidence matches this artifact."""
     state_root = Path(
         os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")
     )
-    path = (
-        state_root
-        / "domes-agent-control"
-        / f"issue-{issue}"
-        / "hardware-attestation.json"
-    )
+    run_root = state_root / "domes-agent-control" / f"issue-{issue}"
     try:
-        attestation = json.loads(path.read_text(encoding="utf-8"))
+        attestation = json.loads(
+            (run_root / "hardware-attestation.json").read_text(encoding="utf-8")
+        )
+        verification = json.loads(
+            (run_root / "handoff-verification-worker.json").read_text(encoding="utf-8")
+        )
     except (OSError, json.JSONDecodeError):
         return False
-    return attestation.get("artifact_head") == artifact_head
+    checks = verification.get("checks")
+    return bool(
+        attestation.get("artifact_head") == artifact_head
+        and attestation.get("failed_event_count") == 0
+        and verification.get("commit") == artifact_head
+        and verification.get("state") == "agent_review"
+        and verification.get("blockers") == []
+        and isinstance(checks, list)
+        and checks
+        and all(
+            isinstance(check, dict) and check.get("status") in {"passed", "skipped"}
+            for check in checks
+        )
+    )
 
 
 def reconcile_ci_ticket(

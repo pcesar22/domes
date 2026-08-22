@@ -823,6 +823,59 @@ class ResultSemanticsTest(unittest.TestCase):
         transition.assert_called_once_with(workflow, ticket, "agent:verification")
         comment.assert_called_once()
 
+    def test_failed_hardware_attempt_does_not_satisfy_artifact_attestation(
+        self,
+    ) -> None:
+        head = "a" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "domes-agent-control" / "issue-703"
+            run_root.mkdir(parents=True)
+            (run_root / "hardware-attestation.json").write_text(
+                json.dumps(
+                    {
+                        "artifact_head": head,
+                        "failed_event_count": 1,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            handoff = {
+                "commit": head,
+                "state": "blocked",
+                "blockers": ["trace normalization failed"],
+                "checks": [{"name": "trace", "status": "failed"}],
+            }
+            (run_root / "handoff-verification-worker.json").write_text(
+                json.dumps(handoff), encoding="utf-8"
+            )
+            with mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}):
+                self.assertFalse(
+                    control.hardware_attestation_matches_artifact(703, head)
+                )
+                (run_root / "hardware-attestation.json").write_text(
+                    json.dumps(
+                        {
+                            "artifact_head": head,
+                            "failed_event_count": 0,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (run_root / "handoff-verification-worker.json").write_text(
+                    json.dumps(
+                        {
+                            **handoff,
+                            "state": "agent_review",
+                            "blockers": [],
+                            "checks": [{"name": "trace", "status": "passed"}],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                self.assertTrue(
+                    control.hardware_attestation_matches_artifact(703, head)
+                )
+
     def test_public_handoff_redacts_host_and_device_identity_without_touching_commit(
         self,
     ) -> None:
