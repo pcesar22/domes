@@ -7,9 +7,14 @@ import unittest
 from tools.trace.trace_normalizer import (
     CALLBACK_BEGIN,
     CALLBACK_END,
+    CAUSAL_COMPLETE,
+    ESP_NOW_OBJECTS,
+    PHYSICAL_OBJECTS,
     PROBE_OBJECTS,
+    QUEUE_RECEIVE,
     QUEUE_SEND,
     SEM_GIVE,
+    SEM_TAKE,
     TraceNormalizationError,
     normalize_trace,
     object_map_from_qemu_log,
@@ -102,11 +107,65 @@ class TraceNormalizerTests(unittest.TestCase):
             ],
         }
 
+    def physical_trace(self):
+        queue_id, ready_id, callback_id, complete_id = ESP_NOW_OBJECTS
+        rx_token = 417
+        tx_token = 418
+        rx = [
+            (CALLBACK_BEGIN, callback_id, 0, 9),
+            (QUEUE_SEND, queue_id, 0, 9),
+            (SEM_GIVE, ready_id, 0, 9),
+            (CALLBACK_END, callback_id, 0, 9),
+            (SEM_TAKE, ready_id, 1, 1),
+            (QUEUE_RECEIVE, queue_id, 1, 1),
+            (CAUSAL_COMPLETE, complete_id, 1, 1),
+        ]
+        tx = [
+            (QUEUE_SEND, queue_id, 1, 1),
+            (CALLBACK_BEGIN, callback_id, 0, 9),
+            (SEM_GIVE, ready_id, 0, 9),
+            (CALLBACK_END, callback_id, 0, 9),
+            (SEM_TAKE, ready_id, 1, 1),
+            (CAUSAL_COMPLETE, complete_id, 1, 1),
+        ]
+        encoded = self.raw
+        for offset, (event_type, object_id, task, flags) in enumerate(rx, start=20):
+            encoded += event(
+                offset, event_type, object_id, rx_token, task=task, flags=flags
+            )
+        for offset, (event_type, object_id, task, flags) in enumerate(tx, start=30):
+            encoded += event(
+                offset, event_type, object_id, tx_token, task=task, flags=flags
+            )
+        return encoded
+
     def test_decodes_little_endian_and_validates_causal_chain(self):
         normalized = normalize_trace(self.raw, self.manifest, objects=PROBE_OBJECTS)
         self.assertEqual(normalized["events"][0]["relative_us"], 0)
         self.assertEqual(normalized["causal_positions"], list(range(1, 11)))
         self.assertEqual(normalized["normalizer"]["version"], "1.0.1")
+
+    def test_normalizes_encoded_ten_object_rx_and_tx_session(self):
+        raw = self.physical_trace()
+        session = self.session(raw)
+        session["objects"] = [
+            {"object_id": object_id, **entry}
+            for object_id, entry in PHYSICAL_OBJECTS.items()
+        ]
+        objects = validate_session(raw, session)
+        self.assertEqual(objects, PHYSICAL_OBJECTS)
+        normalized = normalize_trace(raw, self.manifest, objects=objects)
+        correlated = [
+            item for item in normalized["events"] if item["arg1"] in ESP_NOW_OBJECTS
+        ]
+        self.assertEqual({item["arg2"] for item in correlated}, {417, 418})
+        self.assertTrue(all(item["category"] == 0 for item in correlated))
+
+        reordered = bytearray(raw)
+        first_tx = (len(self.raw) // 16 + 7) * 16
+        struct.pack_into("<I", reordered, first_tx + 12, 419)
+        with self.assertRaisesRegex(TraceNormalizationError, "TX correlation"):
+            normalize_trace(bytes(reordered), self.manifest, objects=objects)
 
     def test_rejects_overflow_unresolved_ids_and_truncation(self):
         with self.assertRaises(TraceNormalizationError):
@@ -229,9 +288,7 @@ class TraceNormalizerTests(unittest.TestCase):
         ]
         validate_scheduler_contract(events)
         events[1]["task_id"] = 1
-        with self.assertRaisesRegex(
-            TraceNormalizationError, "ownership/context"
-        ):
+        with self.assertRaisesRegex(TraceNormalizationError, "ownership/context"):
             validate_scheduler_contract(events)
 
     def test_rejects_switch_below_highest_ready_priority(self):
