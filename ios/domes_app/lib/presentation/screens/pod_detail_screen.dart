@@ -6,12 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers/feature_provider.dart';
+import '../../application/providers/feedback_provider.dart';
 import '../../application/providers/led_provider.dart';
 import '../../application/providers/pod_connection_provider.dart';
 import '../../application/providers/system_provider.dart';
 import '../../data/protocol/config_protocol.dart';
 import '../../presentation/theme/app_theme.dart';
 import '../widgets/feature_toggle.dart';
+import '../widgets/audio_volume_control.dart';
 import '../widgets/led_pattern_picker.dart';
 
 class PodDetailScreen extends ConsumerStatefulWidget {
@@ -31,6 +33,7 @@ class _PodDetailScreenState extends ConsumerState<PodDetailScreen> {
       ref.read(systemInfoProvider.notifier).loadSystemInfo();
       ref.read(systemModeProvider.notifier).loadMode();
       ref.read(ledProvider.notifier).loadPattern();
+      ref.read(feedbackProvider.notifier).loadVolume();
     });
   }
 
@@ -41,6 +44,7 @@ class _PodDetailScreenState extends ConsumerState<PodDetailScreen> {
     final systemInfo = ref.watch(systemInfoProvider);
     final systemMode = ref.watch(systemModeProvider);
     final ledPattern = ref.watch(ledProvider);
+    final audioVolume = ref.watch(feedbackProvider);
 
     if (!connection.isConnected) {
       return Scaffold(
@@ -60,6 +64,7 @@ class _PodDetailScreenState extends ConsumerState<PodDetailScreen> {
               ref.read(systemInfoProvider.notifier).loadSystemInfo();
               ref.read(systemModeProvider.notifier).loadMode();
               ref.read(ledProvider.notifier).loadPattern();
+              ref.read(feedbackProvider.notifier).loadVolume();
             },
           ),
         ],
@@ -71,6 +76,7 @@ class _PodDetailScreenState extends ConsumerState<PodDetailScreen> {
             ref.read(systemInfoProvider.notifier).loadSystemInfo(),
             ref.read(systemModeProvider.notifier).loadMode(),
             ref.read(ledProvider.notifier).loadPattern(),
+            ref.read(feedbackProvider.notifier).loadVolume(),
           ]);
         },
         child: ListView(
@@ -86,6 +92,9 @@ class _PodDetailScreenState extends ConsumerState<PodDetailScreen> {
 
             // LED Control Card
             _buildLedCard(context, ledPattern),
+            const SizedBox(height: 16),
+
+            _buildFeedbackCard(context, audioVolume),
           ],
         ),
       ),
@@ -236,6 +245,29 @@ class _PodDetailScreenState extends ConsumerState<PodDetailScreen> {
                 'Error: $e',
                 style: const TextStyle(color: AppTheme.errorColor),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeedbackCard(BuildContext context, AsyncValue<int> volume) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Audio software gain',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const Divider(),
+            AudioVolumeControl(
+              volume: volume,
+              onSet: (value) =>
+                  ref.read(feedbackProvider.notifier).setVolume(value),
             ),
           ],
         ),

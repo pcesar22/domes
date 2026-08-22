@@ -16,6 +16,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "feedbackCommandHandler.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "infra/appMetadata.hpp"
@@ -29,6 +30,7 @@
 #include "protocol/frameCodec.hpp"
 #include "protocol/memoryProfileLimits.hpp"
 #include "services/espNowService.hpp"
+#include "services/feedbackController.hpp"
 #include "services/imuService.hpp"
 #include "services/ledService.hpp"
 #include "trace/traceApi.hpp"
@@ -230,9 +232,29 @@ bool ConfigCommandHandler::handleCommand(uint8_t type, const uint8_t* payload, s
             handleSetSimMode(payload, len);
             return true;
 
+        case MsgType::kGetAudioVolumeReq:
+            handleFeedbackCommand(msgType, payload, len);
+            return true;
+
+        case MsgType::kSetAudioVolumeReq:
+            handleFeedbackCommand(msgType, payload, len);
+            return true;
+
+        case MsgType::kTriggerFeedbackReq:
+            handleFeedbackCommand(msgType, payload, len);
+            return true;
+
         default:
             ESP_LOGW(kTag, "Unknown config command: 0x%02X", type);
             return false;
+    }
+}
+
+void ConfigCommandHandler::handleFeedbackCommand(MsgType type, const uint8_t* payload, size_t len) {
+    FeedbackCommandHandler::Response response;
+    FeedbackCommandHandler handler(feedback_);
+    if (handler.handle(type, payload, len, response)) {
+        sendFrame(response.type, response.payload.data(), response.length);
     }
 }
 

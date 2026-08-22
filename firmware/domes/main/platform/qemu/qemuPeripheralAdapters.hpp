@@ -107,8 +107,10 @@ public:
     esp_err_t stop() override;
     esp_err_t write(const int16_t* samples, size_t count, size_t* written,
                     uint32_t timeoutMs) override;
-    void setVolume(uint8_t volume) override { volume_ = volume > 100 ? 100 : volume; }
-    uint8_t getVolume() const override { return volume_; }
+    void setVolume(uint8_t volume) override {
+        volume_.store(volume > 100 ? 100 : volume, std::memory_order_relaxed);
+    }
+    uint8_t getVolume() const override { return volume_.load(std::memory_order_relaxed); }
     bool isInitialized() const override { return initialized_; }
     bool isStarted() const override { return started_; }
     uint32_t sampleCount() const { return sampleCount_.load(std::memory_order_acquire); }
@@ -118,7 +120,7 @@ private:
     QemuAdapterEvidence& evidence_;
     std::atomic<uint32_t> sampleCount_{0};
     std::atomic<uint32_t> sampleHash_{2166136261U};
-    uint8_t volume_ = 50;
+    std::atomic<uint8_t> volume_{50};
     bool initialized_ = false;
     bool started_ = false;
 };

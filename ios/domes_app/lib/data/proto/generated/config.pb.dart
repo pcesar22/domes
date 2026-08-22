@@ -534,6 +534,156 @@ class GetLedPatternRequest extends $pb.GeneratedMessage {
   static GetLedPatternRequest? _defaultInstance;
 }
 
+class GetAudioVolumeRequest extends $pb.GeneratedMessage {
+  factory GetAudioVolumeRequest() => create();
+
+  GetAudioVolumeRequest._();
+
+  factory GetAudioVolumeRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetAudioVolumeRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetAudioVolumeRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
+      createEmptyInstance: create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetAudioVolumeRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetAudioVolumeRequest copyWith(
+          void Function(GetAudioVolumeRequest) updates) =>
+      super.copyWith((message) => updates(message as GetAudioVolumeRequest))
+          as GetAudioVolumeRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetAudioVolumeRequest create() => GetAudioVolumeRequest._();
+  @$core.override
+  GetAudioVolumeRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetAudioVolumeRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetAudioVolumeRequest>(create);
+  static GetAudioVolumeRequest? _defaultInstance;
+}
+
+class SetAudioVolumeRequest extends $pb.GeneratedMessage {
+  factory SetAudioVolumeRequest({
+    $core.int? volume,
+  }) {
+    final result = create();
+    if (volume != null) result.volume = volume;
+    return result;
+  }
+
+  SetAudioVolumeRequest._();
+
+  factory SetAudioVolumeRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SetAudioVolumeRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SetAudioVolumeRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'volume', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SetAudioVolumeRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SetAudioVolumeRequest copyWith(
+          void Function(SetAudioVolumeRequest) updates) =>
+      super.copyWith((message) => updates(message as SetAudioVolumeRequest))
+          as SetAudioVolumeRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SetAudioVolumeRequest create() => SetAudioVolumeRequest._();
+  @$core.override
+  SetAudioVolumeRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SetAudioVolumeRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SetAudioVolumeRequest>(create);
+  static SetAudioVolumeRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get volume => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set volume($core.int value) => $_setUnsignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasVolume() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearVolume() => $_clearField(1);
+}
+
+class TriggerFeedbackRequest extends $pb.GeneratedMessage {
+  factory TriggerFeedbackRequest({
+    FeedbackProbe? probe,
+  }) {
+    final result = create();
+    if (probe != null) result.probe = probe;
+    return result;
+  }
+
+  TriggerFeedbackRequest._();
+
+  factory TriggerFeedbackRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory TriggerFeedbackRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'TriggerFeedbackRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
+      createEmptyInstance: create)
+    ..aE<FeedbackProbe>(1, _omitFieldNames ? '' : 'probe',
+        enumValues: FeedbackProbe.values)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  TriggerFeedbackRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  TriggerFeedbackRequest copyWith(
+          void Function(TriggerFeedbackRequest) updates) =>
+      super.copyWith((message) => updates(message as TriggerFeedbackRequest))
+          as TriggerFeedbackRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static TriggerFeedbackRequest create() => TriggerFeedbackRequest._();
+  @$core.override
+  TriggerFeedbackRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static TriggerFeedbackRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<TriggerFeedbackRequest>(create);
+  static TriggerFeedbackRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  FeedbackProbe get probe => $_getN(0);
+  @$pb.TagNumber(1)
+  set probe(FeedbackProbe value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasProbe() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearProbe() => $_clearField(1);
+}
+
 /// Response messages
 class ListFeaturesResponse extends $pb.GeneratedMessage {
   factory ListFeaturesResponse({
@@ -824,6 +974,184 @@ class GetLedPatternResponse extends $pb.GeneratedMessage {
   void clearPattern() => $_clearField(1);
   @$pb.TagNumber(1)
   LedPattern ensurePattern() => $_ensure(0);
+}
+
+class GetAudioVolumeResponse extends $pb.GeneratedMessage {
+  factory GetAudioVolumeResponse({
+    $core.int? volume,
+  }) {
+    final result = create();
+    if (volume != null) result.volume = volume;
+    return result;
+  }
+
+  GetAudioVolumeResponse._();
+
+  factory GetAudioVolumeResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory GetAudioVolumeResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'GetAudioVolumeResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'volume', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetAudioVolumeResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  GetAudioVolumeResponse copyWith(
+          void Function(GetAudioVolumeResponse) updates) =>
+      super.copyWith((message) => updates(message as GetAudioVolumeResponse))
+          as GetAudioVolumeResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static GetAudioVolumeResponse create() => GetAudioVolumeResponse._();
+  @$core.override
+  GetAudioVolumeResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static GetAudioVolumeResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<GetAudioVolumeResponse>(create);
+  static GetAudioVolumeResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get volume => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set volume($core.int value) => $_setUnsignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasVolume() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearVolume() => $_clearField(1);
+}
+
+class SetAudioVolumeResponse extends $pb.GeneratedMessage {
+  factory SetAudioVolumeResponse({
+    $core.int? volume,
+  }) {
+    final result = create();
+    if (volume != null) result.volume = volume;
+    return result;
+  }
+
+  SetAudioVolumeResponse._();
+
+  factory SetAudioVolumeResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SetAudioVolumeResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SetAudioVolumeResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'volume', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SetAudioVolumeResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SetAudioVolumeResponse copyWith(
+          void Function(SetAudioVolumeResponse) updates) =>
+      super.copyWith((message) => updates(message as SetAudioVolumeResponse))
+          as SetAudioVolumeResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SetAudioVolumeResponse create() => SetAudioVolumeResponse._();
+  @$core.override
+  SetAudioVolumeResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SetAudioVolumeResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SetAudioVolumeResponse>(create);
+  static SetAudioVolumeResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get volume => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set volume($core.int value) => $_setUnsignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasVolume() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearVolume() => $_clearField(1);
+}
+
+class TriggerFeedbackResponse extends $pb.GeneratedMessage {
+  factory TriggerFeedbackResponse({
+    FeedbackProbe? probe,
+    $core.bool? accepted,
+  }) {
+    final result = create();
+    if (probe != null) result.probe = probe;
+    if (accepted != null) result.accepted = accepted;
+    return result;
+  }
+
+  TriggerFeedbackResponse._();
+
+  factory TriggerFeedbackResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory TriggerFeedbackResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'TriggerFeedbackResponse',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'domes.config'),
+      createEmptyInstance: create)
+    ..aE<FeedbackProbe>(1, _omitFieldNames ? '' : 'probe',
+        enumValues: FeedbackProbe.values)
+    ..aOB(2, _omitFieldNames ? '' : 'accepted')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  TriggerFeedbackResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  TriggerFeedbackResponse copyWith(
+          void Function(TriggerFeedbackResponse) updates) =>
+      super.copyWith((message) => updates(message as TriggerFeedbackResponse))
+          as TriggerFeedbackResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static TriggerFeedbackResponse create() => TriggerFeedbackResponse._();
+  @$core.override
+  TriggerFeedbackResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static TriggerFeedbackResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<TriggerFeedbackResponse>(create);
+  static TriggerFeedbackResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  FeedbackProbe get probe => $_getN(0);
+  @$pb.TagNumber(1)
+  set probe(FeedbackProbe value) => $_setField(1, value);
+  @$pb.TagNumber(1)
+  $core.bool hasProbe() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearProbe() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.bool get accepted => $_getBF(1);
+  @$pb.TagNumber(2)
+  set accepted($core.bool value) => $_setBool(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasAccepted() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearAccepted() => $_clearField(2);
 }
 
 /// IMU triage mode messages
