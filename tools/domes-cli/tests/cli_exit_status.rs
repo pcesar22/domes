@@ -33,6 +33,21 @@ fn rejected_mode_transition_exits_nonzero() {
 }
 
 #[test]
+fn rejected_feedback_command_exits_nonzero_without_physical_claim() {
+    let (address, server) = serve_config_response(0x55, 0x56, &[0x08]);
+    let mut command = cargo_bin_cmd!("domes-cli");
+    command.args(["--wifi", &address, "feedback", "play", "beep"]);
+
+    let output = command.output().unwrap();
+    server.join().unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Rejected"));
+    assert!(!stderr.contains("played"));
+}
+
+#[test]
 fn feature_status_uses_get_feature_contract() {
     // Outer status OK and GetFeatureResponse{FeatureState{wifi, enabled}}.
     let response_payload = [0x00, 0x0A, 0x04, 0x08, 0x03, 0x10, 0x01];

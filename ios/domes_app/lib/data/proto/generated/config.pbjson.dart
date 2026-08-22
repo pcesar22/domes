@@ -63,6 +63,12 @@ const MsgType$json = {
     {'1': 'MSG_TYPE_SET_SIM_MODE_REQ', '2': 78},
     {'1': 'MSG_TYPE_SET_SIM_MODE_RSP', '2': 79},
     {'1': 'MSG_TYPE_TOUCH_EVENT_NTF', '2': 80},
+    {'1': 'MSG_TYPE_GET_AUDIO_VOLUME_REQ', '2': 81},
+    {'1': 'MSG_TYPE_GET_AUDIO_VOLUME_RSP', '2': 82},
+    {'1': 'MSG_TYPE_SET_AUDIO_VOLUME_REQ', '2': 83},
+    {'1': 'MSG_TYPE_SET_AUDIO_VOLUME_RSP', '2': 84},
+    {'1': 'MSG_TYPE_TRIGGER_FEEDBACK_REQ', '2': 85},
+    {'1': 'MSG_TYPE_TRIGGER_FEEDBACK_RSP', '2': 86},
   ],
 };
 
@@ -93,7 +99,10 @@ final $typed_data.Uint8List msgTypeDescriptor = $convert.base64Decode(
     'X0FVVE9fVVBEQVRFX1JTUBBJEh8KG01TR19UWVBFX1NJTVVMQVRFX1RPVUNIX1JFURBMEh8KG0'
     '1TR19UWVBFX1NJTVVMQVRFX1RPVUNIX1JTUBBNEh0KGU1TR19UWVBFX1NFVF9TSU1fTU9ERV9S'
     'RVEQThIdChlNU0dfVFlQRV9TRVRfU0lNX01PREVfUlNQEE8SHAoYTVNHX1RZUEVfVE9VQ0hfRV'
-    'ZFTlRfTlRGEFA=');
+    'ZFTlRfTlRGEFASIQodTVNHX1RZUEVfR0VUX0FVRElPX1ZPTFVNRV9SRVEQURIhCh1NU0dfVFlQ'
+    'RV9HRVRfQVVESU9fVk9MVU1FX1JTUBBSEiEKHU1TR19UWVBFX1NFVF9BVURJT19WT0xVTUVfUk'
+    'VREFMSIQodTVNHX1RZUEVfU0VUX0FVRElPX1ZPTFVNRV9SU1AQVBIhCh1NU0dfVFlQRV9UUklH'
+    'R0VSX0ZFRURCQUNLX1JFURBVEiEKHU1TR19UWVBFX1RSSUdHRVJfRkVFREJBQ0tfUlNQEFY=');
 
 @$core.Deprecated('Use statusDescriptor instead')
 const Status$json = {
@@ -105,6 +114,10 @@ const Status$json = {
     {'1': 'STATUS_BUSY', '2': 3},
     {'1': 'STATUS_INVALID_PATTERN', '2': 4},
     {'1': 'STATUS_NO_DATA', '2': 5},
+    {'1': 'STATUS_INVALID_VALUE', '2': 6},
+    {'1': 'STATUS_DISABLED', '2': 7},
+    {'1': 'STATUS_REJECTED', '2': 8},
+    {'1': 'STATUS_STORAGE_ERROR', '2': 9},
   ],
 };
 
@@ -112,7 +125,9 @@ const Status$json = {
 final $typed_data.Uint8List statusDescriptor = $convert.base64Decode(
     'CgZTdGF0dXMSDQoJU1RBVFVTX09LEAASEAoMU1RBVFVTX0VSUk9SEAESGgoWU1RBVFVTX0lOVk'
     'FMSURfRkVBVFVSRRACEg8KC1NUQVRVU19CVVNZEAMSGgoWU1RBVFVTX0lOVkFMSURfUEFUVEVS'
-    'ThAEEhIKDlNUQVRVU19OT19EQVRBEAU=');
+    'ThAEEhIKDlNUQVRVU19OT19EQVRBEAUSGAoUU1RBVFVTX0lOVkFMSURfVkFMVUUQBhITCg9TVE'
+    'FUVVNfRElTQUJMRUQQBxITCg9TVEFUVVNfUkVKRUNURUQQCBIYChRTVEFUVVNfU1RPUkFHRV9F'
+    'UlJPUhAJ');
 
 @$core.Deprecated('Use ledPatternTypeDescriptor instead')
 const LedPatternType$json = {
@@ -152,6 +167,21 @@ final $typed_data.Uint8List featureDescriptor = $convert.base64Decode(
     'IbChdGRUFUVVJFX0JMRV9BRFZFUlRJU0lORxACEhAKDEZFQVRVUkVfV0lGSRADEhMKD0ZFQVRV'
     'UkVfRVNQX05PVxAEEhEKDUZFQVRVUkVfVE9VQ0gQBRISCg5GRUFUVVJFX0hBUFRJQxAGEhEKDU'
     'ZFQVRVUkVfQVVESU8QBw==');
+
+@$core.Deprecated('Use feedbackProbeDescriptor instead')
+const FeedbackProbe$json = {
+  '1': 'FeedbackProbe',
+  '2': [
+    {'1': 'FEEDBACK_PROBE_UNKNOWN', '2': 0},
+    {'1': 'FEEDBACK_PROBE_EMBEDDED_BEEP', '2': 1},
+    {'1': 'FEEDBACK_PROBE_FIXED_HAPTIC', '2': 2},
+  ],
+};
+
+/// Descriptor for `FeedbackProbe`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List feedbackProbeDescriptor = $convert.base64Decode(
+    'Cg1GZWVkYmFja1Byb2JlEhoKFkZFRURCQUNLX1BST0JFX1VOS05PV04QABIgChxGRUVEQkFDS1'
+    '9QUk9CRV9FTUJFRERFRF9CRUVQEAESHwobRkVFREJBQ0tfUFJPQkVfRklYRURfSEFQVElDEAI=');
 
 @$core.Deprecated('Use systemModeDescriptor instead')
 const SystemMode$json = {
@@ -363,6 +393,49 @@ const GetLedPatternRequest$json = {
 final $typed_data.Uint8List getLedPatternRequestDescriptor =
     $convert.base64Decode('ChRHZXRMZWRQYXR0ZXJuUmVxdWVzdA==');
 
+@$core.Deprecated('Use getAudioVolumeRequestDescriptor instead')
+const GetAudioVolumeRequest$json = {
+  '1': 'GetAudioVolumeRequest',
+};
+
+/// Descriptor for `GetAudioVolumeRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getAudioVolumeRequestDescriptor =
+    $convert.base64Decode('ChVHZXRBdWRpb1ZvbHVtZVJlcXVlc3Q=');
+
+@$core.Deprecated('Use setAudioVolumeRequestDescriptor instead')
+const SetAudioVolumeRequest$json = {
+  '1': 'SetAudioVolumeRequest',
+  '2': [
+    {'1': 'volume', '3': 1, '4': 1, '5': 13, '10': 'volume'},
+  ],
+};
+
+/// Descriptor for `SetAudioVolumeRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List setAudioVolumeRequestDescriptor =
+    $convert.base64Decode(
+        'ChVTZXRBdWRpb1ZvbHVtZVJlcXVlc3QSFgoGdm9sdW1lGAEgASgNUgZ2b2x1bWU=');
+
+@$core.Deprecated('Use triggerFeedbackRequestDescriptor instead')
+const TriggerFeedbackRequest$json = {
+  '1': 'TriggerFeedbackRequest',
+  '2': [
+    {
+      '1': 'probe',
+      '3': 1,
+      '4': 1,
+      '5': 14,
+      '6': '.domes.config.FeedbackProbe',
+      '10': 'probe'
+    },
+  ],
+};
+
+/// Descriptor for `TriggerFeedbackRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List triggerFeedbackRequestDescriptor =
+    $convert.base64Decode(
+        'ChZUcmlnZ2VyRmVlZGJhY2tSZXF1ZXN0EjEKBXByb2JlGAEgASgOMhsuZG9tZXMuY29uZmlnLk'
+        'ZlZWRiYWNrUHJvYmVSBXByb2Jl');
+
 @$core.Deprecated('Use listFeaturesResponseDescriptor instead')
 const ListFeaturesResponse$json = {
   '1': 'ListFeaturesResponse',
@@ -463,6 +536,54 @@ const GetLedPatternResponse$json = {
 final $typed_data.Uint8List getLedPatternResponseDescriptor = $convert.base64Decode(
     'ChVHZXRMZWRQYXR0ZXJuUmVzcG9uc2USMgoHcGF0dGVybhgBIAEoCzIYLmRvbWVzLmNvbmZpZy'
     '5MZWRQYXR0ZXJuUgdwYXR0ZXJu');
+
+@$core.Deprecated('Use getAudioVolumeResponseDescriptor instead')
+const GetAudioVolumeResponse$json = {
+  '1': 'GetAudioVolumeResponse',
+  '2': [
+    {'1': 'volume', '3': 1, '4': 1, '5': 13, '10': 'volume'},
+  ],
+};
+
+/// Descriptor for `GetAudioVolumeResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List getAudioVolumeResponseDescriptor =
+    $convert.base64Decode(
+        'ChZHZXRBdWRpb1ZvbHVtZVJlc3BvbnNlEhYKBnZvbHVtZRgBIAEoDVIGdm9sdW1l');
+
+@$core.Deprecated('Use setAudioVolumeResponseDescriptor instead')
+const SetAudioVolumeResponse$json = {
+  '1': 'SetAudioVolumeResponse',
+  '2': [
+    {'1': 'volume', '3': 1, '4': 1, '5': 13, '10': 'volume'},
+  ],
+};
+
+/// Descriptor for `SetAudioVolumeResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List setAudioVolumeResponseDescriptor =
+    $convert.base64Decode(
+        'ChZTZXRBdWRpb1ZvbHVtZVJlc3BvbnNlEhYKBnZvbHVtZRgBIAEoDVIGdm9sdW1l');
+
+@$core.Deprecated('Use triggerFeedbackResponseDescriptor instead')
+const TriggerFeedbackResponse$json = {
+  '1': 'TriggerFeedbackResponse',
+  '2': [
+    {
+      '1': 'probe',
+      '3': 1,
+      '4': 1,
+      '5': 14,
+      '6': '.domes.config.FeedbackProbe',
+      '10': 'probe'
+    },
+    {'1': 'accepted', '3': 2, '4': 1, '5': 8, '10': 'accepted'},
+  ],
+};
+
+/// Descriptor for `TriggerFeedbackResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List triggerFeedbackResponseDescriptor =
+    $convert.base64Decode(
+        'ChdUcmlnZ2VyRmVlZGJhY2tSZXNwb25zZRIxCgVwcm9iZRgBIAEoDjIbLmRvbWVzLmNvbmZpZy'
+        '5GZWVkYmFja1Byb2JlUgVwcm9iZRIaCghhY2NlcHRlZBgCIAEoCFIIYWNjZXB0ZWQ=');
 
 @$core.Deprecated('Use setImuTriageRequestDescriptor instead')
 const SetImuTriageRequest$json = {

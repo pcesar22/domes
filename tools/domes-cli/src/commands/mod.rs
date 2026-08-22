@@ -2,6 +2,7 @@
 
 pub mod espnow;
 pub mod feature;
+pub mod feedback;
 pub mod health;
 pub mod imu;
 pub mod led;
@@ -14,6 +15,7 @@ pub mod wifi;
 
 pub use espnow::{espnow_bench, espnow_sim_mode, espnow_status};
 pub use feature::{feature_disable, feature_enable, feature_list, feature_status};
+pub use feedback::{audio_volume_get, audio_volume_set, feedback_play};
 pub use health::system_health;
 pub use imu::imu_triage_set;
 pub use led::{led_get, led_off, led_set};

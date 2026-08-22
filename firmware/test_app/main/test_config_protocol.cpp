@@ -26,9 +26,9 @@ using namespace domes::config;
 // =============================================================================
 
 TEST(ConfigMsgType, RecognizesEveryRequestId) {
-    constexpr std::array<uint8_t, 21> requestIds = {
-        0x20, 0x22, 0x24, 0x26, 0x28, 0x2A, 0x30, 0x32, 0x34, 0x36, 0x38,
-        0x3A, 0x3C, 0x3E, 0x40, 0x42, 0x44, 0x46, 0x48, 0x4C, 0x4E,
+    constexpr std::array<uint8_t, 24> requestIds = {
+        0x20, 0x22, 0x24, 0x26, 0x28, 0x2A, 0x30, 0x32, 0x34, 0x36, 0x38, 0x3A,
+        0x3C, 0x3E, 0x40, 0x42, 0x44, 0x46, 0x48, 0x4C, 0x4E, 0x51, 0x53, 0x55,
     };
     for (uint8_t id : requestIds) {
         EXPECT_TRUE(isConfigRequest(id)) << "request id " << unsigned(id);
@@ -36,9 +36,9 @@ TEST(ConfigMsgType, RecognizesEveryRequestId) {
 }
 
 TEST(ConfigMsgType, RejectsResponsesReservedAndOtherProtocolIds) {
-    constexpr std::array<uint8_t, 21> responseIds = {
-        0x21, 0x23, 0x25, 0x27, 0x29, 0x2B, 0x31, 0x33, 0x35, 0x37, 0x39,
-        0x3B, 0x3D, 0x3F, 0x41, 0x43, 0x45, 0x47, 0x49, 0x4D, 0x4F,
+    constexpr std::array<uint8_t, 24> responseIds = {
+        0x21, 0x23, 0x25, 0x27, 0x29, 0x2B, 0x31, 0x33, 0x35, 0x37, 0x39, 0x3B,
+        0x3D, 0x3F, 0x41, 0x43, 0x45, 0x47, 0x49, 0x4D, 0x4F, 0x52, 0x54, 0x56,
     };
     for (uint8_t id : responseIds) {
         EXPECT_FALSE(isConfigRequest(id)) << "response id " << unsigned(id);
@@ -73,6 +73,9 @@ TEST(ConfigMsgType, ActiveRequestsRecordActivity) {
     EXPECT_TRUE(commandRecordsActivity(MsgType::kCheckUpdateReq));
     EXPECT_TRUE(commandRecordsActivity(MsgType::kSetAutoUpdateReq));
     EXPECT_TRUE(commandRecordsActivity(MsgType::kSimulateTouchReq));
+    EXPECT_TRUE(commandRecordsActivity(MsgType::kSetAudioVolumeReq));
+    EXPECT_TRUE(commandRecordsActivity(MsgType::kTriggerFeedbackReq));
+    EXPECT_FALSE(commandRecordsActivity(MsgType::kGetAudioVolumeReq));
 }
 
 TEST(ConfigProtocol, ValidatesLedPatternWithoutNarrowing) {

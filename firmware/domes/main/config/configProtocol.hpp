@@ -75,6 +75,18 @@ enum class MsgType : uint8_t {
     kSetSimModeRsp = domes_config_MsgType_MSG_TYPE_SET_SIM_MODE_RSP,
     // Unsolicited device-originated touch notification (0x50)
     kTouchEventNtf = domes_config_MsgType_MSG_TYPE_TOUCH_EVENT_NTF,
+    kGetAudioVolumeReq = domes_config_MsgType_MSG_TYPE_GET_AUDIO_VOLUME_REQ,
+    kGetAudioVolumeRsp = domes_config_MsgType_MSG_TYPE_GET_AUDIO_VOLUME_RSP,
+    kSetAudioVolumeReq = domes_config_MsgType_MSG_TYPE_SET_AUDIO_VOLUME_REQ,
+    kSetAudioVolumeRsp = domes_config_MsgType_MSG_TYPE_SET_AUDIO_VOLUME_RSP,
+    kTriggerFeedbackReq = domes_config_MsgType_MSG_TYPE_TRIGGER_FEEDBACK_REQ,
+    kTriggerFeedbackRsp = domes_config_MsgType_MSG_TYPE_TRIGGER_FEEDBACK_RSP,
+};
+
+enum class FeedbackProbe : uint8_t {
+    kUnknown = domes_config_FeedbackProbe_FEEDBACK_PROBE_UNKNOWN,
+    kEmbeddedBeep = domes_config_FeedbackProbe_FEEDBACK_PROBE_EMBEDDED_BEEP,
+    kFixedHaptic = domes_config_FeedbackProbe_FEEDBACK_PROBE_FIXED_HAPTIC,
 };
 
 /**
@@ -102,6 +114,10 @@ enum class Status : uint8_t {
     kBusy = domes_config_Status_STATUS_BUSY,
     kInvalidPattern = domes_config_Status_STATUS_INVALID_PATTERN,
     kNoData = domes_config_Status_STATUS_NO_DATA,
+    kInvalidValue = domes_config_Status_STATUS_INVALID_VALUE,
+    kDisabled = domes_config_Status_STATUS_DISABLED,
+    kRejected = domes_config_Status_STATUS_REJECTED,
+    kStorageError = domes_config_Status_STATUS_STORAGE_ERROR,
 };
 
 /**
@@ -130,6 +146,9 @@ constexpr bool isConfigRequest(uint8_t type) {
         case MsgType::kSetAutoUpdateReq:
         case MsgType::kSimulateTouchReq:
         case MsgType::kSetSimModeReq:
+        case MsgType::kGetAudioVolumeReq:
+        case MsgType::kSetAudioVolumeReq:
+        case MsgType::kTriggerFeedbackReq:
             return true;
         default:
             return false;
@@ -155,6 +174,8 @@ constexpr bool commandRecordsActivity(MsgType type) {
         case MsgType::kSetAutoUpdateReq:
         case MsgType::kSimulateTouchReq:
         case MsgType::kSetSimModeReq:
+        case MsgType::kSetAudioVolumeReq:
+        case MsgType::kTriggerFeedbackReq:
             return true;
 
         default:

@@ -126,6 +126,20 @@ class MsgType extends $pb.ProtobufEnum {
   static const MsgType MSG_TYPE_TOUCH_EVENT_NTF =
       MsgType._(80, _omitEnumNames ? '' : 'MSG_TYPE_TOUCH_EVENT_NTF');
 
+  /// Bounded feedback interface commands (0x51-0x56)
+  static const MsgType MSG_TYPE_GET_AUDIO_VOLUME_REQ =
+      MsgType._(81, _omitEnumNames ? '' : 'MSG_TYPE_GET_AUDIO_VOLUME_REQ');
+  static const MsgType MSG_TYPE_GET_AUDIO_VOLUME_RSP =
+      MsgType._(82, _omitEnumNames ? '' : 'MSG_TYPE_GET_AUDIO_VOLUME_RSP');
+  static const MsgType MSG_TYPE_SET_AUDIO_VOLUME_REQ =
+      MsgType._(83, _omitEnumNames ? '' : 'MSG_TYPE_SET_AUDIO_VOLUME_REQ');
+  static const MsgType MSG_TYPE_SET_AUDIO_VOLUME_RSP =
+      MsgType._(84, _omitEnumNames ? '' : 'MSG_TYPE_SET_AUDIO_VOLUME_RSP');
+  static const MsgType MSG_TYPE_TRIGGER_FEEDBACK_REQ =
+      MsgType._(85, _omitEnumNames ? '' : 'MSG_TYPE_TRIGGER_FEEDBACK_REQ');
+  static const MsgType MSG_TYPE_TRIGGER_FEEDBACK_RSP =
+      MsgType._(86, _omitEnumNames ? '' : 'MSG_TYPE_TRIGGER_FEEDBACK_RSP');
+
   static const $core.List<MsgType> values = <MsgType>[
     MSG_TYPE_UNKNOWN,
     MSG_TYPE_LIST_FEATURES_REQ,
@@ -171,6 +185,12 @@ class MsgType extends $pb.ProtobufEnum {
     MSG_TYPE_SET_SIM_MODE_REQ,
     MSG_TYPE_SET_SIM_MODE_RSP,
     MSG_TYPE_TOUCH_EVENT_NTF,
+    MSG_TYPE_GET_AUDIO_VOLUME_REQ,
+    MSG_TYPE_GET_AUDIO_VOLUME_RSP,
+    MSG_TYPE_SET_AUDIO_VOLUME_REQ,
+    MSG_TYPE_SET_AUDIO_VOLUME_RSP,
+    MSG_TYPE_TRIGGER_FEEDBACK_REQ,
+    MSG_TYPE_TRIGGER_FEEDBACK_RSP,
   ];
 
   static final $core.Map<$core.int, MsgType> _byValue =
@@ -194,6 +214,14 @@ class Status extends $pb.ProtobufEnum {
       Status._(4, _omitEnumNames ? '' : 'STATUS_INVALID_PATTERN');
   static const Status STATUS_NO_DATA =
       Status._(5, _omitEnumNames ? '' : 'STATUS_NO_DATA');
+  static const Status STATUS_INVALID_VALUE =
+      Status._(6, _omitEnumNames ? '' : 'STATUS_INVALID_VALUE');
+  static const Status STATUS_DISABLED =
+      Status._(7, _omitEnumNames ? '' : 'STATUS_DISABLED');
+  static const Status STATUS_REJECTED =
+      Status._(8, _omitEnumNames ? '' : 'STATUS_REJECTED');
+  static const Status STATUS_STORAGE_ERROR =
+      Status._(9, _omitEnumNames ? '' : 'STATUS_STORAGE_ERROR');
 
   static const $core.List<Status> values = <Status>[
     STATUS_OK,
@@ -202,10 +230,14 @@ class Status extends $pb.ProtobufEnum {
     STATUS_BUSY,
     STATUS_INVALID_PATTERN,
     STATUS_NO_DATA,
+    STATUS_INVALID_VALUE,
+    STATUS_DISABLED,
+    STATUS_REJECTED,
+    STATUS_STORAGE_ERROR,
   ];
 
   static final $core.List<Status?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 5);
+      $pb.ProtobufEnum.$_initByValueList(values, 9);
   static Status? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
@@ -274,6 +306,30 @@ class Feature extends $pb.ProtobufEnum {
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
   const Feature._(super.value, super.name);
+}
+
+/// Known software feedback probes. Acceptance means that firmware queued or
+/// triggered the request; it never represents sensed physical completion.
+class FeedbackProbe extends $pb.ProtobufEnum {
+  static const FeedbackProbe FEEDBACK_PROBE_UNKNOWN =
+      FeedbackProbe._(0, _omitEnumNames ? '' : 'FEEDBACK_PROBE_UNKNOWN');
+  static const FeedbackProbe FEEDBACK_PROBE_EMBEDDED_BEEP =
+      FeedbackProbe._(1, _omitEnumNames ? '' : 'FEEDBACK_PROBE_EMBEDDED_BEEP');
+  static const FeedbackProbe FEEDBACK_PROBE_FIXED_HAPTIC =
+      FeedbackProbe._(2, _omitEnumNames ? '' : 'FEEDBACK_PROBE_FIXED_HAPTIC');
+
+  static const $core.List<FeedbackProbe> values = <FeedbackProbe>[
+    FEEDBACK_PROBE_UNKNOWN,
+    FEEDBACK_PROBE_EMBEDDED_BEEP,
+    FEEDBACK_PROBE_FIXED_HAPTIC,
+  ];
+
+  static final $core.List<FeedbackProbe?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 2);
+  static FeedbackProbe? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const FeedbackProbe._(super.value, super.name);
 }
 
 /// System operating modes

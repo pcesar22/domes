@@ -73,6 +73,14 @@ enum MsgType {
 
     // Device-originated touch notification (0x50)
     MSG_TYPE_TOUCH_EVENT_NTF = 0x50;
+
+    // Bounded feedback interface commands (0x51-0x56)
+    MSG_TYPE_GET_AUDIO_VOLUME_REQ = 0x51;
+    MSG_TYPE_GET_AUDIO_VOLUME_RSP = 0x52;
+    MSG_TYPE_SET_AUDIO_VOLUME_REQ = 0x53;
+    MSG_TYPE_SET_AUDIO_VOLUME_RSP = 0x54;
+    MSG_TYPE_TRIGGER_FEEDBACK_REQ = 0x55;
+    MSG_TYPE_TRIGGER_FEEDBACK_RSP = 0x56;
 }
 
 // Status codes for responses
@@ -83,6 +91,10 @@ enum Status {
     STATUS_BUSY = 3;
     STATUS_INVALID_PATTERN = 4;
     STATUS_NO_DATA = 5;
+    STATUS_INVALID_VALUE = 6;
+    STATUS_DISABLED = 7;
+    STATUS_REJECTED = 8;
+    STATUS_STORAGE_ERROR = 9;
 }
 
 // LED pattern types
@@ -111,6 +123,14 @@ enum Feature {
     FEATURE_TOUCH = 5;
     FEATURE_HAPTIC = 6;
     FEATURE_AUDIO = 7;
+}
+
+// Known software feedback probes. Acceptance means that firmware queued or
+// triggered the request; it never represents sensed physical completion.
+enum FeedbackProbe {
+    FEEDBACK_PROBE_UNKNOWN = 0;
+    FEEDBACK_PROBE_EMBEDDED_BEEP = 1;
+    FEEDBACK_PROBE_FIXED_HAPTIC = 2;
 }
 
 // Feature with its current state
@@ -150,6 +170,18 @@ message GetLedPatternRequest {
     // Empty - returns current pattern
 }
 
+message GetAudioVolumeRequest {
+    // Empty - returns the device-owned software gain.
+}
+
+message SetAudioVolumeRequest {
+    uint32 volume = 1;  // Software gain, valid range 0-100.
+}
+
+message TriggerFeedbackRequest {
+    FeedbackProbe probe = 1;
+}
+
 // Response messages
 message ListFeaturesResponse {
     repeated FeatureState features = 1;
@@ -170,6 +202,19 @@ message SetLedPatternResponse {
 
 message GetLedPatternResponse {
     LedPattern pattern = 1;
+}
+
+message GetAudioVolumeResponse {
+    uint32 volume = 1;  // Applied software gain, range 0-100.
+}
+
+message SetAudioVolumeResponse {
+    uint32 volume = 1;  // Applied and persisted software gain, range 0-100.
+}
+
+message TriggerFeedbackResponse {
+    FeedbackProbe probe = 1;
+    bool accepted = 2;  // Queued/triggered acceptance, not physical completion.
 }
 
 // IMU triage mode messages
