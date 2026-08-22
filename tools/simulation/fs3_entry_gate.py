@@ -49,6 +49,13 @@ PROHIBITED_QEMU_PATH_PARTS = (
 )
 REPORT_SCHEMA_VERSION = 1
 REPO_ROOT = Path(__file__).resolve().parents[2]
+QEMU_SOURCE_REPOSITORY = "https://github.com/espressif/qemu.git"
+PHYSICAL_EVIDENCE_IDS = (
+    "two_board_discovery",
+    "complementary_roles",
+    "bidirectional_benchmark_simulation_off",
+    "traced_drill",
+)
 
 
 class GateError(RuntimeError):
@@ -173,19 +180,69 @@ def _software_ci(pr: Mapping[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
     )
 
 
+def _physical_record_valid(evidence_id: str, details: Any) -> bool:
+    if not isinstance(details, dict):
+        return False
+    board_ids = details.get("board_ids")
+    if (
+        not isinstance(board_ids, list)
+        or len(board_ids) != 2
+        or any(not isinstance(item, str) or not item for item in board_ids)
+        or len(set(board_ids)) != 2
+    ):
+        return False
+    if evidence_id == "two_board_discovery":
+        return set(details) == {"board_ids", "peer_counts"} and details.get(
+            "peer_counts"
+        ) == {board_ids[0]: 1, board_ids[1]: 1}
+    if evidence_id == "complementary_roles":
+        return set(details) == {"board_ids", "roles"} and details.get("roles") in (
+            {board_ids[0]: "initiator", board_ids[1]: "responder"},
+            {board_ids[0]: "responder", board_ids[1]: "initiator"},
+        )
+    if evidence_id == "bidirectional_benchmark_simulation_off":
+        directions = details.get("directions")
+        expected_directions = {
+            (board_ids[0], board_ids[1], "passed"),
+            (board_ids[1], board_ids[0], "passed"),
+        }
+        return (
+            set(details) == {"board_ids", "simulation_enabled", "directions"}
+            and details.get("simulation_enabled") is False
+            and isinstance(directions, list)
+            and len(directions) == 2
+            and all(isinstance(item, dict) for item in directions)
+            and all(set(item) == {"from", "to", "result"} for item in directions)
+            and {
+                (item.get("from"), item.get("to"), item.get("result"))
+                for item in directions
+            }
+            == expected_directions
+        )
+    if evidence_id == "traced_drill":
+        return set(details) == {
+            "board_ids",
+            "simulation_enabled",
+            "trace_enabled",
+            "drill_result",
+        } and all(
+            (
+                details.get("simulation_enabled") is True,
+                details.get("trace_enabled") is True,
+                details.get("drill_result") == "passed",
+            )
+        )
+    return False
+
+
 def _physical_evidence(
     issue: Mapping[str, Any], exact_commit: str | None
-) -> dict[str, dict[str, Any]]:
-    """Extract accepted evidence only from schema-shaped tracker handoffs."""
-    result: dict[str, dict[str, Any]] = {}
-    matchers = {
-        "two_board_discovery": lambda text: "discovery" in text,
-        "complementary_roles": lambda text: "complementary" in text and "role" in text,
-        "bidirectional_benchmark_simulation_off": lambda text: (
-            "bidirectional" in text and "benchmark" in text and "simulation" in text
-        ),
-        "traced_drill": lambda text: "traced" in text and "drill" in text,
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Extract exact, non-duplicated physical records from trusted handoffs."""
+    candidates: dict[str, list[dict[str, Any]]] = {
+        evidence_id: [] for evidence_id in PHYSICAL_EVIDENCE_IDS
     }
+    invalid: set[str] = set()
     for comment in issue.get("comments") or []:
         if not isinstance(comment, dict):
             continue
@@ -207,25 +264,58 @@ def _physical_evidence(
             if not isinstance(payload, dict) or payload.get("commit") != exact_commit:
                 continue
             for record in payload.get("verification") or []:
-                if not isinstance(record, dict) or record.get("level") != "physical":
+                if not isinstance(record, dict):
                     continue
-                observation = str(record.get("command_or_observation", "")).lower()
-                for evidence_id, matches in matchers.items():
-                    if matches(observation):
-                        result[evidence_id] = {
-                            "id": evidence_id,
-                            "level": "physical",
-                            "exact_commit": payload["commit"],
-                            "result": (
-                                "PASS"
-                                if record.get("status") == "passed"
-                                else "PENDING"
-                            ),
-                            "artifact": record.get("artifact"),
-                            "acceptance_authority": authority,
-                            "tracker_comment": comment.get("url"),
-                        }
-    return result
+                evidence_id = record.get("evidence_id")
+                if evidence_id not in candidates:
+                    continue
+                valid = (
+                    set(record)
+                    == {
+                        "evidence_id",
+                        "level",
+                        "status",
+                        "artifact",
+                        "details",
+                    }
+                    and record.get("level") == "physical"
+                    and record.get("status") == "passed"
+                    and isinstance(record.get("artifact"), str)
+                    and bool(record.get("artifact"))
+                    and authority is not None
+                    and _physical_record_valid(str(evidence_id), record.get("details"))
+                )
+                if not valid:
+                    invalid.add(str(evidence_id))
+                    continue
+                candidates[str(evidence_id)].append(
+                    {
+                        "id": evidence_id,
+                        "level": "physical",
+                        "exact_commit": payload["commit"],
+                        "result": "PASS",
+                        "artifact": record["artifact"],
+                        "acceptance_authority": authority,
+                        "tracker_comment": comment.get("url"),
+                        "details": record["details"],
+                    }
+                )
+    result: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
+    for evidence_id, records in candidates.items():
+        if evidence_id in invalid:
+            errors.append(f"FS-WP-003A {evidence_id} contains an invalid record")
+        if len(records) > 1:
+            errors.append(f"FS-WP-003A {evidence_id} contains duplicate records")
+        if evidence_id not in invalid and len(records) == 1:
+            result[evidence_id] = records[0]
+    board_sets = {
+        tuple(sorted(record["details"]["board_ids"])) for record in result.values()
+    }
+    if len(board_sets) > 1:
+        errors.append("FS-WP-003A physical records identify inconsistent board pairs")
+        result.clear()
+    return result, errors
 
 
 def _repository_report(head: str) -> tuple[dict[str, Any], list[str]]:
@@ -419,6 +509,46 @@ def _fidelity_schema_report() -> tuple[dict[str, Any], list[str]]:
     )
 
 
+def _qemu_source_identity() -> tuple[dict[str, Any], dict[str, bool]]:
+    tag_ref = f"refs/tags/{feasibility.EXPECTED_QEMU_RELEASE_TAG}"
+    try:
+        remote_refs = _run(
+            (
+                "git",
+                "ls-remote",
+                QEMU_SOURCE_REPOSITORY,
+                tag_ref,
+                f"{tag_ref}^{{}}",
+            )
+        )
+        resolved_refs = {
+            ref: commit
+            for line in remote_refs.splitlines()
+            if len((parts := line.split())) == 2
+            for commit, ref in [parts]
+        }
+        source_identity = {
+            "repository": QEMU_SOURCE_REPOSITORY,
+            "release_tag": feasibility.EXPECTED_QEMU_RELEASE_TAG,
+            "tag_object": resolved_refs.get(tag_ref),
+            "source_revision": resolved_refs.get(f"{tag_ref}^{{}}"),
+        }
+        return source_identity, {
+            "qemu_tag_object": (
+                source_identity["tag_object"] == feasibility.EXPECTED_QEMU_TAG_OBJECT
+            ),
+            "qemu_source_revision": (
+                source_identity["source_revision"]
+                == feasibility.EXPECTED_QEMU_SOURCE_REVISION
+            ),
+        }
+    except GateError as error:
+        return (
+            {"repository": QEMU_SOURCE_REPOSITORY, "error": str(error)},
+            {"qemu_tag_object": False, "qemu_source_revision": False},
+        )
+
+
 def _engine_report(validate_installed: bool) -> tuple[dict[str, Any], list[str]]:
     expected = {
         "idf_version": feasibility.EXPECTED_IDF_VERSION,
@@ -444,14 +574,61 @@ def _engine_report(validate_installed: bool) -> tuple[dict[str, Any], list[str]]
     if not validate_installed:
         report.update({"installed": None, "result": "BLOCKED"})
         return report, ["installed pinned-engine identity validation was not requested"]
+    source_identity, source_checks = _qemu_source_identity()
     try:
         toolchain = feasibility.discover_toolchain(require_gdb=False)
     except feasibility.FeasibilityError as error:
-        report.update({"installed": None, "result": "BLOCKED", "error": str(error)})
+        report.update(
+            {
+                "installed": None,
+                "source_identity": source_identity,
+                "identity_checks": source_checks,
+                "result": "BLOCKED",
+                "error": str(error),
+            }
+        )
         return report, [f"pinned-engine identity validation failed: {error}"]
     installed = dict(feasibility._toolchain_identity(toolchain))
-    report.update({"installed": installed, "result": "PASS"})
-    return report, []
+    identity_checks = {
+        "idf_version": toolchain.idf_version == feasibility.EXPECTED_IDF_VERSION,
+        "idf_revision": toolchain.idf_revision == feasibility.EXPECTED_IDF_REVISION,
+        "compiler_version": (
+            toolchain.compiler_version == feasibility.EXPECTED_COMPILER_VERSION
+        ),
+        "compiler_executable_sha256": (
+            toolchain.compiler_sha256 == feasibility.EXPECTED_COMPILER_SHA256
+        ),
+        "compiler_archive_sha256": (
+            toolchain.compiler_archive is not None
+            and toolchain.compiler_archive_sha256
+            == feasibility.EXPECTED_COMPILER_ARCHIVE_SHA256
+        ),
+        "qemu_version": toolchain.qemu_version == feasibility.EXPECTED_QEMU_VERSION,
+        "qemu_executable_sha256": (
+            toolchain.qemu_sha256 == feasibility.EXPECTED_QEMU_SHA256
+        ),
+        "qemu_archive_sha256": (
+            toolchain.qemu_archive is not None
+            and toolchain.qemu_archive_sha256
+            == feasibility.EXPECTED_QEMU_ARCHIVE_SHA256
+        ),
+    }
+    identity_checks.update(source_checks)
+    valid = all(identity_checks.values())
+    report.update(
+        {
+            "installed": installed,
+            "source_identity": source_identity,
+            "identity_checks": identity_checks,
+            "result": "PASS" if valid else "BLOCKED",
+        }
+    )
+    if valid:
+        return report, []
+    failed = ", ".join(name for name, passed in identity_checks.items() if not passed)
+    return report, [
+        f"pinned-engine identities remain unresolved or mismatched: {failed}"
+    ]
 
 
 def _patch_budget_report() -> tuple[dict[str, Any], list[str]]:
@@ -513,7 +690,10 @@ def _fs3_report(
     if not integrated or not software_pass:
         blockers.append("FS-WP-003A lacks integrated exact-head successful Software CI")
 
-    accepted_physical = _physical_evidence(issue, str(integration_head))
+    accepted_physical, evidence_errors = _physical_evidence(
+        issue, str(integration_head)
+    )
+    blockers.extend(evidence_errors)
     evidence = [
         {
             "id": "software_ci",
@@ -527,12 +707,7 @@ def _fs3_report(
             "acceptance_authority": "GitHub Software CI",
         }
     ]
-    for evidence_id in (
-        "two_board_discovery",
-        "complementary_roles",
-        "bidirectional_benchmark_simulation_off",
-        "traced_drill",
-    ):
+    for evidence_id in PHYSICAL_EVIDENCE_IDS:
         record = accepted_physical.get(
             evidence_id,
             {
