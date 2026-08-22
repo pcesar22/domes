@@ -291,12 +291,6 @@ class HardwareBrokerTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(broker.BrokerError, "incomplete"):
             broker._espnow_status_fields("State: master\nPeers: 1\n")
-        self.assertEqual(
-            (17, 19),
-            broker._espnow_packet_counts("TX packets: 17\nRX packets: 19\n"),
-        )
-        with self.assertRaisesRegex(broker.BrokerError, "packet counters"):
-            broker._espnow_packet_counts("TX packets: 17\n")
 
     def test_espnow_regression_runs_fixed_two_board_lifecycle(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -315,8 +309,6 @@ class HardwareBrokerTest(unittest.TestCase):
             )
             enabled = {0: False, 1: False}
             drill = {"active": False}
-            packet_counts = {0: [10, 10], 1: [10, 10]}
-            trace_status_reads = {0: 0, 1: 0}
             commands = []
             sleeps = []
 
@@ -330,8 +322,6 @@ class HardwareBrokerTest(unittest.TestCase):
                     enabled[board] = False
                 elif command[:3] == ["espnow", "sim-mode", "on"]:
                     drill["active"] = True
-                elif command == ["trace", "start"]:
-                    trace_status_reads[board] = 0
                 if command == ["espnow", "status"]:
                     if enabled[board]:
                         state = "master" if board == 0 else "slave"
@@ -339,23 +329,18 @@ class HardwareBrokerTest(unittest.TestCase):
                     else:
                         state = "disabled"
                         peers = 1 if drill["active"] else 0
-                    if drill["active"] and enabled[board]:
-                        trace_status_reads[board] += 1
-                        if trace_status_reads[board] >= 2:
-                            packet_counts[board][0] += 1
-                            packet_counts[board][1] += 1
                     return (
                         0,
                         f"State: {state}\nPeers: {peers}\n"
-                        f"TX packets: {packet_counts[board][0]}\n"
-                        f"RX packets: {packet_counts[board][1]}\nTX fails: 0\n",
+                        "TX packets: 10\nRX packets: 10\nTX fails: 0\n",
                         "",
                     )
                 if command[:2] == ["espnow", "bench"]:
+                    rounds = command[command.index("--rounds") + 1]
                     return (
                         0,
                         "ESP-NOW Benchmark Results:\n"
-                        "  Rounds:     100/100 completed (0 failed)\n"
+                        f"  Rounds:     {rounds}/{rounds} completed (0 failed)\n"
                         "  Mean RTT:   1000 us (1.00 ms)\n",
                         "",
                     )
@@ -411,7 +396,13 @@ class HardwareBrokerTest(unittest.TestCase):
             self.assertCountEqual(
                 [(0, ["trace", "start"]), (1, ["trace", "start"])], trace_starts
             )
-            self.assertIn(0.05, sleeps)
+            trace_probe = [
+                command
+                for command in commands
+                if command[1] == ["espnow", "bench", "--rounds", "1"]
+            ]
+            self.assertEqual(1, len(trace_probe))
+            self.assertEqual(1, summary["traced_probe_rounds"])
             self.assertTrue(
                 (evidence / f"espnow-regression-{'b' * 16}.jsonl").is_file()
             )
