@@ -1084,7 +1084,7 @@ class StackedPullRequestTest(unittest.TestCase):
         )
         self.assertIsNone(control.stack_context(workflow, item, (parent, child)))
 
-    def test_stack_rejects_fan_in_nested_child_hardware_and_parent_changes_requested(
+    def test_stack_rejects_fan_in_hardware_and_parent_changes_requested(
         self,
     ) -> None:
         workflow = control.load_workflow()
@@ -1097,27 +1097,9 @@ class StackedPullRequestTest(unittest.TestCase):
             dependencies=(parent.number, second.number),
             pull_request=0,
         )
-        nested_parent = automated_ticket(
-            54,
-            self.revision,
-            label="agent:human-review",
-            dependencies=(parent.number,),
-        )
-        nested_child = automated_ticket(
-            55,
-            self.revision,
-            label="agent:ready",
-            dependencies=(nested_parent.number,),
-            pull_request=0,
-        )
         hardware_parent, hardware_child, _ = self.parent_and_child(child_hardware=True)
         for candidate, tickets, pattern in (
             (fan_in, (parent, second, fan_in), "exactly one"),
-            (
-                nested_child,
-                (parent, nested_parent, nested_child),
-                "nested|not terminal",
-            ),
             (hardware_child, (hardware_parent, hardware_child), "eligible software"),
         ):
             ok, error = control.stack_dependency_status(
@@ -1162,6 +1144,187 @@ class StackedPullRequestTest(unittest.TestCase):
                 control.validate_ticket(child, check_revision=False),
                 (parent, child),
             )
+
+    def test_stack_accepts_linear_nested_review_chain(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        root = automated_ticket(
+            50, self.revision, label="agent:human-review", pull_request=91
+        )
+        parent = automated_ticket(
+            54,
+            self.revision,
+            label="agent:human-review",
+            dependencies=(root.number,),
+            pull_request=93,
+        )
+        child = automated_ticket(
+            55,
+            self.revision,
+            label="agent:ready",
+            dependencies=(parent.number,),
+        )
+        root_pr = pull_request(
+            policy, number=91, head="b" * 40, head_ref="codex/issue-50"
+        )
+        parent_pr = pull_request(
+            policy,
+            number=93,
+            head="c" * 40,
+            base_ref=root_pr.head_ref,
+            base_oid=root_pr.head_oid,
+            head_ref="codex/issue-54",
+        )
+        root_binding = control.StackContext(
+            root.number, root_pr.number, root_pr.head_ref, root_pr.head_oid
+        )
+        artifacts = {
+            root.number: {
+                "issue": root.number,
+                "spec_revision": self.revision,
+                "pull_request": root_pr.number,
+                "commit": root_pr.head_oid,
+            },
+            parent.number: {
+                "issue": parent.number,
+                "spec_revision": self.revision,
+                "pull_request": parent_pr.number,
+                "commit": parent_pr.head_oid,
+                "controller_stack": {
+                    "parent_issue": root_binding.parent_issue,
+                    "parent_pr": root_binding.parent_pr,
+                    "base_ref": root_binding.base_ref,
+                    "base_head": root_binding.base_head,
+                },
+            },
+        }
+        pull_requests = {root_pr.number: root_pr, parent_pr.number: parent_pr}
+
+        def artifact(_workflow, ticket):
+            return artifacts[ticket.number]
+
+        def pull(_workflow, number):
+            return pull_requests[number]
+
+        def judge(_workflow, ticket, _role):
+            item = artifacts[ticket.number]
+            return {
+                "verdict": "approve",
+                "pull_request": item["pull_request"],
+                "commit": item["commit"],
+            }
+
+        item = control.validate_ticket(child, check_revision=False)
+        self.assertEqual(
+            (True, None),
+            control.stack_dependency_status(workflow, item, (root, parent, child)),
+        )
+        with (
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", side_effect=artifact
+            ),
+            mock.patch.object(control, "load_pull_request", side_effect=pull),
+            mock.patch.object(control, "load_exact_role_handoff", side_effect=judge),
+        ):
+            stack = control.stack_context(workflow, item, (root, parent, child))
+        self.assertEqual(
+            control.StackContext(
+                parent.number,
+                parent_pr.number,
+                parent_pr.head_ref,
+                parent_pr.head_oid,
+            ),
+            stack,
+        )
+
+    def test_stack_collapses_merged_parent_to_live_ancestor(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        root = automated_ticket(
+            50, self.revision, label="agent:human-review", pull_request=91
+        )
+        parent = automated_ticket(
+            54,
+            self.revision,
+            label="agent:human-review",
+            dependencies=(root.number,),
+            pull_request=93,
+        )
+        child = automated_ticket(
+            55,
+            self.revision,
+            label="agent:ready",
+            dependencies=(parent.number,),
+        )
+        old_root_head = "b" * 40
+        root_pr = pull_request(
+            policy, number=91, head="f" * 40, head_ref="codex/issue-50"
+        )
+        parent_pr = pull_request(
+            policy,
+            number=93,
+            state="MERGED",
+            head="c" * 40,
+            base_ref=root_pr.head_ref,
+            base_oid=old_root_head,
+            head_ref="codex/issue-54",
+        )
+        artifacts = {
+            root.number: {
+                "issue": root.number,
+                "spec_revision": self.revision,
+                "pull_request": root_pr.number,
+                "commit": root_pr.head_oid,
+            },
+            parent.number: {
+                "issue": parent.number,
+                "spec_revision": self.revision,
+                "pull_request": parent_pr.number,
+                "commit": parent_pr.head_oid,
+                "controller_stack": {
+                    "parent_issue": root.number,
+                    "parent_pr": root_pr.number,
+                    "base_ref": root_pr.head_ref,
+                    "base_head": old_root_head,
+                },
+            },
+        }
+        pull_requests = {root_pr.number: root_pr, parent_pr.number: parent_pr}
+
+        def artifact(_workflow, ticket):
+            return artifacts[ticket.number]
+
+        def judge(_workflow, ticket, _role):
+            item = artifacts[ticket.number]
+            return {
+                "verdict": "approve",
+                "pull_request": item["pull_request"],
+                "commit": item["commit"],
+            }
+
+        with (
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", side_effect=artifact
+            ),
+            mock.patch.object(
+                control,
+                "load_pull_request",
+                side_effect=lambda _workflow, number: pull_requests[number],
+            ),
+            mock.patch.object(control, "load_exact_role_handoff", side_effect=judge),
+            mock.patch.object(control, "_remote_commit_is_ancestor", return_value=True),
+        ):
+            stack = control.stack_context(
+                workflow,
+                control.validate_ticket(child, check_revision=False),
+                (root, parent, child),
+            )
+        self.assertEqual(
+            control.StackContext(
+                root.number, root_pr.number, root_pr.head_ref, root_pr.head_oid
+            ),
+            stack,
+        )
 
     def test_stack_context_invalidates_moved_or_merged_parent(self) -> None:
         workflow = control.load_workflow()
@@ -1362,6 +1525,49 @@ class StackedPullRequestTest(unittest.TestCase):
             workflow, workspace, item, "worker", old_stack_pr, None
         )
 
+    def test_nested_parent_merge_rework_retargets_next_live_ancestor(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(
+            57,
+            self.revision,
+            label="agent:rework",
+            dependencies=(50,),
+            pull_request=92,
+        )
+        item = control.validate_ticket(ticket, check_revision=False)
+        old_stack_pr = pull_request(
+            control.load_autopilot_policy(),
+            number=92,
+            base_ref="codex/issue-50",
+            base_oid="b" * 40,
+            head_ref="codex/issue-57",
+        )
+        live = control.StackContext(49, 90, "codex/issue-49", "d" * 40)
+        with tempfile.TemporaryDirectory() as directory:
+            workflow = control.Workflow(
+                repository=workflow.repository,
+                state_prefix=workflow.state_prefix,
+                scheduler_host=workflow.scheduler_host,
+                max_concurrent_workers=workflow.max_concurrent_workers,
+                workspace_root=Path(directory),
+                base_branch=workflow.base_branch,
+                poll_interval_seconds=workflow.poll_interval_seconds,
+                stall_timeout_seconds=workflow.stall_timeout_seconds,
+                max_retry_backoff_seconds=workflow.max_retry_backoff_seconds,
+            )
+            with (
+                mock.patch.object(
+                    control, "load_pull_request", return_value=old_stack_pr
+                ),
+                mock.patch.object(control, "_clone_agent_workspace") as clone,
+                mock.patch.object(control, "_prepare_agent_workspace") as prepare,
+            ):
+                workspace = control.ensure_workspace(workflow, item, "worker", live)
+        clone.assert_called_once()
+        prepare.assert_called_once_with(
+            workflow, workspace, item, "worker", old_stack_pr, live
+        )
+
     def test_parent_merge_race_returns_judge_to_rework_not_blocked(self) -> None:
         workflow = control.load_workflow()
         ticket = automated_ticket(
@@ -1451,6 +1657,96 @@ class StackedPullRequestTest(unittest.TestCase):
         self.assertEqual(expected, landed)
         ancestry.assert_called_once_with(workflow, child_pr.merge_commit, "f" * 40)
         finalize.assert_called_once_with(workflow, ticket, child_pr)
+
+    def test_human_merged_nested_stack_waits_on_live_ancestor(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        root = automated_ticket(
+            50, self.revision, label="agent:human-review", pull_request=91
+        )
+        parent = automated_ticket(
+            54,
+            self.revision,
+            label="agent:human-review",
+            dependencies=(root.number,),
+            pull_request=93,
+        )
+        ticket = automated_ticket(
+            59,
+            self.revision,
+            label="agent:human-review",
+            dependencies=(parent.number,),
+            pull_request=92,
+        )
+        binding = control.StackContext(parent.number, 93, "codex/issue-54", "c" * 40)
+        child_pr = pull_request(
+            policy,
+            number=92,
+            state="MERGED",
+            base_ref=binding.base_ref,
+            base_oid=binding.base_head,
+            head_ref="codex/issue-59",
+        )
+        parent_pr = pull_request(
+            policy,
+            number=93,
+            state="MERGED",
+            head=binding.base_head,
+            base_ref="codex/issue-50",
+            base_oid="b" * 40,
+            head_ref=binding.base_ref,
+        )
+        root_pr = pull_request(
+            policy,
+            number=91,
+            head="f" * 40,
+            head_ref="codex/issue-50",
+        )
+        root_artifact = {
+            "issue": root.number,
+            "spec_revision": self.revision,
+            "pull_request": root_pr.number,
+            "commit": root_pr.head_oid,
+        }
+
+        def ancestry(_workflow, _ancestor, descendant):
+            return descendant != "e" * 40
+
+        with (
+            mock.patch.object(
+                control,
+                "load_pull_request",
+                side_effect=lambda _workflow, number: {
+                    parent_pr.number: parent_pr,
+                    root_pr.number: root_pr,
+                }[number],
+            ),
+            mock.patch.object(control, "refresh_base_branch"),
+            mock.patch.object(control, "origin_main_revision", return_value="e" * 40),
+            mock.patch.object(
+                control, "load_live_tickets", return_value=(root, parent)
+            ),
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=root_artifact
+            ),
+            mock.patch.object(
+                control,
+                "load_exact_role_handoff",
+                return_value={
+                    "verdict": "approve",
+                    "pull_request": root_pr.number,
+                    "commit": root_pr.head_oid,
+                },
+            ),
+            mock.patch.object(
+                control, "_remote_commit_is_ancestor", side_effect=ancestry
+            ),
+        ):
+            waiting = control.reconcile_stacked_human_merge(
+                workflow, ticket, child_pr, binding
+            )
+        self.assertEqual("waiting_for_parent_main", waiting["stack_merge"])
+        self.assertEqual(root_pr.number, waiting["parent_pull_request"])
 
     def test_dropped_human_merged_child_blocks_without_rewriting_contract(self) -> None:
         workflow = control.load_workflow()

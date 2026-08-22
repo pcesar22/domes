@@ -291,7 +291,7 @@ class TicketValidation:
 
 @dataclass(frozen=True)
 class StackContext:
-    """Controller-derived, one-deep PR-stack binding; never worker-authored."""
+    """Controller-derived binding to the exact live review-stack base."""
 
     parent_issue: int
     parent_pr: int
@@ -838,18 +838,8 @@ def _stack_parent(
             None,
             "nonterminal dependency is not an eligible software human-review parent",
         )
-    parent_validation = validate_ticket(parent, check_revision=False)
-    if not parent_validation.valid:
+    if not validate_ticket(parent, check_revision=False).valid:
         return None, "stack parent ticket contract is invalid"
-    parent_dependencies = parent_validation.dependencies
-    if any(
-        dependency in by_number and not terminal(by_number[dependency])
-        for dependency in parent_dependencies
-    ):
-        return (
-            None,
-            "dependency is not terminal; nested stacked pull requests are not supported",
-        )
     return parent, None
 
 
@@ -886,15 +876,20 @@ def stack_dependency_status(
     )
 
 
-def stack_context(
-    workflow: Workflow, item: TicketValidation, tickets: Sequence[Ticket]
+def _stack_context(
+    workflow: Workflow,
+    item: TicketValidation,
+    tickets: Sequence[Ticket],
+    resolving: frozenset[int],
 ) -> StackContext | None:
-    """Resolve and validate the exact parent PR head immediately before use."""
+    """Resolve the exact live review-stack base, validating every open level."""
     parent, error = _stack_parent(item, tickets)
     if error:
         raise StackInvalidated(error)
     if parent is None:
         return None
+    if parent.number in resolving:
+        raise StackInvalidated("dependency cycle in review stack")
     parent_sections = parse_sections(parent.body)
     try:
         artifact = load_latest_artifact_handoff(workflow, parent)
@@ -902,20 +897,35 @@ def stack_context(
         raise StackInvalidated(str(error)) from error
     parent_pr = artifact.get("pull_request")
     parent_head = artifact.get("commit")
+    parent_binding = artifact_stack_binding(artifact)
+    parent_item = validate_ticket(parent, check_revision=False)
+    if not parent_item.valid:
+        raise StackInvalidated(f"stack parent #{parent.number} contract is invalid")
+    live_parent_binding = _stack_context(
+        workflow,
+        parent_item,
+        tickets,
+        resolving | {parent.number},
+    )
     if (
         not isinstance(parent_pr, int)
         or not FULL_SHA.fullmatch(str(parent_head))
         or artifact.get("spec_revision")
         != parent_sections.get("Specification revision")
         or existing_pull_request(parent_sections) != parent_pr
-        or artifact_stack_binding(artifact) is not None
     ):
         raise StackInvalidated(f"stack parent #{parent.number} has no exact artifact")
     pull_request = load_pull_request(workflow, parent_pr)
+    expected_parent_base = (
+        parent_binding.base_ref if parent_binding is not None else workflow.base_branch
+    )
     if (
-        pull_request.state != "OPEN"
-        or pull_request.is_draft
-        or pull_request.base_ref != workflow.base_branch
+        pull_request.is_draft
+        or pull_request.base_ref != expected_parent_base
+        or (
+            parent_binding is not None
+            and pull_request.base_oid != parent_binding.base_head
+        )
         or pull_request.head_oid != parent_head
         or pull_request.merge_state == "DIRTY"
         or pull_request.mergeable in {"CONFLICTING", "UNMERGEABLE"}
@@ -941,9 +951,39 @@ def stack_context(
         raise StackInvalidated(
             f"stack parent #{parent.number} lacks exact-head required CI"
         )
-    return StackContext(
-        parent.number, parent_pr, pull_request.head_ref, pull_request.head_oid
+    if pull_request.state == "OPEN":
+        if parent_binding != live_parent_binding:
+            raise StackInvalidated(
+                f"stack parent #{parent.number} no longer binds its reviewed base"
+            )
+        return StackContext(
+            parent.number, parent_pr, pull_request.head_ref, pull_request.head_oid
+        )
+    if pull_request.state == "MERGED" and parent_binding is not None:
+        if (
+            live_parent_binding is None
+            or not FULL_SHA.fullmatch(pull_request.merge_commit)
+            or not _remote_commit_is_ancestor(
+                workflow, pull_request.merge_commit, live_parent_binding.base_head
+            )
+        ):
+            raise StackInvalidated(
+                f"stack parent #{parent.number} is not integrated into its live ancestor"
+            )
+        # The immediate dependency has landed in an ancestor review branch. Bind
+        # new/reworked children to that current branch instead of idling until
+        # the entire review chain reaches main.
+        return live_parent_binding
+    raise StackInvalidated(
+        f"stack parent #{parent.number} is no longer a stable review artifact"
     )
+
+
+def stack_context(
+    workflow: Workflow, item: TicketValidation, tickets: Sequence[Ticket]
+) -> StackContext | None:
+    """Resolve and validate the exact effective parent PR head before use."""
+    return _stack_context(workflow, item, tickets, frozenset({item.ticket.number}))
 
 
 def eligible_queue(
@@ -2379,13 +2419,13 @@ def ensure_workspace(
         pull_request = load_pull_request(workflow, pull_request_number)
         expected_base = stack.base_ref if stack is not None else workflow.base_branch
         rebasing_stacked_child = (
-            stack is None
-            and role == "worker"
+            role == "worker"
             and (item.source_state or item.ticket.agent_state) == "agent:rework"
             and automated_delivery(item.sections)
             and item.sections.get("Work class", "").strip() == "software"
             and not hardware_operations(item.sections)
             and pull_request.base_ref.startswith("codex/issue-")
+            and pull_request.base_ref != expected_base
         )
         if (
             stack is None
@@ -5780,7 +5820,7 @@ def reconcile_stacked_human_merge(
     pull_request: PullRequest,
     binding: StackContext,
 ) -> dict[str, Any]:
-    """Keep a child nonterminal until its human-merged stack commit reaches main."""
+    """Keep a child nonterminal until its merged stack commit reaches main."""
     if (
         pull_request.state != "MERGED"
         or pull_request.base_ref != binding.base_ref
@@ -5790,13 +5830,6 @@ def reconcile_stacked_human_merge(
             f"issue #{ticket.number}: stacked merge artifact is malformed"
         )
     parent = load_pull_request(workflow, binding.parent_pr)
-    if parent.base_ref != workflow.base_branch:
-        return block_invalid_human_merged_stack(
-            workflow,
-            ticket,
-            "The stack parent no longer targets the main branch; the merged child "
-            "has no accepted path to main and requires a new steward-approved delivery.",
-        )
     if parent.state == "OPEN":
         if _remote_commit_is_ancestor(
             workflow, pull_request.merge_commit, parent.head_oid
@@ -5822,14 +5855,44 @@ def reconcile_stacked_human_merge(
         )
     refresh_base_branch(workflow)
     main_head = origin_main_revision(workflow)
-    if not _remote_commit_is_ancestor(workflow, pull_request.merge_commit, main_head):
-        return block_invalid_human_merged_stack(
-            workflow,
-            ticket,
-            "The parent merged, but the child's integration commit is not present on "
-            "main; a new steward-approved delivery is required.",
-        )
-    return finalize_human_merged_ticket(workflow, ticket, pull_request)
+    if _remote_commit_is_ancestor(workflow, pull_request.merge_commit, main_head):
+        return finalize_human_merged_ticket(workflow, ticket, pull_request)
+
+    # A nested parent may have merged into the next review branch without yet
+    # reaching main. Follow its controller-validated dependency chain and keep
+    # the child pending only while that exact integration remains in the live
+    # ancestor. Dropped integrations still fail closed.
+    tickets = load_live_tickets(workflow)
+    parent_ticket = next(
+        (
+            candidate
+            for candidate in tickets
+            if candidate.number == binding.parent_issue
+        ),
+        None,
+    )
+    if parent_ticket is not None:
+        parent_item = validate_ticket(parent_ticket, check_revision=False)
+        if parent_item.valid:
+            try:
+                live_parent = stack_context(workflow, parent_item, tickets)
+            except ControlError:
+                live_parent = None
+            if live_parent is not None and _remote_commit_is_ancestor(
+                workflow, pull_request.merge_commit, live_parent.base_head
+            ):
+                return {
+                    "issue": ticket.number,
+                    "state": "agent:human-review",
+                    "stack_merge": "waiting_for_parent_main",
+                    "parent_pull_request": live_parent.parent_pr,
+                }
+    return block_invalid_human_merged_stack(
+        workflow,
+        ticket,
+        "The parent review chain no longer contains the child's integration commit; "
+        "a new steward-approved delivery is required.",
+    )
 
 
 def reconcile_stacked_children(
