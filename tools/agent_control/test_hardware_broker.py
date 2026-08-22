@@ -11,6 +11,7 @@ from unittest import mock
 
 import hardware_broker as broker
 import hardware_client
+import runtime_trace_normalizer as runtime_normalizer
 import serial_trace_proxy
 
 
@@ -71,6 +72,151 @@ class HardwareBrokerTest(unittest.TestCase):
             self.assertEqual(
                 ("info", None), broker.validate_request(cap, self.request(cap))
             )
+
+    def test_runtime_normalizer_requires_complete_espnow_tx_and_rx_chains(self):
+        root = Path(__file__).resolve().parents[2]
+        proto = root / "firmware/common/proto/trace.proto"
+        names_path = root / "tools/trace/trace_names.json"
+        event_types = runtime_normalizer._enum(proto, "EventType")
+        names = {
+            value: int(key)
+            for key, value in json.loads(names_path.read_text(encoding="utf-8")).items()
+        }
+
+        def event(timestamp, task, event_type, context, arg1, token):
+            return __import__("struct").pack(
+                "<IHBBII", timestamp, task, event_type, 1 | (context << 2), arg1, token
+            )
+
+        token = 17
+        raw = b"".join(
+            (
+                event(
+                    1,
+                    8,
+                    event_types["EVENT_TYPE_SCHED_QUEUE_SEND"],
+                    0,
+                    names["EspNow.TxSubmit"],
+                    token,
+                ),
+                event(
+                    2,
+                    0,
+                    event_types["EVENT_TYPE_CALLBACK_BEGIN"],
+                    2,
+                    names["EspNow.TxCallback"],
+                    token,
+                ),
+                event(
+                    3,
+                    0,
+                    event_types["EVENT_TYPE_CALLBACK_END"],
+                    2,
+                    names["EspNow.TxCallback"],
+                    token,
+                ),
+                event(
+                    4,
+                    8,
+                    event_types["EVENT_TYPE_CAUSAL_COMPLETE"],
+                    0,
+                    names["EspNow.TxComplete"],
+                    token,
+                ),
+                event(
+                    5,
+                    0,
+                    event_types["EVENT_TYPE_CALLBACK_BEGIN"],
+                    2,
+                    names["EspNow.RxCallback"],
+                    token,
+                ),
+                event(
+                    6,
+                    0,
+                    event_types["EVENT_TYPE_SCHED_QUEUE_SEND"],
+                    2,
+                    names["EspNow.RxQueue"],
+                    token,
+                ),
+                event(
+                    7,
+                    0,
+                    event_types["EVENT_TYPE_SEM_GIVE"],
+                    2,
+                    names["EspNow.RxReady"],
+                    token,
+                ),
+                event(
+                    8,
+                    0,
+                    event_types["EVENT_TYPE_CALLBACK_END"],
+                    2,
+                    names["EspNow.RxCallback"],
+                    token,
+                ),
+                event(
+                    9,
+                    8,
+                    event_types["EVENT_TYPE_SEM_TAKE"],
+                    0,
+                    names["EspNow.RxReady"],
+                    token,
+                ),
+                event(
+                    10,
+                    8,
+                    event_types["EVENT_TYPE_SCHED_QUEUE_RECEIVE"],
+                    0,
+                    names["EspNow.RxQueue"],
+                    token,
+                ),
+                event(
+                    11,
+                    8,
+                    event_types["EVENT_TYPE_CAUSAL_COMPLETE"],
+                    0,
+                    names["EspNow.RxDispatch"],
+                    token,
+                ),
+            )
+        )
+        session = {
+            "format_version": 1,
+            "integrity_error": None,
+            "event_count": len(raw) // 16,
+            "received_raw_bytes": len(raw),
+            "dropped_count": 0,
+            "discontinuity_count": 0,
+            "raw_sha256": hashlib.sha256(raw).hexdigest(),
+            "start_timestamp_us": 1,
+            "end_timestamp_us": 11,
+            "tasks": [
+                {
+                    "task_id": 8,
+                    "name": "espnow_svc",
+                    "priority": 10,
+                    "core_affinity_mask": 1,
+                }
+            ],
+            "objects": [],
+        }
+        replay, semantic = runtime_normalizer.normalize_runtime(
+            raw, session, proto, names_path
+        )
+        self.assertEqual(1, replay["correlation"]["tx_complete_count"])
+        self.assertEqual(1, replay["correlation"]["rx_complete_count"])
+        self.assertEqual(1, semantic["tx_complete_count"])
+        with self.assertRaisesRegex(runtime_normalizer.RuntimeTraceError, "TX and RX"):
+            truncated = raw[: 4 * 16]
+            rejected = {
+                **session,
+                "event_count": 4,
+                "received_raw_bytes": len(truncated),
+                "raw_sha256": hashlib.sha256(truncated).hexdigest(),
+                "end_timestamp_us": 4,
+            }
+            runtime_normalizer.normalize_runtime(truncated, rejected, proto, names_path)
 
     def test_board_alias_is_capability_bound(self):
         with tempfile.TemporaryDirectory() as directory:

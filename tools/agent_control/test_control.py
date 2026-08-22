@@ -3507,6 +3507,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
             for offset, artifact, digit in (
                 ("0x0", "bootloader/bootloader.bin", "6"),
                 ("0x8000", "partition_table/partition-table.bin", "7"),
+                ("0xf000", "ota_data_initial.bin", "b"),
                 ("0x20000", "domes.bin", "8"),
             )
         ]
@@ -3615,6 +3616,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
             for offset, artifact, digit in (
                 ("0x0", "bootloader/bootloader.bin", "6"),
                 ("0x8000", "partition_table/partition-table.bin", "7"),
+                ("0xf000", "ota_data_initial.bin", "b"),
                 ("0x20000", "domes.bin", "8"),
             )
         ]
@@ -3758,6 +3760,11 @@ class ReviewFixRegressionTest(unittest.TestCase):
                     "sha256": "9" * 64,
                 },
                 {
+                    "offset": "0xf000",
+                    "artifact": "ota_data_initial.bin",
+                    "sha256": "0" * 64,
+                },
+                {
                     "offset": "0x20000",
                     "artifact": "domes.bin",
                     "sha256": "a" * 64,
@@ -3844,8 +3851,10 @@ class ReviewFixRegressionTest(unittest.TestCase):
                 (trace_output / name).write_bytes(data)
             normalized = manifest.parent / "normalized-trace-611"
             normalized.mkdir()
-            replay_data = b'{"artifact_kind":"replay-normalized-trace"}\n'
-            semantic_data = b'{"artifact_kind":"cross-target-semantic-projection"}\n'
+            replay_data = b'{"artifact_kind":"replay-normalized-runtime-trace"}\n'
+            semantic_data = (
+                b'{"artifact_kind":"runtime-correlation-semantic-projection"}\n'
+            )
             (normalized / "trace.replay.json").write_bytes(replay_data)
             (normalized / "trace.semantic.json").write_bytes(semantic_data)
             trace["trace_hashes"] = {
@@ -3862,8 +3871,9 @@ class ReviewFixRegressionTest(unittest.TestCase):
             trace["artifact_sha256"] = trace["trace_hashes"]["trace_sha256"]
             trace["artifact_id"] = f"trace-{trace['trace_hashes']['trace_sha256'][:16]}"
             trace["normalization"] = {
-                "kind": "controller-bwrap-trace-normalizer-v1",
+                "kind": "controller-bwrap-runtime-trace-normalizer-v1",
                 "source_head": artifact_head,
+                "build_profile": "default",
                 "normalizer_sha256": "1" * 64,
                 "trace_proto_sha256": "2" * 64,
                 "python_sha256": trusted_tools["python3"]["sha256"],
@@ -3878,6 +3888,8 @@ class ReviewFixRegressionTest(unittest.TestCase):
                     "event_count": 1,
                     "causal_positions": [1],
                     "overhead_us": {"disabled_32_records": 4, "enabled_32_records": 20},
+                    "tx_complete_count": 1,
+                    "rx_complete_count": 1,
                     "normalized_sha256": "3" * 64,
                 },
             }
