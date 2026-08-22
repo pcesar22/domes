@@ -1559,8 +1559,10 @@ def _flash_argv(
         "0x20000": "domes.bin",
         "0xf000": "ota_data_initial.bin",
     }
-    # Flash only the standard application artifacts.  In particular, do not let
-    # a candidate write NVS, PHY calibration, otadata, or arbitrary partitions.
+    # Flash only the standard application artifacts. The generated initial OTA
+    # selector is required: writing ota_0 without it can leave a board booting a
+    # stale ota_1 image even though esptool reports success. Do not let a
+    # candidate write NVS, PHY calibration, or arbitrary partitions.
     if files != expected_generated_layout:
         raise BrokerError("flash layout is not the standard DOMES application layout")
     expected_settings = {"flash_mode": "dio", "flash_freq": "80m", "flash_size": "8MB"}
@@ -1581,7 +1583,8 @@ def _flash_argv(
     for key in ("flash_mode", "flash_freq", "flash_size"):
         argv.extend([f"--{key}", expected_settings[key]])
     flash_layout = {
-        key: expected_generated_layout[key] for key in ("0x0", "0x8000", "0x20000")
+        key: expected_generated_layout[key]
+        for key in ("0x0", "0x8000", "0xf000", "0x20000")
     }
     inputs: list[dict[str, str]] = []
     for offset, relative in sorted(
@@ -1797,9 +1800,6 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
         wait_for_disabled(f"benchmark session {session}")
 
     for board in (0, 1):
-        run_cli(board, "trace", "stop")
-        run_cli(board, "trace", "clear")
-        run_cli(board, "trace", "start")
         run_cli(
             board,
             "espnow",
@@ -1813,6 +1813,19 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
     for board in (0, 1):
         run_cli(board, "feature", "enable", "esp-now")
     wait_for_peers("simulated drill")
+
+    # Peer discovery and the full drill take long enough to saturate the fixed
+    # trace ring with scheduler events. Start a bounded capture only after the
+    # peers have converged and the simulated drill is already running. This
+    # retains causal drill traffic without manufacturing dropped-event evidence.
+    for board in (0, 1):
+        run_cli(board, "trace", "stop")
+        run_cli(board, "trace", "clear")
+        run_cli(board, "trace", "start")
+    time.sleep(0.2)
+    for board in (0, 1):
+        run_cli(board, "trace", "stop")
+
     time.sleep(35)
     final = [status(board) for board in (0, 1)]
     if any(
@@ -1820,9 +1833,6 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
         for state, peers, failures in final
     ):
         raise BrokerError("ESP-NOW simulated drill did not finish cleanly")
-    for board in (0, 1):
-        run_cli(board, "trace", "stop")
-
     encoded = ("\n".join(transcript) + "\n").encode()
     ensure_capability_evidence_budget(cap, len(encoded))
     transcript_path = cap.evidence / f"espnow-regression-{artifact_head[:16]}.jsonl"
