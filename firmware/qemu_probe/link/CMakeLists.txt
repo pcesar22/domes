@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.16)
+list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../common")
+list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../domes/components")
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(domes_qemu_link_probe)
