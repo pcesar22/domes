@@ -8,14 +8,15 @@
 
 use crate::proto::config::{
     CheckUpdateResponse, ClearCrashDumpResponse, Color, CrashDumpResponse, EspNowBenchRequest,
-    EspNowBenchResponse, Feature, FeatureState, GetEspNowStatusResponse, GetFeatureRequest,
-    GetFeatureResponse, GetHealthResponse, GetLedPatternResponse, GetMemoryProfileResponse,
-    GetModeResponse, GetSystemInfoResponse, LedPattern, LedPatternType, ListFeaturesResponse,
-    ResetReason, SelfTestResponse, SetAutoUpdateRequest, SetAutoUpdateResponse, SetFeatureRequest,
-    SetFeatureResponse, SetImuTriageRequest, SetImuTriageResponse, SetLedPatternRequest,
-    SetLedPatternResponse, SetModeRequest, SetModeResponse, SetPodIdRequest, SetPodIdResponse,
-    SetSimModeRequest, SetSimModeResponse, SimulateTouchRequest, SimulateTouchResponse, Status,
-    SystemMode,
+    EspNowBenchResponse, Feature, FeatureState, FeedbackProbe, GetAudioVolumeResponse,
+    GetEspNowStatusResponse, GetFeatureRequest, GetFeatureResponse, GetHealthResponse,
+    GetLedPatternResponse, GetMemoryProfileResponse, GetModeResponse, GetSystemInfoResponse,
+    LedPattern, LedPatternType, ListFeaturesResponse, ResetReason, SelfTestResponse,
+    SetAudioVolumeRequest, SetAudioVolumeResponse, SetAutoUpdateRequest, SetAutoUpdateResponse,
+    SetFeatureRequest, SetFeatureResponse, SetImuTriageRequest, SetImuTriageResponse,
+    SetLedPatternRequest, SetLedPatternResponse, SetModeRequest, SetModeResponse, SetPodIdRequest,
+    SetPodIdResponse, SetSimModeRequest, SetSimModeResponse, SimulateTouchRequest,
+    SimulateTouchResponse, Status, SystemMode, TriggerFeedbackRequest, TriggerFeedbackResponse,
 };
 use prost::Message;
 use thiserror::Error;
@@ -25,6 +26,54 @@ pub mod peer_contract;
 
 // Re-export config MsgType with clearer name for use in commands
 pub use crate::proto::config::MsgType as ConfigMsgType;
+
+pub fn serialize_set_audio_volume(volume: u8) -> Vec<u8> {
+    SetAudioVolumeRequest {
+        volume: u32::from(volume),
+    }
+    .encode_to_vec()
+}
+
+pub fn parse_get_audio_volume_response(payload: &[u8]) -> Result<u8, ProtocolError> {
+    let response = GetAudioVolumeResponse::decode(parse_ok_status(payload)?)?;
+    bounded_volume(response.volume)
+}
+
+pub fn parse_set_audio_volume_response(payload: &[u8]) -> Result<u8, ProtocolError> {
+    let response = SetAudioVolumeResponse::decode(parse_ok_status(payload)?)?;
+    bounded_volume(response.volume)
+}
+
+fn bounded_volume(volume: u32) -> Result<u8, ProtocolError> {
+    if volume > 100 {
+        return Err(ProtocolError::FieldOutOfRange {
+            field: "audio software gain",
+            value: volume,
+            max: 100,
+        });
+    }
+    Ok(volume as u8)
+}
+
+pub fn serialize_trigger_feedback(probe: FeedbackProbe) -> Vec<u8> {
+    TriggerFeedbackRequest {
+        probe: probe as i32,
+    }
+    .encode_to_vec()
+}
+
+pub fn parse_trigger_feedback_response(
+    payload: &[u8],
+) -> Result<(FeedbackProbe, bool), ProtocolError> {
+    let response = TriggerFeedbackResponse::decode(parse_ok_status(payload)?)?;
+    let probe =
+        FeedbackProbe::try_from(response.probe).map_err(|_| ProtocolError::FieldOutOfRange {
+            field: "feedback probe",
+            value: response.probe as u32,
+            max: FeedbackProbe::FixedHaptic as u32,
+        })?;
+    Ok((probe, response.accepted))
+}
 
 /// Protocol errors
 #[derive(Debug, Error)]

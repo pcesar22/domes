@@ -93,6 +93,48 @@ class PodRepositoryImpl implements PodRepository {
     return parseGetSystemInfoResponse(frame.payload);
   }
 
+  @override
+  Future<int> getAudioVolume() async {
+    final frame = await _sendCommand(
+      MsgType.MSG_TYPE_GET_AUDIO_VOLUME_REQ,
+      MsgType.MSG_TYPE_GET_AUDIO_VOLUME_RSP,
+      Uint8List(0),
+    );
+    return parseGetAudioVolumeResponse(frame.payload);
+  }
+
+  @override
+  Future<int> setAudioVolume(int volume) async {
+    final frame = await _sendCommand(
+      MsgType.MSG_TYPE_SET_AUDIO_VOLUME_REQ,
+      MsgType.MSG_TYPE_SET_AUDIO_VOLUME_RSP,
+      serializeSetAudioVolume(volume),
+    );
+    final applied = parseSetAudioVolumeResponse(frame.payload);
+    if (applied != volume) {
+      throw StateError(
+        'Device applied software gain $applied, requested $volume',
+      );
+    }
+    return applied;
+  }
+
+  @override
+  Future<bool> triggerFeedback(FeedbackProbe probe) async {
+    final frame = await _sendCommand(
+      MsgType.MSG_TYPE_TRIGGER_FEEDBACK_REQ,
+      MsgType.MSG_TYPE_TRIGGER_FEEDBACK_RSP,
+      serializeTriggerFeedback(probe),
+    );
+    final (returnedProbe, accepted) = parseTriggerFeedbackResponse(
+      frame.payload,
+    );
+    if (returnedProbe != probe) {
+      throw StateError('Device returned a different feedback probe');
+    }
+    return accepted;
+  }
+
   Future<Frame> _sendCommand(
     MsgType requestType,
     MsgType responseType,

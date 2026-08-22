@@ -96,6 +96,16 @@ final class _FakeRepository implements PodRepository {
   @override
   Future<AppFeatureState> setFeature(Feature feature, bool enabled) =>
       throw UnsupportedError('not used');
+
+  @override
+  Future<int> getAudioVolume() => throw UnsupportedError('not used');
+
+  @override
+  Future<int> setAudioVolume(int volume) => throw UnsupportedError('not used');
+
+  @override
+  Future<bool> triggerFeedback(FeedbackProbe probe) =>
+      throw UnsupportedError('not used');
 }
 
 void main() {

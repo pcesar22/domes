@@ -30,6 +30,15 @@ PB_BIND(domes_config_SetLedPatternRequest, domes_config_SetLedPatternRequest, AU
 PB_BIND(domes_config_GetLedPatternRequest, domes_config_GetLedPatternRequest, AUTO)
 
 
+PB_BIND(domes_config_GetAudioVolumeRequest, domes_config_GetAudioVolumeRequest, AUTO)
+
+
+PB_BIND(domes_config_SetAudioVolumeRequest, domes_config_SetAudioVolumeRequest, AUTO)
+
+
+PB_BIND(domes_config_TriggerFeedbackRequest, domes_config_TriggerFeedbackRequest, AUTO)
+
+
 PB_BIND(domes_config_ListFeaturesResponse, domes_config_ListFeaturesResponse, AUTO)
 
 
@@ -43,6 +52,15 @@ PB_BIND(domes_config_SetLedPatternResponse, domes_config_SetLedPatternResponse, 
 
 
 PB_BIND(domes_config_GetLedPatternResponse, domes_config_GetLedPatternResponse, AUTO)
+
+
+PB_BIND(domes_config_GetAudioVolumeResponse, domes_config_GetAudioVolumeResponse, AUTO)
+
+
+PB_BIND(domes_config_SetAudioVolumeResponse, domes_config_SetAudioVolumeResponse, AUTO)
+
+
+PB_BIND(domes_config_TriggerFeedbackResponse, domes_config_TriggerFeedbackResponse, AUTO)
 
 
 PB_BIND(domes_config_SetImuTriageRequest, domes_config_SetImuTriageRequest, AUTO)
