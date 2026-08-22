@@ -20,7 +20,12 @@ Ticket-specific acceptance checks are additive to repository policy checks. When
 exists, run `pre-commit run --all-files` before the final commit and push. If hooks modify files,
 inspect the changes, rerun affected tests and evidence at the resulting exact head, and rerun
 pre-commit until it exits successfully without modifications. Do not publish a head that is known
-to differ from the repository policy hooks used by CI.
+to differ from the repository policy hooks used by CI. The controller independently reruns the
+complete policy suite on the exact pushed head after this sandbox exits. If the only local failure
+is that an EOF hook cannot open protected read-only `.codex` files, run every other hook over the
+full tree plus the EOF hook over all changed files, report that sandbox limitation as unavailable
+without an implementation blocker, and return promptly; do not copy the repository or loop on an
+impossible write to protected policy files. Any other hook failure remains your responsibility.
 
 After pushing and creating or updating the pull request, do not wait for CI and do not run a
 long-lived check watcher such as `gh pr checks --watch`. Record checks you already executed,

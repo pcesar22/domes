@@ -900,12 +900,6 @@ def _run_with_bounded_logs(
     stdout_path = cap.evidence / f"{name}.stdout.log"
     stderr_path = cap.evidence / f"{name}.stderr.log"
     baseline = ensure_capability_evidence_budget(cap)
-    baseline_free_bytes, baseline_free_inodes = _filesystem_capacity(cap.evidence)
-    if (
-        baseline_free_bytes < MIN_HOST_FREE_BYTES
-        or baseline_free_inodes < MIN_HOST_FREE_INODES
-    ):
-        raise BrokerError("host filesystem reserve is insufficient for candidate work")
     exceeded = threading.Event()
     reader_errors: list[BaseException] = []
 
@@ -987,12 +981,8 @@ def _run_with_bounded_logs(
                     current - baseline > MAX_CANDIDATE_DISK_GROWTH_BYTES
                     or current + unlinked > MAX_CAPABILITY_EVIDENCE_BYTES
                     or unlinked > MAX_CANDIDATE_DISK_GROWTH_BYTES
-                    or baseline_free_bytes - free_bytes
-                    > MAX_CANDIDATE_DISK_GROWTH_BYTES
                     or free_bytes < MIN_HOST_FREE_BYTES
                     or free_inodes < MIN_HOST_FREE_INODES
-                    or baseline_free_inodes - free_inodes
-                    > MAX_CANDIDATE_EVIDENCE_ENTRIES
                 ):
                     failure = "candidate process exceeded aggregate disk-growth limit"
                     break

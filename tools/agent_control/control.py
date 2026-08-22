@@ -3268,6 +3268,102 @@ def worker_evidence_requires_rework(result: dict[str, Any]) -> bool:
     )
 
 
+def _repository_policy_record(record: Any) -> bool:
+    return (
+        isinstance(record, dict)
+        and "pre-commit" in str(record.get("command_or_observation", "")).casefold()
+    )
+
+
+def _repository_policy_blocker(blocker: Any) -> bool:
+    text = str(blocker).casefold()
+    return "pre-commit" in text or (".codex" in text and "read-only" in text)
+
+
+def verify_repository_policy(
+    workspace: Path,
+    result: dict[str, Any],
+    *,
+    timeout_seconds: int,
+) -> None:
+    """Run policy hooks on the exact worker head outside the Codex sandbox."""
+    if not (workspace / ".pre-commit-config.yaml").is_file():
+        return
+    commit = str(result.get("commit", ""))
+    head = _git("rev-parse", "HEAD", cwd=workspace)
+    if head.returncode != 0 or head.stdout.strip() != commit:
+        raise ControlError(
+            "controller policy check workspace does not match worker head"
+        )
+    try:
+        checked = subprocess.run(
+            ["pre-commit", "run", "--all-files"],
+            cwd=workspace,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        checked = None
+        detail = str(error)
+    else:
+        detail = "\n".join(
+            line
+            for line in (checked.stdout + "\n" + checked.stderr).splitlines()[-20:]
+            if line.strip()
+        )
+    dirty = _git("status", "--porcelain", "--untracked-files=no", cwd=workspace)
+    passed = (
+        checked is not None
+        and checked.returncode == 0
+        and dirty.returncode == 0
+        and not dirty.stdout.strip()
+    )
+    verification = result.setdefault("verification", [])
+    if not isinstance(verification, list):
+        raise ControlError("worker verification must be a list")
+    if passed:
+        # The sandbox cannot open protected .codex files in rb+ mode. Supersede
+        # only that policy-check limitation after the trusted controller proves
+        # the exact pushed tree; every other worker failure remains intact.
+        result["verification"] = [
+            record
+            for record in verification
+            if not (
+                _repository_policy_record(record)
+                and isinstance(record, dict)
+                and record.get("status") in {"failed", "pending", "unavailable"}
+            )
+        ]
+        blockers = result.get("blockers", [])
+        if isinstance(blockers, list):
+            result["blockers"] = [
+                blocker
+                for blocker in blockers
+                if not _repository_policy_blocker(blocker)
+            ]
+        result["verification"].append(
+            {
+                "level": "automated",
+                "command_or_observation": (
+                    "Controller exact-head pre-commit run --all-files"
+                ),
+                "status": "passed",
+                "artifact": f"commit {commit}",
+            }
+        )
+        return
+    verification.append(
+        {
+            "level": "automated",
+            "command_or_observation": "Controller exact-head pre-commit run --all-files",
+            "status": "failed",
+            "artifact": detail or dirty.stderr.strip() or "policy hooks modified files",
+        }
+    )
+
+
 def result_state(
     role: str,
     result: dict[str, Any],
@@ -5199,6 +5295,11 @@ def _execute_one(
             result,
             required_base_head=required_base_head,
             stack=stack,
+        )
+        verify_repository_policy(
+            workspace,
+            result,
+            timeout_seconds=workflow.stall_timeout_seconds,
         )
         if role == "worker" and not existing_pull_request(item.sections):
             bind_ticket_pull_request(workflow, item, int(result["pull_request"]))

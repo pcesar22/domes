@@ -784,6 +784,58 @@ class ResultSemanticsTest(unittest.TestCase):
         }
         self.assertEqual("agent:agent-review", control.result_state("worker", result))
 
+    def test_controller_policy_pass_supersedes_only_sandbox_limitation(self) -> None:
+        commit = "c" * 40
+        result = {
+            "commit": commit,
+            "verification": [
+                {
+                    "status": "unavailable",
+                    "command_or_observation": "pre-commit run --all-files",
+                },
+                {"status": "unavailable", "level": "physical"},
+            ],
+            "blockers": ["pre-commit could not open protected read-only .codex files"],
+        }
+        completed = subprocess.CompletedProcess([], 0, "hooks passed", "")
+        head = subprocess.CompletedProcess([], 0, commit + "\n", "")
+        clean = subprocess.CompletedProcess([], 0, "", "")
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            (workspace / ".pre-commit-config.yaml").write_text("repos: []\n")
+            with (
+                mock.patch.object(control.subprocess, "run", return_value=completed),
+                mock.patch.object(control, "_git", side_effect=(head, clean)),
+            ):
+                control.verify_repository_policy(workspace, result, timeout_seconds=30)
+        self.assertEqual([], result["blockers"])
+        self.assertEqual(
+            ["unavailable", "passed"],
+            [record["status"] for record in result["verification"]],
+        )
+        self.assertIn(
+            "Controller exact-head pre-commit",
+            result["verification"][-1]["command_or_observation"],
+        )
+        self.assertFalse(control.worker_evidence_requires_rework(result))
+
+    def test_controller_policy_failure_remains_failed_evidence(self) -> None:
+        commit = "c" * 40
+        result = {"commit": commit, "verification": [], "blockers": []}
+        failed = subprocess.CompletedProcess([], 1, "hook failed", "")
+        head = subprocess.CompletedProcess([], 0, commit + "\n", "")
+        clean = subprocess.CompletedProcess([], 0, "", "")
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            (workspace / ".pre-commit-config.yaml").write_text("repos: []\n")
+            with (
+                mock.patch.object(control.subprocess, "run", return_value=failed),
+                mock.patch.object(control, "_git", side_effect=(head, clean)),
+            ):
+                control.verify_repository_policy(workspace, result, timeout_seconds=30)
+        self.assertEqual("failed", result["verification"][-1]["status"])
+        self.assertTrue(control.worker_evidence_requires_rework(result))
+
     def test_hardware_approval_routes_through_verification_then_final_judge(
         self,
     ) -> None:
