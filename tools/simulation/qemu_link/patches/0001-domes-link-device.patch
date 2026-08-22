@@ -1,0 +1,315 @@
+diff --git a/hw/misc/domes_link.c b/hw/misc/domes_link.c
+new file mode 100644
+index 0000000..4898d99
+--- /dev/null
++++ b/hw/misc/domes_link.c
+@@ -0,0 +1,225 @@
++#include "qemu/osdep.h"
++#include "hw/misc/domes_link.h"
++#include "hw/irq.h"
++#include "qemu/module.h"
++
++#define MAGIC 0x444c4e4b
++#define VERSION 1
++#define CAPABILITY 0x000
++#define ABI_VERSION 0x004
++#define MAX_PAYLOAD 0x008
++#define TX_DEST_LOW 0x010
++#define TX_DEST_HIGH 0x014
++#define TX_LENGTH 0x018
++#define TX_CORRELATION 0x01c
++#define TX_SUBMIT 0x020
++#define TX_STATUS 0x024
++#define RX_SOURCE_LOW 0x030
++#define RX_SOURCE_HIGH 0x034
++#define RX_RSSI 0x038
++#define RX_LENGTH 0x03c
++#define RX_CORRELATION 0x040
++#define RX_CONSUME 0x044
++#define IRQ_STATUS 0x050
++#define IRQ_MASK 0x054
++#define IRQ_ACK 0x058
++#define STICKY_STATUS 0x05c
++#define TX_PAYLOAD 0x100
++#define RX_PAYLOAD 0x200
++#define IRQ_TX BIT(0)
++#define IRQ_RX BIT(1)
++#define ST_OVERFLOW BIT(0)
++#define ST_INVALID BIT(1)
++#define ST_MODEL_FAILURE BIT(3)
++#define ST_SEQUENCE BIT(4)
++#define ST_TRUNCATED BIT(5)
++#define ST_OVERWRITE BIT(6)
++#define ST_UNKNOWN_VERSION BIT(7)
++enum { TX_IDLE, TX_PENDING, TX_SUCCESS, TX_FAILURE };
++
++static void update_irq(DomesLinkState *s)
++{
++    qemu_set_irq(s->irq, (s->irq_status & s->irq_mask) != 0);
++}
++
++static bool word_access(hwaddr addr, unsigned size)
++{
++    return size == 4 && (addr & 3) == 0;
++}
++
++static uint64_t link_read(void *opaque, hwaddr addr, unsigned size)
++{
++    DomesLinkState *s = opaque;
++    if (!word_access(addr, size)) {
++        s->sticky |= ST_INVALID;
++        return 0;
++    }
++    if (addr >= TX_PAYLOAD && addr < TX_PAYLOAD + sizeof(s->tx_payload)) {
++        return ldl_le_p(&s->tx_payload[addr - TX_PAYLOAD]);
++    }
++    if (addr >= RX_PAYLOAD && addr < RX_PAYLOAD + sizeof(s->rx_payload)) {
++        return ldl_le_p(&s->rx_payload[addr - RX_PAYLOAD]);
++    }
++    switch (addr) {
++    case CAPABILITY: return MAGIC;
++    case ABI_VERSION: return VERSION;
++    case MAX_PAYLOAD: return DOMES_LINK_MAX_PAYLOAD;
++    case TX_DEST_LOW: return s->tx_destination_low;
++    case TX_DEST_HIGH: return s->tx_destination_high;
++    case TX_LENGTH: return s->tx_length;
++    case TX_CORRELATION: return s->tx_correlation;
++    case TX_STATUS: return s->tx_status;
++    case RX_SOURCE_LOW: return s->rx_source_low;
++    case RX_SOURCE_HIGH: return s->rx_source_high;
++    case RX_RSSI: return s->rx_rssi;
++    case RX_LENGTH: return s->rx_length;
++    case RX_CORRELATION: return s->rx_correlation;
++    case IRQ_STATUS: return s->irq_status;
++    case IRQ_MASK: return s->irq_mask;
++    case STICKY_STATUS: return s->sticky;
++    default: s->sticky |= ST_INVALID; return 0;
++    }
++}
++
++static void complete(void *opaque)
++{
++    DomesLinkState *s = opaque;
++    if (s->tx_status != TX_PENDING || !s->tx_correlation || !s->tx_length ||
++        s->tx_length > DOMES_LINK_MAX_PAYLOAD) {
++        s->sticky |= ST_MODEL_FAILURE;
++        s->tx_status = TX_FAILURE;
++        s->irq_status |= IRQ_TX;
++        update_irq(s);
++        return;
++    }
++    s->tx_status = TX_SUCCESS;
++    s->irq_status |= IRQ_TX;
++    if (s->irq_status & IRQ_RX) {
++        s->sticky |= ST_OVERFLOW | ST_OVERWRITE;
++    } else {
++        s->rx_source_low = 0x00000002;
++        s->rx_source_high = 0x00000200;
++        s->rx_rssi = (uint8_t)-42;
++        s->rx_length = s->tx_length;
++        s->rx_correlation = s->tx_correlation;
++        memcpy(s->rx_payload, s->tx_payload, s->tx_length);
++        s->irq_status |= IRQ_RX;
++    }
++    update_irq(s);
++}
++
++static void link_write(void *opaque, hwaddr addr, uint64_t value, unsigned size)
++{
++    DomesLinkState *s = opaque;
++    if (!word_access(addr, size)) {
++        s->sticky |= ST_INVALID;
++        return;
++    }
++    if (addr >= TX_PAYLOAD && addr < TX_PAYLOAD + sizeof(s->tx_payload)) {
++        stl_le_p(&s->tx_payload[addr - TX_PAYLOAD], value);
++        return;
++    }
++    if (addr >= RX_PAYLOAD && addr < RX_PAYLOAD + sizeof(s->rx_payload)) {
++        s->sticky |= ST_INVALID;
++        return;
++    }
++    switch (addr) {
++    case ABI_VERSION:
++        if (value != VERSION) s->sticky |= ST_UNKNOWN_VERSION;
++        break;
++    case TX_DEST_LOW: s->tx_destination_low = value; break;
++    case TX_DEST_HIGH:
++        if (value & 0xffff0000) s->sticky |= ST_INVALID;
++        else s->tx_destination_high = value;
++        break;
++    case TX_LENGTH:
++        if (!value || value > DOMES_LINK_MAX_PAYLOAD) s->sticky |= ST_TRUNCATED;
++        else s->tx_length = value;
++        break;
++    case TX_CORRELATION:
++        if (!value) s->sticky |= ST_SEQUENCE;
++        else s->tx_correlation = value;
++        break;
++    case TX_SUBMIT:
++        if (value != 1 || s->sticky || s->tx_status == TX_PENDING || !s->tx_length ||
++            !s->tx_correlation) {
++            s->sticky |= s->tx_status == TX_PENDING ? ST_OVERWRITE : ST_SEQUENCE;
++            s->tx_status = TX_FAILURE;
++        } else {
++            s->tx_status = TX_PENDING;
++            qemu_bh_schedule(s->completion_bh);
++        }
++        break;
++    case RX_CONSUME:
++        if (value != 1 || !(s->irq_status & IRQ_RX)) s->sticky |= ST_SEQUENCE;
++        else {
++            s->irq_status &= ~IRQ_RX;
++            s->rx_length = s->rx_correlation = 0;
++            update_irq(s);
++        }
++        break;
++    case IRQ_MASK:
++        if (value & ~(IRQ_TX | IRQ_RX)) s->sticky |= ST_INVALID;
++        else { s->irq_mask = value; update_irq(s); }
++        break;
++    case IRQ_ACK:
++        if (value & ~(IRQ_TX | IRQ_RX)) s->sticky |= ST_INVALID;
++        s->irq_status &= ~(value & (IRQ_TX | IRQ_RX));
++        update_irq(s);
++        break;
++    default: s->sticky |= ST_INVALID; break;
++    }
++}
++
++static const MemoryRegionOps link_ops = {
++    .read = link_read, .write = link_write, .endianness = DEVICE_LITTLE_ENDIAN,
++    .valid = { .min_access_size = 1, .max_access_size = 4, .unaligned = true },
++};
++
++static void link_reset(Object *obj, ResetType type)
++{
++    DomesLinkState *s = DOMES_LINK(obj);
++    s->tx_destination_low = s->tx_destination_high = s->tx_length = 0;
++    s->tx_correlation = 0; s->tx_status = TX_IDLE;
++    s->rx_source_low = s->rx_source_high = s->rx_rssi = s->rx_length = 0;
++    s->rx_correlation = s->irq_status = s->irq_mask = s->sticky = 0;
++    memset(s->tx_payload, 0, sizeof(s->tx_payload));
++    memset(s->rx_payload, 0, sizeof(s->rx_payload));
++    update_irq(s);
++}
++
++static void link_realize(DeviceState *dev, Error **errp)
++{
++    DomesLinkState *s = DOMES_LINK(dev);
++    s->completion_bh = qemu_bh_new(complete, s);
++}
++
++static void link_finalize(Object *obj)
++{
++    DomesLinkState *s = DOMES_LINK(obj);
++    qemu_bh_delete(s->completion_bh);
++}
++
++static void link_init(Object *obj)
++{
++    DomesLinkState *s = DOMES_LINK(obj);
++    memory_region_init_io(&s->mmio, obj, &link_ops, s, TYPE_DOMES_LINK, DOMES_LINK_MMIO_SIZE);
++    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
++    sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
++}
++
++static void link_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++    ResettableClass *rc = RESETTABLE_CLASS(klass);
++    dc->realize = link_realize;
++    rc->phases.hold = link_reset;
++}
++
++static const TypeInfo link_info = {
++    .name = TYPE_DOMES_LINK, .parent = TYPE_SYS_BUS_DEVICE,
++    .instance_size = sizeof(DomesLinkState), .instance_init = link_init,
++    .instance_finalize = link_finalize, .class_init = link_class_init,
++};
++static void link_register_types(void) { type_register_static(&link_info); }
++type_init(link_register_types)
+diff --git a/hw/misc/meson.build b/hw/misc/meson.build
+index 4c2b5b3..dca3900 100644
+--- a/hw/misc/meson.build
++++ b/hw/misc/meson.build
+@@ -159,6 +159,7 @@ system_ss.add(when: 'CONFIG_RISCV_ESP32C3', if_true: files(
+ ))
+
+ system_ss.add(when: 'CONFIG_XTENSA_ESP32S3', if_true: files(
++  'domes_link.c',
+   'esp32s3_cache.c',
+   'ssi_psram.c',
+   'esp_sha.c',
+diff --git a/hw/xtensa/esp32s3.c b/hw/xtensa/esp32s3.c
+index 091657e..c21cf04 100644
+--- a/hw/xtensa/esp32s3.c
++++ b/hw/xtensa/esp32s3.c
+@@ -62,6 +62,7 @@
+ #include "hw/gpio/esp32s3_gpio.h"
+ #include "hw/misc/esp32s3_xts_aes.h"
+ #include "hw/misc/esp32s3_pms.h"
++#include "hw/misc/domes_link.h"
+ #include "hw/net/can/esp32s3_twai.h"
+
+ #include "cpu_esp32s3.h"
+@@ -124,6 +125,7 @@ typedef struct Esp32s3SocState {
+     ESP32S3GPIOState gpio;
+     Esp32s3RngState rng;
+     Esp32S3TWAIState twai;
++    DomesLinkState domes_link;
+
+     Esp32s3RtcCntlState rtc_cntl;
+
+@@ -527,6 +529,7 @@ static void esp32s3_soc_init(Object *obj)
+     qdev_init_gpio_in_named(DEVICE(s), esp32s3_clk_update, ESP32S3_RTC_CLK_UPDATE_GPIO, 1);
+
+     object_initialize_child(obj, "twai", &s->twai, TYPE_ESP32S3_TWAI);
++    object_initialize_child(obj, "domes-link", &s->domes_link, TYPE_DOMES_LINK);
+ }
+
+ static Property esp32s3_soc_properties[] = {
+@@ -635,6 +638,13 @@ static void esp32s3_machine_init(MachineState *machine)
+     object_initialize_child(OBJECT(ss), "rgb", &ss->rgb, TYPE_ESP_RGB);
+
+     DeviceState* intmatrix_dev = DEVICE(&ss->intmatrix);
++    {
++        sysbus_realize(SYS_BUS_DEVICE(&ss->domes_link), &error_fatal);
++        MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->domes_link), 0);
++        memory_region_add_subregion_overlap(sys_mem, 0x600D0000, mr, 1);
++        sysbus_connect_irq(SYS_BUS_DEVICE(&ss->domes_link), 0,
++                           qdev_get_gpio_in(intmatrix_dev, ETS_WIFI_MAC_INTR_SOURCE));
++    }
+     {
+         /* Store the current Machine CPU in the interrupt matrix */
+         MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->intmatrix), 0);
+@@ -972,4 +982,3 @@ static void esp32s3_machine_type_init(void)
+ }
+
+ type_init(esp32s3_machine_type_init);
+-
+diff --git a/include/hw/misc/domes_link.h b/include/hw/misc/domes_link.h
+new file mode 100644
+index 0000000..e7c686c
+--- /dev/null
++++ b/include/hw/misc/domes_link.h
+@@ -0,0 +1,19 @@
++#pragma once
++#include "hw/sysbus.h"
++#include "qemu/main-loop.h"
++
++#define TYPE_DOMES_LINK "domes-link"
++OBJECT_DECLARE_SIMPLE_TYPE(DomesLinkState, DOMES_LINK)
++#define DOMES_LINK_MMIO_SIZE 0x1000
++#define DOMES_LINK_MAX_PAYLOAD 250
++
++struct DomesLinkState {
++    SysBusDevice parent_obj;
++    MemoryRegion mmio;
++    qemu_irq irq;
++    QEMUBH *completion_bh;
++    uint32_t tx_destination_low, tx_destination_high, tx_length, tx_correlation, tx_status;
++    uint32_t rx_source_low, rx_source_high, rx_rssi, rx_length, rx_correlation;
++    uint32_t irq_status, irq_mask, sticky;
++    uint8_t tx_payload[256], rx_payload[256];
++};
