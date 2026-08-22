@@ -1785,7 +1785,8 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
             output = run_cli(board, "espnow", "bench", "--rounds", "100", timeout=180)
             if (
                 not re.search(
-                    r"(?m)^Rounds:\s*100/100 completed \(0 failed\)\s*$", output
+                    r"(?m)^\s*Rounds:\s*100/100 completed \(0 failed\)\s*$",
+                    output,
                 )
                 or "Mean RTT:" not in output
             ):

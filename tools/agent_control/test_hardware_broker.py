@@ -186,7 +186,9 @@ class HardwareBrokerTest(unittest.TestCase):
                 if command[:2] == ["espnow", "bench"]:
                     return (
                         0,
-                        "Rounds: 100/100 completed (0 failed)\nMean RTT: 1 ms\n",
+                        "ESP-NOW Benchmark Results:\n"
+                        "  Rounds:     100/100 completed (0 failed)\n"
+                        "  Mean RTT:   1000 us (1.00 ms)\n",
                         "",
                     )
                 return 0, "ok\n", ""
