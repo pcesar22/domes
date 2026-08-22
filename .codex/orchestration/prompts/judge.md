@@ -17,9 +17,11 @@ For a ticket with authorized hardware operations, judgment is deliberately two-p
 pass, controller hardware evidence is absent: review the exact pushed commit for correctness,
 scope, destructive-device behavior, and readiness for the finite ticketed hardware operations.
 Approve a safe implementation to authorize the separate hardware verification worker; do not
-reject solely because physical evidence is not present yet. Mark only those deliberately deferred
-hardware criteria `not_verifiable`; approval still requires every software and safety criterion
-`met`, no `not_met` criterion, and no required rework. After that worker returns, the controller
+reject solely because physical evidence or still-running exact-head CI is not present yet. Mark
+those deliberately deferred hardware and controller-owned CI criteria `not_verifiable`; approval
+still requires every source, build-safety, and operation-safety criterion `met`, no `not_met`
+criterion, and no required rework. The deterministic controller waits for exact-head CI to pass
+before it supplies any hardware capability. After the hardware worker returns, the controller
 supplies its private-evidence attestation and you perform final acceptance judgment, where approval
 requires every criterion `met`.
 
