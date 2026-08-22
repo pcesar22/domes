@@ -16,6 +16,12 @@ descends from the supplied base revision. The deterministic controller may repai
 the exact head for review, but only a human may approve or merge the pull request. When reworking
 after human review, inspect the current PR review feedback.
 
+Ticket-specific acceptance checks are additive to repository policy checks. When `.pre-commit-config.yaml`
+exists, run `pre-commit run --all-files` before the final commit and push. If hooks modify files,
+inspect the changes, rerun affected tests and evidence at the resulting exact head, and rerun
+pre-commit until it exits successfully without modifications. Do not publish a head that is known
+to differ from the repository policy hooks used by CI.
+
 After pushing and creating or updating the pull request, do not wait for CI and do not run a
 long-lived check watcher such as `gh pr checks --watch`. Record checks you already executed,
 confirm the remote head, and immediately return the structured handoff. The deterministic

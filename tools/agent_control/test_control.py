@@ -1717,6 +1717,8 @@ class AutopilotReviewTest(unittest.TestCase):
         self.assertIn("do not run a\nlong-lived check watcher", prompt)
         self.assertIn("controller owns CI polling", prompt)
         self.assertIn("never an\nimplementation-worker blocker", prompt)
+        self.assertIn("run `pre-commit run --all-files`", prompt)
+        self.assertIn("pre-commit until it exits successfully", prompt)
 
     def test_judge_prompt_defers_controller_owned_ci_for_software(self) -> None:
         ticket = automated_ticket(30, self.revision, label="agent:agent-review")
