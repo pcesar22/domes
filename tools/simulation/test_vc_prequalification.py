@@ -186,6 +186,33 @@ class PrequalificationTests(unittest.TestCase):
         )
         self.assertRejected(value)
 
+    def test_rejects_relabeled_calibration_dataset_digest_reuse(self) -> None:
+        value = fixture()
+        calibration = value["datasets"]["calibration"][0]
+        held_out = value["datasets"]["held_out"][0]
+        self.assertNotEqual(calibration["id"], held_out["id"])
+        held_out["sha256"] = calibration["sha256"]
+        self.assertRejected(value)
+
+    def test_rejects_relabeled_calibration_trace_identity_reuse(self) -> None:
+        for identity in ("raw_trace_sha256", "normalized_trace_sha256"):
+            with self.subTest(identity=identity):
+                value = fixture()
+                calibration = value["datasets"]["calibration"][0]
+                held_out = value["datasets"]["held_out"][0]
+                self.assertNotEqual(calibration["id"], held_out["id"])
+                held_out[identity] = calibration[identity]
+                self.assertRejected(value)
+
+    def test_rejects_relabeled_calibration_scenario_seed_reuse(self) -> None:
+        value = fixture()
+        calibration = value["datasets"]["calibration"][0]
+        held_out = value["datasets"]["held_out"][0]
+        self.assertNotEqual(calibration["id"], held_out["id"])
+        for identity in ("scenario", "scenario_sha256", "seed", "seed_sha256"):
+            held_out[identity] = calibration[identity]
+        self.assertRejected(value)
+
     def test_rejects_tuning_details_and_held_out_results_at_any_depth(self) -> None:
         for field in (
             "tuning_details",

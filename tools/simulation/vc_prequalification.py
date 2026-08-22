@@ -482,10 +482,20 @@ def validate_public_input(
             {item[0] for item in identities}
         ) != len(identities):
             raise GateError(f"datasets.{group} contains duplicate identities")
-    calibration = {(item["id"], item["sha256"]) for item in datasets["calibration"]}
-    held_out = {(item["id"], item["sha256"]) for item in datasets["held_out"]}
-    if calibration & held_out or {x[0] for x in calibration} & {x[0] for x in held_out}:
-        raise GateError("calibration and held-out dataset identities overlap")
+    identity_namespaces = {
+        "dataset id": lambda item: item["id"],
+        "dataset SHA-256": lambda item: item["sha256"],
+        "raw trace SHA-256": lambda item: item["raw_trace_sha256"],
+        "normalized trace SHA-256": lambda item: item["normalized_trace_sha256"],
+        "scenario/seed": lambda item: (item["scenario"], item["seed"]),
+    }
+    for namespace, identity in identity_namespaces.items():
+        calibration = {identity(item) for item in datasets["calibration"]}
+        held_out = {identity(item) for item in datasets["held_out"]}
+        if calibration & held_out:
+            raise GateError(
+                f"calibration and held-out {namespace} identities overlap"
+            )
 
     clock = value["clock_correlation"]
     _exact(clock, {"method", "method_sha256", "uncertainty_ns"}, "clock_correlation")
