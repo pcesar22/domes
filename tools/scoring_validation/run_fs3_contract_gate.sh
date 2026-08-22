@@ -5,6 +5,8 @@ set -Eeuo pipefail
 readonly SPEC_REVISION="6f197670a49bc8b83753d1dfab0dd1f789b5f4db"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly REPO_ROOT
+# shellcheck source=tools/scoring_validation/fs3_gate_failure.sh
+source "$REPO_ROOT/tools/scoring_validation/fs3_gate_failure.sh"
 RUN_ROOT="$(mktemp -d)"
 readonly RUN_ROOT
 readonly FIRMWARE_BUILD="$RUN_ROOT/firmware-test-app"
@@ -87,7 +89,7 @@ for path in "${PINNED_PATHS[@]}"; do
     if [[ "$pinned_object" != "$current_object" ]]; then
         printf 'PINNED_SOURCE_DRIFT path=%s pinned=%s current=%s\n' \
             "$path" "$pinned_object" "$current_object" >&2
-        exit 1
+        fail_gate 1 "$LINENO" "$path" pinned_source_object_equality
     fi
 done
 
@@ -115,7 +117,7 @@ run env CARGO_TARGET_DIR="$CARGO_TARGET" cargo test \
 generated_prost="$(find "$CARGO_TARGET" -type f -path '*/out/domes.peer.rs' -print -quit)"
 if [[ -z "$generated_prost" ]]; then
     printf 'GENERATED_PROST_MISSING target=%s\n' "$CARGO_TARGET" >&2
-    exit 1
+    fail_gate 1 "$LINENO" 'Cargo OUT_DIR/domes.peer.rs' generated_prost_artifact_present
 fi
 printf 'GENERATED_PROST sha256=%s artifact=%s\n' \
     "$(sha256sum "$generated_prost" | cut -d' ' -f1)" \
@@ -134,6 +136,7 @@ run python3 tools/scoring_validation/generate_fixed_fixture.py \
     --fixture tools/scoring_validation/fixtures/fixed_two_pod_v1.json \
     --output tools/scoring_validation/generated/fixed_two_pod_v1.hpp --check
 run python3 -m unittest discover -s tools/scoring_validation -p 'test_*.py' -v
+run bash tools/scoring_validation/test_fs3_gate_failure.sh
 
 printf '\nGATE_VERDICT=ACCEPTED_SOFTWARE_COMPATIBILITY\n'
 printf 'PHYSICAL_EVIDENCE=UNVERIFIED\n'
