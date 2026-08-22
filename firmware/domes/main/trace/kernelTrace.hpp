@@ -39,9 +39,13 @@ struct ObjectNameEntry {
 class KernelTrace {
 public:
     static constexpr size_t kCoreCount = 2;
-    static constexpr size_t kEventsPerCore = 512;
+    // The brokered correlation drill exceeded the former 512-event per-core
+    // arrays. Double the actual allocation-free capture storage while keeping
+    // the callback and cache-disabled paths fixed-capacity and DRAM-backed.
+    static constexpr size_t kEventsPerCore = 1024;
+    static constexpr size_t kPerCoreCaptureBytes = kEventsPerCore * sizeof(TraceEvent);
     static constexpr size_t kCaptureCapacityBytes =
-        kCoreCount * kEventsPerCore * sizeof(TraceEvent);
+        kCoreCount * kPerCoreCaptureBytes;
 
     static void start();
     static void enable();

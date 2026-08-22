@@ -23,6 +23,13 @@ struct CoreBuffer {
 };
 
 DRAM_ATTR CoreBuffer gCoreBuffers[kCoreCount];
+static_assert(sizeof(gCoreBuffers[0].events) ==
+              domes::trace::KernelTrace::kPerCoreCaptureBytes);
+static_assert(sizeof(gCoreBuffers[0].events) * kCoreCount ==
+              domes::trace::KernelTrace::kCaptureCapacityBytes);
+static_assert(domes::trace::TraceBuffer::kMaxEvents >=
+                  domes::trace::KernelTrace::kCoreCount * kEventsPerCore,
+              "downstream trace buffer must retain the complete per-core capture");
 DRAM_ATTR portMUX_TYPE gCoreLocks[kCoreCount] = {portMUX_INITIALIZER_UNLOCKED,
                                                  portMUX_INITIALIZER_UNLOCKED};
 DRAM_ATTR portMUX_TYPE gTaskLifecycleLock = portMUX_INITIALIZER_UNLOCKED;

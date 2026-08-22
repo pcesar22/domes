@@ -34,17 +34,24 @@ class TraceBuffer {
 public:
     /// Default requested capacity: 96 KiB.
     ///
-    /// FreeRTOS's no-split ring stores metadata beside every 16-byte event, so
-    /// the requested capacity is not the retained event capacity. Keep bounded
-    /// headroom for correlation-heavy traces without weakening fail-closed
-    /// overflow handling. This sizing is not physical-verification evidence.
+    /// FreeRTOS's no-split ring stores an eight-byte item header beside every
+    /// four-byte-aligned event. Keep bounded headroom for correlation-heavy
+    /// traces without weakening fail-closed overflow handling. This sizing is
+    /// not physical-verification evidence.
     static constexpr size_t kDefaultBufferSize = 96 * 1024;
 
     /// Size of each trace event
     static constexpr size_t kEventSize = sizeof(TraceEvent);
 
-    /// Maximum events that can be stored (approximate, due to ring buffer overhead)
-    static constexpr size_t kMaxEvents = kDefaultBufferSize / kEventSize;
+    /// ESP-IDF no-split ring storage required by one event.
+    static constexpr size_t kNoSplitItemHeaderSize = 8;
+    static constexpr size_t kNoSplitAlignment = 4;
+    static constexpr size_t kEventStorageSize =
+        kNoSplitItemHeaderSize +
+        ((kEventSize + kNoSplitAlignment - 1) / kNoSplitAlignment) * kNoSplitAlignment;
+
+    /// Exact retained-event capacity for the fixed-size trace-event workload.
+    static constexpr size_t kMaxEvents = kDefaultBufferSize / kEventStorageSize;
 
     /**
      * @brief Construct trace buffer

@@ -226,5 +226,17 @@ TEST(KernelTraceTest, FlushStablyOrdersBothCoresWithoutMergeStorage) {
     EXPECT_EQ(destination.count(), 0U);
 }
 
+TEST(KernelTraceTest, CaptureStorageFitsCompleteDownstreamFlush) {
+    EXPECT_EQ(KernelTrace::kPerCoreCaptureBytes,
+              KernelTrace::kEventsPerCore * sizeof(TraceEvent));
+    EXPECT_EQ(KernelTrace::kCaptureCapacityBytes,
+              KernelTrace::kCoreCount * KernelTrace::kPerCoreCaptureBytes);
+    EXPECT_EQ(KernelTrace::kCaptureCapacityBytes, 32U * 1024U);
+    EXPECT_EQ(TraceBuffer::kEventStorageSize, 24U);
+    EXPECT_EQ(TraceBuffer::kMaxEvents, 4096U);
+    EXPECT_GE(TraceBuffer::kMaxEvents,
+              KernelTrace::kCoreCount * KernelTrace::kEventsPerCore);
+}
+
 }  // namespace
 }  // namespace domes::trace
