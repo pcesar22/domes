@@ -1,0 +1,714 @@
+FS3_CONTRACT_COMPATIBILITY_GATE
+SPEC_REVISION=6f197670a49bc8b83753d1dfab0dd1f789b5f4db
+EXECUTED_HEAD=be347355d3747b849b0521e40c539aae88d33614
+UTC_STARTED=2026-08-22T06:14:06Z
+
+$ git cat-file -e 6f197670a49bc8b83753d1dfab0dd1f789b5f4db\^\{commit\}
+EXIT_STATUS=0
+
+$ git merge-base --is-ancestor 6f197670a49bc8b83753d1dfab0dd1f789b5f4db HEAD
+EXIT_STATUS=0
+
+PINNED_SOURCE_OBJECTS
+firmware/common/proto/peer_drill.proto pinned=111568503ca3a79ebaca75a523acf49c6f5aae11 current=111568503ca3a79ebaca75a523acf49c6f5aae11
+firmware/common/proto/peer_drill.options pinned=6f2ee29ec2b8d0d8034259f3d6d4709c1781ea3b current=6f2ee29ec2b8d0d8034259f3d6d4709c1781ea3b
+firmware/common/proto/peer_drill.pb.c pinned=94be08ad492e70469176f4063a98465f0514fb0d current=94be08ad492e70469176f4063a98465f0514fb0d
+firmware/common/proto/peer_drill.pb.h pinned=1bab88ff70174bade1affd1f5efccb41a3777263 current=1bab88ff70174bade1affd1f5efccb41a3777263
+firmware/domes/main/services/espNowProtocol.hpp pinned=af607f97aabe67ff337677e47b0a88116d0301b8 current=af607f97aabe67ff337677e47b0a88116d0301b8
+firmware/domes/main/services/espNowService.cpp pinned=3df4c6e42431fe2cad5395df984ff26fc088bd1e current=3df4c6e42431fe2cad5395df984ff26fc088bd1e
+firmware/domes/main/services/espNowService.hpp pinned=4289764a1988ae562289315a1a2c6af655264770 current=4289764a1988ae562289315a1a2c6af655264770
+firmware/domes/main/services/roundTokenSequence.hpp pinned=6832e683359917710ec520794e3b1fc4605bba7d current=6832e683359917710ec520794e3b1fc4605bba7d
+firmware/test_app/main/test_esp_now_protocol.cpp pinned=690d8fe675aea8965f56c5bf5fea4a305116c0b4 current=690d8fe675aea8965f56c5bf5fea4a305116c0b4
+firmware/test_app/main/test_multi_pod_sim.cpp pinned=c8e19cc872498141eb4533b0d5741e0e7a761e21 current=c8e19cc872498141eb4533b0d5741e0e7a761e21
+firmware/test_app/main/test_platform_inputs.cpp pinned=a8f4dbdd72b9162e556fc8c7ac45b5003559a0f1 current=a8f4dbdd72b9162e556fc8c7ac45b5003559a0f1
+firmware/test_app/main/test_sim_drill.cpp pinned=086735bfb87065f4f9c80d98b8fbf3f72d592208 current=086735bfb87065f4f9c80d98b8fbf3f72d592208
+firmware/test_app/sim/drillOrchestrator.hpp pinned=71898042744b67b109fa9e157187ceaa17d23749 current=71898042744b67b109fa9e157187ceaa17d23749
+ios/domes_app/lib/application/providers/drill_provider.dart pinned=89e1385a232f1eae2e873b7ec204b69c1dab12d8 current=89e1385a232f1eae2e873b7ec204b69c1dab12d8
+ios/domes_app/lib/data/proto/generated/peer_drill.pb.dart pinned=9a215e0f8ab32abd4e984de2093b914230a1a069 current=9a215e0f8ab32abd4e984de2093b914230a1a069
+ios/domes_app/lib/data/proto/generated/peer_drill.pbenum.dart pinned=e5abe8c43baf7ac113f5990038c66a92ade6f7bc current=e5abe8c43baf7ac113f5990038c66a92ade6f7bc
+ios/domes_app/lib/data/proto/generated/peer_drill.pbjson.dart pinned=cd1c184803b4ba3713949448e93d68933ba1c7db current=cd1c184803b4ba3713949448e93d68933ba1c7db
+ios/domes_app/lib/data/protocol/peer_contract.dart pinned=3cbac24573f14f4015e45f1672829befd804dd53 current=3cbac24573f14f4015e45f1672829befd804dd53
+ios/domes_app/lib/domain/models/drill_result.dart pinned=c64940a5d44f390b60d1b6bb36b3b93262d6c69a current=c64940a5d44f390b60d1b6bb36b3b93262d6c69a
+ios/domes_app/test/data/protocol/peer_contract_test.dart pinned=4c119d125d40af34ad96ffcfe4d58a2b62409c01 current=4c119d125d40af34ad96ffcfe4d58a2b62409c01
+ios/domes_app/test/domain/models/drill_result_test.dart pinned=2ab23a8cfee06f6dad130b8d2b18ef2efbb93e32 current=2ab23a8cfee06f6dad130b8d2b18ef2efbb93e32
+tools/domes-cli/build.rs pinned=dafa9206ecc7cb5888b202481222db9b4b8bbf01 current=dafa9206ecc7cb5888b202481222db9b4b8bbf01
+tools/domes-cli/src/proto.rs pinned=21caced68415ca83c90b23d16014e0712f1ee0d2 current=21caced68415ca83c90b23d16014e0712f1ee0d2
+tools/domes-cli/src/protocol/peer_contract.rs pinned=5916157664d4295493cca0bc541be734c5d18b66 current=5916157664d4295493cca0bc541be734c5d18b66
+tools/scoring_validation/campaign.py pinned=8901b3deb5a6b92ab5de22fe981cc78233a11b46 current=8901b3deb5a6b92ab5de22fe981cc78233a11b46
+tools/scoring_validation/fixtures/fixed_two_pod_v1.json pinned=b2e9bde0c34a1130120134e951b4f359830bfd4e current=b2e9bde0c34a1130120134e951b4f359830bfd4e
+tools/scoring_validation/test_campaign.py pinned=12aeff894297854996106f3fcdacc9792e2b074d current=12aeff894297854996106f3fcdacc9792e2b074d
+tools/scoring_validation/artifacts/verdict.json pinned=9bdec57e88b9386fb2d65ccdaf80fdffe7e2dd1f current=9bdec57e88b9386fb2d65ccdaf80fdffe7e2dd1f
+
+TOOL_VERSIONS
+
+$ git --version
+git version 2.53.0
+EXIT_STATUS=0
+
+$ python3 --version
+Python 3.14.3
+EXIT_STATUS=0
+
+$ cmake --version
+cmake version 3.21.1
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake).
+EXIT_STATUS=0
+
+$ c++ --version
+c++ (GCC) 15.2.1 20260209
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+EXIT_STATUS=0
+
+$ protoc --version
+libprotoc 33.1
+EXIT_STATUS=0
+
+$ cargo --version
+cargo 1.92.0 (344c4567c 2025-10-21)
+EXIT_STATUS=0
+
+$ rustc --version
+rustc 1.92.0 (ded5c06cf 2025-12-08)
+EXIT_STATUS=0
+
+$ /tmp/domes-fs3-flutter-3448/bin/cache/dart-sdk/bin/dart --version
+Dart SDK version: 3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on "linux_x64"
+EXIT_STATUS=0
+
+$ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448/bin/flutter --suppress-analytics --version
+Flutter 3.44.8 • channel stable • https://github.com/flutter/flutter.git
+Framework • revision 058e0af2c2 (4 weeks ago) • 2026-07-23 10:56:21 -0700
+Engine • hash 13ffd72b2f9a5ca4db2a74ea52d5353ec2e8f939 (revision 0cd610717b) (29 days ago) • 2026-07-23 16:11:34.000Z
+Tools • Dart 3.12.2 • DevTools 2.57.0
+EXIT_STATUS=0
+
+$ tools/generate_protocols.sh --check all
+Writing to /tmp/tmp.HvygPXljts/nanopb/config.pb.h and /tmp/tmp.HvygPXljts/nanopb/config.pb.c
+Writing to /tmp/tmp.HvygPXljts/nanopb/peer_drill.pb.h and /tmp/tmp.HvygPXljts/nanopb/peer_drill.pb.c
+Writing to /tmp/tmp.HvygPXljts/nanopb/trace.pb.h and /tmp/tmp.HvygPXljts/nanopb/trace.pb.c
+Protocol bindings are current (all).
+EXIT_STATUS=0
+
+$ cmake -S firmware/test_app -B /tmp/tmp.ojMWoBlhGm/firmware-test-app -DCMAKE_BUILD_TYPE=Release
+-- The CXX compiler identification is GNU 15.2.1
+-- The C compiler identification is GNU 15.2.1
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Found Python3: /usr/bin/python3 (found version "3.14.3") found components: Interpreter
+-- Looking for pthread.h
+-- Looking for pthread.h - found
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /tmp/tmp.ojMWoBlhGm/firmware-test-app
+EXIT_STATUS=0
+
+$ cmake --build /tmp/tmp.ojMWoBlhGm/firmware-test-app --parallel
+[  1%] Building C object common/CMakeFiles/domes_common.dir/proto/peer_drill.pb.c.o
+[  3%] Building C object common/CMakeFiles/domes_common.dir/proto/trace.pb.c.o
+[  4%] Building CXX object common/CMakeFiles/domes_common.dir/protocol/otaProtocol.cpp.o
+[  6%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest.dir/src/gtest-all.cc.o
+[  7%] Building C object common/CMakeFiles/domes_common.dir/proto/config.pb.c.o
+[ 10%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/third_party/nanopb/pb_common.c.o
+[ 10%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/third_party/nanopb/pb_encode.c.o
+[ 12%] Building C object common/CMakeFiles/domes_common.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/third_party/nanopb/pb_decode.c.o
+[ 13%] Linking CXX static library libdomes_common.a
+[ 13%] Built target domes_common
+[ 16%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/game/gameEngine.cpp.o
+[ 16%] Building CXX object CMakeFiles/trace_generator.dir/main/generate_trace.cpp.o
+[ 18%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/config/featureManager.cpp.o
+[ 19%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/config/modeManager.cpp.o
+[ 21%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/kernelTrace.cpp.o
+[ 22%] Building CXX object CMakeFiles/trace_generator.dir/sim/hostTraceBuffer.cpp.o
+[ 24%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceDumpSnapshot.cpp.o
+[ 25%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp.o
+[ 27%] Building CXX object CMakeFiles/trace_generator.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceRecorder.cpp.o
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp: In member function ‘bool domes::trace::CommandHandler::sendSessionInfo(uint32_t, uint32_t, uint32_t, uint32_t)’:
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+  413 |             std::strncpy(msg.objects[objectIdx].name, entry.name,
+      |             ~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  414 |                          sizeof(msg.objects[objectIdx].name) - 1);
+      |                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+[ 28%] Linking CXX executable trace_generator
+[ 28%] Built target trace_generator
+[ 30%] Linking CXX static library ../../../lib/libgtest.a
+[ 30%] Built target gtest
+[ 31%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/src/gmock-all.cc.o
+[ 33%] Building CXX object _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o
+[ 34%] Linking CXX static library ../../../lib/libgtest_main.a
+[ 34%] Built target gtest_main
+[ 36%] Linking CXX static library ../../../lib/libgmock.a
+[ 36%] Built target gmock
+[ 37%] Building CXX object _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/src/gmock_main.cc.o
+[ 39%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_protocol.cpp.o
+[ 40%] Building CXX object CMakeFiles/test_app.dir/main/test_frame_codec.cpp.o
+[ 43%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_boot_verification.cpp.o
+[ 43%] Building CXX object CMakeFiles/test_app.dir/main/test_main.cpp.o
+[ 45%] Building CXX object CMakeFiles/test_app.dir/main/test_crc32.cpp.o
+[ 46%] Building CXX object CMakeFiles/test_app.dir/main/test_esp_now_protocol.cpp.o
+[ 50%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_state_machine.cpp.o
+[ 50%] Building CXX object CMakeFiles/test_app.dir/main/test_ota_session_coordinator.cpp.o
+[ 51%] Building CXX object CMakeFiles/test_app.dir/main/test_esp_now_transport.cpp.o
+[ 53%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/transport/espNowTransport.cpp.o
+[ 54%] Building CXX object CMakeFiles/test_app.dir/main/test_platform_inputs.cpp.o
+[ 56%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/platform/qemu/deterministicPlatformInputs.cpp.o
+[ 57%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/platform/qemu/qemuPeripheralAdapters.cpp.o
+[ 59%] Building CXX object CMakeFiles/test_app.dir/main/test_qemu_peripheral_adapters.cpp.o
+[ 60%] Building CXX object CMakeFiles/test_app.dir/main/test_task_start_evidence.cpp.o
+[ 62%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/infra/taskStartEvidence.cpp.o
+[ 63%] Building CXX object CMakeFiles/test_app.dir/main/test_version_parser.cpp.o
+[ 65%] Building CXX object CMakeFiles/test_app.dir/main/test_release_metadata.cpp.o
+[ 68%] Building CXX object CMakeFiles/test_app.dir/main/test_feedback_controller.cpp.o
+[ 69%] Building CXX object CMakeFiles/test_app.dir/main/test_restart_snapshot_record.cpp.o
+[ 66%] Building CXX object CMakeFiles/test_app.dir/main/test_config_protocol.cpp.o
+[ 71%] Building CXX object CMakeFiles/test_app.dir/main/test_game_engine.cpp.o
+[ 72%] Building CXX object CMakeFiles/test_app.dir/main/test_mode_manager.cpp.o
+[ 74%] Building CXX object CMakeFiles/test_app.dir/main/test_feature_manager.cpp.o
+[ 75%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_stream_writer.cpp.o
+[ 77%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_buffer.cpp.o
+[ 78%] Building CXX object CMakeFiles/test_app.dir/main/test_trace_command_handler.cpp.o
+[ 80%] Building CXX object CMakeFiles/test_app.dir/main/test_sim_drill.cpp.o
+[ 83%] Building CXX object CMakeFiles/test_app.dir/main/test_multi_pod_sim.cpp.o
+[ 81%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/config/featureManager.cpp.o
+[ 84%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/config/modeManager.cpp.o
+[ 86%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/services/firmwareVersion.cpp.o
+[ 87%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/services/releaseMetadata.cpp.o
+[ 89%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/game/gameEngine.cpp.o
+[ 90%] Building CXX object CMakeFiles/test_app.dir/sim/hostTraceBuffer.cpp.o
+[ 92%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceDumpSnapshot.cpp.o
+[ 93%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/kernelTrace.cpp.o
+[ 95%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp.o
+[ 96%] Building CXX object CMakeFiles/test_app.dir/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceRecorder.cpp.o
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp: In member function ‘bool domes::trace::CommandHandler::sendSessionInfo(uint32_t, uint32_t, uint32_t, uint32_t)’:
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+  413 |             std::strncpy(msg.objects[objectIdx].name, entry.name,
+      |             ~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  414 |                          sizeof(msg.objects[objectIdx].name) - 1);
+      |                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/domes/main/trace/traceCommandHandler.cpp:413:25: warning: ‘char* strncpy(char*, const char*, size_t)’ output may be truncated copying 15 bytes from a string of length 15 [-Wstringop-truncation]
+[ 98%] Linking CXX static library ../../../lib/libgmock_main.a
+[ 98%] Built target gmock_main
+In file included from /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/test_app/main/test_ota_boot_verification.cpp:6:
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/test_app/../domes/main/services/otaBootVerification.hpp: In member function ‘virtual void OtaBootVerification_RejectsPassingOrTruncatedReason_Test::TestBody()’:
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/test_app/../domes/main/services/otaBootVerification.hpp:159:62: warning: ‘ota verify failed: ’ directive output truncated writing 19 bytes into a region of size 8 [-Wformat-truncation=]
+  159 |         written = std::snprintf(output, outputSize, "ota verify failed: %s",
+      |                                                      ~~~~~~~~^~~~~~~~~~~
+In function ‘bool domes::formatOtaSelfTestRestartReason(const OtaSelfTestResult&, char*, size_t)’,
+    inlined from ‘virtual void OtaBootVerification_RejectsPassingOrTruncatedReason_Test::TestBody()’ at /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/test_app/main/test_ota_boot_verification.cpp:69:5:
+/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/firmware/test_app/../domes/main/services/otaBootVerification.hpp:159:32: note: ‘snprintf’ output 36 bytes into a destination of size 8
+  159 |         written = std::snprintf(output, outputSize, "ota verify failed: %s",
+      |                   ~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  160 |                                 otaSelfTestStageName(result.stage));
+      |                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[100%] Linking CXX executable test_app
+[100%] Built target test_app
+EXIT_STATUS=0
+
+$ /tmp/tmp.ojMWoBlhGm/firmware-test-app/test_app --gtest_filter=EspNowProtocolTest.\*:PlatformInputsTest.RoundTokenSequencePreservesSeedPlusOneAndSkipsZero:MultiPodSimTest.\*:SimDrillTest.\*
+Note: Google Test filter = EspNowProtocolTest.*:PlatformInputsTest.RoundTokenSequencePreservesSeedPlusOneAndSkipsZero:MultiPodSimTest.*:SimDrillTest.*
+[==========] Running 48 tests from 4 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from EspNowProtocolTest
+[ RUN      ] EspNowProtocolTest.DefinesExactWireSizeForEveryMessage
+[       OK ] EspNowProtocolTest.DefinesExactWireSizeForEveryMessage (0 ms)
+[ RUN      ] EspNowProtocolTest.OnlyBeaconPingAndPongAreDiscoveryTraffic
+[       OK ] EspNowProtocolTest.OnlyBeaconPingAndPongAreDiscoveryTraffic (0 ms)
+[ RUN      ] EspNowProtocolTest.SenderMustMatchRadioSource
+[       OK ] EspNowProtocolTest.SenderMustMatchRadioSource (0 ms)
+[ RUN      ] EspNowProtocolTest.RoundTokenIsEchoedByEveryRoundScopedMessage
+[       OK ] EspNowProtocolTest.RoundTokenIsEchoedByEveryRoundScopedMessage (0 ms)
+[ RUN      ] EspNowProtocolTest.EveryVariantRoundTripsPortableGeneratedEncoding
+[       OK ] EspNowProtocolTest.EveryVariantRoundTripsPortableGeneratedEncoding (0 ms)
+[ RUN      ] EspNowProtocolTest.PortableDecoderRejectsMalformedUnknownTruncatedAndOversized
+[       OK ] EspNowProtocolTest.PortableDecoderRejectsMalformedUnknownTruncatedAndOversized (0 ms)
+[ RUN      ] EspNowProtocolTest.SemanticValidationRejectsRoleAndStateViolations
+[       OK ] EspNowProtocolTest.SemanticValidationRejectsRoleAndStateViolations (0 ms)
+[ RUN      ] EspNowProtocolTest.LegacyDecoderRejectsUnknownTruncatedOversizedAndInvalidPayloads
+[       OK ] EspNowProtocolTest.LegacyDecoderRejectsUnknownTruncatedOversizedAndInvalidPayloads (0 ms)
+[ RUN      ] EspNowProtocolTest.EveryLegacyWireVariantMapsLosslesslyToGeneratedPayload
+[       OK ] EspNowProtocolTest.EveryLegacyWireVariantMapsLosslesslyToGeneratedPayload (0 ms)
+[----------] 9 tests from EspNowProtocolTest (0 ms total)
+
+[----------] 1 test from PlatformInputsTest
+[ RUN      ] PlatformInputsTest.RoundTokenSequencePreservesSeedPlusOneAndSkipsZero
+[       OK ] PlatformInputsTest.RoundTokenSequencePreservesSeedPlusOneAndSkipsZero (0 ms)
+[----------] 1 test from PlatformInputsTest (0 ms total)
+
+[----------] 23 tests from MultiPodSimTest
+[ RUN      ] MultiPodSimTest.SinglePod_ArmHitCycle
+[       OK ] MultiPodSimTest.SinglePod_ArmHitCycle (0 ms)
+[ RUN      ] MultiPodSimTest.SinglePod_ArmMissCycle
+[       OK ] MultiPodSimTest.SinglePod_ArmMissCycle (0 ms)
+[ RUN      ] MultiPodSimTest.MultiPod_IndependentArming
+[       OK ] MultiPodSimTest.MultiPod_IndependentArming (0 ms)
+[ RUN      ] MultiPodSimTest.SimLog_CapturesLedEvents
+[       OK ] MultiPodSimTest.SimLog_CapturesLedEvents (0 ms)
+[ RUN      ] MultiPodSimTest.SimLog_CapturesAudioEvents
+[       OK ] MultiPodSimTest.SimLog_CapturesAudioEvents (0 ms)
+[ RUN      ] MultiPodSimTest.SimLog_FilterByCategory
+[       OK ] MultiPodSimTest.SimLog_FilterByCategory (0 ms)
+[ RUN      ] MultiPodSimTest.SimLog_FilterByPod
+[       OK ] MultiPodSimTest.SimLog_FilterByPod (0 ms)
+[ RUN      ] MultiPodSimTest.ModeTransition_BootToGame
+[       OK ] MultiPodSimTest.ModeTransition_BootToGame (0 ms)
+[ RUN      ] MultiPodSimTest.PodInstance_FeedbackCallbacksLogged
+[       OK ] MultiPodSimTest.PodInstance_FeedbackCallbacksLogged (0 ms)
+[ RUN      ] MultiPodSimTest.Orchestrator_TicksAllPods
+[       OK ] MultiPodSimTest.Orchestrator_TicksAllPods (0 ms)
+[ RUN      ] MultiPodSimTest.Bus_UnicastDelivery
+[       OK ] MultiPodSimTest.Bus_UnicastDelivery (0 ms)
+[ RUN      ] MultiPodSimTest.Bus_BroadcastDelivery
+[       OK ] MultiPodSimTest.Bus_BroadcastDelivery (0 ms)
+[ RUN      ] MultiPodSimTest.Bus_DelaysDeliveryUntilVirtualDeadline
+[       OK ] MultiPodSimTest.Bus_DelaysDeliveryUntilVirtualDeadline (0 ms)
+[ RUN      ] MultiPodSimTest.Bus_AppliesDropAndDuplicateDeterministically
+[       OK ] MultiPodSimTest.Bus_AppliesDropAndDuplicateDeterministically (0 ms)
+[ RUN      ] MultiPodSimTest.Bus_ReplaysCapturedDeliveryRecordExactly
+[       OK ] MultiPodSimTest.Bus_ReplaysCapturedDeliveryRecordExactly (0 ms)
+[ RUN      ] MultiPodSimTest.Bus_PayloadMismatchFailsClosed
+[       OK ] MultiPodSimTest.Bus_PayloadMismatchFailsClosed (0 ms)
+[ RUN      ] MultiPodSimTest.Bus_EmptyReplayRejectsUnexpectedDelivery
+[       OK ] MultiPodSimTest.Bus_EmptyReplayRejectsUnexpectedDelivery (0 ms)
+[ RUN      ] MultiPodSimTest.CanonicalPayloadPreservesEveryMessageVariant
+[       OK ] MultiPodSimTest.CanonicalPayloadPreservesEveryMessageVariant (0 ms)
+[ RUN      ] MultiPodSimTest.CanonicalPayloadIncludesRoundToken
+[       OK ] MultiPodSimTest.CanonicalPayloadIncludesRoundToken (0 ms)
+[ RUN      ] MultiPodSimTest.PodCommandHandler_JoinGame
+[       OK ] MultiPodSimTest.PodCommandHandler_JoinGame (0 ms)
+[ RUN      ] MultiPodSimTest.PodCommandHandler_SetColor
+[       OK ] MultiPodSimTest.PodCommandHandler_SetColor (0 ms)
+[ RUN      ] MultiPodSimTest.PodCommandHandler_ArmAndTouch
+[       OK ] MultiPodSimTest.PodCommandHandler_ArmAndTouch (0 ms)
+[ RUN      ] MultiPodSimTest.PodCommandHandler_RejectedRearmKeepsActiveRoundCallback
+[       OK ] MultiPodSimTest.PodCommandHandler_RejectedRearmKeepsActiveRoundCallback (0 ms)
+[----------] 23 tests from MultiPodSimTest (0 ms total)
+
+[----------] 15 tests from SimDrillTest
+[ RUN      ] SimDrillTest.DrillResult_Statistics
+[       OK ] SimDrillTest.DrillResult_Statistics (0 ms)
+[ RUN      ] SimDrillTest.DrillResult_AllMisses
+[       OK ] SimDrillTest.DrillResult_AllMisses (0 ms)
+[ RUN      ] SimDrillTest.FixedTwoPodScoringFixture
+[       OK ] SimDrillTest.FixedTwoPodScoringFixture (0 ms)
+[ RUN      ] SimDrillTest.ThreePod_AllHits
+[       OK ] SimDrillTest.ThreePod_AllHits (0 ms)
+[ RUN      ] SimDrillTest.ThreePod_WithMisses
+[       OK ] SimDrillTest.ThreePod_WithMisses (0 ms)
+[ RUN      ] SimDrillTest.ThreePod_MasterAsTarget
+[       OK ] SimDrillTest.ThreePod_MasterAsTarget (0 ms)
+[ RUN      ] SimDrillTest.DelayedArmIsAppliedBeforeTouch
+[       OK ] SimDrillTest.DelayedArmIsAppliedBeforeTouch (0 ms)
+[ RUN      ] SimDrillTest.DelayedArmTimeoutStartsAtDelivery
+[       OK ] SimDrillTest.DelayedArmTimeoutStartsAtDelivery (0 ms)
+[ RUN      ] SimDrillTest.StaleDelayedTimeoutDoesNotMaskNextTouchResponse
+[       OK ] SimDrillTest.StaleDelayedTimeoutDoesNotMaskNextTouchResponse (0 ms)
+[ RUN      ] SimDrillTest.DelayedOldArmCannotClaimNextRoundTouch
+[       OK ] SimDrillTest.DelayedOldArmCannotClaimNextRoundTouch (0 ms)
+[ RUN      ] SimDrillTest.FivePod_LargeDrill
+[       OK ] SimDrillTest.FivePod_LargeDrill (0 ms)
+[ RUN      ] SimDrillTest.Determinism_SameInputSameOutput
+[       OK ] SimDrillTest.Determinism_SameInputSameOutput (0 ms)
+[ RUN      ] SimDrillTest.PerfettoExport_ProducesValidJson
+[       OK ] SimDrillTest.PerfettoExport_ProducesValidJson (0 ms)
+[ RUN      ] SimDrillTest.PerfettoExport_ContainsFlowEvents
+[       OK ] SimDrillTest.PerfettoExport_ContainsFlowEvents (0 ms)
+[ RUN      ] SimDrillTest.PerfettoExport_WritesToFile
+[       OK ] SimDrillTest.PerfettoExport_WritesToFile (0 ms)
+[----------] 15 tests from SimDrillTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 48 tests from 4 test suites ran. (0 ms total)
+[  PASSED  ] 48 tests.
+EXIT_STATUS=0
+
+$ env CARGO_TARGET_DIR=/tmp/tmp.ojMWoBlhGm/cargo-target cargo test --manifest-path tools/domes-cli/Cargo.toml --locked --bin domes-cli protocol::peer_contract::tests
+   Compiling unicode-ident v1.0.22
+   Compiling proc-macro2 v1.0.105
+   Compiling libc v0.2.180
+   Compiling memchr v2.7.6
+   Compiling cfg-if v1.0.4
+   Compiling pkg-config v0.3.32
+   Compiling futures-core v0.3.31
+   Compiling pin-project-lite v0.2.16
+   Compiling serde_core v1.0.228
+   Compiling futures-sink v0.3.31
+   Compiling either v1.15.0
+   Compiling getrandom v0.3.4
+   Compiling anyhow v1.0.100
+   Compiling serde v1.0.228
+   Compiling pin-utils v0.1.0
+   Compiling slab v0.4.11
+   Compiling futures-io v0.3.31
+   Compiling futures-task v0.3.31
+   Compiling version_check v0.9.5
+   Compiling regex-syntax v0.8.8
+   Compiling futures-channel v0.3.31
+   Compiling thiserror v2.0.18
+   Compiling equivalent v1.0.2
+   Compiling hashbrown v0.16.1
+   Compiling typenum v1.19.0
+   Compiling itertools v0.14.0
+   Compiling once_cell v1.21.3
+   Compiling anstyle v1.0.13
+   Compiling rustix v1.1.3
+   Compiling generic-array v0.14.7
+   Compiling autocfg v1.5.0
+   Compiling utf8parse v0.2.2
+   Compiling log v0.4.29
+   Compiling heck v0.5.0
+   Compiling libdbus-sys v0.2.7
+   Compiling aho-corasick v1.1.4
+   Compiling crossbeam-utils v0.8.21
+   Compiling linux-raw-sys v0.11.0
+   Compiling bitflags v2.10.0
+   Compiling quote v1.0.40
+   Compiling num-traits v0.2.19
+   Compiling bytes v1.11.0
+   Compiling prettyplease v0.2.37
+   Compiling syn v2.0.114
+   Compiling indexmap v2.13.0
+   Compiling libudev-sys v0.1.4
+   Compiling anstyle-parse v0.2.7
+   Compiling fastrand v2.3.0
+   Compiling colorchoice v1.0.4
+   Compiling anstyle-query v1.1.5
+   Compiling fixedbitset v0.5.7
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling parking_lot_core v0.9.12
+   Compiling scopeguard v1.2.0
+   Compiling anstream v0.6.21
+   Compiling petgraph v0.7.1
+   Compiling zmij v1.0.20
+   Compiling multimap v0.10.1
+   Compiling smallvec v1.15.1
+   Compiling regex-automata v0.4.13
+   Compiling predicates-core v1.0.9
+   Compiling xml v1.2.1
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling lock_api v0.4.14
+   Compiling winnow v0.7.15
+   Compiling bitflags v1.3.2
+   Compiling crc32fast v1.5.0
+   Compiling clap_lex v0.7.7
+   Compiling float-cmp v0.10.0
+   Compiling difflib v0.4.0
+   Compiling mio v1.1.1
+   Compiling socket2 v0.6.1
+   Compiling uuid v1.19.0
+   Compiling tokio v1.49.0
+   Compiling tempfile v3.24.0
+   Compiling termtree v0.5.1
+   Compiling assert_cmd v2.1.2
+   Compiling toml_write v0.1.2
+   Compiling normalize-line-endings v0.3.0
+   Compiling thiserror v1.0.69
+   Compiling strsim v0.11.1
+   Compiling serde_json v1.0.149
+   Compiling hashbrown v0.14.5
+   Compiling predicates-tree v1.0.12
+   Compiling libudev v0.3.0
+   Compiling clap_builder v4.5.54
+   Compiling nix v0.26.4
+   Compiling wait-timeout v0.2.1
+   Compiling digest v0.10.7
+   Compiling cpufeatures v0.2.17
+   Compiling itoa v1.0.17
+   Compiling jiff v0.2.18
+   Compiling static_assertions v1.1.0
+   Compiling crossbeam-channel v0.5.15
+   Compiling hex v0.4.3
+   Compiling sha2 v0.10.9
+   Compiling dashmap v6.1.0
+   Compiling regex v1.12.2
+   Compiling bstr v1.12.1
+   Compiling predicates v3.1.3
+   Compiling env_filter v0.1.4
+   Compiling futures-macro v0.3.31
+   Compiling serde_derive v1.0.228
+   Compiling prost-derive v0.13.5
+   Compiling thiserror-impl v2.0.18
+   Compiling async-trait v0.1.89
+   Compiling thiserror-impl v1.0.69
+   Compiling clap_derive v4.5.49
+   Compiling futures-util v0.3.31
+   Compiling tokio-util v0.7.18
+   Compiling unescaper v0.1.8
+   Compiling prost v0.13.5
+   Compiling serialport v4.8.1
+   Compiling tokio-stream v0.1.18
+   Compiling prost-types v0.13.5
+   Compiling clap v4.5.54
+   Compiling env_logger v0.11.8
+   Compiling prost-build v0.13.5
+   Compiling serde-xml-rs v0.8.2
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling toml_edit v0.22.27
+   Compiling domes-cli v0.1.0 (/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/tools/domes-cli)
+   Compiling dbus v0.9.10
+   Compiling futures-executor v0.3.31
+   Compiling futures v0.3.31
+   Compiling toml v0.8.23
+   Compiling dbus-tokio v0.7.6
+   Compiling bluez-generated v0.4.0
+   Compiling bluez-async v0.8.2
+   Compiling btleplug v0.11.8
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 19.89s
+     Running unittests src/main.rs (/tmp/tmp.ojMWoBlhGm/cargo-target/debug/deps/domes_cli-1af9525c85a1a62c)
+
+running 3 tests
+test protocol::peer_contract::tests::malformed_unknown_truncated_and_oversized_fail_closed ... ok
+test protocol::peer_contract::tests::role_and_state_invalid_messages_fail_closed ... ok
+test protocol::peer_contract::tests::generated_variants_round_trip_without_independent_contract ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 102 filtered out; finished in 0.00s
+
+EXIT_STATUS=0
+GENERATED_PROST sha256=0c65a33209823c944bbd921f8de7ec274e149b7d3ba04ef824bb81332c7bd98f artifact=Cargo OUT_DIR/domes.peer.rs (ephemeral build artifact)
+
+$ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448/bin/flutter --suppress-analytics pub get --directory ios/domes_app --enforce-lockfile
+Resolving dependencies in `ios/domes_app`...
+Downloading packages...
+  _fe_analyzer_shared 85.0.0 (105.0.0 available)
+  analyzer 7.6.0 (14.1.0 available)
+  analyzer_plugin 0.13.4 (0.14.14 available)
+  async 2.13.0 (2.13.1 available)
+  build 2.5.4 (4.0.10 available)
+  build_config 1.1.2 (1.3.2 available)
+  build_daemon 4.1.1 (4.1.5 available)
+  build_resolvers 2.5.4 (3.0.4 available)
+  build_runner 2.5.4 (2.16.0 available)
+  build_runner_core 9.1.2 (9.3.2 available)
+  built_value 8.12.3 (8.12.7 available)
+  cross_file 0.3.5+2 (0.3.5+4 available)
+  cupertino_icons 1.0.8 (1.0.9 available)
+  custom_lint_core 0.7.5 (0.8.2 available)
+  custom_lint_visitor 1.0.0+7.7.0 (1.0.0+9.0.0 available)
+  dart_style 3.1.1 (3.1.12 available)
+  dbus 0.7.12 (0.7.15 available)
+  equatable 2.0.8 (2.1.0 available)
+  ffi 2.1.5 (2.2.0 available)
+  file_picker 8.3.7 (12.0.0 available)
+  fl_chart 0.69.2 (1.2.0 available)
+  flutter_blue_plus 1.36.8 (2.3.12 available)
+  flutter_blue_plus_android 7.0.4 (9.0.3 available)
+  flutter_blue_plus_darwin 7.0.3 (9.0.4 available)
+  flutter_blue_plus_linux 7.0.3 (9.0.3 available)
+  flutter_blue_plus_platform_interface 7.0.0 (9.0.3 available)
+  flutter_blue_plus_web 7.0.2 (9.0.3 available)
+  flutter_plugin_android_lifecycle 2.0.33 (2.0.35 available)
+  flutter_riverpod 2.6.1 (3.4.2 available)
+  json_annotation 4.10.0 (4.12.0 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.18.0 (1.19.0 available)
+  mockito 5.4.6 (5.8.1 available)
+  package_config 2.2.0 (3.0.0 available)
+  petitparser 7.0.1 (7.0.2 available)
+  riverpod 2.6.1 (3.4.2 available)
+  riverpod_annotation 2.6.1 (4.0.6 available)
+  riverpod_generator 2.6.5 (4.0.8 available)
+  source_gen 2.0.0 (4.3.0 available)
+  test_api 0.7.11 (0.7.13 available)
+  uuid 4.5.2 (4.6.0 available)
+  vector_math 2.2.0 (2.4.2 available)
+  vm_service 15.0.2 (15.3.0 available)
+  win32 5.15.0 (6.4.0 available)
+  xml 6.6.1 (7.0.1 available)
+Got dependencies in `ios/domes_app`!
+46 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+EXIT_STATUS=0
+
+$ bash -c cd\ ios/domes_app\ \&\&\ exec\ \"\$@\" _ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448/bin/flutter --suppress-analytics test test/data/protocol/peer_contract_test.dart
+Resolving dependencies...
+Downloading packages...
+  _fe_analyzer_shared 85.0.0 (105.0.0 available)
+  analyzer 7.6.0 (14.1.0 available)
+  analyzer_plugin 0.13.4 (0.14.14 available)
+  async 2.13.0 (2.13.1 available)
+  build 2.5.4 (4.0.10 available)
+  build_config 1.1.2 (1.3.2 available)
+  build_daemon 4.1.1 (4.1.5 available)
+  build_resolvers 2.5.4 (3.0.4 available)
+  build_runner 2.5.4 (2.16.0 available)
+  build_runner_core 9.1.2 (9.3.2 available)
+  built_value 8.12.3 (8.12.7 available)
+  cross_file 0.3.5+2 (0.3.5+4 available)
+  cupertino_icons 1.0.8 (1.0.9 available)
+  custom_lint_core 0.7.5 (0.8.2 available)
+  custom_lint_visitor 1.0.0+7.7.0 (1.0.0+9.0.0 available)
+  dart_style 3.1.1 (3.1.12 available)
+  dbus 0.7.12 (0.7.15 available)
+  equatable 2.0.8 (2.1.0 available)
+  ffi 2.1.5 (2.2.0 available)
+  file_picker 8.3.7 (12.0.0 available)
+  fl_chart 0.69.2 (1.2.0 available)
+  flutter_blue_plus 1.36.8 (2.3.12 available)
+  flutter_blue_plus_android 7.0.4 (9.0.3 available)
+  flutter_blue_plus_darwin 7.0.3 (9.0.4 available)
+  flutter_blue_plus_linux 7.0.3 (9.0.3 available)
+  flutter_blue_plus_platform_interface 7.0.0 (9.0.3 available)
+  flutter_blue_plus_web 7.0.2 (9.0.3 available)
+  flutter_plugin_android_lifecycle 2.0.33 (2.0.35 available)
+  flutter_riverpod 2.6.1 (3.4.2 available)
+  json_annotation 4.10.0 (4.12.0 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.18.0 (1.19.0 available)
+  mockito 5.4.6 (5.8.1 available)
+  package_config 2.2.0 (3.0.0 available)
+  petitparser 7.0.1 (7.0.2 available)
+  riverpod 2.6.1 (3.4.2 available)
+  riverpod_annotation 2.6.1 (4.0.6 available)
+  riverpod_generator 2.6.5 (4.0.8 available)
+  source_gen 2.0.0 (4.3.0 available)
+  test_api 0.7.11 (0.7.13 available)
+  uuid 4.5.2 (4.6.0 available)
+  vector_math 2.2.0 (2.4.2 available)
+  vm_service 15.0.2 (15.3.0 available)
+  win32 5.15.0 (6.4.0 available)
+  xml 6.6.1 (7.0.1 available)
+Got dependencies!
+46 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+00:00 +0: loading /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/ios/domes_app/test/data/protocol/peer_contract_test.dart
+00:00 +0: every generated variant round trips through the strict consumer
+00:00 +1: malformed unknown truncated and oversized inputs fail closed
+00:00 +2: role and state invalid messages fail closed
+00:00 +3: All tests passed!
+EXIT_STATUS=0
+
+$ bash -c cd\ ios/domes_app\ \&\&\ exec\ \"\$@\" _ env CI=true DART_SUPPRESS_ANALYTICS=true /tmp/domes-fs3-flutter-3448/bin/flutter --suppress-analytics test test/domain/models/drill_result_test.dart
+Resolving dependencies...
+Downloading packages...
+  _fe_analyzer_shared 85.0.0 (105.0.0 available)
+  analyzer 7.6.0 (14.1.0 available)
+  analyzer_plugin 0.13.4 (0.14.14 available)
+  async 2.13.0 (2.13.1 available)
+  build 2.5.4 (4.0.10 available)
+  build_config 1.1.2 (1.3.2 available)
+  build_daemon 4.1.1 (4.1.5 available)
+  build_resolvers 2.5.4 (3.0.4 available)
+  build_runner 2.5.4 (2.16.0 available)
+  build_runner_core 9.1.2 (9.3.2 available)
+  built_value 8.12.3 (8.12.7 available)
+  cross_file 0.3.5+2 (0.3.5+4 available)
+  cupertino_icons 1.0.8 (1.0.9 available)
+  custom_lint_core 0.7.5 (0.8.2 available)
+  custom_lint_visitor 1.0.0+7.7.0 (1.0.0+9.0.0 available)
+  dart_style 3.1.1 (3.1.12 available)
+  dbus 0.7.12 (0.7.15 available)
+  equatable 2.0.8 (2.1.0 available)
+  ffi 2.1.5 (2.2.0 available)
+  file_picker 8.3.7 (12.0.0 available)
+  fl_chart 0.69.2 (1.2.0 available)
+  flutter_blue_plus 1.36.8 (2.3.12 available)
+  flutter_blue_plus_android 7.0.4 (9.0.3 available)
+  flutter_blue_plus_darwin 7.0.3 (9.0.4 available)
+  flutter_blue_plus_linux 7.0.3 (9.0.3 available)
+  flutter_blue_plus_platform_interface 7.0.0 (9.0.3 available)
+  flutter_blue_plus_web 7.0.2 (9.0.3 available)
+  flutter_plugin_android_lifecycle 2.0.33 (2.0.35 available)
+  flutter_riverpod 2.6.1 (3.4.2 available)
+  json_annotation 4.10.0 (4.12.0 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.18.0 (1.19.0 available)
+  mockito 5.4.6 (5.8.1 available)
+  package_config 2.2.0 (3.0.0 available)
+  petitparser 7.0.1 (7.0.2 available)
+  riverpod 2.6.1 (3.4.2 available)
+  riverpod_annotation 2.6.1 (4.0.6 available)
+  riverpod_generator 2.6.5 (4.0.8 available)
+  source_gen 2.0.0 (4.3.0 available)
+  test_api 0.7.11 (0.7.13 available)
+  uuid 4.5.2 (4.6.0 available)
+  vector_math 2.2.0 (2.4.2 available)
+  vm_service 15.0.2 (15.3.0 available)
+  win32 5.15.0 (6.4.0 available)
+  xml 6.6.1 (7.0.1 available)
+Got dependencies!
+46 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+00:00 +0: loading /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-152/ios/domes_app/test/domain/models/drill_result_test.dart
+00:00 +0: DrillResult stats matches the deterministic two-pod scoring fixture
+00:00 +1: DrillResult stats counts hits and misses
+00:00 +2: DrillResult stats computes avg reaction time
+00:00 +3: DrillResult stats computes best and worst reaction time
+00:00 +4: DrillResult stats returns null for empty results
+00:00 +5: DrillResult stats returns null for all misses
+00:00 +6: DrillResult stats computes total duration
+00:00 +7: DrillResult stats per-pod breakdown
+00:00 +8: DrillResult stats hitRounds only includes hits with reaction time
+00:00 +9: DrillResult export toTextSummary contains key info
+00:00 +10: DrillResult export toJson produces valid JSON with correct fields
+00:00 +11: DrillResult export toJsonString produces parseable JSON
+00:00 +12: DrillResult export toJson handles empty results
+00:00 +13: All tests passed!
+EXIT_STATUS=0
+
+$ python3 tools/scoring_validation/generate_fixed_fixture.py --fixture tools/scoring_validation/fixtures/fixed_two_pod_v1.json --output tools/scoring_validation/generated/fixed_two_pod_v1.hpp --check
+EXIT_STATUS=0
+
+$ python3 -m unittest discover -s tools/scoring_validation -p test_\*.py -v
+test_ambiguous_identity_is_rejected (test_campaign.CampaignTest.test_ambiguous_identity_is_rejected) ... ok
+test_ambiguous_miss_reaction_time_is_rejected (test_campaign.CampaignTest.test_ambiguous_miss_reaction_time_is_rejected) ... ok
+test_boundary_result_reaction_time_is_rejected (test_campaign.CampaignTest.test_boundary_result_reaction_time_is_rejected) ... ok
+test_duplicate_fixed_result_token_is_rejected (test_campaign.CampaignTest.test_duplicate_fixed_result_token_is_rejected) ... ok
+test_duplicate_token_is_rejected (test_campaign.CampaignTest.test_duplicate_token_is_rejected) ... ok
+test_every_changed_independent_field_is_reported (test_campaign.CampaignTest.test_every_changed_independent_field_is_reported) ... ok
+test_generated_cpp_binding_is_current (test_campaign.CampaignTest.test_generated_cpp_binding_is_current) ... ok
+test_incomplete_fixture_is_rejected (test_campaign.CampaignTest.test_incomplete_fixture_is_rejected) ... ok
+test_incomplete_result_round_is_rejected (test_campaign.CampaignTest.test_incomplete_result_round_is_rejected) ... ok
+test_inconsistent_aggregate_is_rejected (test_campaign.CampaignTest.test_inconsistent_aggregate_is_rejected) ... ok
+test_incorrect_fixed_result_token_is_rejected (test_campaign.CampaignTest.test_incorrect_fixed_result_token_is_rejected) ... ok
+test_malformed_json_is_rejected (test_campaign.CampaignTest.test_malformed_json_is_rejected) ... ok
+test_malformed_result_is_rejected (test_campaign.CampaignTest.test_malformed_result_is_rejected) ... ok
+test_missing_clock_provenance_is_rejected (test_campaign.CampaignTest.test_missing_clock_provenance_is_rejected) ... ok
+test_missing_hit_reaction_time_is_rejected (test_campaign.CampaignTest.test_missing_hit_reaction_time_is_rejected) ... ok
+test_non_boolean_result_hit_is_rejected (test_campaign.CampaignTest.test_non_boolean_result_hit_is_rejected) ... ok
+test_non_integer_aggregate_is_rejected (test_campaign.CampaignTest.test_non_integer_aggregate_is_rejected) ... ok
+test_repeated_independent_outputs_and_verdict_are_identical (test_campaign.CampaignTest.test_repeated_independent_outputs_and_verdict_are_identical) ... ok
+test_result_without_clock_provenance_is_rejected (test_campaign.CampaignTest.test_result_without_clock_provenance_is_rejected) ... ok
+test_sub_resolution_result_reaction_time_is_rejected (test_campaign.CampaignTest.test_sub_resolution_result_reaction_time_is_rejected) ... ok
+test_wrong_known_result_pod_is_rejected (test_campaign.CampaignTest.test_wrong_known_result_pod_is_rejected) ... ok
+test_wrong_pod_is_rejected (test_campaign.CampaignTest.test_wrong_pod_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.005s
+
+OK
+EXIT_STATUS=0
+
+GATE_VERDICT=ACCEPTED_SOFTWARE_COMPATIBILITY
+PHYSICAL_EVIDENCE=UNVERIFIED
+UTC_FINISHED=2026-08-22T06:15:10Z
