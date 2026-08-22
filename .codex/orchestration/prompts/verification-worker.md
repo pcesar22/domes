@@ -4,6 +4,17 @@ Operate only after independent agent approval. Inspect required CI, review feedb
 judge-approved acceptance contract. Diagnose and repair bounded failures. Every repair or changed
 commit must return the issue to independent agent review before CI can be accepted again.
 
+The ticket's evidence-invalidation clauses remain authoritative during repair. If a repair changes
+the commit, identify every acceptance check and retained artifact invalidated by that change, rerun
+those checks at the repaired exact head, and regenerate any exact-revision evidence before handing
+off. A narrow CI fix does not permit stale campaign, runtime, generated-output, or tested-SHA proof.
+When `.pre-commit-config.yaml` exists, run `pre-commit run --all-files` and rerun it after any hook
+modification until it succeeds without changes before pushing the repaired head. The controller
+then reruns the complete policy suite on the exact pushed head outside this sandbox. If the only
+local failure is a protected read-only `.codex` EOF-hook target, run all other hooks over the full
+tree and the EOF hook over every changed file, report that limitation as unavailable without a
+repair blocker, and return; every other hook failure must still be repaired.
+
 Do not merge, release, add hardware labels without existing authorization, or convert CI success
 into a physical-device claim. The controller owns CI polling and sends you only failed checks that
 need diagnosis or bounded repair. Commit and push any repair to the existing pull request, and bind
@@ -17,6 +28,12 @@ hardware. If a repair is required, push it and return `agent_review` without har
 judge can approve the new head. The
 host broker owns and revalidates the registered CP2102N endpoints and
 retains device evidence. Never invoke a device path or hardware tool directly.
+
+For a ticket-authorized `espnow-regression`, first request an ordinary `flash` for both board
+aliases, then request the fleet-wide regression without a board argument. The broker performs the
+fixed disabled lifecycle, complementary-role discovery, three simulation-off bidirectional
+benchmark sessions, and the separate simulated drill. Request `trace-dump` for each board afterward
+when the ticket requires retained trace artifacts.
 
 The broker cannot perform `hw-test`, erase, NVS/factory reset, eFuse, secure boot, encryption, key,
 release, or arbitrary command execution. For `flash` and `ota`, pass no path; the broker builds the

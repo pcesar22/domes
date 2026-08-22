@@ -13,10 +13,11 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["key", "mode", "goal", "non_goals", "required_behavior", "acceptance_checks", "allowed_surfaces", "dependencies", "required_proof", "autonomy_policy", "hardware_operations"],
+        "required": ["key", "mode", "base_strategy", "goal", "non_goals", "required_behavior", "acceptance_checks", "allowed_surfaces", "dependencies", "required_proof", "autonomy_policy", "hardware_operations"],
         "properties": {
           "key": {"type": "string", "minLength": 1},
           "mode": {"type": "string", "enum": ["execute", "plan"]},
+          "base_strategy": {"type": "string", "enum": ["main", "dependency"]},
           "goal": {"type": "string", "minLength": 1},
           "non_goals": {"type": "array", "items": {"type": "string"}},
           "required_behavior": {"type": "string", "minLength": 1},

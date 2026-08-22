@@ -24,7 +24,7 @@ context. A CEO should understand why the company should care before reading tech
 | Product or user behavior | <!-- Changed / Unchanged --> | <!-- Plain-language consequence --> |
 | Automated software checks | <!-- Passed / Failed / Pending / Not applicable --> | <!-- Scope covered --> |
 | Physical-device evidence | <!-- Passed / Failed / Provisional / Not tested / Not applicable --> | <!-- Exact claim boundary --> |
-| Program or release status | <!-- Changed / Unchanged --> | <!-- Gate, schedule, or dependency consequence --> |
+| Program or release status | <!-- Changed / Unchanged --> | <!-- Decision, schedule, or dependency consequence --> |
 
 ## What this PR changes
 

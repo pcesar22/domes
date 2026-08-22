@@ -6,6 +6,7 @@ tracker_actor: pcesar22
 state_prefix: agent:
 scheduler_host: ministrom
 max_concurrent_workers: 4
+max_open_pull_requests: 6
 workspace_root: .worktrees/agents
 base_branch: main
 poll_interval_seconds: 30
@@ -50,9 +51,10 @@ independent judge verdict may move implementation from `agent:agent-review` to
 judge. Versioned `software-review-required` policy authorizes autonomous implementation and CI
 repair only. Every pull request stops at `agent:human-review`; only a human may approve or merge it.
 After observing a human merge, the controller performs issue bookkeeping and unlocks ordinary
-dependencies. A narrowly bounded software child may start earlier as a one-level stacked pull
-request when its sole nonterminal parent is already an exact-head, independently judged,
-CI-passing `agent:human-review` artifact. Release remains outside this workflow.
+dependencies. A narrowly bounded software child may start earlier only when its accepted contract
+explicitly requires code from one unmerged direct dependency whose exact head is independently
+judged, CI-passing, and in `agent:human-review`. Independent work starts from `main`. Release
+remains outside this workflow.
 
 ## Dispatch policy
 
@@ -60,35 +62,44 @@ The scheduler performs only these actions:
 
 1. Read active issues and their state labels.
 2. Validate the ticket contract and pinned specification revision.
-3. Reject issues with unresolved dependencies or overlapping active workspaces. The only
-   nonterminal-dependency exception is one automated software child, with no hardware operations,
-   stacked on one stable `agent:human-review` parent. Fan-in and nested stacks fail closed.
-4. Sort eligible issues by numeric priority and then issue number.
+3. Reject implementation issues with unresolved dependencies or overlapping active workspaces. A
+   planner may run ahead of its nonterminal declared dependencies because it is read-only; every
+   materialized child inherits those external prerequisites. The only implementation exception is
+   an automated software child whose contract explicitly requires an unmerged direct dependency,
+   has no hardware operations, and targets one stable `agent:human-review` parent. Independent
+   work and dependency joins that can wait for merged inputs target `main`.
+4. Repair failed CI first, then sort remaining eligible issues by numeric priority and issue
+   number.
 5. Reserve up to three slots and create one controller-owned standalone Git workspace per issue.
 6. Move a newly accepted implementation task to `agent:running` and launch a fresh role-specific
    run with the matching output schema; rejected work retains `agent:rework` so its judge handoff is
    never lost across a restart.
 7. Validate the final structured result and translate it into an explicit tracker transition.
 8. Retry transient process failures with bounded exponential backoff.
-9. In explicit autopilot mode, reserve any otherwise-free slot for one disposable requirements
+9. Admit at most six open pull requests repository-wide. Existing pull requests may continue
+   through repair, review, CI, and human review while the cap is full, but no worker that would
+   create another pull request and no selector may start until capacity exists. Active new-PR
+   workers reserve capacity before launch so concurrent workers cannot overshoot the cap.
+10. In explicit autopilot mode, reserve any otherwise-free slot for one disposable requirements
    steward even while other roles, CI, or human review are active. Repeated selections fill free
    capacity with milestone-authorized contracts, and accepted planner DAGs materialize
    idempotently. Only one selector may run at once.
-10. Poll required CI without spending an agent slot, repair failures through a fresh worker and
+11. Poll required CI without spending an agent slot, repair failures through a fresh worker and
     judge cycle, then place the exact passing head in `agent:human-review` without approving or
     merging it.
 
-For the one-level stack exception, the controller—not a worker narrative—binds the child to the
-parent issue, pull request, branch, and exact reviewed head. It creates the child branch from that
-head and requires the child pull request to target the parent branch. Parent head movement,
-requested changes, conflict, closure, rework, or merge invalidates the binding and sends the child
-through a fresh worker, judge, and CI cycle. After the parent is merged, the child is rebuilt and
-retargeted to `main`; no earlier child approval survives the base transition. Hardware-executing
-children remain `main`-only. If a human explicitly merges an already review-ready child into its
-exact parent branch first, the child remains nonterminal until the controller proves that merge's
-integration commit reached `main` through the parent. If the parent drops or fails to land that
-commit, that human-merged artifact is blocked without rewriting its acceptance contract; a fresh
-steward-approved delivery is required while the selector continues other work.
+For the dependency-only stack exception, the controller—not a worker narrative—validates every ancestor's
+issue, pull request, branch, exact reviewed head, independent approval, and required CI before it
+binds a child to the immediate live parent. It creates the child branch from that head and requires
+the child pull request to target the parent branch. Fan-in, cycles, unstable or changed ancestors,
+requested changes, conflicts, and hardware-executing children fail closed. When a parent merges
+into its own parent, an open child is rebuilt and retargeted to the next live ancestor; no earlier
+child approval survives that base transition. If a human explicitly merges a review-ready child
+into its exact parent branch first, the child remains nonterminal while the controller follows the
+validated ancestor chain and proves that the integration commit ultimately reached `main`. If any
+ancestor drops or fails to land that commit, the merged artifact is blocked without rewriting its
+acceptance contract; a fresh steward-approved delivery is required while the selector continues
+other work.
 
 Every worker and verification-worker Codex process remains workspace-write and has no direct device
 access. Hardware execution requires all four of: an explicit finite `Hardware operations` enum and
@@ -118,6 +129,12 @@ role's prompt, or treats a successful process exit as acceptance. The disposable
 translate existing milestones and live execution state into one bounded software or executed-
 validation contract; its output is revalidated against fresh main, issue, and pull-request state
 before any tracker mutation.
+
+Every autonomous pull request must use a plain-language title and a fully populated CEO-first
+description. The standalone word `gate` is prohibited in both because it hides the actual
+prerequisite or decision. The controller rejects incomplete summaries, unexplained internal work
+package codes in titles, template placeholders, and descriptions that omit the outcome, why it
+matters, approval boundary, next action, or verification boundary.
 
 ## Role routing
 

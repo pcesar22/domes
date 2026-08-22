@@ -58,6 +58,17 @@ REQUIRED_SECTIONS = (
     "Dependencies",
     "Required proof",
 )
+PR_REQUIRED_SECTIONS = (
+    "Executive summary",
+    "Why this matters",
+    "Status at a glance",
+    "What this PR changes",
+    "What approval means",
+    "What happens next",
+    "Verification summary",
+)
+PR_FORBIDDEN_TERM = re.compile(r"\bgates?\b", re.IGNORECASE)
+PR_INTERNAL_CODE = re.compile(r"\b(?:PS|FS|HW|VC)-WP-[A-Z0-9_-]+\b", re.IGNORECASE)
 ROLE_BY_STATE = {
     "agent:plan": "planner",
     "agent:ready": "worker",
@@ -66,6 +77,7 @@ ROLE_BY_STATE = {
     "agent:agent-review": "judge",
     "agent:verification": "verification-worker",
 }
+SURFACE_RESERVING_ROLES = frozenset({"worker", "verification-worker"})
 SCHEMA_BY_ROLE = {
     "selector": "selector-result.schema.json",
     "planner": "planner-result.schema.json",
@@ -163,6 +175,7 @@ HARDWARE_OPERATIONS = frozenset(
         "trace-clear",
         "trace-status",
         "trace-dump",
+        "espnow-regression",
         "flash",
         "flash-trace-acceptance",
         "ota",
@@ -202,6 +215,7 @@ class Workflow:
     stall_timeout_seconds: int
     max_retry_backoff_seconds: int
     tracker_actor: str = ""
+    max_open_pull_requests: int = 6
 
 
 @dataclass(frozen=True)
@@ -230,6 +244,8 @@ class PullRequest:
     files: tuple[str, ...]
     checks: tuple[dict[str, str], ...]
     merge_commit: str = ""
+    title: str = ""
+    body: str = ""
 
 
 @dataclass(frozen=True)
@@ -289,7 +305,7 @@ class TicketValidation:
 
 @dataclass(frozen=True)
 class StackContext:
-    """Controller-derived, one-deep PR-stack binding; never worker-authored."""
+    """Controller-derived binding to the exact live review-stack base."""
 
     parent_issue: int
     parent_pr: int
@@ -335,6 +351,7 @@ def load_workflow(path: Path = WORKFLOW_PATH) -> Workflow:
         "state_prefix",
         "scheduler_host",
         "max_concurrent_workers",
+        "max_open_pull_requests",
         "workspace_root",
         "base_branch",
         "poll_interval_seconds",
@@ -354,6 +371,13 @@ def load_workflow(path: Path = WORKFLOW_PATH) -> Workflow:
     maximum = config["max_concurrent_workers"]
     if not isinstance(maximum, int) or not 1 <= maximum <= 16:
         raise ControlError(f"{path}: max_concurrent_workers must be between 1 and 16")
+    open_pr_maximum = config["max_open_pull_requests"]
+    if (
+        not isinstance(open_pr_maximum, int)
+        or isinstance(open_pr_maximum, bool)
+        or not 1 <= open_pr_maximum <= 100
+    ):
+        raise ControlError(f"{path}: max_open_pull_requests must be between 1 and 100")
     for key in (
         "poll_interval_seconds",
         "stall_timeout_seconds",
@@ -372,6 +396,7 @@ def load_workflow(path: Path = WORKFLOW_PATH) -> Workflow:
         stall_timeout_seconds=config["stall_timeout_seconds"],
         max_retry_backoff_seconds=config["max_retry_backoff_seconds"],
         tracker_actor=tracker_actor,
+        max_open_pull_requests=open_pr_maximum,
     )
 
 
@@ -464,6 +489,19 @@ def existing_pull_request(sections: dict[str, str]) -> int:
     return int(match.group(1))
 
 
+def pull_request_base_strategy(sections: dict[str, str]) -> str:
+    """Return the accepted PR base policy, preserving pre-policy tickets."""
+    value = sections.get("Pull request base", "").strip().casefold()
+    if not value:
+        # Existing accepted contracts predate this field and may already own a
+        # dependency-based PR. Unstarted legacy work defaults to main, and every
+        # newly rendered contract binds the choice explicitly.
+        return "legacy" if existing_pull_request(sections) else "main"
+    if value not in {"main", "dependency"}:
+        raise ControlError("Pull request base must be `main` or `dependency`")
+    return value
+
+
 def _contract_digest_payload(sections: dict[str, str]) -> dict[str, str]:
     names = [
         *REQUIRED_SECTIONS,
@@ -478,6 +516,8 @@ def _contract_digest_payload(sections: dict[str, str]) -> dict[str, str]:
         names.append("Hardware operations")
     if "Hardware boards" in sections:
         names.append("Hardware boards")
+    if "Pull request base" in sections:
+        names.append("Pull request base")
     return {name: sections.get(name, "").strip() for name in names}
 
 
@@ -571,6 +611,13 @@ def validate_ticket(ticket: Ticket, *, check_revision: bool = True) -> TicketVal
         existing_pull_request(sections)
     except ControlError as error:
         errors.append(str(error))
+    try:
+        base_strategy = pull_request_base_strategy(sections)
+    except ControlError as error:
+        errors.append(str(error))
+    else:
+        if base_strategy == "dependency" and not dependencies:
+            errors.append("dependency pull-request base requires a task dependency")
     try:
         hardware_operations(sections)
     except ControlError as error:
@@ -743,14 +790,33 @@ def select_non_overlapping(
     selected: list[TicketValidation] = []
     selected_surfaces = [tuple(surfaces) for surfaces in reserved_surfaces]
     for item in eligible:
-        surfaces = allowed_surfaces(item.sections["Allowed architectural surfaces"])
-        if any(surfaces_overlap(surfaces, existing) for existing in selected_surfaces):
-            continue
+        reserves_surfaces = role_for(item.ticket) in SURFACE_RESERVING_ROLES
+        surfaces = (
+            allowed_surfaces(item.sections["Allowed architectural surfaces"])
+            if reserves_surfaces
+            else ()
+        )
+        if reserves_surfaces:
+            if any(
+                surfaces_overlap(surfaces, existing) for existing in selected_surfaces
+            ):
+                continue
+            selected_surfaces.append(surfaces)
         selected.append(item)
-        selected_surfaces.append(surfaces)
         if len(selected) == maximum:
             break
     return selected
+
+
+def reserved_mutation_surfaces(
+    active: Sequence[TicketValidation],
+) -> list[tuple[str, ...]]:
+    """Return only path reservations held by roles allowed to mutate artifacts."""
+    return [
+        allowed_surfaces(item.sections["Allowed architectural surfaces"])
+        for item in active
+        if role_for(item.ticket) in SURFACE_RESERVING_ROLES
+    ]
 
 
 def dependency_cycles(validations: Iterable[TicketValidation]) -> list[list[int]]:
@@ -792,6 +858,8 @@ def _stack_parent(
     item: TicketValidation, tickets: Sequence[Ticket]
 ) -> tuple[Ticket | None, str | None]:
     """Return the sole permitted nonterminal dependency, without tracker I/O."""
+    if pull_request_base_strategy(item.sections) == "main":
+        return None, None
     by_number = {ticket.number: ticket for ticket in tickets}
     nonterminal = [
         by_number[number]
@@ -817,18 +885,8 @@ def _stack_parent(
             None,
             "nonterminal dependency is not an eligible software human-review parent",
         )
-    parent_validation = validate_ticket(parent, check_revision=False)
-    if not parent_validation.valid:
+    if not validate_ticket(parent, check_revision=False).valid:
         return None, "stack parent ticket contract is invalid"
-    parent_dependencies = parent_validation.dependencies
-    if any(
-        dependency in by_number and not terminal(by_number[dependency])
-        for dependency in parent_dependencies
-    ):
-        return (
-            None,
-            "dependency is not terminal; nested stacked pull requests are not supported",
-        )
     return parent, None
 
 
@@ -865,15 +923,20 @@ def stack_dependency_status(
     )
 
 
-def stack_context(
-    workflow: Workflow, item: TicketValidation, tickets: Sequence[Ticket]
+def _stack_context(
+    workflow: Workflow,
+    item: TicketValidation,
+    tickets: Sequence[Ticket],
+    resolving: frozenset[int],
 ) -> StackContext | None:
-    """Resolve and validate the exact parent PR head immediately before use."""
+    """Resolve the exact live review-stack base, validating every open level."""
     parent, error = _stack_parent(item, tickets)
     if error:
         raise StackInvalidated(error)
     if parent is None:
         return None
+    if parent.number in resolving:
+        raise StackInvalidated("dependency cycle in review stack")
     parent_sections = parse_sections(parent.body)
     try:
         artifact = load_latest_artifact_handoff(workflow, parent)
@@ -881,22 +944,37 @@ def stack_context(
         raise StackInvalidated(str(error)) from error
     parent_pr = artifact.get("pull_request")
     parent_head = artifact.get("commit")
+    parent_binding = artifact_stack_binding(artifact)
+    parent_item = validate_ticket(parent, check_revision=False)
+    if not parent_item.valid:
+        raise StackInvalidated(f"stack parent #{parent.number} contract is invalid")
+    live_parent_binding = _stack_context(
+        workflow,
+        parent_item,
+        tickets,
+        resolving | {parent.number},
+    )
     if (
         not isinstance(parent_pr, int)
         or not FULL_SHA.fullmatch(str(parent_head))
         or artifact.get("spec_revision")
         != parent_sections.get("Specification revision")
         or existing_pull_request(parent_sections) != parent_pr
-        or artifact_stack_binding(artifact) is not None
     ):
         raise StackInvalidated(f"stack parent #{parent.number} has no exact artifact")
     pull_request = load_pull_request(workflow, parent_pr)
+    expected_parent_base = (
+        parent_binding.base_ref if parent_binding is not None else workflow.base_branch
+    )
     if (
-        pull_request.state != "OPEN"
-        or pull_request.is_draft
-        or pull_request.base_ref != workflow.base_branch
+        pull_request.is_draft
+        or pull_request.base_ref != expected_parent_base
+        or (
+            parent_binding is not None
+            and pull_request.base_oid != parent_binding.base_head
+        )
         or pull_request.head_oid != parent_head
-        or pull_request.merge_state in {"BEHIND", "DIRTY"}
+        or pull_request.merge_state == "DIRTY"
         or pull_request.mergeable in {"CONFLICTING", "UNMERGEABLE"}
         or pull_request.review_decision == "CHANGES_REQUESTED"
     ):
@@ -920,9 +998,39 @@ def stack_context(
         raise StackInvalidated(
             f"stack parent #{parent.number} lacks exact-head required CI"
         )
-    return StackContext(
-        parent.number, parent_pr, pull_request.head_ref, pull_request.head_oid
+    if pull_request.state == "OPEN":
+        if parent_binding != live_parent_binding:
+            raise StackInvalidated(
+                f"stack parent #{parent.number} no longer binds its reviewed base"
+            )
+        return StackContext(
+            parent.number, parent_pr, pull_request.head_ref, pull_request.head_oid
+        )
+    if pull_request.state == "MERGED" and parent_binding is not None:
+        if (
+            live_parent_binding is None
+            or not FULL_SHA.fullmatch(pull_request.merge_commit)
+            or not _remote_commit_is_ancestor(
+                workflow, pull_request.merge_commit, live_parent_binding.base_head
+            )
+        ):
+            raise StackInvalidated(
+                f"stack parent #{parent.number} is not integrated into its live ancestor"
+            )
+        # The immediate dependency has landed in an ancestor review branch. Bind
+        # new/reworked children to that current branch instead of idling until
+        # the entire review chain reaches main.
+        return live_parent_binding
+    raise StackInvalidated(
+        f"stack parent #{parent.number} is no longer a stable review artifact"
     )
+
+
+def stack_context(
+    workflow: Workflow, item: TicketValidation, tickets: Sequence[Ticket]
+) -> StackContext | None:
+    """Resolve and validate the exact effective parent PR head before use."""
+    return _stack_context(workflow, item, tickets, frozenset({item.ticket.number}))
 
 
 def eligible_queue(
@@ -946,14 +1054,31 @@ def eligible_queue(
             continue
         if ticket.number in cycle_nodes:
             reasons.append("dependency cycle")
-        dependencies_ok, dependency_error = stack_dependency_status(None, item, tickets)
-        if not dependencies_ok and dependency_error:
-            reasons.append(dependency_error)
+        if ticket.agent_state == "agent:plan":
+            missing = [
+                number for number in item.dependencies if number not in by_number
+            ]
+            if missing:
+                reasons.append(
+                    f"dependency #{missing[0]} was not returned by the tracker"
+                )
+        else:
+            dependencies_ok, dependency_error = stack_dependency_status(
+                None, item, tickets
+            )
+            if not dependencies_ok and dependency_error:
+                reasons.append(dependency_error)
         if reasons:
             blockers[ticket.number] = reasons
         else:
             eligible.append(item)
-    eligible.sort(key=lambda item: (item.ticket.priority, item.ticket.number))
+    eligible.sort(
+        key=lambda item: (
+            0 if item.ticket.agent_state == "agent:verification" else 1,
+            item.ticket.priority,
+            item.ticket.number,
+        )
+    )
     return eligible, blockers
 
 
@@ -1006,6 +1131,8 @@ def pull_request_from_json(document: dict[str, Any]) -> PullRequest:
                 "name": str(check.get("name") or check.get("context") or ""),
                 "state": state,
                 "url": str(check.get("detailsUrl") or check.get("targetUrl") or ""),
+                "started_at": str(check.get("startedAt") or ""),
+                "completed_at": str(check.get("completedAt") or ""),
             }
         )
     merge_commit = document.get("mergeCommit") or {}
@@ -1025,6 +1152,8 @@ def pull_request_from_json(document: dict[str, Any]) -> PullRequest:
         merge_commit=(
             str(merge_commit.get("oid", "")) if isinstance(merge_commit, dict) else ""
         ),
+        title=str(document.get("title", "")),
+        body=str(document.get("body", "")),
     )
 
 
@@ -1041,7 +1170,7 @@ def load_pull_request(workflow: Workflow, number: int) -> PullRequest:
             (
                 "number,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,"
                 "mergeable,mergeStateStatus,reviewDecision,files,statusCheckRollup,"
-                "mergeCommit,changedFiles"
+                "mergeCommit,changedFiles,title,body"
             ),
         ]
     )
@@ -1258,6 +1387,8 @@ def build_prompt(
     controller_evidence: dict[str, Any] | None = None,
     required_base_head: str | None = None,
     required_base_ref: str | None = None,
+    tracker_context: dict[str, Any] | None = None,
+    controller_interventions: Sequence[str] = (),
 ) -> str:
     role_prompt = (ORCHESTRATION_DIR / "prompts" / f"{role}.md").read_text(
         encoding="utf-8"
@@ -1291,6 +1422,33 @@ def build_prompt(
             "This is structured evidence, not a worker transcript or self-authored acceptance.\n\n"
             f"```json\n{json.dumps(prior_handoff, indent=2, sort_keys=True)}\n```\n"
         )
+    if controller_interventions:
+        prompt += (
+            "\n# Durable controller interventions\n\n"
+            "These concise tracker records were authored by the configured controller "
+            "principal. They are not role transcripts and do not replace independent "
+            "acceptance, but every unresolved rework requirement in them must be "
+            "addressed explicitly. Do not return an unchanged artifact when an "
+            "intervention identifies evidence that contradicts it.\n\n"
+            + "\n\n---\n\n".join(controller_interventions)
+            + "\n"
+        )
+    if tracker_context is not None:
+        prompt += (
+            "\n# Controller-captured tracker snapshot\n\n"
+            "The deterministic controller captured this authoritative tracker state "
+            "immediately before dispatch. Use it instead of attempting network access. "
+            "Materialization revalidates live state after you return.\n\n"
+            f"```json\n{json.dumps(tracker_context, indent=2, sort_keys=True)}\n```\n"
+            "Planning may proceed while the planning ticket's declared dependencies "
+            "are nonterminal. The controller will copy those dependencies onto every "
+            "materialized child, so design the DAG now without weakening or omitting "
+            "the parent ticket's external gates. Task dependency arrays may contain "
+            "only keys from the returned DAG, never GitHub issue references. Do not "
+            "report a planner blocker solely because an external gate is nonterminal "
+            "or a runtime acceptance input is not yet available; encode those as "
+            "fail-closed task prerequisites and stop conditions.\n"
+        )
     if hardware_capability is not None:
         prompt += (
             "\n# Registered hardware capability envelope\n\n"
@@ -1309,6 +1467,60 @@ def build_prompt(
             f"```json\n{json.dumps(controller_evidence, indent=2, sort_keys=True)}\n```\n"
         )
     return prompt
+
+
+def build_planner_tracker_context(
+    workflow: Workflow,
+    tickets: Sequence[Ticket],
+    pull_requests: Sequence[dict[str, Any]],
+    *,
+    revision: str | None = None,
+) -> dict[str, Any]:
+    """Build the concise tracker state a network-isolated planner must rehydrate."""
+    issues: list[dict[str, Any]] = []
+    for ticket in tickets:
+        if not any(label.startswith(STATE_PREFIX) for label in ticket.labels):
+            continue
+        sections = parse_sections(ticket.body)
+        dependencies = sorted(
+            {
+                int(value)
+                for value in ISSUE_REFERENCE.findall(sections.get("Dependencies", ""))
+            }
+        )
+        issues.append(
+            {
+                "number": ticket.number,
+                "title": ticket.title,
+                "state": ticket.state,
+                "labels": sorted(ticket.labels),
+                "url": ticket.url,
+                "specification_revision": sections.get("Specification revision", ""),
+                "goal": sections.get("Goal", ""),
+                "work_package": sections.get("Work package", ""),
+                "work_class": sections.get("Work class", ""),
+                "autonomy_policy": sections.get("Autonomy policy", ""),
+                "dependencies": dependencies,
+                "allowed_surfaces": (
+                    list(allowed_surfaces(sections["Allowed architectural surfaces"]))
+                    if sections.get("Allowed architectural surfaces")
+                    else []
+                ),
+                "existing_pull_request": sections.get("Existing pull request", ""),
+                "contract_sha256": hashlib.sha256(
+                    ticket.body.encode("utf-8")
+                ).hexdigest(),
+            }
+        )
+    return {
+        "repository": workflow.repository,
+        "base_revision": revision or origin_main_revision(workflow),
+        "issues": sorted(issues, key=lambda value: int(value["number"])),
+        "open_pull_requests": sorted(
+            (dict(item) for item in pull_requests),
+            key=lambda value: int(value["number"]),
+        ),
+    }
 
 
 def registered_hardware_preflight() -> dict[str, Any]:
@@ -2264,13 +2476,13 @@ def ensure_workspace(
         pull_request = load_pull_request(workflow, pull_request_number)
         expected_base = stack.base_ref if stack is not None else workflow.base_branch
         rebasing_stacked_child = (
-            stack is None
-            and role == "worker"
+            role == "worker"
             and (item.source_state or item.ticket.agent_state) == "agent:rework"
             and automated_delivery(item.sections)
             and item.sections.get("Work class", "").strip() == "software"
             and not hardware_operations(item.sections)
             and pull_request.base_ref.startswith("codex/issue-")
+            and pull_request.base_ref != expected_base
         )
         if (
             stack is None
@@ -2579,6 +2791,7 @@ def render_ticket_contract(
     work_package: str,
     work_class: str,
     selected_policy: str,
+    base_strategy: str = "main",
     pull_request: int = 0,
     hardware_operations: Sequence[str] = (),
     hardware_boards: Sequence[int] = (),
@@ -2597,6 +2810,7 @@ def render_ticket_contract(
         "Work package": work_package.strip(),
         "Work class": work_class.strip(),
         "Autonomy policy": selected_policy.strip(),
+        "Pull request base": base_strategy.strip(),
         "Existing pull request": f"#{pull_request}" if pull_request else "None",
         "Hardware operations": (
             ", ".join(hardware_operations) if hardware_operations else "None"
@@ -2636,6 +2850,7 @@ def validate_selector_result(
     if state != "selected":
         if (
             result["mode"] != "none"
+            or result["base_strategy"] != "none"
             or result["autonomy_policy"] != "none"
             or result["priority"] != "none"
             or result["work_class"] != "none"
@@ -2669,6 +2884,18 @@ def validate_selector_result(
             raise ControlError(f"selector returned empty {name}")
     if result["mode"] not in {"execute", "plan"}:
         raise ControlError("selected work must use execute or plan mode")
+    if result["base_strategy"] not in {"main", "dependency"}:
+        raise ControlError(
+            "selected work must declare main or dependency base strategy"
+        )
+    if result["base_strategy"] == "dependency" and len(result["dependencies"]) != 1:
+        raise ControlError(
+            "dependency base strategy requires exactly one direct dependency"
+        )
+    if PR_FORBIDDEN_TERM.search(str(result["title"])):
+        raise ControlError(
+            "selector title must name the prerequisite instead of `gate`"
+        )
     if result["work_class"] not in policy.allowed_work_classes:
         raise ControlError("selector returned a prohibited work class")
     if result["priority"] not in {"p0", "p1", "p2", "p3"}:
@@ -2801,6 +3028,7 @@ def _apply_selector_result_locked(
         work_package=result["work_package"],
         work_class=result["work_class"],
         selected_policy=result["autonomy_policy"],
+        base_strategy=result["base_strategy"],
         pull_request=result["existing_pull_request"],
     )
     target_state = "agent:ready" if result["mode"] == "execute" else "agent:plan"
@@ -2817,6 +3045,13 @@ def _apply_selector_result_locked(
         pull_requests,
         expected_revision=revision,
     )
+    if (
+        not int(result["existing_pull_request"])
+        and len(pull_requests) >= workflow.max_open_pull_requests
+    ):
+        raise ControlError(
+            "open pull-request limit reached before selector materialization"
+        )
 
     existing_number = int(result["existing_issue"])
     if existing_number:
@@ -2957,6 +3192,45 @@ def selector_capacity_available(
     )
 
 
+def creates_new_pull_request(item: TicketValidation) -> bool:
+    return (
+        role_for(item.ticket) == "worker"
+        and automated_delivery(item.sections)
+        and existing_pull_request(item.sections) == 0
+    )
+
+
+def enforce_pull_request_capacity(
+    candidates: Sequence[TicketValidation],
+    active: Sequence[TicketValidation],
+    *,
+    open_pull_requests: int,
+    maximum: int,
+) -> tuple[list[TicketValidation], list[int]]:
+    """Reserve every possible new PR before launching concurrent workers."""
+    reserved = sum(creates_new_pull_request(item) for item in active)
+    slots = max(0, maximum - open_pull_requests - reserved)
+    admitted: list[TicketValidation] = []
+    deferred: list[int] = []
+    for item in candidates:
+        if creates_new_pull_request(item):
+            if slots < 1:
+                deferred.append(item.ticket.number)
+                continue
+            slots -= 1
+        admitted.append(item)
+    return admitted, deferred
+
+
+def selector_pull_request_capacity_available(
+    active: Sequence[TicketValidation], *, open_pull_requests: int, maximum: int
+) -> bool:
+    return (
+        open_pull_requests + sum(creates_new_pull_request(item) for item in active)
+        < maximum
+    )
+
+
 def build_selector_prompt(
     workflow: Workflow,
     policy: AutopilotPolicy,
@@ -2986,6 +3260,7 @@ def build_selector_prompt(
         f"Current origin/main revision: {revision or origin_main_revision(workflow)}\n"
         f"Autopilot policy: {policy.policy_name}\n"
         f"Allowed work classes: {', '.join(policy.allowed_work_classes)}\n\n"
+        f"Open pull-request limit: {workflow.max_open_pull_requests}\n\n"
         "# Live open issue summary\n\n"
         f"```json\n{json.dumps(issue_snapshot, indent=2, sort_keys=True)}\n```\n\n"
         "# Live open pull-request summary\n\n"
@@ -3184,6 +3459,136 @@ def claim_for_dispatch(workflow: Workflow, item: TicketValidation) -> TicketVali
     )
 
 
+def worker_evidence_requires_rework(result: dict[str, Any]) -> bool:
+    """Whether a worker handoff contains known-incomplete acceptance evidence."""
+    records = [
+        record for record in result.get("verification", []) if isinstance(record, dict)
+    ]
+    incomplete = any(
+        record.get("status") == "failed"
+        or (
+            record.get("status") == "pending"
+            and not _controller_owned_ci_observation(record)
+        )
+        for record in records
+    )
+    unavailable = any(record.get("status") == "unavailable" for record in records)
+    return incomplete or bool(result.get("blockers") and unavailable)
+
+
+def _controller_owned_ci_observation(record: dict[str, Any]) -> bool:
+    """Identify a pending PR/CI snapshot that the controller must reconcile."""
+    text = " ".join(
+        str(record.get(field, "")) for field in ("command_or_observation", "artifact")
+    ).casefold()
+    return bool(
+        record.get("level") == "automated"
+        and (
+            re.search(
+                r"\b(?:ci|github actions|github checks?|pull[- ]request checks?|pr checks?)\b",
+                text,
+            )
+            or "/checks" in text
+        )
+    )
+
+
+def _repository_policy_record(record: Any) -> bool:
+    return (
+        isinstance(record, dict)
+        and "pre-commit" in str(record.get("command_or_observation", "")).casefold()
+    )
+
+
+def _repository_policy_blocker(blocker: Any) -> bool:
+    text = str(blocker).casefold()
+    return "pre-commit" in text or (".codex" in text and "read-only" in text)
+
+
+def verify_repository_policy(
+    workspace: Path,
+    result: dict[str, Any],
+    *,
+    timeout_seconds: int,
+) -> None:
+    """Run policy hooks on the exact worker head outside the Codex sandbox."""
+    if not (workspace / ".pre-commit-config.yaml").is_file():
+        return
+    commit = str(result.get("commit", ""))
+    head = _git("rev-parse", "HEAD", cwd=workspace)
+    if head.returncode != 0 or head.stdout.strip() != commit:
+        raise ControlError(
+            "controller policy check workspace does not match worker head"
+        )
+    try:
+        checked = subprocess.run(
+            ["pre-commit", "run", "--all-files"],
+            cwd=workspace,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        checked = None
+        detail = str(error)
+    else:
+        detail = "\n".join(
+            line
+            for line in (checked.stdout + "\n" + checked.stderr).splitlines()[-20:]
+            if line.strip()
+        )
+    dirty = _git("status", "--porcelain", "--untracked-files=no", cwd=workspace)
+    passed = (
+        checked is not None
+        and checked.returncode == 0
+        and dirty.returncode == 0
+        and not dirty.stdout.strip()
+    )
+    verification = result.setdefault("verification", [])
+    if not isinstance(verification, list):
+        raise ControlError("worker verification must be a list")
+    if passed:
+        # The sandbox cannot open protected .codex files in rb+ mode. Supersede
+        # only that policy-check limitation after the trusted controller proves
+        # the exact pushed tree; every other worker failure remains intact.
+        result["verification"] = [
+            record
+            for record in verification
+            if not (
+                _repository_policy_record(record)
+                and isinstance(record, dict)
+                and record.get("status") in {"failed", "pending", "unavailable"}
+            )
+        ]
+        blockers = result.get("blockers", [])
+        if isinstance(blockers, list):
+            result["blockers"] = [
+                blocker
+                for blocker in blockers
+                if not _repository_policy_blocker(blocker)
+            ]
+        result["verification"].append(
+            {
+                "level": "automated",
+                "command_or_observation": (
+                    "Controller exact-head pre-commit run --all-files"
+                ),
+                "status": "passed",
+                "artifact": f"commit {commit}",
+            }
+        )
+        return
+    verification.append(
+        {
+            "level": "automated",
+            "command_or_observation": "Controller exact-head pre-commit run --all-files",
+            "status": "failed",
+            "artifact": detail or dirty.stderr.strip() or "policy hooks modified files",
+        }
+    )
+
+
 def result_state(
     role: str,
     result: dict[str, Any],
@@ -3202,6 +3607,21 @@ def result_state(
         )
     ):
         return "agent:blocked"
+    if (
+        role == "worker"
+        and result.get("pull_request") is not None
+        and worker_evidence_requires_rework(result)
+    ):
+        # An existing PR does not make failed, pending, or blocker-bound
+        # unavailable evidence reviewable. Keep it in the worker loop instead
+        # of spending a judge cycle on a known-incomplete artifact.
+        return "agent:rework"
+    if (
+        role == "worker"
+        and not result["blockers"]
+        and worker_evidence_requires_rework(result)
+    ):
+        return "agent:rework"
     if role == "planner" and result["blockers"]:
         return "agent:blocked"
     if role in NEXT_STATE:
@@ -3213,12 +3633,7 @@ def result_state(
             and ticket_sections is not None
             and automated_delivery(ticket_sections)
         ):
-            approved_state = (
-                "agent:ci-pending"
-                if not requires_registered_hardware(ticket_sections)
-                or hardware_attested
-                else "agent:verification"
-            )
+            approved_state = "agent:ci-pending"
         return {
             "approve": approved_state,
             "reject": "agent:rework",
@@ -3293,6 +3708,16 @@ def validate_result_semantics(
                 + ", ".join(sorted(duplicate_hardware_operations))
             )
         task_dependencies = {task["key"]: tuple(task["dependencies"]) for task in tasks}
+        invalid_dependency_bases = sorted(
+            task["key"]
+            for task in tasks
+            if task["base_strategy"] == "dependency" and len(task["dependencies"]) != 1
+        )
+        if invalid_dependency_bases:
+            raise ControlError(
+                "dependency base strategy requires exactly one direct task dependency: "
+                + ", ".join(invalid_dependency_bases)
+            )
         unknown = sorted(
             {
                 dependency
@@ -3408,6 +3833,7 @@ def normalized_plan(result: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "key": task["key"],
                 "mode": task["mode"],
+                "base_strategy": task["base_strategy"],
                 "goal": task["goal"].strip(),
                 "non_goals": sorted(value.strip() for value in task["non_goals"]),
                 "required_behavior": task["required_behavior"].strip(),
@@ -3592,6 +4018,9 @@ def materialize_plan(
         (label for label in parent.ticket.labels if label.startswith("priority:p")),
         "priority:p2",
     )
+    inherited_dependencies = tuple(
+        dict.fromkeys((parent.ticket.number, *parent.dependencies))
+    )
     for task in topological_tasks(result["tasks"]):
         uid = task_uid(parent, plan_hash, task)
         marker = (
@@ -3619,11 +4048,12 @@ def materialize_plan(
                 required_behavior=task["required_behavior"],
                 acceptance_checks=task["acceptance_checks"],
                 allowed_surface_values=task["allowed_surfaces"],
-                dependencies=(parent.ticket.number,),
+                dependencies=inherited_dependencies,
                 required_proof=task["required_proof"],
                 work_package=parent.sections.get("Work package", task["key"]),
                 work_class=parent.sections.get("Work class", "software"),
                 selected_policy=task["autonomy_policy"],
+                base_strategy=task["base_strategy"],
                 hardware_operations=task.get("hardware_operations", ()),
                 hardware_boards=(
                     hardware_boards(parent.sections)
@@ -3648,7 +4078,7 @@ def materialize_plan(
 
     for task in topological_tasks(result["tasks"]):
         child = created_by_key[task["key"]]
-        dependencies = [parent.ticket.number]
+        dependencies = list(inherited_dependencies)
         dependencies.extend(task_numbers[key] for key in task["dependencies"])
         contract = render_ticket_contract(
             spec_revision=result["spec_revision"],
@@ -3666,6 +4096,7 @@ def materialize_plan(
             work_package=parent.sections.get("Work package", task["key"]),
             work_class=parent.sections.get("Work class", "software"),
             selected_policy=task["autonomy_policy"],
+            base_strategy=task["base_strategy"],
             hardware_operations=task.get("hardware_operations", ()),
             hardware_boards=(
                 hardware_boards(parent.sections)
@@ -3858,7 +4289,7 @@ def attest_hardware_manifest(
                 f"issue #{item.ticket.number}: hardware manifest artifact binding is invalid"
             )
         if (
-            operation not in {"artifact-hash", "invalid"}
+            operation not in {"artifact-hash", "espnow-regression", "invalid"}
             and event.get("board") not in allowed_boards
         ):
             raise ControlError(
@@ -3974,6 +4405,7 @@ def attest_hardware_manifest(
                 {
                     ("0x0", "bootloader/bootloader.bin"),
                     ("0x8000", "partition_table/partition-table.bin"),
+                    ("0xf000", "ota_data_initial.bin"),
                     ("0x20000", "domes.bin"),
                 }
                 if operation in {"flash", "flash-trace-acceptance"}
@@ -4113,8 +4545,13 @@ def attest_hardware_manifest(
                 or candidate_cli.get("cc_sha256") != trusted_tools["cc"]["sha256"]
                 or candidate_cli.get("rustc_sha256") != trusted_tools["rustc"]["sha256"]
                 or not isinstance(normalization, dict)
-                or normalization.get("kind") != "controller-bwrap-trace-normalizer-v1"
+                or normalization.get("kind")
+                not in {
+                    "controller-bwrap-trace-normalizer-v1",
+                    "controller-bwrap-runtime-trace-normalizer-v1",
+                }
                 or normalization.get("source_head") != artifact_head
+                or normalization.get("build_profile") != active["build_profile"]
                 or normalization.get("raw_sha256") != trace_hashes["raw_sha256"]
                 or normalization.get("session_sha256") != trace_hashes["session_sha256"]
                 or any(
@@ -4140,6 +4577,19 @@ def attest_hardware_manifest(
                 or trace_hashes["raw_sha256"] not in private_trace_hashes
                 or trace_hashes["session_sha256"] not in private_trace_hashes
                 or not isinstance(normalization.get("summary"), dict)
+                or (
+                    active["build_profile"] == "default"
+                    and (
+                        normalization["kind"]
+                        != "controller-bwrap-runtime-trace-normalizer-v1"
+                        or normalization["summary"].get("tx_complete_count", 0) < 1
+                        or normalization["summary"].get("rx_complete_count", 0) < 1
+                    )
+                )
+                or (
+                    active["build_profile"] == "trace-acceptance"
+                    and normalization["kind"] != "controller-bwrap-trace-normalizer-v1"
+                )
                 or not isinstance(trace_identity, dict)
                 or trace_identity.get("registered_device_match") is not True
                 or trace_identity.get("candidate_file_sha256")
@@ -4175,6 +4625,52 @@ def attest_hardware_manifest(
                 "replay_sha256": normalization["replay_sha256"],
                 "semantic_sha256": normalization["semantic_sha256"],
             }
+        elif operation == "espnow-regression":
+            regression = event.get("espnow_regression")
+            selected = (
+                {
+                    str(board): {
+                        "artifact_head": active_board_images[board]["artifact_head"],
+                        "build_profile": active_board_images[board]["build_profile"],
+                        "domes_bin_sha256": active_board_images[board][
+                            "domes_bin_sha256"
+                        ],
+                    }
+                    for board in (0, 1)
+                }
+                if set(active_board_images) >= {0, 1}
+                else None
+            )
+            valid = (
+                isinstance(regression, dict)
+                and regression.get("kind")
+                == "controller-two-board-espnow-regression-v1"
+                and regression.get("artifact_head") == artifact_head
+                and regression.get("boards") == [0, 1]
+                and regression.get("selected_flashes") == selected
+                and regression.get("benchmark_sessions") == 3
+                and regression.get("benchmarks") == 6
+                and regression.get("rounds_per_benchmark") == 100
+                and regression.get("benchmark_failures") == 0
+                and regression.get("discovery_cancellation") == "passed"
+                and regression.get("drill") == "passed"
+                and regression.get("final_states") == ["disabled", "disabled"]
+                and regression.get("final_peer_counts") == [1, 1]
+                and regression.get("final_tx_failures") == [0, 0]
+                and re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(regression.get("transcript_sha256", "")),
+                )
+                is not None
+                and event.get("artifact_sha256") == regression.get("transcript_sha256")
+                and event.get("artifact_id")
+                == f"espnow-regression-{str(regression.get('transcript_sha256'))[:16]}"
+            )
+            if not valid:
+                raise ControlError(
+                    f"issue #{item.ticket.number}: ESP-NOW regression artifact binding is invalid"
+                )
+            event_summary["espnow_regression"] = regression
         previous = str(event_digest)
     unrestored = sorted(
         board
@@ -4216,11 +4712,50 @@ def controller_authored_comment(workflow: Workflow, comment: Any) -> bool:
     )
 
 
+def load_controller_interventions(
+    workflow: Workflow, ticket: Ticket
+) -> tuple[str, ...]:
+    """Load bounded durable rework evidence from the pinned tracker principal."""
+    expected_url_prefix = f"https://github.com/{workflow.repository}/issues/"
+    if not ticket.url.startswith(expected_url_prefix):
+        return ()
+    document = _run_json(
+        [
+            "gh",
+            "issue",
+            "view",
+            str(ticket.number),
+            "--repo",
+            workflow.repository,
+            "--json",
+            "comments",
+        ]
+    )
+    selected: list[str] = []
+    total_bytes = 0
+    for comment in reversed(document.get("comments", [])):
+        if not controller_authored_comment(workflow, comment):
+            continue
+        body = str(comment.get("body", "")).strip()
+        if not body.startswith("Agent control-plane intervention"):
+            continue
+        encoded_size = len(body.encode("utf-8"))
+        if encoded_size > 8_000 or total_bytes + encoded_size > 16_000:
+            continue
+        selected.append(body)
+        total_bytes += encoded_size
+        if len(selected) == 3:
+            break
+    return tuple(reversed(selected))
+
+
 def load_exact_role_handoff(
     workflow: Workflow,
     ticket: Ticket,
     role: str,
     run_root: Path | None = None,
+    *,
+    allow_deferred_hardware: bool = False,
 ) -> dict[str, Any]:
     if run_root is None:
         state_root = Path(
@@ -4269,7 +4804,9 @@ def load_exact_role_handoff(
     sections = parse_sections(ticket.body)
     if result.get("spec_revision") != sections.get("Specification revision"):
         raise ControlError(f"issue #{ticket.number}: {role} handoff spec mismatch")
-    validate_result_semantics(role, result)
+    validate_result_semantics(
+        role, result, allow_deferred_hardware=allow_deferred_hardware
+    )
     return result
 
 
@@ -4330,6 +4867,36 @@ def count_role_comments(workflow: Workflow, ticket: Ticket, role: str) -> int:
         and marker in str(comment.get("body", ""))
         for comment in document.get("comments", [])
     )
+
+
+def count_current_ci_repair_dispatches(workflow: Workflow, ticket: Ticket) -> int:
+    """Count only CI-failure repairs since the latest implementation artifact."""
+    document = _run_json(
+        [
+            "gh",
+            "issue",
+            "view",
+            str(ticket.number),
+            "--repo",
+            workflow.repository,
+            "--json",
+            "comments",
+        ]
+    )
+    attempts = 0
+    for comment in reversed(document.get("comments", [])):
+        if not controller_authored_comment(workflow, comment):
+            continue
+        body = str(comment.get("body", ""))
+        if "Agent control-plane transition (worker)" in body:
+            break
+        if (
+            "Agent control-plane transition (ci)" in body
+            and "Required checks failed; dispatching bounded verification repair."
+            in body
+        ):
+            attempts += 1
+    return attempts
 
 
 def load_latest_artifact_handoff(workflow: Workflow, ticket: Ticket) -> dict[str, Any]:
@@ -4573,7 +5140,16 @@ def _execute_one(
     role = role_for(item.ticket)
     hardware_required = requires_registered_hardware(item.sections)
     hardware_worker = role == "verification-worker"
-    hardware_access = hardware_required and hardware_worker
+    if hardware_required and hardware_worker and hardware_capability is None:
+        raise ControlError(
+            f"issue #{item.ticket.number}: registered hardware requires "
+            "--allow-registered-hardware preflight"
+        )
+    hardware_access = (
+        hardware_required
+        and hardware_worker
+        and exact_head_ci_passed(workflow, item.sections)
+    )
     stack = (
         stack_context(workflow, item, load_live_tickets(workflow))
         if role in {"worker", "verification-worker", "judge"}
@@ -4594,10 +5170,6 @@ def _execute_one(
         if pins_implementation_base
         else None
     )
-    if hardware_access and hardware_capability is None:
-        raise ControlError(
-            f"issue #{item.ticket.number}: registered hardware requires --allow-registered-hardware preflight"
-        )
     state_root = Path(
         os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")
     )
@@ -4612,6 +5184,20 @@ def _execute_one(
         run_root,
         role,
         item.source_state or item.ticket.agent_state,
+    )
+    tracker_context = (
+        build_planner_tracker_context(
+            workflow,
+            load_live_tickets(workflow),
+            load_open_pull_request_snapshot(workflow),
+        )
+        if role == "planner"
+        else None
+    )
+    controller_interventions = (
+        load_controller_interventions(workflow, item.ticket)
+        if role in {"worker", "verification-worker", "judge"}
+        else ()
     )
     if (
         prior_handoff is not None
@@ -4853,6 +5439,8 @@ def _execute_one(
                 controller_evidence,
                 required_base_head,
                 required_base_ref,
+                tracker_context,
+                controller_interventions,
             ),
             event_path,
             stderr_path,
@@ -4935,6 +5523,11 @@ def _execute_one(
             result,
             required_base_head=required_base_head,
             stack=stack,
+        )
+        verify_repository_policy(
+            workspace,
+            result,
+            timeout_seconds=workflow.stall_timeout_seconds,
         )
         if role == "worker" and not existing_pull_request(item.sections):
             bind_ticket_pull_request(workflow, item, int(result["pull_request"]))
@@ -5339,17 +5932,38 @@ def verify_worker_artifact(
         raise ControlError(
             f"issue #{item.ticket.number}: worker changed the existing pull request"
         )
-    pull_request = load_pull_request(workflow, pull_request_number)
     expected_base = stack.base_ref if stack is not None else workflow.base_branch
-    if (
-        pull_request.state != "OPEN"
-        or pull_request.is_draft
-        or pull_request.base_ref != expected_base
-        or pull_request.head_oid != commit
-    ):
+    pull_request: PullRequest | None = None
+    observed: list[str] = []
+    for attempt in range(3):
+        try:
+            candidate = load_pull_request(workflow, pull_request_number)
+        except TrackerError as error:
+            observed.append(str(error))
+        else:
+            pull_request = candidate
+            if (
+                candidate.state == "OPEN"
+                and not candidate.is_draft
+                and candidate.base_ref == expected_base
+                and candidate.head_oid == commit
+            ):
+                break
+            observed.append(
+                "state="
+                f"{candidate.state}, draft={candidate.is_draft}, "
+                f"base={candidate.base_ref}, head={candidate.head_oid}"
+            )
+        if attempt < 2:
+            time.sleep(min(2**attempt, workflow.max_retry_backoff_seconds))
+    else:
+        detail = observed[-1] if observed else "no tracker response"
         raise ControlError(
-            f"issue #{item.ticket.number}: pull request does not match worker artifact"
+            f"issue #{item.ticket.number}: pull request does not match worker "
+            f"artifact after bounded tracker reconciliation ({detail})"
         )
+    assert pull_request is not None
+    validate_pull_request_presentation(pull_request)
     pr_violations = paths_outside_surfaces(pull_request.files, surfaces)
     if pr_violations:
         raise ControlError(
@@ -5385,6 +5999,84 @@ def verify_worker_artifact(
         raise ControlError(
             ancestry.stderr.strip()
             or f"issue #{item.ticket.number}: cannot verify PR base ancestry"
+        )
+
+
+def _visible_markdown(value: str) -> str:
+    without_comments = re.sub(r"<!--.*?-->", " ", value, flags=re.DOTALL)
+    without_tags = re.sub(r"</?(?:details|summary)>", " ", without_comments)
+    return re.sub(r"\s+", " ", without_tags).strip()
+
+
+def validate_pull_request_presentation(pull_request: PullRequest) -> None:
+    """Reject cryptic or template-incomplete autonomous PR descriptions."""
+    errors: list[str] = []
+    title = pull_request.title.strip()
+    body = pull_request.body.strip()
+    if not title:
+        errors.append("title is empty")
+    if PR_FORBIDDEN_TERM.search(title) or PR_FORBIDDEN_TERM.search(body):
+        errors.append("replace `gate` with the concrete prerequisite or decision")
+    if PR_INTERNAL_CODE.search(title):
+        errors.append("remove the internal work-package code from the title")
+    if "<!--" in body or re.search(r"\b(?:TODO|TBD)\b", body, re.IGNORECASE):
+        errors.append("replace every template placeholder")
+    sections = parse_sections(body)
+    for name in PR_REQUIRED_SECTIONS:
+        if not _visible_markdown(sections.get(name, "")):
+            errors.append(f"missing or empty `{name}` section")
+
+    summary = _visible_markdown(sections.get("Executive summary", ""))
+    if len(summary.split()) < 45 or len(re.findall(r"[.!?](?:\s|$)", summary)) < 3:
+        errors.append(
+            "executive summary must provide at least three contextual sentences and 45 words"
+        )
+    why = _visible_markdown(sections.get("Why this matters", ""))
+    if len(why.split()) < 30:
+        errors.append("`Why this matters` must provide at least 30 words of context")
+
+    status = sections.get("Status at a glance", "")
+    for row in (
+        "Product or user behavior",
+        "Automated software checks",
+        "Physical-device evidence",
+        "Program or release status",
+    ):
+        if row not in status:
+            errors.append(f"status table is missing `{row}`")
+
+    changes = sections.get("What this PR changes", "")
+    if not any(
+        len(line.split()) >= 6
+        for line in changes.splitlines()
+        if re.match(r"^\s*[-*+]\s+\S", line)
+    ):
+        errors.append("`What this PR changes` needs at least one concrete bullet")
+
+    approval = _visible_markdown(sections.get("What approval means", ""))
+    if (
+        "Approving this PR means:" not in approval
+        or "It does not mean:" not in approval
+        or len(approval.split()) < 25
+    ):
+        errors.append("approval section must state both authorization and exclusions")
+
+    if len(_visible_markdown(sections.get("What happens next", "")).split()) < 8:
+        errors.append("`What happens next` must name a concrete follow-up or endpoint")
+
+    verification = sections.get("Verification summary", "")
+    for label in (
+        "Automated software checks:",
+        "Physical-device checks:",
+        "Not tested or intentionally excluded:",
+        "Independent review:",
+    ):
+        if label not in verification:
+            errors.append(f"verification summary is missing `{label}`")
+    if errors:
+        raise ControlError(
+            f"PR #{pull_request.number}: human-facing description is invalid: "
+            + "; ".join(dict.fromkeys(errors))
         )
 
 
@@ -5465,7 +6157,7 @@ def reconcile_stacked_human_merge(
     pull_request: PullRequest,
     binding: StackContext,
 ) -> dict[str, Any]:
-    """Keep a child nonterminal until its human-merged stack commit reaches main."""
+    """Keep a child nonterminal until its merged stack commit reaches main."""
     if (
         pull_request.state != "MERGED"
         or pull_request.base_ref != binding.base_ref
@@ -5475,13 +6167,6 @@ def reconcile_stacked_human_merge(
             f"issue #{ticket.number}: stacked merge artifact is malformed"
         )
     parent = load_pull_request(workflow, binding.parent_pr)
-    if parent.base_ref != workflow.base_branch:
-        return block_invalid_human_merged_stack(
-            workflow,
-            ticket,
-            "The stack parent no longer targets the main branch; the merged child "
-            "has no accepted path to main and requires a new steward-approved delivery.",
-        )
     if parent.state == "OPEN":
         if _remote_commit_is_ancestor(
             workflow, pull_request.merge_commit, parent.head_oid
@@ -5507,14 +6192,44 @@ def reconcile_stacked_human_merge(
         )
     refresh_base_branch(workflow)
     main_head = origin_main_revision(workflow)
-    if not _remote_commit_is_ancestor(workflow, pull_request.merge_commit, main_head):
-        return block_invalid_human_merged_stack(
-            workflow,
-            ticket,
-            "The parent merged, but the child's integration commit is not present on "
-            "main; a new steward-approved delivery is required.",
-        )
-    return finalize_human_merged_ticket(workflow, ticket, pull_request)
+    if _remote_commit_is_ancestor(workflow, pull_request.merge_commit, main_head):
+        return finalize_human_merged_ticket(workflow, ticket, pull_request)
+
+    # A nested parent may have merged into the next review branch without yet
+    # reaching main. Follow its controller-validated dependency chain and keep
+    # the child pending only while that exact integration remains in the live
+    # ancestor. Dropped integrations still fail closed.
+    tickets = load_live_tickets(workflow)
+    parent_ticket = next(
+        (
+            candidate
+            for candidate in tickets
+            if candidate.number == binding.parent_issue
+        ),
+        None,
+    )
+    if parent_ticket is not None:
+        parent_item = validate_ticket(parent_ticket, check_revision=False)
+        if parent_item.valid:
+            try:
+                live_parent = stack_context(workflow, parent_item, tickets)
+            except ControlError:
+                live_parent = None
+            if live_parent is not None and _remote_commit_is_ancestor(
+                workflow, pull_request.merge_commit, live_parent.base_head
+            ):
+                return {
+                    "issue": ticket.number,
+                    "state": "agent:human-review",
+                    "stack_merge": "waiting_for_parent_main",
+                    "parent_pull_request": live_parent.parent_pr,
+                }
+    return block_invalid_human_merged_stack(
+        workflow,
+        ticket,
+        "The parent review chain no longer contains the child's integration commit; "
+        "a new steward-approved delivery is required.",
+    )
 
 
 def reconcile_stacked_children(
@@ -5591,9 +6306,9 @@ def reconcile_stacked_children(
 def required_check_summary(
     pull_request: PullRequest, policy: AutopilotPolicy
 ) -> tuple[str, list[dict[str, str]]]:
-    by_name: dict[str, list[dict[str, str]]] = {}
-    for check in pull_request.checks:
-        by_name.setdefault(check["name"], []).append(check)
+    by_name: dict[str, list[tuple[int, dict[str, str]]]] = {}
+    for index, check in enumerate(pull_request.checks):
+        by_name.setdefault(check["name"], []).append((index, check))
     records: list[dict[str, str]] = []
     overall = "passed"
     failure_states = {
@@ -5607,11 +6322,23 @@ def required_check_summary(
     }
     for name in policy.required_ci_checks:
         matches = by_name.get(name, [])
-        states = {item["state"] for item in matches}
-        if states & failure_states:
+        latest = (
+            max(
+                matches,
+                key=lambda item: (
+                    item[1].get("started_at", ""),
+                    item[1].get("completed_at", ""),
+                    item[0],
+                ),
+            )[1]
+            if matches
+            else None
+        )
+        state_value = latest["state"] if latest is not None else ""
+        if state_value in failure_states:
             state = "failed"
             overall = "failed"
-        elif matches and states == {"SUCCESS"}:
+        elif state_value == "SUCCESS":
             state = "passed"
         else:
             state = "pending"
@@ -5621,10 +6348,21 @@ def required_check_summary(
             {
                 "name": name,
                 "state": state,
-                "url": next((item["url"] for item in matches if item["url"]), ""),
+                "url": latest["url"] if latest is not None else "",
             }
         )
     return overall, records
+
+
+def exact_head_ci_passed(workflow: Workflow, sections: dict[str, str]) -> bool:
+    """Fail closed before provisioning hardware for a verification worker."""
+    pull_request_number = existing_pull_request(sections)
+    if pull_request_number < 1:
+        return False
+    pull_request = load_pull_request(workflow, pull_request_number)
+    policy = load_autopilot_policy()
+    state, _ = required_check_summary(pull_request, policy)
+    return state == "passed"
 
 
 def requires_physical_proof(sections: dict[str, str]) -> bool:
@@ -5740,6 +6478,37 @@ def mark_review_ready(
     }
 
 
+def hardware_attestation_matches_artifact(issue: int, artifact_head: str) -> bool:
+    """Return whether complete private hardware evidence matches this artifact."""
+    state_root = Path(
+        os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")
+    )
+    run_root = state_root / "domes-agent-control" / f"issue-{issue}"
+    try:
+        attestation = json.loads(
+            (run_root / "hardware-attestation.json").read_text(encoding="utf-8")
+        )
+        verification = json.loads(
+            (run_root / "handoff-verification-worker.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return False
+    checks = verification.get("checks")
+    return bool(
+        attestation.get("artifact_head") == artifact_head
+        and attestation.get("failed_event_count") == 0
+        and verification.get("commit") == artifact_head
+        and verification.get("state") == "agent_review"
+        and verification.get("blockers") == []
+        and isinstance(checks, list)
+        and checks
+        and all(
+            isinstance(check, dict) and check.get("status") in {"passed", "skipped"}
+            for check in checks
+        )
+    )
+
+
 def reconcile_ci_ticket(
     workflow: Workflow,
     policy: AutopilotPolicy,
@@ -5752,7 +6521,26 @@ def reconcile_ci_ticket(
             + "; ".join(validation.errors)
         )
     artifact = load_latest_artifact_handoff(workflow, ticket)
-    judge = load_exact_role_handoff(workflow, ticket, "judge")
+    if worker_evidence_requires_rework(artifact):
+        transition(workflow, ticket, "agent:rework")
+        post_controller_comment(
+            workflow,
+            ticket,
+            "Agent control-plane transition (evidence integrity)",
+            "The implementation handoff contains failed, pending, or blocker-bound "
+            "unavailable verification; returning it to rework before CI.",
+        )
+        return {"issue": ticket.number, "state": "agent:rework"}
+    artifact_head = str(artifact.get("commit", ""))
+    judge = load_exact_role_handoff(
+        workflow,
+        ticket,
+        "judge",
+        allow_deferred_hardware=(
+            requires_registered_hardware(validation.sections)
+            and not hardware_attestation_matches_artifact(ticket.number, artifact_head)
+        ),
+    )
     if judge["verdict"] != "approve":
         raise ControlError(f"issue #{ticket.number}: CI state lacks judge approval")
     pull_request_number = artifact.get("pull_request")
@@ -5800,7 +6588,7 @@ def reconcile_ci_ticket(
             "checks": records,
         }
     if ci_state == "failed":
-        attempts = count_role_comments(workflow, ticket, "verification-worker")
+        attempts = count_current_ci_repair_dispatches(workflow, ticket)
         if attempts >= policy.max_ci_repair_cycles:
             transition(workflow, ticket, "agent:blocked")
             post_controller_comment(
@@ -5843,7 +6631,7 @@ def reconcile_ci_ticket(
             f"issue #{ticket.number}: autonomous PR path policy rejected: "
             + ", ".join(outside or protected)
         )
-    if pull_request.merge_state in {"BEHIND", "DIRTY"} or pull_request.mergeable in {
+    if pull_request.merge_state == "DIRTY" or pull_request.mergeable in {
         "CONFLICTING",
         "UNMERGEABLE",
     }:
@@ -5852,10 +6640,32 @@ def reconcile_ci_ticket(
             workflow,
             ticket,
             "Agent control-plane transition (review readiness)",
-            "The pull request is behind or conflicting; returning it to the "
+            "The pull request is conflicting; returning it to the "
             "worker before human review.",
         )
         return {"issue": ticket.number, "state": "agent:rework"}
+    if requires_registered_hardware(validation.sections) and not (
+        hardware_attestation_matches_artifact(ticket.number, pull_request.head_oid)
+    ):
+        post_controller_comment(
+            workflow,
+            ticket,
+            "Agent control-plane transition (hardware verification)",
+            (
+                f"PR #{pull_request.number} at exact head `{pull_request.head_oid}` "
+                f"passed {len(policy.required_ci_checks)} required checks and the "
+                "first-pass safety judge. Dispatching the separately authorized "
+                "registered-hardware verification worker."
+            ),
+        )
+        transition(workflow, ticket, "agent:verification")
+        return {
+            "issue": ticket.number,
+            "state": "agent:verification",
+            "pull_request": pull_request.number,
+            "head": pull_request.head_oid,
+            "checks": list(records),
+        }
     return mark_review_ready(workflow, policy, ticket, pull_request, records)
 
 
@@ -5911,6 +6721,11 @@ def reconcile_human_reviews(
                     + "; ".join(validation.errors)
                 )
             artifact = load_latest_artifact_handoff(workflow, ticket)
+            # Human review is reached only after worker admission, independent
+            # judgment, and controller-owned exact-head CI. Do not retroactively
+            # reinterpret an older worker's local/pending observation here; live
+            # head, stack, mergeability, and review state are the authorities for
+            # this lifecycle phase.
             pull_request_number = artifact.get("pull_request")
             if not isinstance(pull_request_number, int) or pull_request_number < 1:
                 raise ControlError(
@@ -5968,7 +6783,7 @@ def reconcile_human_reviews(
                     )
                     results.append({"issue": ticket.number, "state": "agent:rework"})
                     continue
-            if pull_request.merge_state in {"BEHIND", "DIRTY"} or (
+            if pull_request.merge_state == "DIRTY" or (
                 pull_request.mergeable in {"CONFLICTING", "UNMERGEABLE"}
             ):
                 transition(workflow, ticket, "agent:rework")
@@ -5976,7 +6791,7 @@ def reconcile_human_reviews(
                     workflow,
                     ticket,
                     "Agent control-plane transition (human review)",
-                    "The reviewed PR is now behind or conflicting with its base; "
+                    "The reviewed PR is now conflicting with its base; "
                     "returning it through worker and independent-judge validation.",
                 )
                 results.append({"issue": ticket.number, "state": "agent:rework"})
@@ -6175,6 +6990,11 @@ def render_dashboard(
             f"{workflow.max_concurrent_workers} | eligible {len(eligible)} | "
             f"blocked {len(blockers)}"
         ),
+        (
+            "Pull requests: "
+            f"{payload.get('open_pull_requests', '?')}/"
+            f"{payload.get('max_open_pull_requests', workflow.max_open_pull_requests)} open"
+        ),
         "",
         "ACTIVE AGENTS",
     ]
@@ -6218,9 +7038,38 @@ def render_dashboard(
 
     lines.extend(("", "QUEUE"))
     if eligible:
+        active_by_number = {item.ticket.number: item for item in active_items}
+        active_reservations = [
+            (
+                item.ticket.number,
+                allowed_surfaces(item.sections["Allowed architectural surfaces"]),
+            )
+            for item in active_items
+            if role_for(item.ticket) in SURFACE_RESERVING_ROLES
+        ]
         for item in eligible[:5]:
+            if item.ticket.number in active_by_number:
+                queue_state = "running"
+            else:
+                conflict = next(
+                    (
+                        issue
+                        for issue, surfaces in active_reservations
+                        if role_for(item.ticket) in SURFACE_RESERVING_ROLES
+                        and surfaces_overlap(
+                            allowed_surfaces(
+                                item.sections["Allowed architectural surfaces"]
+                            ),
+                            surfaces,
+                        )
+                    ),
+                    None,
+                )
+                queue_state = (
+                    f"surface-wait (active #{conflict})" if conflict else "ready"
+                )
             lines.append(
-                f"  ready #{item.ticket.number} {role_for(item.ticket)} | "
+                f"  {queue_state} #{item.ticket.number} {role_for(item.ticket)} | "
                 f"{_single_line(item.ticket.title)}"
             )
     else:
@@ -6429,7 +7278,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                             ) = load_selector_snapshot(workflow)
                         else:
                             tickets = load_live_tickets(workflow)
-                            pull_request_snapshot = []
+                            pull_request_snapshot = load_open_pull_request_snapshot(
+                                workflow
+                            )
                             current_selector_snapshot = ""
                     except (ControlError, OSError, json.JSONDecodeError) as error:
                         if not args.watch:
@@ -6534,6 +7385,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                             or hardware_capability is not None
                         )
                     ]
+                    candidates, pr_capacity_deferred = enforce_pull_request_capacity(
+                        candidates,
+                        tuple(active.values()),
+                        open_pull_requests=len(pull_request_snapshot),
+                        maximum=workflow.max_open_pull_requests,
+                    )
+                    for issue in pr_capacity_deferred:
+                        blockers.setdefault(issue, []).append(
+                            "open pull-request limit reached; existing PR work continues first"
+                        )
                     # One physical fleet, one exclusive broker lease: reserve at
                     # most one hardware worker before any GitHub claim.
                     if any(
@@ -6555,12 +7416,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 seen_hardware = True
                             filtered.append(item)
                         candidates = filtered
-                    reserved = [
-                        allowed_surfaces(
-                            item.sections["Allowed architectural surfaces"]
-                        )
-                        for item in active.values()
-                    ]
+                    reserved = reserved_mutation_surfaces(tuple(active.values()))
                     selected = select_non_overlapping(
                         candidates,
                         available_role_slots(
@@ -6609,6 +7465,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         and selector_capacity_available(
                             maximum, len(active), selector_future is not None
                         )
+                        and selector_pull_request_capacity_available(
+                            tuple(active.values()),
+                            open_pull_requests=len(pull_request_snapshot),
+                            maximum=workflow.max_open_pull_requests,
+                        )
                         and time.monotonic() >= next_selector_at
                     ):
                         selector_future = executor.submit(
@@ -6632,6 +7493,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "failures": dispatch_errors,
                         "ci": ci_results,
                         "selector": selector_payload,
+                        "open_pull_requests": len(pull_request_snapshot),
+                        "max_open_pull_requests": workflow.max_open_pull_requests,
                         "blocked": blockers,
                     }
                     phase = (
@@ -6679,6 +7542,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 "failures": dispatch_errors,
                                 "ci": ci_results,
                                 "selector": selector_payload,
+                                "open_pull_requests": len(pull_request_snapshot),
+                                "max_open_pull_requests": workflow.max_open_pull_requests,
                                 "blocked": blockers,
                             },
                             phase=phase,
@@ -6757,13 +7622,18 @@ def block_failed_run(
 ) -> None:
     role = role_for(item.ticket)
     if isinstance(error, StackInvalidated):
-        transition(workflow, item.ticket, "agent:rework")
+        resume_state = (
+            "agent:ready"
+            if role == "worker" and item.source_state == "agent:ready"
+            else "agent:rework"
+        )
+        transition(workflow, item.ticket, resume_state)
         post_controller_comment(
             workflow,
             item.ticket,
             "Agent control-plane transition (stacked pull request)",
             "The reviewed parent changed, conflicted, or merged; returning the child "
-            f"to rework: {error}",
+            f"to `{resume_state}` without inventing a missing handoff: {error}",
         )
         return
     resume_state = retry_state_for(item, role)

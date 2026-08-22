@@ -11,6 +11,7 @@ from unittest import mock
 
 import hardware_broker as broker
 import hardware_client
+import runtime_trace_normalizer as runtime_normalizer
 import serial_trace_proxy
 
 
@@ -72,6 +73,249 @@ class HardwareBrokerTest(unittest.TestCase):
                 ("info", None), broker.validate_request(cap, self.request(cap))
             )
 
+    def test_runtime_normalizer_requires_complete_espnow_tx_and_rx_chains(self):
+        root = Path(__file__).resolve().parents[2]
+        proto = root / "firmware/common/proto/trace.proto"
+        event_types = runtime_normalizer._enum(proto, "EventType")
+        object_kinds = runtime_normalizer._enum(proto, "ObjectKind")
+        queue_id, ready_id, callback_id, complete_id = (
+            runtime_normalizer.ESP_NOW_TRACE_NAMES
+        )
+
+        def event(timestamp, task, event_type, context, arg1, token):
+            return __import__("struct").pack(
+                "<IHBBII", timestamp, task, event_type, 1 | (context << 2), arg1, token
+            )
+
+        tx_token = 17
+        rx_token = 23
+        raw = b"".join(
+            (
+                event(
+                    1,
+                    8,
+                    event_types["EVENT_TYPE_SCHED_QUEUE_SEND"],
+                    0,
+                    queue_id,
+                    tx_token,
+                ),
+                event(
+                    2,
+                    0,
+                    event_types["EVENT_TYPE_CALLBACK_BEGIN"],
+                    2,
+                    callback_id,
+                    tx_token,
+                ),
+                event(
+                    3,
+                    0,
+                    event_types["EVENT_TYPE_SEM_GIVE"],
+                    2,
+                    ready_id,
+                    tx_token,
+                ),
+                event(
+                    4,
+                    0,
+                    event_types["EVENT_TYPE_CALLBACK_END"],
+                    2,
+                    callback_id,
+                    tx_token,
+                ),
+                event(
+                    5,
+                    8,
+                    event_types["EVENT_TYPE_SEM_TAKE"],
+                    0,
+                    ready_id,
+                    tx_token,
+                ),
+                event(
+                    6,
+                    8,
+                    event_types["EVENT_TYPE_CAUSAL_COMPLETE"],
+                    0,
+                    complete_id,
+                    tx_token,
+                ),
+                event(
+                    7,
+                    0,
+                    event_types["EVENT_TYPE_CALLBACK_BEGIN"],
+                    2,
+                    callback_id,
+                    rx_token,
+                ),
+                event(
+                    8,
+                    0,
+                    event_types["EVENT_TYPE_SCHED_QUEUE_SEND"],
+                    2,
+                    queue_id,
+                    rx_token,
+                ),
+                event(
+                    9,
+                    0,
+                    event_types["EVENT_TYPE_SEM_GIVE"],
+                    2,
+                    ready_id,
+                    rx_token,
+                ),
+                event(
+                    10,
+                    0,
+                    event_types["EVENT_TYPE_CALLBACK_END"],
+                    2,
+                    callback_id,
+                    rx_token,
+                ),
+                event(
+                    11,
+                    8,
+                    event_types["EVENT_TYPE_SEM_TAKE"],
+                    0,
+                    ready_id,
+                    rx_token,
+                ),
+                event(
+                    12,
+                    8,
+                    event_types["EVENT_TYPE_SCHED_QUEUE_RECEIVE"],
+                    0,
+                    queue_id,
+                    rx_token,
+                ),
+                event(
+                    13,
+                    8,
+                    event_types["EVENT_TYPE_CAUSAL_COMPLETE"],
+                    0,
+                    complete_id,
+                    rx_token,
+                ),
+            )
+        )
+        session = {
+            "format_version": 1,
+            "integrity_error": None,
+            "event_count": len(raw) // 16,
+            "received_raw_bytes": len(raw),
+            "dropped_count": 0,
+            "discontinuity_count": 0,
+            "raw_sha256": hashlib.sha256(raw).hexdigest(),
+            "start_timestamp_us": 1,
+            "end_timestamp_us": 13,
+            "tasks": [
+                {
+                    "task_id": 8,
+                    "name": "espnow_svc",
+                    "priority": 10,
+                    "core_affinity_mask": 1,
+                }
+            ],
+            "objects": [
+                {
+                    "object_id": queue_id,
+                    "kind": object_kinds["OBJECT_KIND_QUEUE"],
+                    "name": "espnow_queue",
+                },
+                {
+                    "object_id": ready_id,
+                    "kind": object_kinds["OBJECT_KIND_SEMAPHORE"],
+                    "name": "espnow_ready",
+                },
+                {
+                    "object_id": callback_id,
+                    "kind": object_kinds["OBJECT_KIND_CALLBACK"],
+                    "name": "espnow_cb",
+                },
+                {
+                    "object_id": complete_id,
+                    "kind": object_kinds["OBJECT_KIND_ACTION"],
+                    "name": "espnow_done",
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            names_path = Path(directory) / "trace_names.json"
+            names_path.write_text(
+                json.dumps(
+                    {
+                        str(identifier): name
+                        for identifier, name in runtime_normalizer.ESP_NOW_TRACE_NAMES.items()
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay, semantic = runtime_normalizer.normalize_runtime(
+                raw, session, proto, names_path
+            )
+            self.assertEqual(1, replay["correlation"]["tx_complete_count"])
+            self.assertEqual(1, replay["correlation"]["rx_complete_count"])
+            self.assertEqual(1, semantic["tx_complete_count"])
+            self.assertEqual(1, semantic["rx_complete_count"])
+            self.assertEqual(
+                [0, 1, 2, 3, 4, 5],
+                replay["correlation"]["tx_chains"][0]["positions"],
+            )
+            self.assertEqual(
+                [6, 7, 8, 9, 10, 11, 12],
+                replay["correlation"]["rx_chains"][0]["positions"],
+            )
+
+            truncated = raw[: 6 * 16]
+            rejected = {
+                **session,
+                "event_count": 6,
+                "received_raw_bytes": len(truncated),
+                "raw_sha256": hashlib.sha256(truncated).hexdigest(),
+                "end_timestamp_us": 6,
+            }
+            with self.assertRaisesRegex(
+                runtime_normalizer.RuntimeTraceError, "TX and RX"
+            ):
+                runtime_normalizer.normalize_runtime(
+                    truncated, rejected, proto, names_path
+                )
+
+            bad_objects = {
+                **session,
+                "objects": [
+                    *session["objects"][:-1],
+                    {**session["objects"][-1], "name": "wrong"},
+                ],
+            }
+            with self.assertRaisesRegex(
+                runtime_normalizer.RuntimeTraceError, "object catalog"
+            ):
+                runtime_normalizer.normalize_runtime(
+                    raw, bad_objects, proto, names_path
+                )
+
+            zero_token_raw = (
+                event(
+                    1,
+                    8,
+                    event_types["EVENT_TYPE_SCHED_QUEUE_SEND"],
+                    0,
+                    queue_id,
+                    0,
+                )
+                + raw[16:]
+            )
+            zero_token_session = {
+                **session,
+                "raw_sha256": hashlib.sha256(zero_token_raw).hexdigest(),
+            }
+            with self.assertRaisesRegex(
+                runtime_normalizer.RuntimeTraceError, "zero token"
+            ):
+                runtime_normalizer.normalize_runtime(
+                    zero_token_raw, zero_token_session, proto, names_path
+                )
+
     def test_board_alias_is_capability_bound(self):
         with tempfile.TemporaryDirectory() as directory:
             cap = self.capability(Path(directory))
@@ -120,6 +364,167 @@ class HardwareBrokerTest(unittest.TestCase):
                     ordinary,
                     self.request(ordinary, operation="flash-trace-acceptance", board=0),
                 )
+
+    def test_espnow_regression_is_explicit_and_status_parser_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cap = self.capability(Path(directory), ["espnow-regression"])
+            self.assertEqual(
+                ("espnow-regression", None),
+                broker.validate_request(
+                    cap,
+                    self.request(cap, operation="espnow-regression"),
+                ),
+            )
+        self.assertEqual(
+            ("master", 1, 0),
+            broker._espnow_status_fields("State: master\nPeers: 1\nTX fails: 0\n"),
+        )
+        self.assertEqual(
+            ("disabled", 0, 0),
+            broker._espnow_status_fields(
+                "ESP-NOW Status:\n  State:      disabled\n  Channel:    1\n"
+                "  Peers:      0\n  TX packets: 0\n  RX packets: 0\n"
+                "  TX fails:   0\n"
+            ),
+        )
+        with self.assertRaisesRegex(broker.BrokerError, "incomplete"):
+            broker._espnow_status_fields("State: master\nPeers: 1\n")
+
+    def test_espnow_regression_runs_fixed_two_board_lifecycle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            evidence = root / "evidence"
+            evidence.mkdir()
+            cap = broker.Capability(
+                101,
+                "a" * 40,
+                "b" * 40,
+                root,
+                evidence,
+                ("espnow-regression",),
+                (0, 1),
+                "token",
+            )
+            enabled = {0: False, 1: False}
+            drill = {"active": False}
+            commands = []
+            sleeps = []
+
+            def run(_cap, argv, _name, _timeout):
+                board = int(argv[argv.index("--port") + 1][-1])
+                command = argv[argv.index("--port") + 2 :]
+                commands.append((board, command))
+                if command[:2] == ["feature", "enable"]:
+                    enabled[board] = True
+                elif command[:2] == ["feature", "disable"]:
+                    enabled[board] = False
+                elif command[:3] == ["espnow", "sim-mode", "on"]:
+                    drill["active"] = True
+                if command == ["espnow", "status"]:
+                    if enabled[board]:
+                        state = "master" if board == 0 else "slave"
+                        peers = 1 if all(enabled.values()) else 0
+                    else:
+                        state = "disabled"
+                        peers = 1 if drill["active"] else 0
+                    return (
+                        0,
+                        f"State: {state}\nPeers: {peers}\n"
+                        "TX packets: 10\nRX packets: 10\nTX fails: 0\n",
+                        "",
+                    )
+                if command[:2] == ["espnow", "bench"]:
+                    rounds = command[command.index("--rounds") + 1]
+                    return (
+                        0,
+                        "ESP-NOW Benchmark Results:\n"
+                        f"  Rounds:     {rounds}/{rounds} completed (0 failed)\n"
+                        "  Mean RTT:   1000 us (1.00 ms)\n",
+                        "",
+                    )
+                return 0, "ok\n", ""
+
+            def sleep(seconds):
+                sleeps.append(seconds)
+                if seconds == 35:
+                    enabled[0] = False
+                    enabled[1] = False
+
+            selected = (
+                "b" * 40,
+                "default",
+                "c" * 64,
+                {"source_head": "b" * 40},
+            )
+            with (
+                mock.patch.object(broker, "_selected_flash", return_value=selected),
+                mock.patch.object(broker, "_cli_path", return_value="/trusted/cli"),
+                mock.patch.object(
+                    broker,
+                    "_verified_port",
+                    side_effect=lambda _cap, board: f"/dev/fake{board}",
+                ),
+                mock.patch.object(
+                    broker, "_resource_limited", side_effect=lambda _cap, argv: argv
+                ),
+                mock.patch.object(broker, "_run_with_bounded_logs", side_effect=run),
+                mock.patch.object(broker.time, "sleep", side_effect=sleep),
+            ):
+                result = broker._execute_espnow_regression(cap, "b" * 40)
+            summary = result["espnow_regression"]
+            self.assertEqual(6, summary["benchmarks"])
+            self.assertEqual("passed", summary["drill"])
+            self.assertEqual(["disabled", "disabled"], summary["final_states"])
+            self.assertEqual(
+                [(0, ["trace", "stop"]), (1, ["trace", "stop"])],
+                [command for command in commands if command[1] == ["trace", "stop"]][
+                    -2:
+                ],
+            )
+            first_trace_start = commands.index((0, ["trace", "start"]))
+            simulated_peer_status = max(
+                index
+                for index, command in enumerate(commands[:first_trace_start])
+                if command[1] == ["espnow", "status"]
+            )
+            self.assertLess(simulated_peer_status, first_trace_start)
+            trace_starts = [
+                command for command in commands if command[1] == ["trace", "start"]
+            ]
+            self.assertCountEqual(
+                [(0, ["trace", "start"]), (1, ["trace", "start"])], trace_starts
+            )
+            trace_probe = [
+                command
+                for command in commands
+                if command[1] == ["espnow", "bench", "--rounds", "1"]
+            ]
+            self.assertEqual(1, len(trace_probe))
+            first_trace_clear = next(
+                index
+                for index, command in enumerate(
+                    commands[first_trace_start + 1 :], first_trace_start + 1
+                )
+                if command[1] == ["trace", "clear"]
+            )
+            trace_probe_index = commands.index(trace_probe[0])
+            self.assertLess(first_trace_start, first_trace_clear)
+            self.assertLess(first_trace_clear, trace_probe_index)
+            self.assertEqual(1, summary["traced_probe_rounds"])
+            self.assertTrue(
+                (evidence / f"espnow-regression-{'b' * 16}.jsonl").is_file()
+            )
+
+    def test_failed_trace_dump_does_not_require_output_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            failed = subprocess.CompletedProcess(["domes-cli"], 1)
+            self.assertFalse(broker._trace_artifacts_ready(failed, output))
+            succeeded = subprocess.CompletedProcess(["domes-cli"], 0)
+            with self.assertRaisesRegex(broker.BrokerError, "no raw trace"):
+                broker._trace_artifacts_ready(succeeded, output)
+            (output / "trace.json.raw").write_bytes(b"trace")
+            self.assertTrue(broker._trace_artifacts_ready(succeeded, output))
 
     def test_path_escape_and_wrong_ticket_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -223,6 +628,39 @@ class HardwareBrokerTest(unittest.TestCase):
                     "fast-quota-overflow",
                     5,
                 )
+
+    def test_bounded_runner_ignores_unattributed_filesystem_churn(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cap = self.capability(Path(directory))
+            capacity_calls = 0
+
+            def filesystem_capacity(_path):
+                nonlocal capacity_calls
+                capacity_calls += 1
+                # Simulate another autonomous worker consuming host space while
+                # this bounded candidate is alive. Candidate attribution comes
+                # from its evidence tree and open descriptors, not this global
+                # filesystem delta.
+                consumed = 0 if capacity_calls == 1 else 65536
+                return 1024 * 1024 - consumed, 100000
+
+            with (
+                mock.patch.object(
+                    broker, "_filesystem_capacity", side_effect=filesystem_capacity
+                ),
+                mock.patch.object(broker, "MIN_HOST_FREE_BYTES", 0),
+                mock.patch.object(broker, "MIN_HOST_FREE_INODES", 0),
+                mock.patch.object(broker, "MAX_CANDIDATE_DISK_GROWTH_BYTES", 4096),
+            ):
+                returncode, stdout, stderr = broker._run_with_bounded_logs(
+                    cap,
+                    [sys.executable, "-c", "import time; time.sleep(0.15)"],
+                    "concurrent-host-churn",
+                    5,
+                )
+            self.assertEqual(0, returncode)
+            self.assertEqual("", stdout)
+            self.assertEqual("", stderr)
 
     def test_directory_scan_tolerates_compiler_temp_file_disappearance(self):
         class VanishingEntry:
@@ -588,8 +1026,9 @@ class HardwareBrokerTest(unittest.TestCase):
             ):
                 argv, inputs = broker._flash_argv(cap, project, build, "/dev/fake")
             self.assertIn("0x20000", argv)
-            self.assertNotIn("ota_data_initial.bin", argv)
-            self.assertEqual(3, len(inputs))
+            self.assertIn("0xf000", argv)
+            self.assertEqual(4, len(inputs))
+            self.assertIn("ota_data_initial.bin", {item["artifact"] for item in inputs})
             for offset, name in (("0x9000", "nvs.bin"), ("0x20000", "renamed.bin")):
                 rejected = dict(layout)
                 rejected[offset] = name if offset not in rejected else name

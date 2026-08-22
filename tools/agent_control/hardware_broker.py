@@ -9,6 +9,7 @@ and identity snapshots) stays with this host process.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import fcntl
 import fnmatch
 import hashlib
@@ -42,6 +43,7 @@ OPERATIONS = frozenset(
         "trace-clear",
         "trace-status",
         "trace-dump",
+        "espnow-regression",
         "flash",
         "flash-trace-acceptance",
         "ota",
@@ -898,12 +900,6 @@ def _run_with_bounded_logs(
     stdout_path = cap.evidence / f"{name}.stdout.log"
     stderr_path = cap.evidence / f"{name}.stderr.log"
     baseline = ensure_capability_evidence_budget(cap)
-    baseline_free_bytes, baseline_free_inodes = _filesystem_capacity(cap.evidence)
-    if (
-        baseline_free_bytes < MIN_HOST_FREE_BYTES
-        or baseline_free_inodes < MIN_HOST_FREE_INODES
-    ):
-        raise BrokerError("host filesystem reserve is insufficient for candidate work")
     exceeded = threading.Event()
     reader_errors: list[BaseException] = []
 
@@ -981,18 +977,24 @@ def _run_with_bounded_logs(
                     live_pids, MAX_CANDIDATE_DISK_GROWTH_BYTES
                 )
                 free_bytes, free_inodes = _filesystem_capacity(cap.evidence)
+                if current + unlinked > MAX_CAPABILITY_EVIDENCE_BYTES:
+                    failure = (
+                        "hardware capability exceeded its cumulative evidence quota"
+                    )
+                    break
                 if (
                     current - baseline > MAX_CANDIDATE_DISK_GROWTH_BYTES
-                    or current + unlinked > MAX_CAPABILITY_EVIDENCE_BYTES
                     or unlinked > MAX_CANDIDATE_DISK_GROWTH_BYTES
-                    or baseline_free_bytes - free_bytes
-                    > MAX_CANDIDATE_DISK_GROWTH_BYTES
-                    or free_bytes < MIN_HOST_FREE_BYTES
-                    or free_inodes < MIN_HOST_FREE_INODES
-                    or baseline_free_inodes - free_inodes
-                    > MAX_CANDIDATE_EVIDENCE_ENTRIES
                 ):
                     failure = "candidate process exceeded aggregate disk-growth limit"
+                    break
+                if (
+                    free_bytes < MIN_HOST_FREE_BYTES
+                    or free_inodes < MIN_HOST_FREE_INODES
+                ):
+                    failure = (
+                        "host filesystem reserve is insufficient for candidate work"
+                    )
                     break
                 next_disk_check = now + 0.1
             time.sleep(0.02)
@@ -1558,8 +1560,10 @@ def _flash_argv(
         "0x20000": "domes.bin",
         "0xf000": "ota_data_initial.bin",
     }
-    # Flash only the standard application artifacts.  In particular, do not let
-    # a candidate write NVS, PHY calibration, otadata, or arbitrary partitions.
+    # Flash only the standard application artifacts. The generated initial OTA
+    # selector is required: writing ota_0 without it can leave a board booting a
+    # stale ota_1 image even though esptool reports success. Do not let a
+    # candidate write NVS, PHY calibration, or arbitrary partitions.
     if files != expected_generated_layout:
         raise BrokerError("flash layout is not the standard DOMES application layout")
     expected_settings = {"flash_mode": "dio", "flash_freq": "80m", "flash_size": "8MB"}
@@ -1580,7 +1584,8 @@ def _flash_argv(
     for key in ("flash_mode", "flash_freq", "flash_size"):
         argv.extend([f"--{key}", expected_settings[key]])
     flash_layout = {
-        key: expected_generated_layout[key] for key in ("0x0", "0x8000", "0x20000")
+        key: expected_generated_layout[key]
+        for key in ("0x0", "0x8000", "0xf000", "0x20000")
     }
     inputs: list[dict[str, str]] = []
     for offset, relative in sorted(
@@ -1681,6 +1686,204 @@ def _selected_flash(
     if selected is not None:
         return selected
     raise BrokerError("no successful board-local flash provenance is available")
+
+
+def _espnow_status_fields(output: str) -> tuple[str, int, int]:
+    """Parse only the bounded fields required by the two-board acceptance drill."""
+    state = re.search(r"(?im)^\s*State:\s*([a-z-]+)\s*$", output)
+    peers = re.search(r"(?im)^\s*Peers:\s*(\d+)\s*$", output)
+    tx_fails = re.search(r"(?im)^\s*TX fails:\s*(\d+)\s*$", output)
+    if state is None or peers is None or tx_fails is None:
+        raise BrokerError("ESP-NOW status response is incomplete")
+    return state.group(1).casefold(), int(peers.group(1)), int(tx_fails.group(1))
+
+
+def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str, Any]:
+    """Run the fixed two-NFF benchmark and simulated-drill acceptance lifecycle."""
+    if set(cap.boards) != {0, 1}:
+        raise BrokerError("ESP-NOW regression requires both registered board aliases")
+
+    selected_flashes: dict[str, dict[str, Any]] = {}
+    for board in (0, 1):
+        head, profile, image_sha256, _provenance = _selected_flash(cap, board)
+        if head != artifact_head or profile != "default":
+            raise BrokerError(
+                "ESP-NOW regression requires an exact-head default flash on both boards"
+            )
+        selected_flashes[str(board)] = {
+            "artifact_head": head,
+            "build_profile": profile,
+            "domes_bin_sha256": image_sha256,
+        }
+
+    cli = _cli_path(cap)
+    transcript: list[tuple[int, str]] = []
+    invocation = 0
+    transcript_lock = threading.Lock()
+
+    def run_cli(board: int, *arguments: str, timeout: float = 90) -> str:
+        nonlocal invocation
+        with transcript_lock:
+            invocation += 1
+            current_invocation = invocation
+        port = _verified_port(cap, board)
+        returncode, stdout, stderr = _run_with_bounded_logs(
+            cap,
+            _resource_limited(cap, [cli, "--port", port, *arguments]),
+            f"espnow-regression-{current_invocation:03d}",
+            timeout,
+        )
+        record = json.dumps(
+            {
+                "board": board,
+                "arguments": list(arguments),
+                "returncode": returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+            },
+            sort_keys=True,
+        )
+        with transcript_lock:
+            transcript.append((current_invocation, record))
+        if returncode:
+            raise BrokerError("ESP-NOW regression command failed")
+        return stdout
+
+    def run_both(*arguments: str) -> tuple[str, str]:
+        """Run the same bounded command on both independent serial endpoints."""
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = tuple(
+                executor.submit(run_cli, board, *arguments) for board in (0, 1)
+            )
+            return tuple(future.result() for future in futures)  # type: ignore[return-value]
+
+    def status(board: int) -> tuple[str, int, int]:
+        return _espnow_status_fields(run_cli(board, "espnow", "status"))
+
+    def wait_for_disabled(phase: str) -> None:
+        for _attempt in range(20):
+            states = (status(0)[0], status(1)[0])
+            if states == ("disabled", "disabled"):
+                return
+            time.sleep(1)
+        raise BrokerError(f"ESP-NOW did not reach disabled state during {phase}")
+
+    def wait_for_peers(phase: str) -> tuple[int, int]:
+        for _attempt in range(30):
+            first, second = status(0), status(1)
+            if (
+                {first[0], second[0]} == {"master", "slave"}
+                and first[1] == 1
+                and second[1] == 1
+            ):
+                return (0, 1) if first[0] == "master" else (1, 0)
+            time.sleep(1)
+        raise BrokerError(f"ESP-NOW peers did not converge during {phase}")
+
+    for board in (0, 1):
+        run_cli(board, "feature", "disable", "esp-now")
+    wait_for_disabled("initial benchmark state")
+    for board in (0, 1):
+        run_cli(board, "espnow", "sim-mode", "off")
+
+    run_cli(0, "feature", "enable", "esp-now")
+    time.sleep(1)
+    run_cli(0, "feature", "disable", "esp-now")
+    wait_for_disabled("single-board discovery cancellation")
+
+    benchmark_count = 0
+    for session in range(1, 4):
+        for board in (0, 1):
+            run_cli(board, "feature", "enable", "esp-now")
+        master, slave = wait_for_peers(f"benchmark session {session}")
+        for board in (slave, master):
+            output = run_cli(board, "espnow", "bench", "--rounds", "100", timeout=180)
+            if (
+                not re.search(
+                    r"(?m)^\s*Rounds:\s*100/100 completed \(0 failed\)\s*$",
+                    output,
+                )
+                or "Mean RTT:" not in output
+            ):
+                raise BrokerError("ESP-NOW benchmark did not complete 100/100 rounds")
+            benchmark_count += 1
+        for board in (0, 1):
+            run_cli(board, "feature", "disable", "esp-now")
+        wait_for_disabled(f"benchmark session {session}")
+
+    for board in (0, 1):
+        run_cli(
+            board,
+            "espnow",
+            "sim-mode",
+            "on",
+            "--delay-ms",
+            "100",
+            "--pad",
+            "0",
+        )
+    for board in (0, 1):
+        run_cli(board, "feature", "enable", "esp-now")
+    wait_for_peers("simulated drill")
+
+    # The simulated drill and scheduler traffic can fill the fixed 1,024-event
+    # trace ring in well under a second. While sim mode and the peer drill are
+    # active, run one explicit supported ping/pong round between the assigned
+    # roles. This gives both recorders complete TX and RX causal chains without
+    # depending on host polling latency or retaining the full drill.
+    run_both("trace", "stop")
+    run_both("trace", "start")
+    # Clear after start while the recorder lease is active. The firmware
+    # briefly pauses and resumes recording around TRACE_CLEAR, removing the
+    # command/startup scheduler traffic that otherwise consumes enough of the
+    # 1,024-event ring to invalidate this short exchange.
+    run_both("trace", "clear")
+    traced_output = run_cli(slave, "espnow", "bench", "--rounds", "1", timeout=30)
+    run_both("trace", "stop")
+    if not re.search(
+        r"(?m)^\s*Rounds:\s*1/1 completed \(0 failed\)\s*$", traced_output
+    ):
+        raise BrokerError("simulated drill trace probe did not complete 1/1 round")
+
+    time.sleep(35)
+    final = [status(board) for board in (0, 1)]
+    if any(
+        state != "disabled" or peers != 1 or failures != 0
+        for state, peers, failures in final
+    ):
+        raise BrokerError("ESP-NOW simulated drill did not finish cleanly")
+    encoded = ("\n".join(record for _, record in sorted(transcript)) + "\n").encode()
+    ensure_capability_evidence_budget(cap, len(encoded))
+    transcript_path = cap.evidence / f"espnow-regression-{artifact_head[:16]}.jsonl"
+    transcript_path.write_bytes(encoded)
+    os.chmod(transcript_path, 0o600)
+    digest = hashlib.sha256(encoded).hexdigest()
+    summary = {
+        "kind": "controller-two-board-espnow-regression-v1",
+        "artifact_head": artifact_head,
+        "boards": [0, 1],
+        "selected_flashes": selected_flashes,
+        "benchmark_sessions": 3,
+        "benchmarks": benchmark_count,
+        "rounds_per_benchmark": 100,
+        "benchmark_failures": 0,
+        "discovery_cancellation": "passed",
+        "drill": "passed",
+        "traced_probe_rounds": 1,
+        "final_states": [record[0] for record in final],
+        "final_peer_counts": [record[1] for record in final],
+        "final_tx_failures": [record[2] for record in final],
+        "transcript_sha256": digest,
+    }
+    return {
+        "returncode": 0,
+        "artifact_head": artifact_head,
+        "stdout": json.dumps(summary, sort_keys=True),
+        "stderr": "",
+        "artifact_id": f"espnow-regression-{digest[:16]}",
+        "sha256": digest,
+        "espnow_regression": summary,
+    }
 
 
 def _bwrap(cap: Capability) -> str:
@@ -2190,6 +2393,17 @@ def _validate_trace_output(
     }
 
 
+def _trace_artifacts_ready(
+    completed: subprocess.CompletedProcess, output: Path
+) -> bool:
+    """Require trace artifacts only when the candidate command reports success."""
+    if completed.returncode != 0:
+        return False
+    if not (output / "trace.json.raw").is_file():
+        raise BrokerError("successful trace dump produced no raw trace artifact")
+    return True
+
+
 def _normalize_trace_artifacts(
     cap: Capability,
     candidate_source: Path,
@@ -2197,17 +2411,31 @@ def _normalize_trace_artifacts(
     trace_hashes: dict[str, str],
     device_uid: str,
     source_head: str,
+    build_profile: str,
 ) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
-    """Run the judged normalizer privately and retain only content-addressed IDs."""
-    normalizer = candidate_source / "tools" / "trace" / "trace_normalizer.py"
+    """Run the profile-correct normalizer and retain content-addressed IDs."""
+    acceptance_normalizer = candidate_source / "tools" / "trace" / "trace_normalizer.py"
+    runtime_normalizer = (
+        Path(__file__).resolve().with_name("runtime_trace_normalizer.py")
+    )
     trace_proto = candidate_source / "firmware" / "common" / "proto" / "trace.proto"
+    trace_names = candidate_source / "tools" / "trace" / "trace_names.json"
+    if build_profile not in {"default", "trace-acceptance"}:
+        raise BrokerError("selected trace build profile is invalid")
+    normalizer = (
+        acceptance_normalizer
+        if build_profile == "trace-acceptance"
+        else runtime_normalizer
+    )
     if (
         not normalizer.is_file()
         or normalizer.is_symlink()
         or not trace_proto.is_file()
         or trace_proto.is_symlink()
+        or not trace_names.is_file()
+        or trace_names.is_symlink()
     ):
-        raise BrokerError("candidate trace normalizer inputs are unavailable")
+        raise BrokerError("trace normalizer inputs are unavailable")
     normalized = cap.evidence / (
         f"normalized-trace-{trace_hashes['raw_sha256'][:16]}-{secrets.token_hex(4)}"
     )
@@ -2215,6 +2443,26 @@ def _normalize_trace_artifacts(
     python = _trusted_path(cap, "python3")
     if not Path(python).is_relative_to("/usr"):
         raise BrokerError("trusted normalizer Python is outside the system mount")
+    normalizer_mount = (
+        "/src/tools/trace/trace_normalizer.py"
+        if build_profile == "trace-acceptance"
+        else "/controller/runtime_trace_normalizer.py"
+    )
+    runtime_mounts = (
+        ["--dir", "/controller", "--ro-bind", str(runtime_normalizer), normalizer_mount]
+        if build_profile == "default"
+        else []
+    )
+    runtime_arguments = (
+        [
+            "--trace-proto",
+            "/src/firmware/common/proto/trace.proto",
+            "--trace-names",
+            "/src/tools/trace/trace_names.json",
+        ]
+        if build_profile == "default"
+        else []
+    )
     argv = _resource_limited(
         cap,
         [
@@ -2226,6 +2474,7 @@ def _normalize_trace_artifacts(
             "--ro-bind",
             str(candidate_source),
             "/src",
+            *runtime_mounts,
             "--dir",
             "/input",
             "--ro-bind",
@@ -2258,11 +2507,12 @@ def _normalize_trace_artifacts(
             "/out",
             "--",
             python,
-            "/src/tools/trace/trace_normalizer.py",
+            normalizer_mount,
             "--raw",
             "/input/trace.raw",
             "--session",
             "/input/session.json",
+            *runtime_arguments,
             "--output-prefix",
             "/out/trace",
         ],
@@ -2274,7 +2524,11 @@ def _normalize_trace_artifacts(
         60,
     )
     if returncode or len(stdout) > 65536 or len(stderr) > 65536:
-        raise BrokerError("sandboxed trace normalization failed")
+        detail = next(
+            (line.strip() for line in reversed(stderr.splitlines()) if line.strip()),
+            "unknown validation error",
+        )
+        raise BrokerError(f"sandboxed trace normalization failed: {detail[:240]}")
     expected = {"trace.replay.json", "trace.semantic.json"}
     if {path.name for path in normalized.iterdir()} != expected:
         raise BrokerError("trace normalizer produced unexpected files")
@@ -2296,15 +2550,33 @@ def _normalize_trace_artifacts(
         os.chmod(path, 0o400)
     replay = documents["replay"]
     semantic = documents["semantic"]
+    expected_replay_kind = (
+        "replay-normalized-trace"
+        if build_profile == "trace-acceptance"
+        else "replay-normalized-runtime-trace"
+    )
+    expected_semantic_kind = (
+        "cross-target-semantic-projection"
+        if build_profile == "trace-acceptance"
+        else "runtime-correlation-semantic-projection"
+    )
     if (
-        replay.get("artifact_kind") != "replay-normalized-trace"
+        replay.get("artifact_kind") != expected_replay_kind
         or replay.get("raw_sha256") != trace_hashes["raw_sha256"]
         or replay.get("dropped_count") != 0
         or replay.get("discontinuity_count") != 0
         or not isinstance(replay.get("events"), list)
         or len(replay["events"]) == 0
-        or semantic.get("artifact_kind") != "cross-target-semantic-projection"
+        or semantic.get("artifact_kind") != expected_semantic_kind
         or semantic.get("raw_sha256") != trace_hashes["raw_sha256"]
+        or (
+            build_profile == "default"
+            and (
+                not isinstance(replay.get("correlation"), dict)
+                or replay["correlation"].get("tx_complete_count", 0) < 1
+                or replay["correlation"].get("rx_complete_count", 0) < 1
+            )
+        )
     ):
         raise BrokerError("normalized trace semantics are inconsistent")
     python_version = subprocess.run(
@@ -2318,8 +2590,13 @@ def _normalize_trace_artifacts(
     if python_version.returncode or not python_version.stdout.strip():
         raise BrokerError("trusted normalizer Python version is unavailable")
     provenance: dict[str, Any] = {
-        "kind": "controller-bwrap-trace-normalizer-v1",
+        "kind": (
+            "controller-bwrap-trace-normalizer-v1"
+            if build_profile == "trace-acceptance"
+            else "controller-bwrap-runtime-trace-normalizer-v1"
+        ),
         "source_head": source_head,
+        "build_profile": build_profile,
         "normalizer_sha256": _sha256_file(normalizer),
         "trace_proto_sha256": _sha256_file(trace_proto),
         "python_sha256": str((cap.tools or {})["python3"]["sha256"]),
@@ -2334,6 +2611,17 @@ def _normalize_trace_artifacts(
             "event_count": len(replay["events"]),
             "causal_positions": replay.get("causal_positions"),
             "overhead_us": replay.get("overhead_us"),
+            "duration_us": replay.get("duration_us"),
+            "tx_complete_count": (
+                replay.get("correlation", {}).get("tx_complete_count")
+                if isinstance(replay.get("correlation"), dict)
+                else None
+            ),
+            "rx_complete_count": (
+                replay.get("correlation", {}).get("rx_complete_count")
+                if isinstance(replay.get("correlation"), dict)
+                else None
+            ),
             "normalized_sha256": replay.get("normalized_sha256"),
         },
     }
@@ -2457,6 +2745,12 @@ def execute(cap: Capability, request: dict[str, Any]) -> dict[str, Any]:
             "artifact_head": artifact_head,
             "returncode": 0,
         }
+    if operation == "espnow-regression":
+        result = _execute_espnow_regression(cap, artifact_head)
+        if _workspace_head(cap) != artifact_head:
+            raise BrokerError("workspace artifact changed during hardware operation")
+        ensure_capability_evidence_budget(cap)
+        return result
     port = _verified_port(
         cap, request.get("board")
     )  # identity is checked immediately before action
@@ -2641,6 +2935,9 @@ def execute(cap: Capability, request: dict[str, Any]) -> dict[str, Any]:
     if build_provenance is not None:
         result["build_provenance"] = build_provenance
         result["inputs"] = inputs
+    if operation == "trace-dump" and not _trace_artifacts_ready(completed, output):
+        ensure_capability_evidence_budget(cap)
+        return result
     if operation == "trace-dump":
         raw = (output / "trace.json.raw").read_bytes()
         trace_relay, transcript_bytes, wire_identity = _validate_trace_transcript(
@@ -2656,6 +2953,7 @@ def execute(cap: Capability, request: dict[str, Any]) -> dict[str, Any]:
             trace_hashes,
             wire_identity["device_uid"],
             selected_head,
+            build_profile,
         )
         transcript_path = cap.evidence / (
             f"trace-relay-{trace_relay['transcript_sha256']}.bin"
@@ -2746,6 +3044,7 @@ def _append_manifest(
         "trace_relay": result.get("trace_relay"),
         "normalization": result.get("normalization"),
         "trace_identity": result.get("trace_identity"),
+        "espnow_regression": result.get("espnow_regression"),
     }
     previous = ""
     if manifest.is_file():
