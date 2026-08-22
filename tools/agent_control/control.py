@@ -6845,13 +6845,18 @@ def block_failed_run(
 ) -> None:
     role = role_for(item.ticket)
     if isinstance(error, StackInvalidated):
-        transition(workflow, item.ticket, "agent:rework")
+        resume_state = (
+            "agent:ready"
+            if role == "worker" and item.source_state == "agent:ready"
+            else "agent:rework"
+        )
+        transition(workflow, item.ticket, resume_state)
         post_controller_comment(
             workflow,
             item.ticket,
             "Agent control-plane transition (stacked pull request)",
             "The reviewed parent changed, conflicted, or merged; returning the child "
-            f"to rework: {error}",
+            f"to `{resume_state}` without inventing a missing handoff: {error}",
         )
         return
     resume_state = retry_state_for(item, role)
