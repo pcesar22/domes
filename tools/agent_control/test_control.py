@@ -1740,6 +1740,14 @@ class AutopilotReviewTest(unittest.TestCase):
         self.assertIn("do not add still-running CI as a criterion", prompt)
         self.assertIn("Approval advances the ticket to\n`ci-pending`", prompt)
 
+    def test_verification_prompt_rebuilds_invalidated_exact_head_evidence(self) -> None:
+        ticket = automated_ticket(30, self.revision, label="agent:verification")
+        item = control.validate_ticket(ticket, check_revision=False)
+        prompt = control.build_prompt(item, "verification-worker")
+        self.assertIn("evidence-invalidation clauses remain authoritative", prompt)
+        self.assertIn("regenerate any exact-revision evidence", prompt)
+        self.assertIn("run `pre-commit run --all-files`", prompt)
+
     def test_trusted_controller_intervention_is_bounded_and_prompted(self) -> None:
         workflow = control.load_workflow()
         fixture = automated_ticket(31, self.revision, label="agent:rework")
