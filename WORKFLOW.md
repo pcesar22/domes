@@ -60,9 +60,11 @@ The scheduler performs only these actions:
 
 1. Read active issues and their state labels.
 2. Validate the ticket contract and pinned specification revision.
-3. Reject issues with unresolved dependencies or overlapping active workspaces. The only
-   nonterminal-dependency exception is one automated software child, with no hardware operations,
-   stacked on one stable `agent:human-review` parent. Fan-in and nested stacks fail closed.
+3. Reject implementation issues with unresolved dependencies or overlapping active workspaces. A
+   planner may run ahead of its nonterminal declared dependencies because it is read-only; every
+   materialized child inherits those external gates. The only implementation exception is one
+   automated software child, with no hardware operations, stacked on one stable
+   `agent:human-review` parent. Fan-in and nested stacks fail closed.
 4. Sort eligible issues by numeric priority and then issue number.
 5. Reserve up to three slots and create one controller-owned standalone Git workspace per issue.
 6. Move a newly accepted implementation task to `agent:running` and launch a fresh role-specific

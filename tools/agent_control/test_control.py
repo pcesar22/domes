@@ -468,6 +468,20 @@ class TicketValidationTest(unittest.TestCase):
         )
         self.assertEqual([2], [item.ticket.number for item in selected])
 
+    def test_planner_can_plan_ahead_of_nonterminal_dependencies(self) -> None:
+        dependency = make_ticket(1, self.revision, label="agent:ready")
+        planner = make_ticket(
+            2,
+            self.revision,
+            label="agent:plan",
+            dependencies="#1",
+        )
+        eligible, blockers = control.eligible_queue(
+            [dependency, planner], check_revision=False
+        )
+        self.assertNotIn(2, blockers)
+        self.assertIn(2, [item.ticket.number for item in eligible])
+
     def test_parallel_selection_planner_does_not_reserve_worker_surface(self) -> None:
         planner = make_ticket(1, self.revision, label="agent:plan")
         worker = make_ticket(2, self.revision)
@@ -2714,7 +2728,12 @@ class SelectorAndPlanTest(unittest.TestCase):
     def test_materialize_plan_sets_execute_and_plan_child_states(self) -> None:
         workflow = control.load_workflow()
         parent = control.validate_ticket(
-            automated_ticket(41, self.revision, label="agent:plan"),
+            automated_ticket(
+                41,
+                self.revision,
+                label="agent:plan",
+                dependencies=(39,),
+            ),
             check_revision=False,
         )
         tasks = [
@@ -2764,6 +2783,7 @@ class SelectorAndPlanTest(unittest.TestCase):
                     ticket, control.parse_sections(ticket.body), (), ()
                 ),
             ),
+            mock.patch.object(control, "update_issue_body") as update_body,
             mock.patch.object(control, "transition") as transition,
         ):
             self.assertEqual(
@@ -2781,6 +2801,15 @@ class SelectorAndPlanTest(unittest.TestCase):
             )
         self.assertTrue(created[0].title.startswith("[Agent]"))
         self.assertTrue(created[1].title.startswith("[Plan]"))
+        self.assertEqual(
+            "- #41\n- #39",
+            control.parse_sections(created[0].body)["Dependencies"],
+        )
+        update_body.assert_called_once()
+        self.assertEqual(
+            "- #41\n- #39\n- #80",
+            control.parse_sections(update_body.call_args.args[2])["Dependencies"],
+        )
         self.assertEqual(
             [
                 mock.call(workflow, created[0], "agent:ready"),
