@@ -406,6 +406,15 @@ class TicketValidationTest(unittest.TestCase):
         self.assertEqual([30, 20, 2], [item.ticket.number for item in eligible])
         self.assertEqual(["dependency #2 is not terminal"], blockers[40])
 
+    def test_closed_rework_dependency_is_not_terminal(self) -> None:
+        rejected = make_ticket(2, self.revision, label="agent:rework", state="CLOSED")
+        dependent = make_ticket(40, self.revision, dependencies="#2")
+        eligible, blockers = control.eligible_queue(
+            [rejected, dependent], check_revision=False
+        )
+        self.assertEqual([], eligible)
+        self.assertEqual(["dependency #2 is not terminal"], blockers[40])
+
     def test_dependency_cycle_blocks_every_member(self) -> None:
         first = make_ticket(1, self.revision, dependencies="#2")
         second = make_ticket(2, self.revision, dependencies="#1")
@@ -1776,6 +1785,60 @@ class AutopilotReviewTest(unittest.TestCase):
         self.assertEqual("human", result[0]["merged_by"])
         comment.assert_called_once()
         complete_issue.assert_called_once_with(workflow, ticket)
+
+    def test_merged_rework_reopens_issue_and_clears_pr_binding(self) -> None:
+        workflow = control.load_workflow()
+        open_ticket = automated_ticket(42, self.revision, label="agent:rework")
+        ticket = control.Ticket(
+            open_ticket.number,
+            open_ticket.title,
+            open_ticket.body,
+            "CLOSED",
+            open_ticket.labels,
+            open_ticket.url,
+        )
+        merged = pull_request(control.load_autopilot_policy(), state="MERGED")
+        with (
+            mock.patch.object(control, "load_pull_request", return_value=merged),
+            mock.patch.object(control, "reopen_issue") as reopen,
+            mock.patch.object(control, "update_issue_body") as update_body,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            result = control.recover_merged_rework_tickets(workflow, (ticket,))
+        self.assertEqual(
+            [
+                {
+                    "issue": 42,
+                    "state": "agent:rework",
+                    "merged_pull_request": merged.number,
+                }
+            ],
+            result,
+        )
+        reopen.assert_called_once_with(workflow, ticket)
+        updated = update_body.call_args.args[2]
+        sections = control.parse_sections(updated)
+        self.assertEqual(0, control.existing_pull_request(sections))
+        updated_ticket = control.Ticket(
+            ticket.number,
+            ticket.title,
+            updated,
+            "OPEN",
+            ticket.labels,
+            ticket.url,
+        )
+        self.assertTrue(control.has_valid_autopilot_marker(updated_ticket, sections))
+        comment.assert_called_once()
+
+    def test_active_merged_rework_is_not_mutated(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(42, self.revision, label="agent:rework")
+        with mock.patch.object(control, "load_pull_request") as load_pull_request:
+            result = control.recover_merged_rework_tickets(
+                workflow, (ticket,), active_ticket_numbers=(42,)
+            )
+        self.assertEqual([], result)
+        load_pull_request.assert_not_called()
 
 
 class SelectorAndPlanTest(unittest.TestCase):
