@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -30,26 +32,53 @@ def check(
     }
 
 
-def physical_record(evidence_id: str, details: dict) -> dict:
+def physical_record(evidence_id: str, details: dict, commit: str = "2" * 40) -> dict:
+    boards = details["board_ids"]
     return {
         "evidence_id": evidence_id,
         "level": "physical",
         "status": "passed",
-        "artifact": f"https://evidence.example/{evidence_id}.json",
+        "configuration": {
+            "firmware_commit": commit,
+            "board_image_sha256": {
+                boards[0]: "a" * 64,
+                boards[1]: "b" * 64,
+            },
+            "lifecycle_initial_state": "disabled",
+            "simulation_enabled": evidence_id == "traced_drill",
+        },
+        "procedure": f"controlled {evidence_id} verification",
         "details": details,
     }
 
 
-def physical_issue(records: list[dict], commit: str = "2" * 40) -> dict:
-    import json
-
+def physical_issue(
+    records: list[dict], commit: str = "2" * 40, actor: str = gate.TRACKER_ACTOR
+) -> dict:
+    url = "https://github.com/pcesar22/domes/issues/114#issuecomment-1"
+    digest = hashlib.sha256(
+        json.dumps(records, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    payload = {
+        "schema_version": 1,
+        "kind": "fs-wp-003a-physical-acceptance",
+        "issue": 114,
+        "commit": commit,
+        "acceptance_authority": {
+            "actor": gate.TRACKER_ACTOR,
+            "role": "controller",
+            "decision": "accepted",
+        },
+        "artifact": {"url": url, "sha256": digest},
+        "verification": records,
+    }
     return {
         "comments": [
             {
-                "author": {"login": "verifier"},
+                "author": {"login": actor},
                 "authorAssociation": "OWNER",
-                "url": "https://example/comment",
-                "body": f"```json\n{json.dumps({'commit': commit, 'verification': records})}\n```",
+                "url": url,
+                "body": f"```json\n{json.dumps(payload)}\n```",
             }
         ]
     }
@@ -109,7 +138,17 @@ class EntryGateTests(unittest.TestCase):
         self.assertFalse(failed)
 
     def test_patch_budget_is_empty_and_bounded(self) -> None:
-        report, blockers = gate._patch_budget_report()
+        def git_result(*args: str) -> str:
+            if args[:2] == ("status", "--porcelain=v1"):
+                return ""
+            if args[:2] == ("diff", "--name-only"):
+                return "tools/simulation/fs3_entry_gate.py"
+            if args[:2] == ("diff", "--numstat"):
+                return "10\t2\ttools/simulation/fs3_entry_gate.py"
+            raise AssertionError(args)
+
+        with mock.patch.object(gate, "_git", side_effect=git_result):
+            report, blockers = gate._patch_budget_report()
         self.assertEqual(blockers, [])
         self.assertEqual(report["anticipated_qemu_patch"]["paths"], [])
         self.assertEqual(report["adopted_limits"]["non_generated_files"], 10)
@@ -165,6 +204,26 @@ class EntryGateTests(unittest.TestCase):
         )
         self.assertEqual(len(blockers), 5)
 
+    def test_non_integrated_ci_head_is_not_reported_as_pass(self) -> None:
+        prs = {
+            107: {"number": 107, "state": "CLOSED", "headRefOid": "1" * 40},
+            115: {
+                "number": 115,
+                "state": "MERGED",
+                "headRefOid": "2" * 40,
+                "mergeCommit": {"oid": "3" * 40},
+                "statusCheckRollup": [
+                    check(name) for name in gate.REQUIRED_SOFTWARE_CHECKS
+                ],
+            },
+        }
+        with mock.patch.object(gate, "_is_ancestor", return_value=False):
+            report, _ = gate._fs3_report(prs, {"comments": []})
+        self.assertFalse(
+            report["accepted_integration_candidate"]["integrated_in_pinned_revision"]
+        )
+        self.assertEqual(report["evidence_matrix"][0]["result"], "MISSING")
+
     def test_physical_evidence_requires_explicit_complete_records(self) -> None:
         commit = "2" * 40
         evidence, errors = gate._physical_evidence(
@@ -175,7 +234,7 @@ class EntryGateTests(unittest.TestCase):
         self.assertEqual(evidence["two_board_discovery"]["result"], "PASS")
         self.assertEqual(
             evidence["two_board_discovery"]["acceptance_authority"],
-            "verifier (OWNER)",
+            {"actor": "pcesar22", "role": "controller", "decision": "accepted"},
         )
 
     def test_free_text_cannot_satisfy_multiple_physical_categories(self) -> None:
@@ -191,6 +250,93 @@ class EntryGateTests(unittest.TestCase):
         evidence, errors = gate._physical_evidence(physical_issue([record]), "2" * 40)
         self.assertEqual(evidence, {})
         self.assertEqual(errors, [])
+
+    def test_physical_evidence_rejects_untrusted_actor_and_tampered_digest(
+        self,
+    ) -> None:
+        untrusted, errors = gate._physical_evidence(
+            physical_issue(valid_physical_records(), actor="collaborator"), "2" * 40
+        )
+        self.assertEqual(untrusted, {})
+        self.assertEqual(errors, [])
+
+        tampered = physical_issue(valid_physical_records())
+        tampered["comments"][0]["body"] = tampered["comments"][0]["body"].replace(
+            '"sha256": "', '"sha256": "0', 1
+        )
+        evidence, errors = gate._physical_evidence(tampered, "2" * 40)
+        self.assertEqual(evidence, {})
+        self.assertEqual(len(errors), len(gate.PHYSICAL_EVIDENCE_IDS))
+
+        unresolved = physical_issue(valid_physical_records())
+        unresolved["comments"][0]["body"] = unresolved["comments"][0]["body"].replace(
+            "issues/114#issuecomment-1", "issues/999#issuecomment-404", 1
+        )
+        evidence, errors = gate._physical_evidence(unresolved, "2" * 40)
+        self.assertEqual(evidence, {})
+        self.assertEqual(len(errors), len(gate.PHYSICAL_EVIDENCE_IDS))
+
+    def test_patch_audit_blocks_dirty_or_protected_diff(self) -> None:
+        outputs = {
+            "status": "1 .M N... tools/simulation/fs3_entry_gate.py",
+            "names": "firmware/domes/main/main.cpp",
+            "numstat": "1\t0\tfirmware/domes/main/main.cpp",
+        }
+
+        def git_result(*args: str) -> str:
+            if args[0] == "status":
+                return outputs["status"]
+            if args[1] == "--name-only":
+                return outputs["names"]
+            return outputs["numstat"]
+
+        with mock.patch.object(gate, "_git", side_effect=git_result):
+            report, blockers = gate._patch_budget_report()
+        self.assertEqual(report["result"], "BLOCKED")
+        self.assertEqual(
+            report["reviewed_diff"]["protected_paths"], ["firmware/domes/main/main.cpp"]
+        )
+        self.assertTrue(blockers)
+
+    def test_ledger_status_is_bound_to_exact_package_row(self) -> None:
+        files = {
+            "PROGRAM_STATUS.md": (
+                "PR 105 passes review and merge\n"
+                "| FS-WP-002C | package | Active / Amber |\n"
+                "| FS-WP-002E | package | Complete / Green |\n"
+                "| UNRELATED | package | `Not due` / `Not rated` |\n"
+            ),
+            "docs/plans/scheduler-trace-observability.md": (
+                "PR 105 final implementation head `abcdef0`"
+            ),
+            "docs/plans/esp-now-radio-seam.md": (
+                "Issue #123 implements FS-WP-002E at specification revision\n"
+                "`" + "a" * 40 + "`."
+            ),
+        }
+        prs = {
+            105: {
+                "state": "MERGED",
+                "headRefOid": "1" * 40,
+                "mergeCommit": {"oid": "a" * 40},
+            },
+            130: {
+                "state": "MERGED",
+                "headRefOid": "2" * 40,
+                "mergeCommit": {"oid": "b" * 40},
+            },
+        }
+        issues = {101: {"comments": []}, 123: {"comments": []}}
+        with (
+            mock.patch.object(
+                gate, "_git_file", side_effect=lambda _revision, path: files[path]
+            ),
+            mock.patch.object(gate, "_is_ancestor", return_value=True),
+        ):
+            report, blockers = gate._ledger_and_integration(prs, issues)
+        self.assertTrue(report["program_status_pr105_pointer_stale"])
+        self.assertFalse(report["program_status_fs_wp_002e_pointer_stale"])
+        self.assertTrue(blockers)
 
     def test_unsupported_physical_claims_cannot_produce_overall_pass(self) -> None:
         old_pr = {
@@ -238,7 +384,9 @@ class EntryGateTests(unittest.TestCase):
             ("pr", 107): old_pr,
             ("pr", 115): integrated_pr,
             ("pr", 130): {**placeholder_pr, "number": 130},
+            ("issue", 101): {"number": 101, "comments": []},
             ("issue", 114): unsupported,
+            ("issue", 123): {"number": 123, "comments": []},
         }
         passing = ({"result": "PASS"}, [])
         with (

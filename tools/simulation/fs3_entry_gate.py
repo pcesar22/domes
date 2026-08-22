@@ -8,6 +8,7 @@ report is always emitted when possible; exit status 0 means PASS and 2 means BLO
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -24,7 +25,9 @@ import qemu_feasibility as feasibility
 SPEC_REVISION = "498ae0203dc8b7048682fbff718a0629243a98a8"
 REPOSITORY = "pcesar22/domes"
 PR_NUMBERS = (105, 107, 115, 130)
+ISSUE_NUMBERS = (101, 114, 123)
 FS3_ISSUE = 114
+TRACKER_ACTOR = "pcesar22"
 REQUIRED_SOFTWARE_CHECKS = frozenset(
     {
         "Build ESP32-S3 Firmware",
@@ -180,7 +183,71 @@ def _software_ci(pr: Mapping[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
     )
 
 
-def _physical_record_valid(evidence_id: str, details: Any) -> bool:
+def _structured_payloads(issue: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return controller-authored schema payloads with durable comment identity."""
+    result: list[dict[str, Any]] = []
+    for comment in issue.get("comments") or []:
+        if not isinstance(comment, dict):
+            continue
+        author = comment.get("author")
+        if not isinstance(author, dict) or author.get("login") != TRACKER_ACTOR:
+            continue
+        for encoded in re.findall(
+            r"```json\s*(.*?)\s*```", str(comment.get("body", "")), re.DOTALL
+        ):
+            try:
+                payload = json.loads(encoded)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                result.append({**payload, "_comment_url": comment.get("url")})
+    return result
+
+
+def _latest_judgment(
+    issue: Mapping[str, Any], commit: str | None
+) -> dict[str, Any] | None:
+    matches = [
+        payload
+        for payload in _structured_payloads(issue)
+        if payload.get("commit") == commit
+        and payload.get("verdict") in {"approve", "reject"}
+    ]
+    return matches[-1] if matches else None
+
+
+def _latest_ancestral_judgment(
+    issue: Mapping[str, Any], descendant: str | None
+) -> dict[str, Any] | None:
+    if not descendant:
+        return None
+    matches = []
+    for payload in _structured_payloads(issue):
+        commit = payload.get("commit")
+        if (
+            isinstance(commit, str)
+            and re.fullmatch(r"[0-9a-f]{40}", commit)
+            and payload.get("verdict") in {"approve", "reject"}
+            and _is_ancestor(commit, descendant)
+        ):
+            matches.append(payload)
+    return matches[-1] if matches else None
+
+
+def _judgment_identity(payload: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if payload is None:
+        return None
+    return {
+        "commit": payload.get("commit"),
+        "verdict": payload.get("verdict"),
+        "tracker_comment": payload.get("_comment_url"),
+        "required_rework_count": len(payload.get("required_rework") or []),
+    }
+
+
+def _physical_record_valid(
+    evidence_id: str, details: Any, configuration: Any, exact_commit: str
+) -> bool:
     if not isinstance(details, dict):
         return False
     board_ids = details.get("board_ids")
@@ -189,6 +256,27 @@ def _physical_record_valid(evidence_id: str, details: Any) -> bool:
         or len(board_ids) != 2
         or any(not isinstance(item, str) or not item for item in board_ids)
         or len(set(board_ids)) != 2
+    ):
+        return False
+    expected_simulation = evidence_id == "traced_drill"
+    if (
+        not isinstance(configuration, dict)
+        or set(configuration)
+        != {
+            "firmware_commit",
+            "board_image_sha256",
+            "lifecycle_initial_state",
+            "simulation_enabled",
+        }
+        or configuration.get("firmware_commit") != exact_commit
+        or configuration.get("lifecycle_initial_state") != "disabled"
+        or configuration.get("simulation_enabled") is not expected_simulation
+        or not isinstance(configuration.get("board_image_sha256"), dict)
+        or set(configuration["board_image_sha256"]) != set(board_ids)
+        or any(
+            not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for digest in configuration["board_image_sha256"].values()
+        )
     ):
         return False
     if evidence_id == "two_board_discovery":
@@ -238,68 +326,81 @@ def _physical_record_valid(evidence_id: str, details: Any) -> bool:
 def _physical_evidence(
     issue: Mapping[str, Any], exact_commit: str | None
 ) -> tuple[dict[str, dict[str, Any]], list[str]]:
-    """Extract exact, non-duplicated physical records from trusted handoffs."""
+    """Validate identity-bound controller attestations embedded in tracker evidence.
+
+    The digest covers the canonical evidence list.  Consequently an edited comment,
+    invented URL, or unresolved artifact cannot silently retain acceptance.
+    """
     candidates: dict[str, list[dict[str, Any]]] = {
         evidence_id: [] for evidence_id in PHYSICAL_EVIDENCE_IDS
     }
     invalid: set[str] = set()
-    for comment in issue.get("comments") or []:
-        if not isinstance(comment, dict):
+    for payload in _structured_payloads(issue):
+        if payload.get("commit") != exact_commit:
             continue
-        body = str(comment.get("body", ""))
-        author = comment.get("author")
-        association = comment.get("authorAssociation")
-        authority = (
-            f"{author.get('login')} ({association})"
-            if isinstance(author, dict)
-            and author.get("login")
-            and association in {"OWNER", "MEMBER", "COLLABORATOR"}
-            else None
+        artifact = payload.get("artifact")
+        records = payload.get("verification")
+        canonical = json.dumps(records, sort_keys=True, separators=(",", ":")).encode()
+        artifact_valid = (
+            payload.get("schema_version") == 1
+            and payload.get("kind") == "fs-wp-003a-physical-acceptance"
+            and payload.get("issue") == FS3_ISSUE
+            and payload.get("acceptance_authority")
+            == {"actor": TRACKER_ACTOR, "role": "controller", "decision": "accepted"}
+            and isinstance(artifact, dict)
+            and set(artifact) == {"url", "sha256"}
+            and artifact.get("url") == payload.get("_comment_url")
+            and artifact.get("sha256") == hashlib.sha256(canonical).hexdigest()
+            and isinstance(records, list)
         )
-        for encoded in re.findall(r"```json\s*(.*?)\s*```", body, re.DOTALL):
-            try:
-                payload = json.loads(encoded)
-            except json.JSONDecodeError:
+        if not artifact_valid:
+            invalid.update(PHYSICAL_EVIDENCE_IDS)
+            continue
+        for record in records:
+            if not isinstance(record, dict):
                 continue
-            if not isinstance(payload, dict) or payload.get("commit") != exact_commit:
+            evidence_id = record.get("evidence_id")
+            if evidence_id not in candidates:
                 continue
-            for record in payload.get("verification") or []:
-                if not isinstance(record, dict):
-                    continue
-                evidence_id = record.get("evidence_id")
-                if evidence_id not in candidates:
-                    continue
-                valid = (
-                    set(record)
-                    == {
-                        "evidence_id",
-                        "level",
-                        "status",
-                        "artifact",
-                        "details",
-                    }
-                    and record.get("level") == "physical"
-                    and record.get("status") == "passed"
-                    and isinstance(record.get("artifact"), str)
-                    and bool(record.get("artifact"))
-                    and authority is not None
-                    and _physical_record_valid(str(evidence_id), record.get("details"))
+            valid = (
+                set(record)
+                == {
+                    "evidence_id",
+                    "level",
+                    "status",
+                    "configuration",
+                    "procedure",
+                    "details",
+                }
+                and record.get("level") == "physical"
+                and record.get("status") == "passed"
+                and isinstance(record.get("configuration"), dict)
+                and isinstance(record.get("procedure"), str)
+                and bool(record.get("procedure"))
+                and _physical_record_valid(
+                    str(evidence_id),
+                    record.get("details"),
+                    record.get("configuration"),
+                    str(exact_commit),
                 )
-                if not valid:
-                    invalid.add(str(evidence_id))
-                    continue
-                candidates[str(evidence_id)].append(
-                    {
-                        "id": evidence_id,
-                        "level": "physical",
-                        "exact_commit": payload["commit"],
-                        "result": "PASS",
-                        "artifact": record["artifact"],
-                        "acceptance_authority": authority,
-                        "tracker_comment": comment.get("url"),
-                        "details": record["details"],
-                    }
-                )
+            )
+            if not valid:
+                invalid.add(str(evidence_id))
+                continue
+            candidates[str(evidence_id)].append(
+                {
+                    "id": evidence_id,
+                    "level": "physical",
+                    "exact_commit": payload["commit"],
+                    "result": "PASS",
+                    "artifact": artifact,
+                    "acceptance_authority": payload["acceptance_authority"],
+                    "tracker_comment": payload.get("_comment_url"),
+                    "configuration": record["configuration"],
+                    "procedure": record["procedure"],
+                    "details": record["details"],
+                }
+            )
     result: dict[str, dict[str, Any]] = {}
     errors: list[str] = []
     for evidence_id, records in candidates.items():
@@ -343,6 +444,7 @@ def _repository_report(head: str) -> tuple[dict[str, Any], list[str]]:
 
 def _ledger_and_integration(
     prs: Mapping[int, Mapping[str, Any]],
+    issues: Mapping[int, Mapping[str, Any]],
 ) -> tuple[dict[str, Any], list[str]]:
     blockers: list[str] = []
     status = _git_file(SPEC_REVISION, "PROGRAM_STATUS.md")
@@ -364,16 +466,51 @@ def _ledger_and_integration(
         and pr130_merge
         and _is_ancestor(str(pr130_merge), SPEC_REVISION)
     )
-    ledger_pr105_stale = "PR 105 passes review and merge" in status and pr105_integrated
-    ledger_e_stale = (
-        "| FS-WP-002E |" in status
-        and "`Not due` / `Not rated`" in status
-        and pr130_integrated
+    table_rows = {
+        cells[0]: cells
+        for line in status.splitlines()
+        if line.startswith("|")
+        and len(
+            cells := [
+                cell.strip().replace("`", "") for cell in line.strip("|").split("|")
+            ]
+        )
+        >= 3
+    }
+    c_row = table_rows.get("FS-WP-002C")
+    e_row = table_rows.get("FS-WP-002E")
+    ledger_pr105_stale = bool(
+        c_row
+        and c_row[2] == "Active / Amber"
+        and "PR 105 passes review and merge" in status
+        and pr105_integrated
     )
-    plan_e_identity = (
-        re.search(r"Issue #123 implements FS-WP-002E", seam_plan) is not None
+    ledger_e_stale = bool(
+        e_row and e_row[2] == "Not due / Not rated" and pr130_integrated
     )
-    plan_c_retained = "PR 105" in scheduler_plan
+    c_head = pr105.get("headRefOid")
+    e_head = pr130.get("headRefOid")
+    c_judgment = _latest_judgment(issues[101], str(c_head))
+    e_judgment = _latest_judgment(issues[123], str(e_head))
+    c_retained_judgment = _latest_ancestral_judgment(issues[101], str(c_head))
+    e_retained_judgment = _latest_ancestral_judgment(issues[123], str(e_head))
+    c_accepted = bool(c_judgment and c_judgment.get("verdict") == "approve")
+    e_accepted = bool(e_judgment and e_judgment.get("verdict") == "approve")
+    plan_e_match = re.search(
+        r"Issue #123 implements FS-WP-002E at specification revision\s*`([0-9a-f]{40})`",
+        seam_plan,
+    )
+    implementation_match = re.search(
+        r"final implementation head `([0-9a-f]{7,40})`", scheduler_plan
+    )
+    plan_e_identity = bool(plan_e_match and plan_e_match.group(1) == pr105_merge)
+    plan_c_retained = bool(implementation_match)
+    implementation_e = "c8a67e4904bbc1af882d278125dbc6ef80ab8319"
+    implementation_e_valid = bool(
+        e_head
+        and _is_ancestor(implementation_e, str(e_head))
+        and _is_ancestor(str(e_head), SPEC_REVISION)
+    )
     if not all(
         (
             pr105_integrated,
@@ -382,6 +519,9 @@ def _ledger_and_integration(
             ledger_e_stale,
             plan_e_identity,
             plan_c_retained,
+            c_accepted,
+            e_accepted,
+            implementation_e_valid,
         )
     ):
         blockers.append(
@@ -399,16 +539,23 @@ def _ledger_and_integration(
                 "integrated_in_pinned_revision": pr105_integrated,
                 "retained_plan": "docs/plans/scheduler-trace-observability.md",
                 "retained_plan_identifies_pr": plan_c_retained,
+                "required_evidence_judgment": _judgment_identity(c_judgment),
+                "latest_ancestral_judgment": _judgment_identity(c_retained_judgment),
+                "required_evidence_still_valid": c_accepted,
             },
             "fs_wp_002e": {
                 "source_issue": 123,
                 "integration_pr": 130,
-                "implementation_commit": "c8a67e4904bbc1af882d278125dbc6ef80ab8319",
+                "implementation_commit": implementation_e,
+                "implementation_commit_is_ancestral": implementation_e_valid,
                 "pr_head": pr130.get("headRefOid"),
                 "merge_commit": pr130_merge,
                 "integrated_in_pinned_revision": pr130_integrated,
                 "retained_plan": "docs/plans/esp-now-radio-seam.md",
                 "retained_plan_identifies_package": plan_e_identity,
+                "required_evidence_judgment": _judgment_identity(e_judgment),
+                "latest_ancestral_judgment": _judgment_identity(e_retained_judgment),
+                "required_evidence_still_valid": e_accepted,
             },
         },
         blockers,
@@ -632,16 +779,46 @@ def _engine_report(validate_installed: bool) -> tuple[dict[str, Any], list[str]]
 
 
 def _patch_budget_report() -> tuple[dict[str, Any], list[str]]:
-    # No QEMU engine patch is allowed to be anticipated by this entry-only ticket.
-    paths: list[str] = []
-    changed_lines = 0
+    status = _git("status", "--porcelain=v1", "--untracked-files=all")
+    reviewed_paths = [
+        path
+        for path in _git("diff", "--name-only", f"{SPEC_REVISION}...HEAD").splitlines()
+        if path
+    ]
+    numstat = _git("diff", "--numstat", f"{SPEC_REVISION}...HEAD")
+    reviewed_changed_lines = sum(
+        int(added) + int(deleted)
+        for line in numstat.splitlines()
+        if len(parts := line.split("\t", 2)) == 3
+        for added, deleted in [parts[:2]]
+        if added.isdigit() and deleted.isdigit()
+    )
+    # This entry-only ticket may not anticipate or carry an engine patch.  Derive
+    # that assertion from the reviewed diff instead of manufacturing an empty list.
+    paths = [
+        path
+        for path in reviewed_paths
+        if path.startswith(("qemu/", "third_party/qemu/", "vendor/qemu/"))
+    ]
+    changed_lines = sum(
+        int(added) + int(deleted)
+        for line in numstat.splitlines()
+        if len(parts := line.split("\t", 2)) == 3
+        for added, deleted, path in [parts]
+        if path in paths and added.isdigit() and deleted.isdigit()
+    )
     prohibited = [
         path
         for path in paths
         if any(part in f"/{path}" for part in PROHIBITED_QEMU_PATH_PARTS)
     ]
+    protected_paths = [
+        path for path in reviewed_paths if not path.startswith("tools/simulation/")
+    ]
     valid = (
-        len(paths) <= MAX_QEMU_FILES
+        not status
+        and not protected_paths
+        and len(paths) <= MAX_QEMU_FILES
         and changed_lines <= MAX_QEMU_CHANGED_LINES
         and not prohibited
     )
@@ -653,14 +830,26 @@ def _patch_budget_report() -> tuple[dict[str, Any], list[str]]:
                 "prohibited_path_parts": list(PROHIBITED_QEMU_PATH_PARTS),
             },
             "anticipated_qemu_patch": {
+                "source": f"git diff {SPEC_REVISION}...HEAD",
                 "paths": paths,
                 "non_generated_files": len(paths),
                 "changed_lines": changed_lines,
                 "prohibited_paths": prohibited,
             },
+            "reviewed_diff": {
+                "paths": reviewed_paths,
+                "changed_lines": reviewed_changed_lines,
+                "dirty_worktree_entries": status.splitlines(),
+                "protected_paths": protected_paths,
+                "hardware_operations": [],
+            },
             "result": "PASS" if valid else "BLOCKED",
         },
-        [] if valid else ["adopted QEMU structural patch budget is invalid"],
+        (
+            []
+            if valid
+            else ["QEMU budget/protected-path audit is dirty, out of scope, or invalid"]
+        ),
     )
 
 
@@ -699,7 +888,7 @@ def _fs3_report(
             "id": "software_ci",
             "level": "automated",
             "exact_commit": integration_head,
-            "result": "PASS" if software_pass else "MISSING",
+            "result": "PASS" if integrated and software_pass else "MISSING",
             "artifact": next(
                 (item["url"] for item in software_checks if item["name"] == "CI Gate"),
                 None,
@@ -762,7 +951,8 @@ def build_report(*, validate_installed_engine: bool = True) -> dict[str, Any]:
     tracker_error: str | None = None
     try:
         prs = {number: _gh_json("pr", number) for number in PR_NUMBERS}
-        issue = _gh_json("issue", FS3_ISSUE)
+        issues = {number: _gh_json("issue", number) for number in ISSUE_NUMBERS}
+        issue = issues[FS3_ISSUE]
     except (GateError, json.JSONDecodeError) as error:
         tracker_error = str(error)
         issue = {}
@@ -771,7 +961,7 @@ def build_report(*, validate_installed_engine: bool = True) -> dict[str, Any]:
     ledger: dict[str, Any] = {"result": "BLOCKED", "error": tracker_error}
     fs3: dict[str, Any] = {"result": "BLOCKED", "error": tracker_error}
     if not tracker_error:
-        ledger, found = _ledger_and_integration(prs)
+        ledger, found = _ledger_and_integration(prs, issues)
         blockers.extend(found)
         fs3, found = _fs3_report(prs, issue)
         blockers.extend(found)
@@ -809,10 +999,9 @@ def build_report(*, validate_installed_engine: bool = True) -> dict[str, Any]:
         "qemu_patch_budget": budget,
         "protected_path_audit": {
             "gate_allowed_surface": "tools/simulation/**",
-            "downstream_anticipated_diff": [],
-            "protected_paths": [],
-            "hardware_operations": [],
-            "result": "PASS",
+            "identity_source": budget.get("anticipated_qemu_patch", {}).get("source"),
+            **budget.get("reviewed_diff", {}),
+            "result": budget.get("result", "BLOCKED"),
         },
         "blockers": unique_blockers,
         "verdict": verdict,
