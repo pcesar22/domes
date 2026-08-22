@@ -629,6 +629,39 @@ class HardwareBrokerTest(unittest.TestCase):
                     5,
                 )
 
+    def test_bounded_runner_ignores_unattributed_filesystem_churn(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cap = self.capability(Path(directory))
+            capacity_calls = 0
+
+            def filesystem_capacity(_path):
+                nonlocal capacity_calls
+                capacity_calls += 1
+                # Simulate another autonomous worker consuming host space while
+                # this bounded candidate is alive. Candidate attribution comes
+                # from its evidence tree and open descriptors, not this global
+                # filesystem delta.
+                consumed = 0 if capacity_calls == 1 else 65536
+                return 1024 * 1024 - consumed, 100000
+
+            with (
+                mock.patch.object(
+                    broker, "_filesystem_capacity", side_effect=filesystem_capacity
+                ),
+                mock.patch.object(broker, "MIN_HOST_FREE_BYTES", 0),
+                mock.patch.object(broker, "MIN_HOST_FREE_INODES", 0),
+                mock.patch.object(broker, "MAX_CANDIDATE_DISK_GROWTH_BYTES", 4096),
+            ):
+                returncode, stdout, stderr = broker._run_with_bounded_logs(
+                    cap,
+                    [sys.executable, "-c", "import time; time.sleep(0.15)"],
+                    "concurrent-host-churn",
+                    5,
+                )
+            self.assertEqual(0, returncode)
+            self.assertEqual("", stdout)
+            self.assertEqual("", stderr)
+
     def test_directory_scan_tolerates_compiler_temp_file_disappearance(self):
         class VanishingEntry:
             path = "/tmp/vanished"
