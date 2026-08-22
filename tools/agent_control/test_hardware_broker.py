@@ -402,6 +402,16 @@ class HardwareBrokerTest(unittest.TestCase):
                 if command[1] == ["espnow", "bench", "--rounds", "1"]
             ]
             self.assertEqual(1, len(trace_probe))
+            first_trace_clear = next(
+                index
+                for index, command in enumerate(
+                    commands[first_trace_start + 1 :], first_trace_start + 1
+                )
+                if command[1] == ["trace", "clear"]
+            )
+            trace_probe_index = commands.index(trace_probe[0])
+            self.assertLess(first_trace_start, first_trace_clear)
+            self.assertLess(first_trace_clear, trace_probe_index)
             self.assertEqual(1, summary["traced_probe_rounds"])
             self.assertTrue(
                 (evidence / f"espnow-regression-{'b' * 16}.jsonl").is_file()
