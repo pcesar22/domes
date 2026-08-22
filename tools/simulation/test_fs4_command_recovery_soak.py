@@ -264,5 +264,15 @@ class ManifestTests(unittest.TestCase):
             soak.validate_manifest(candidate, log_bytes())
 
 
+class CampaignTests(unittest.TestCase):
+    def test_writable_toolchain_files_with_spaces_remain_ignored(self) -> None:
+        status = "?? .tmp/cache/file with spaces\0?? .tmp/toolchain/file\0"
+        status_lines = status.strip().split("\0")
+        self.assertEqual(
+            [line for line in status_lines if line and not line.startswith("?? .tmp/")],
+            [],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -393,9 +393,11 @@ def run(cycles: int, specification_revision: str, output: Path) -> Path:
     output.mkdir(parents=True, exist_ok=True)
     tested_sha = _git("rev-parse", "HEAD")
     status_lines = _git(
-        "status", "--porcelain=v1", "--untracked-files=all"
-    ).splitlines()
-    source_changes = [line for line in status_lines if not line.startswith("?? .tmp/")]
+        "status", "--porcelain=v1", "-z", "--untracked-files=all"
+    ).split("\0")
+    source_changes = [
+        line for line in status_lines if line and not line.startswith("?? .tmp/")
+    ]
     if source_changes:
         raise SoakError("campaign must execute from a clean tested Git head")
     try:
