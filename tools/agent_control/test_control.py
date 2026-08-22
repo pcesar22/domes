@@ -645,9 +645,21 @@ class ResultSemanticsTest(unittest.TestCase):
         control.validate_result_semantics("judge", result)
         self.assertEqual("agent:rework", control.result_state("judge", result))
 
-    def test_worker_blocker_never_advances_to_review(self) -> None:
-        result = {"state": "agent_review", "blockers": ["external input"]}
+    def test_worker_without_reviewable_pr_blocks_on_external_input(self) -> None:
+        result = {
+            "state": "agent_review",
+            "pull_request": None,
+            "blockers": ["external input"],
+        }
         self.assertEqual("agent:blocked", control.result_state("worker", result))
+
+    def test_worker_pr_routes_reported_product_blockers_to_judge(self) -> None:
+        result = {
+            "state": "agent_review",
+            "pull_request": 144,
+            "blockers": ["entry gate reports unmet product prerequisite"],
+        }
+        self.assertEqual("agent:agent-review", control.result_state("worker", result))
 
     def test_hardware_approval_routes_through_verification_then_final_judge(
         self,
@@ -1918,6 +1930,19 @@ class SelectorAndPlanTest(unittest.TestCase):
                     (),
                     (),
                 )
+
+    def test_selector_rejects_review_only_selected_work(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        result = self.selector_result()
+        result["autonomy_policy"] = "review-only"
+        with mock.patch.object(
+            control, "origin_main_revision", return_value=self.revision
+        ):
+            with self.assertRaisesRegex(
+                control.ControlError, "must use the software-review-required policy"
+            ):
+                control.validate_selector_result(result, workflow, policy, (), ())
 
     def test_selector_rejects_unavailable_existing_issue_or_pull_request(self) -> None:
         workflow = control.load_workflow()
