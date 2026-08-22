@@ -2590,8 +2590,10 @@ def validate_selector_result(
         raise ControlError("selector returned a prohibited work class")
     if result["priority"] not in {"p0", "p1", "p2", "p3"}:
         raise ControlError("selector returned an invalid priority")
-    if result["autonomy_policy"] not in {AUTOMATED_REVIEW_POLICY, "review-only"}:
-        raise ControlError("selector returned an invalid autonomy policy")
+    if result["autonomy_policy"] != AUTOMATED_REVIEW_POLICY:
+        raise ControlError(
+            "autonomous selector must use the software-review-required policy"
+        )
     surfaces = allowed_surfaces("\n".join(result["allowed_surfaces"]))
     if result["autonomy_policy"] == AUTOMATED_REVIEW_POLICY:
         protected = protected_autonomous_surfaces(surfaces, policy)
@@ -3110,6 +3112,7 @@ def result_state(
     if (
         role == "worker"
         and result["blockers"]
+        and result.get("pull_request") is None
         and not (
             ticket_sections is not None
             and requires_registered_hardware(ticket_sections)

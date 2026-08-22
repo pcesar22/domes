@@ -1,0 +1,83 @@
+{
+  "comparison_verdict_sha256": [
+    "4b4b031802c3452234b1afa76bed453f791fe591f64f2acd3b0bf430f797ef05",
+    "4b4b031802c3452234b1afa76bed453f791fe591f64f2acd3b0bf430f797ef05"
+  ],
+  "divergences": [
+    {
+      "field": "rounds[0].round_token",
+      "fixed": 1,
+      "mobile": null,
+      "reason": "unavailable_in_mobile_result"
+    },
+    {
+      "field": "rounds[1].round_token",
+      "fixed": 2,
+      "mobile": null,
+      "reason": "unavailable_in_mobile_result"
+    },
+    {
+      "field": "rounds[2].round_token",
+      "fixed": 3,
+      "mobile": null,
+      "reason": "unavailable_in_mobile_result"
+    },
+    {
+      "field": "rounds[3].round_token",
+      "fixed": 4,
+      "mobile": null,
+      "reason": "unavailable_in_mobile_result"
+    },
+    {
+      "field": "rounds[4].round_token",
+      "fixed": 5,
+      "mobile": null,
+      "reason": "unavailable_in_mobile_result"
+    },
+    {
+      "field": "rounds[5].round_token",
+      "fixed": 6,
+      "mobile": null,
+      "reason": "unavailable_in_mobile_result"
+    }
+  ],
+  "fixture_id": "fixed-two-pod-mobile-v1",
+  "fixture_sha256": "5bf359be3b254608bf737d1a5f5a17139b6d6fdd32a30c863003a6332c0fdd2e",
+  "matches": [
+    "aggregate.hits",
+    "aggregate.misses",
+    "aggregate.average_reaction_us",
+    "aggregate.best_reaction_us",
+    "aggregate.worst_reaction_us",
+    "rounds[0].target_identity",
+    "rounds[0].hit",
+    "rounds[0].reaction_time_us",
+    "rounds[1].target_identity",
+    "rounds[1].hit",
+    "rounds[1].reaction_time_us",
+    "rounds[2].target_identity",
+    "rounds[2].hit",
+    "rounds[2].reaction_time_us",
+    "rounds[3].target_identity",
+    "rounds[3].hit",
+    "rounds[3].reaction_time_us",
+    "rounds[4].target_identity",
+    "rounds[4].hit",
+    "rounds[4].reaction_time_us",
+    "rounds[5].target_identity",
+    "rounds[5].hit",
+    "rounds[5].reaction_time_us"
+  ],
+  "normalized_output_sha256": [
+    "c4e22820ff91344b8c87db7e16d59e9dcb9583c05937fe94709f90a9ca392176",
+    "c4e22820ff91344b8c87db7e16d59e9dcb9583c05937fe94709f90a9ca392176"
+  ],
+  "provenance_limitations": [
+    "mobile production results do not retain round tokens",
+    "mobile fixture durations exercise DrillResult scoring but not DateTime.now capture",
+    "simulated monotonic and host wall clocks have different origins and are not physically equivalent",
+    "BLE, ESP-NOW, touch, and wall-clock equivalence are unverified"
+  ],
+  "schema_version": 1,
+  "status": "diverged"
+}
