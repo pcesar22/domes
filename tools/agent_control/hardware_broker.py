@@ -977,14 +977,24 @@ def _run_with_bounded_logs(
                     live_pids, MAX_CANDIDATE_DISK_GROWTH_BYTES
                 )
                 free_bytes, free_inodes = _filesystem_capacity(cap.evidence)
+                if current + unlinked > MAX_CAPABILITY_EVIDENCE_BYTES:
+                    failure = (
+                        "hardware capability exceeded its cumulative evidence quota"
+                    )
+                    break
                 if (
                     current - baseline > MAX_CANDIDATE_DISK_GROWTH_BYTES
-                    or current + unlinked > MAX_CAPABILITY_EVIDENCE_BYTES
                     or unlinked > MAX_CANDIDATE_DISK_GROWTH_BYTES
-                    or free_bytes < MIN_HOST_FREE_BYTES
-                    or free_inodes < MIN_HOST_FREE_INODES
                 ):
                     failure = "candidate process exceeded aggregate disk-growth limit"
+                    break
+                if (
+                    free_bytes < MIN_HOST_FREE_BYTES
+                    or free_inodes < MIN_HOST_FREE_INODES
+                ):
+                    failure = (
+                        "host filesystem reserve is insufficient for candidate work"
+                    )
                     break
                 next_disk_check = now + 0.1
             time.sleep(0.02)
