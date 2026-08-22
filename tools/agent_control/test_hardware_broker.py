@@ -135,6 +135,14 @@ class HardwareBrokerTest(unittest.TestCase):
             ("master", 1, 0),
             broker._espnow_status_fields("State: master\nPeers: 1\nTX fails: 0\n"),
         )
+        self.assertEqual(
+            ("disabled", 0, 0),
+            broker._espnow_status_fields(
+                "ESP-NOW Status:\n  State:      disabled\n  Channel:    1\n"
+                "  Peers:      0\n  TX packets: 0\n  RX packets: 0\n"
+                "  TX fails:   0\n"
+            ),
+        )
         with self.assertRaisesRegex(broker.BrokerError, "incomplete"):
             broker._espnow_status_fields("State: master\nPeers: 1\n")
 
@@ -155,10 +163,12 @@ class HardwareBrokerTest(unittest.TestCase):
             )
             enabled = {0: False, 1: False}
             drill = {"active": False}
+            commands = []
 
             def run(_cap, argv, _name, _timeout):
                 board = int(argv[argv.index("--port") + 1][-1])
                 command = argv[argv.index("--port") + 2 :]
+                commands.append((board, command))
                 if command[:2] == ["feature", "enable"]:
                     enabled[board] = True
                 elif command[:2] == ["feature", "disable"]:
@@ -211,9 +221,24 @@ class HardwareBrokerTest(unittest.TestCase):
             self.assertEqual(6, summary["benchmarks"])
             self.assertEqual("passed", summary["drill"])
             self.assertEqual(["disabled", "disabled"], summary["final_states"])
+            self.assertEqual(
+                [(0, ["trace", "stop"]), (1, ["trace", "stop"])],
+                commands[-2:],
+            )
             self.assertTrue(
                 (evidence / f"espnow-regression-{'b' * 16}.jsonl").is_file()
             )
+
+    def test_failed_trace_dump_does_not_require_output_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            failed = subprocess.CompletedProcess(["domes-cli"], 1)
+            self.assertFalse(broker._trace_artifacts_ready(failed, output))
+            succeeded = subprocess.CompletedProcess(["domes-cli"], 0)
+            with self.assertRaisesRegex(broker.BrokerError, "no raw trace"):
+                broker._trace_artifacts_ready(succeeded, output)
+            (output / "trace.json.raw").write_bytes(b"trace")
+            self.assertTrue(broker._trace_artifacts_ready(succeeded, output))
 
     def test_path_escape_and_wrong_ticket_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
