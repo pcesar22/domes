@@ -139,7 +139,7 @@ TransportError EspNowTransport::sendToAddress(const EspNowAddress& address, cons
     pendingTxToken_.store(token, std::memory_order_release);
     if (trace::Recorder::isEnabled()) {
         trace::Recorder::record(trace::makeEvent(trace::EventType::kSchedQueueSend,
-                                                 trace::Category::kEspNow,
+                                                 trace::Category::kKernel,
                                                  TRACE_ID("EspNow.TxSubmit"), token));
     }
     const uint32_t sendStartTick = xTaskGetTickCount();
@@ -236,10 +236,10 @@ TransportError EspNowTransport::receive(uint8_t* buf, size_t* len, uint32_t time
     lastReceivedToken_.store(token, std::memory_order_release);
     if (trace::Recorder::isEnabled()) {
         trace::Recorder::record(trace::makeEvent(trace::EventType::kSemTake,
-                                                 trace::Category::kEspNow,
+                                                 trace::Category::kKernel,
                                                  TRACE_ID("EspNow.RxReady"), token));
         trace::Recorder::record(trace::makeEvent(trace::EventType::kSchedQueueReceive,
-                                                 trace::Category::kEspNow,
+                                                 trace::Category::kKernel,
                                                  TRACE_ID("EspNow.RxQueue"), token));
     }
 
@@ -254,7 +254,7 @@ TransportError EspNowTransport::receive(uint8_t* buf, size_t* len, uint32_t time
                   trace::Category::kEspNow);
     if (trace::Recorder::isEnabled()) {
         trace::Recorder::record(trace::makeEvent(trace::EventType::kCausalComplete,
-                                                 trace::Category::kEspNow,
+                                                 trace::Category::kKernel,
                                                  TRACE_ID("EspNow.RxDispatch"), token));
     }
     return TransportError::kOk;
@@ -376,7 +376,7 @@ void EspNowTransport::onReceive(EspNowCorrelationToken token, const EspNowReceiv
                                 const uint8_t* data, size_t len) {
     if (trace::Recorder::isEnabled()) {
         trace::Recorder::record(trace::makeEvent(trace::EventType::kCallbackBegin,
-                                                 trace::Category::kEspNow,
+                                                 trace::Category::kKernel,
                                                  TRACE_ID("EspNow.RxCallback"), token));
     }
 
@@ -384,7 +384,7 @@ void EspNowTransport::onReceive(EspNowCorrelationToken token, const EspNowReceiv
         rxSemaphore_ == nullptr || !data || len == 0 || len > kEspNowMaxPayload) {
         if (trace::Recorder::isEnabled()) {
             trace::Recorder::record(trace::makeEvent(trace::EventType::kCallbackEnd,
-                                                     trace::Category::kEspNow,
+                                                     trace::Category::kKernel,
                                                      TRACE_ID("EspNow.RxCallback"), token));
         }
         return;
@@ -409,7 +409,7 @@ void EspNowTransport::onReceive(EspNowCorrelationToken token, const EspNowReceiv
         ESP_LOGW(kTag, "RX buffer full, dropping %zu bytes", len);
         if (trace::Recorder::isEnabled()) {
             trace::Recorder::record(trace::makeEvent(trace::EventType::kCallbackEnd,
-                                                     trace::Category::kEspNow,
+                                                     trace::Category::kKernel,
                                                      TRACE_ID("EspNow.RxCallback"), token));
         }
         return;
@@ -417,7 +417,7 @@ void EspNowTransport::onReceive(EspNowCorrelationToken token, const EspNowReceiv
 
     if (trace::Recorder::isEnabled()) {
         trace::Recorder::record(trace::makeEvent(trace::EventType::kSchedQueueSend,
-                                                 trace::Category::kEspNow,
+                                                 trace::Category::kKernel,
                                                  TRACE_ID("EspNow.RxQueue"), token));
     }
 
@@ -425,10 +425,10 @@ void EspNowTransport::onReceive(EspNowCorrelationToken token, const EspNowReceiv
     xSemaphoreGive(rxSemaphore_);
     if (trace::Recorder::isEnabled()) {
         trace::Recorder::record(trace::makeEvent(trace::EventType::kSemGive,
-                                                 trace::Category::kEspNow,
+                                                 trace::Category::kKernel,
                                                  TRACE_ID("EspNow.RxReady"), token));
         trace::Recorder::record(trace::makeEvent(trace::EventType::kCallbackEnd,
-                                                 trace::Category::kEspNow,
+                                                 trace::Category::kKernel,
                                                  TRACE_ID("EspNow.RxCallback"), token));
     }
     rxCount_.fetch_add(1, std::memory_order_relaxed);
@@ -470,7 +470,7 @@ void EspNowTransport::onSendComplete(EspNowCorrelationToken token, const EspNowA
     lastSendStatus_.store(status);
     if (trace::Recorder::isEnabled()) {
         trace::Recorder::record(trace::makeEvent(trace::EventType::kCallbackBegin,
-                                                 trace::Category::kEspNow,
+                                                 trace::Category::kKernel,
                                                  TRACE_ID("EspNow.TxCallback"), token));
     }
     xSemaphoreGive(txDoneSemaphore_);
@@ -482,10 +482,10 @@ void EspNowTransport::onSendComplete(EspNowCorrelationToken token, const EspNowA
     }
     if (trace::Recorder::isEnabled()) {
         trace::Recorder::record(trace::makeEvent(trace::EventType::kCallbackEnd,
-                                                 trace::Category::kEspNow,
+                                                 trace::Category::kKernel,
                                                  TRACE_ID("EspNow.TxCallback"), token));
         trace::Recorder::record(trace::makeEvent(trace::EventType::kCausalComplete,
-                                                 trace::Category::kEspNow,
+                                                 trace::Category::kKernel,
                                                  TRACE_ID("EspNow.TxComplete"), token));
     }
 }

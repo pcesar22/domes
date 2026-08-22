@@ -293,34 +293,35 @@ TEST(EspNowTransportTest, EmitsOneCorrelationTokenAtEveryCallbackToTaskBoundary)
     const EspNowCorrelationToken txToken = radio.sentTokens.back();
 
     const auto& events = sim::globalTraceEvents();
+    const auto causalTypesForToken = [&events](EspNowCorrelationToken token) {
+        std::vector<trace::EventType> types;
+        for (const trace::TraceEvent& event : events) {
+            if (event.arg2 == token && event.type() >= trace::EventType::kSemTake &&
+                event.type() <= trace::EventType::kCausalComplete) {
+                EXPECT_EQ(event.category(), trace::Category::kKernel)
+                    << "causal trace type " << static_cast<int>(event.type())
+                    << " must use the kernel category";
+                types.push_back(event.type());
+            }
+        }
+        return types;
+    };
     const std::array rxTypes = {
         trace::EventType::kCallbackBegin,  trace::EventType::kSchedQueueSend,
         trace::EventType::kSemGive,        trace::EventType::kCallbackEnd,
         trace::EventType::kSemTake,        trace::EventType::kSchedQueueReceive,
         trace::EventType::kCausalComplete,
     };
-    for (const trace::EventType type : rxTypes) {
-        EXPECT_TRUE(std::any_of(events.begin(), events.end(),
-                                [type](const trace::TraceEvent& event) {
-                                    return event.category() == trace::Category::kEspNow &&
-                                           event.type() == type && event.arg2 == kRxToken;
-                                }))
-            << "missing RX trace type " << static_cast<int>(type);
-    }
+    EXPECT_EQ(causalTypesForToken(kRxToken),
+              (std::vector<trace::EventType>(rxTypes.begin(), rxTypes.end())));
     const std::array txTypes = {
         trace::EventType::kSchedQueueSend,
         trace::EventType::kCallbackBegin,
         trace::EventType::kCallbackEnd,
         trace::EventType::kCausalComplete,
     };
-    for (const trace::EventType type : txTypes) {
-        EXPECT_TRUE(std::any_of(events.begin(), events.end(),
-                                [type, txToken](const trace::TraceEvent& event) {
-                                    return event.category() == trace::Category::kEspNow &&
-                                           event.type() == type && event.arg2 == txToken;
-                                }))
-            << "missing TX trace type " << static_cast<int>(type);
-    }
+    EXPECT_EQ(causalTypesForToken(txToken),
+              (std::vector<trace::EventType>(txTypes.begin(), txTypes.end())));
 
     trace::Recorder::setEnabled(false);
     trace::Recorder::shutdown();
