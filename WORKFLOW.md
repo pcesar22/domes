@@ -50,9 +50,9 @@ independent judge verdict may move implementation from `agent:agent-review` to
 judge. Versioned `software-review-required` policy authorizes autonomous implementation and CI
 repair only. Every pull request stops at `agent:human-review`; only a human may approve or merge it.
 After observing a human merge, the controller performs issue bookkeeping and unlocks ordinary
-dependencies. A narrowly bounded software child may start earlier as a one-level stacked pull
-request when its sole nonterminal parent is already an exact-head, independently judged,
-CI-passing `agent:human-review` artifact. Release remains outside this workflow.
+dependencies. A narrowly bounded software child may start earlier in a linear stacked pull-request
+chain when its sole nonterminal parent is already an exact-head, independently judged, CI-passing
+`agent:human-review` artifact. Release remains outside this workflow.
 
 ## Dispatch policy
 
@@ -62,9 +62,10 @@ The scheduler performs only these actions:
 2. Validate the ticket contract and pinned specification revision.
 3. Reject implementation issues with unresolved dependencies or overlapping active workspaces. A
    planner may run ahead of its nonterminal declared dependencies because it is read-only; every
-   materialized child inherits those external gates. The only implementation exception is one
+   materialized child inherits those external gates. The only implementation exception is an
    automated software child, with no hardware operations, stacked on one stable
-   `agent:human-review` parent. Fan-in and nested stacks fail closed.
+   `agent:human-review` parent. Linear stacks may continue through multiple independently accepted
+   parents; fan-in fails closed.
 4. Sort eligible issues by numeric priority and then issue number.
 5. Reserve up to three slots and create one controller-owned standalone Git workspace per issue.
 6. Move a newly accepted implementation task to `agent:running` and launch a fresh role-specific
@@ -80,17 +81,18 @@ The scheduler performs only these actions:
     judge cycle, then place the exact passing head in `agent:human-review` without approving or
     merging it.
 
-For the one-level stack exception, the controller—not a worker narrative—binds the child to the
-parent issue, pull request, branch, and exact reviewed head. It creates the child branch from that
-head and requires the child pull request to target the parent branch. Parent head movement,
-requested changes, conflict, closure, rework, or merge invalidates the binding and sends the child
-through a fresh worker, judge, and CI cycle. After the parent is merged, the child is rebuilt and
-retargeted to `main`; no earlier child approval survives the base transition. Hardware-executing
-children remain `main`-only. If a human explicitly merges an already review-ready child into its
-exact parent branch first, the child remains nonterminal until the controller proves that merge's
-integration commit reached `main` through the parent. If the parent drops or fails to land that
-commit, that human-merged artifact is blocked without rewriting its acceptance contract; a fresh
-steward-approved delivery is required while the selector continues other work.
+For the linear stack exception, the controller—not a worker narrative—validates every ancestor's
+issue, pull request, branch, exact reviewed head, independent approval, and required CI before it
+binds a child to the immediate live parent. It creates the child branch from that head and requires
+the child pull request to target the parent branch. Fan-in, cycles, unstable or changed ancestors,
+requested changes, conflicts, and hardware-executing children fail closed. When a parent merges
+into its own parent, an open child is rebuilt and retargeted to the next live ancestor; no earlier
+child approval survives that base transition. If a human explicitly merges a review-ready child
+into its exact parent branch first, the child remains nonterminal while the controller follows the
+validated ancestor chain and proves that the integration commit ultimately reached `main`. If any
+ancestor drops or fails to land that commit, the merged artifact is blocked without rewriting its
+acceptance contract; a fresh steward-approved delivery is required while the selector continues
+other work.
 
 Every worker and verification-worker Codex process remains workspace-write and has no direct device
 access. Hardware execution requires all four of: an explicit finite `Hardware operations` enum and
