@@ -13,6 +13,9 @@ import json
 import re
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -21,13 +24,30 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 import qemu_feasibility as feasibility
+import qemu_runtime as runtime
 
 SPEC_REVISION = "498ae0203dc8b7048682fbff718a0629243a98a8"
+REQUIRED_BASE_REVISION = "d9f84e4eca153d1f637b869681eae6e04a6adac6"
 REPOSITORY = "pcesar22/domes"
 PR_NUMBERS = (105, 107, 115, 130)
 ISSUE_NUMBERS = (101, 114, 123)
 FS3_ISSUE = 114
 TRACKER_ACTOR = "pcesar22"
+DEPENDENCY_JUDGMENTS = {
+    101: {
+        "pull_request": 105,
+        "spec_revision": "224c22931311e763db3ba304d780daa78552db41",
+    },
+    123: {
+        "pull_request": 130,
+        "spec_revision": "8ed71e4a9adadbfddbde1548ef7060bcf79a76e9",
+    },
+}
+FS3_JUDGMENT = {
+    "issue": FS3_ISSUE,
+    "pull_request": 115,
+    "spec_revision": "1c02a9bc0d1812837f24076e1f04372ed8572e9a",
+}
 REQUIRED_SOFTWARE_CHECKS = frozenset(
     {
         "Build ESP32-S3 Firmware",
@@ -58,6 +78,14 @@ PHYSICAL_EVIDENCE_IDS = (
     "complementary_roles",
     "bidirectional_benchmark_simulation_off",
     "traced_drill",
+)
+RETAINED_ARTIFACT_HOSTS = frozenset(
+    {
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com",
+        "objects.githubusercontent.com",
+    }
 )
 
 
@@ -204,20 +232,93 @@ def _structured_payloads(issue: Mapping[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
+def _valid_judgment(
+    payload: Mapping[str, Any],
+    *,
+    issue: int,
+    pull_request: int,
+    spec_revision: str,
+    commit: str | None,
+) -> bool:
+    criteria = payload.get("criteria")
+    required_rework = payload.get("required_rework")
+    verdict = payload.get("verdict")
+    return bool(
+        commit
+        and set(payload) - {"_comment_url"}
+        == {
+            "claim_boundary",
+            "commit",
+            "criteria",
+            "issue",
+            "pull_request",
+            "required_rework",
+            "spec_revision",
+            "verdict",
+        }
+        and isinstance(payload.get("claim_boundary"), str)
+        and bool(payload["claim_boundary"].strip())
+        and payload.get("commit") == commit
+        and payload.get("issue") == issue
+        and payload.get("pull_request") == pull_request
+        and payload.get("spec_revision") == spec_revision
+        and verdict in {"approve", "reject"}
+        and isinstance(criteria, list)
+        and bool(criteria)
+        and all(
+            isinstance(criterion, dict)
+            and set(criterion) == {"criterion", "evidence", "status"}
+            and isinstance(criterion.get("criterion"), str)
+            and bool(criterion["criterion"].strip())
+            and isinstance(criterion.get("evidence"), list)
+            and bool(criterion["evidence"])
+            and all(
+                isinstance(item, str) and item.strip() for item in criterion["evidence"]
+            )
+            and criterion.get("status") in {"met", "not_met", "not_verifiable"}
+            for criterion in criteria
+        )
+        and isinstance(required_rework, list)
+        and all(isinstance(item, str) and item.strip() for item in required_rework)
+        and (
+            verdict != "approve"
+            or (
+                not required_rework
+                and all(criterion["status"] == "met" for criterion in criteria)
+            )
+        )
+    )
+
+
 def _latest_judgment(
-    issue: Mapping[str, Any], commit: str | None
+    issue: Mapping[str, Any],
+    commit: str | None,
+    *,
+    issue_number: int,
+    pull_request: int,
+    spec_revision: str,
 ) -> dict[str, Any] | None:
     matches = [
         payload
         for payload in _structured_payloads(issue)
-        if payload.get("commit") == commit
-        and payload.get("verdict") in {"approve", "reject"}
+        if _valid_judgment(
+            payload,
+            issue=issue_number,
+            pull_request=pull_request,
+            spec_revision=spec_revision,
+            commit=commit,
+        )
     ]
     return matches[-1] if matches else None
 
 
 def _latest_ancestral_judgment(
-    issue: Mapping[str, Any], descendant: str | None
+    issue: Mapping[str, Any],
+    descendant: str | None,
+    *,
+    issue_number: int,
+    pull_request: int,
+    spec_revision: str,
 ) -> dict[str, Any] | None:
     if not descendant:
         return None
@@ -227,7 +328,13 @@ def _latest_ancestral_judgment(
         if (
             isinstance(commit, str)
             and re.fullmatch(r"[0-9a-f]{40}", commit)
-            and payload.get("verdict") in {"approve", "reject"}
+            and _valid_judgment(
+                payload,
+                issue=issue_number,
+                pull_request=pull_request,
+                spec_revision=spec_revision,
+                commit=commit,
+            )
             and _is_ancestor(commit, descendant)
         ):
             matches.append(payload)
@@ -323,13 +430,43 @@ def _physical_record_valid(
     return False
 
 
+def _artifact_digest_matches(artifact: Any, tracker_comment: Any) -> bool:
+    if not isinstance(artifact, dict) or set(artifact) != {"url", "sha256"}:
+        return False
+    url = artifact.get("url")
+    digest = artifact.get("sha256")
+    parsed = urllib.parse.urlparse(url) if isinstance(url, str) else None
+    if (
+        not isinstance(url, str)
+        or parsed is None
+        or parsed.scheme != "https"
+        or parsed.hostname not in RETAINED_ARTIFACT_HOSTS
+        or url == tracker_comment
+        or not isinstance(digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+    ):
+        return False
+    try:
+        with urllib.request.urlopen(url, timeout=20) as response:
+            final_host = urllib.parse.urlparse(response.geturl()).hostname
+            if final_host not in RETAINED_ARTIFACT_HOSTS:
+                return False
+            content = response.read(16 * 1024 * 1024 + 1)
+    except (OSError, urllib.error.URLError, ValueError):
+        return False
+    return (
+        len(content) <= 16 * 1024 * 1024
+        and hashlib.sha256(content).hexdigest() == digest
+    )
+
+
 def _physical_evidence(
     issue: Mapping[str, Any], exact_commit: str | None
 ) -> tuple[dict[str, dict[str, Any]], list[str]]:
     """Validate identity-bound controller attestations embedded in tracker evidence.
 
-    The digest covers the canonical evidence list.  Consequently an edited comment,
-    invented URL, or unresolved artifact cannot silently retain acceptance.
+    Every category names and hashes its retained runtime artifact. The controller
+    attestation describes that artifact but is never accepted as the artifact itself.
     """
     candidates: dict[str, list[dict[str, Any]]] = {
         evidence_id: [] for evidence_id in PHYSICAL_EVIDENCE_IDS
@@ -338,19 +475,26 @@ def _physical_evidence(
     for payload in _structured_payloads(issue):
         if payload.get("commit") != exact_commit:
             continue
-        artifact = payload.get("artifact")
         records = payload.get("verification")
-        canonical = json.dumps(records, sort_keys=True, separators=(",", ":")).encode()
         artifact_valid = (
-            payload.get("schema_version") == 1
+            set(payload) - {"_comment_url"}
+            == {
+                "schema_version",
+                "kind",
+                "issue",
+                "pull_request",
+                "spec_revision",
+                "commit",
+                "acceptance_authority",
+                "verification",
+            }
+            and payload.get("schema_version") == 1
             and payload.get("kind") == "fs-wp-003a-physical-acceptance"
             and payload.get("issue") == FS3_ISSUE
+            and payload.get("pull_request") == FS3_JUDGMENT["pull_request"]
+            and payload.get("spec_revision") == FS3_JUDGMENT["spec_revision"]
             and payload.get("acceptance_authority")
             == {"actor": TRACKER_ACTOR, "role": "controller", "decision": "accepted"}
-            and isinstance(artifact, dict)
-            and set(artifact) == {"url", "sha256"}
-            and artifact.get("url") == payload.get("_comment_url")
-            and artifact.get("sha256") == hashlib.sha256(canonical).hexdigest()
             and isinstance(records, list)
         )
         if not artifact_valid:
@@ -371,12 +515,16 @@ def _physical_evidence(
                     "configuration",
                     "procedure",
                     "details",
+                    "artifact",
                 }
                 and record.get("level") == "physical"
                 and record.get("status") == "passed"
                 and isinstance(record.get("configuration"), dict)
                 and isinstance(record.get("procedure"), str)
                 and bool(record.get("procedure"))
+                and _artifact_digest_matches(
+                    record.get("artifact"), payload.get("_comment_url")
+                )
                 and _physical_record_valid(
                     str(evidence_id),
                     record.get("details"),
@@ -393,7 +541,7 @@ def _physical_evidence(
                     "level": "physical",
                     "exact_commit": payload["commit"],
                     "result": "PASS",
-                    "artifact": artifact,
+                    "artifact": record["artifact"],
                     "acceptance_authority": payload["acceptance_authority"],
                     "tracker_comment": payload.get("_comment_url"),
                     "configuration": record["configuration"],
@@ -430,12 +578,20 @@ def _repository_report(head: str) -> tuple[dict[str, Any], list[str]]:
     descends = pinned_exists and _is_ancestor(SPEC_REVISION, head)
     if not descends:
         blockers.append(f"repository HEAD {head} does not descend from {SPEC_REVISION}")
+    base_descends = _is_ancestor(REQUIRED_BASE_REVISION, head)
+    if not base_descends:
+        blockers.append(
+            f"repository HEAD {head} does not descend from required base "
+            f"{REQUIRED_BASE_REVISION}"
+        )
     return (
         {
             "head": head,
             "pinned_revision": SPEC_REVISION,
             "pinned_revision_exists": pinned_exists,
             "head_descends_from_pinned_revision": descends,
+            "required_base_revision": REQUIRED_BASE_REVISION,
+            "head_descends_from_required_base": base_descends,
             "evidence_tree_revision": SPEC_REVISION if pinned_exists else None,
         },
         blockers,
@@ -490,10 +646,20 @@ def _ledger_and_integration(
     )
     c_head = pr105.get("headRefOid")
     e_head = pr130.get("headRefOid")
-    c_judgment = _latest_judgment(issues[101], str(c_head))
-    e_judgment = _latest_judgment(issues[123], str(e_head))
-    c_retained_judgment = _latest_ancestral_judgment(issues[101], str(c_head))
-    e_retained_judgment = _latest_ancestral_judgment(issues[123], str(e_head))
+    c_identity = DEPENDENCY_JUDGMENTS[101]
+    e_identity = DEPENDENCY_JUDGMENTS[123]
+    c_judgment = _latest_judgment(
+        issues[101], str(c_head), issue_number=101, **c_identity
+    )
+    e_judgment = _latest_judgment(
+        issues[123], str(e_head), issue_number=123, **e_identity
+    )
+    c_retained_judgment = _latest_ancestral_judgment(
+        issues[101], str(c_head), issue_number=101, **c_identity
+    )
+    e_retained_judgment = _latest_ancestral_judgment(
+        issues[123], str(e_head), issue_number=123, **e_identity
+    )
     c_accepted = bool(c_judgment and c_judgment.get("verdict") == "approve")
     e_accepted = bool(e_judgment and e_judgment.get("verdict") == "approve")
     plan_e_match = re.search(
@@ -501,10 +667,28 @@ def _ledger_and_integration(
         seam_plan,
     )
     implementation_match = re.search(
-        r"final implementation head `([0-9a-f]{7,40})`", scheduler_plan
+        r"Reviewed PR 105 candidate `([0-9a-f]{7,40})`", scheduler_plan
     )
-    plan_e_identity = bool(plan_e_match and plan_e_match.group(1) == pr105_merge)
-    plan_c_retained = bool(implementation_match)
+    plan_e_identity = bool(
+        plan_e_match
+        and plan_e_match.group(1) == e_identity["spec_revision"]
+        and "Issue #123 implements FS-WP-002E" in seam_plan
+    )
+    plan_c_commit = None
+    if implementation_match:
+        try:
+            plan_c_commit = _git(
+                "rev-parse", f"{implementation_match.group(1)}^{{commit}}"
+            )
+        except GateError:
+            pass
+    plan_c_retained = bool(
+        plan_c_commit
+        and c_head
+        and pr105_merge
+        and _is_ancestor(plan_c_commit, str(c_head))
+        and _is_ancestor(str(c_head), str(pr105_merge))
+    )
     implementation_e = "c8a67e4904bbc1af882d278125dbc6ef80ab8319"
     implementation_e_valid = bool(
         e_head
@@ -539,6 +723,7 @@ def _ledger_and_integration(
                 "integrated_in_pinned_revision": pr105_integrated,
                 "retained_plan": "docs/plans/scheduler-trace-observability.md",
                 "retained_plan_identifies_pr": plan_c_retained,
+                "retained_plan_implementation_commit": plan_c_commit,
                 "required_evidence_judgment": _judgment_identity(c_judgment),
                 "latest_ancestral_judgment": _judgment_identity(c_retained_judgment),
                 "required_evidence_still_valid": c_accepted,
@@ -562,6 +747,14 @@ def _ledger_and_integration(
     )
 
 
+def _cmake_source_set(cmake: str, pattern: str) -> frozenset[str]:
+    cmake = re.sub(r"(?m)#.*$", "", cmake)
+    match = re.search(pattern, cmake, re.DOTALL)
+    if not match:
+        return frozenset()
+    return frozenset(re.findall(r'"([^"\n]+\.cpp)"', match.group(1)))
+
+
 def _seam_report() -> tuple[dict[str, Any], list[str]]:
     header = _git_file(
         SPEC_REVISION, "firmware/domes/main/transport/espNowTransport.hpp"
@@ -569,31 +762,127 @@ def _seam_report() -> tuple[dict[str, Any], list[str]]:
     source = _git_file(
         SPEC_REVISION, "firmware/domes/main/transport/espNowTransport.cpp"
     )
+    interface = _git_file(
+        SPEC_REVISION, "firmware/domes/main/transport/iEspNowRadio.hpp"
+    )
+    regression = _git_file(
+        SPEC_REVISION, "firmware/test_app/main/test_esp_now_transport.cpp"
+    )
     cmake = _git_file(SPEC_REVISION, "firmware/domes/main/CMakeLists.txt")
+    header_code = re.sub(
+        r"//.*?$|/\*.*?\*/", "", header, flags=re.MULTILINE | re.DOTALL
+    )
+    source_code = re.sub(
+        r"//.*?$|/\*.*?\*/", "", source, flags=re.MULTILINE | re.DOTALL
+    )
+    interface_code = re.sub(
+        r"//.*?$|/\*.*?\*/", "", interface, flags=re.MULTILINE | re.DOTALL
+    )
+    regression_code = re.sub(
+        r"//.*?$|/\*.*?\*/", "", regression, flags=re.MULTILINE | re.DOTALL
+    )
+    shared = _cmake_source_set(
+        cmake, r"set\(DOMES_SHARED_SRCS(.*?)\)\s*\n\s*if\(CONFIG_DOMES_RUNTIME_PROFILE"
+    )
+    qemu_root = _cmake_source_set(
+        cmake,
+        r"elseif\(CONFIG_DOMES_RUNTIME_PROFILE_QEMU\)(.*?)"
+        r"elseif\(CONFIG_DOMES_RUNTIME_PROFILE_PHYSICAL\)",
+    )
+    physical_root = _cmake_source_set(
+        cmake,
+        r"elseif\(CONFIG_DOMES_RUNTIME_PROFILE_PHYSICAL\)(.*?)"
+        r"else\(\)\s*\n\s*message\(FATAL_ERROR",
+    )
+    capacity_values = {
+        "buffer": 2048,
+        "overhead": 8,
+        "address": 6,
+        "token": 4,
+        "payload": 250,
+    }
+    baseline_metadata = 3 + capacity_values["address"]
+    correlated_metadata = baseline_metadata + capacity_values["token"]
+
+    def item_storage(metadata: int) -> int:
+        unaligned = metadata + capacity_values["payload"]
+        return capacity_values["overhead"] + ((unaligned + 3) & ~3)
+
+    baseline_frames = capacity_values["buffer"] // item_storage(baseline_metadata)
+    correlated_frames = capacity_values["buffer"] // item_storage(correlated_metadata)
     checks = {
-        "production_transport_owns_radio_seam": all(
-            marker in header
-            for marker in (
-                "EspNowTransport(IEspNowRadio& radio)",
-                "IEspNowRadio& radio_",
+        "production_transport_owns_radio_seam": bool(
+            re.search(
+                r"explicit\s+EspNowTransport\(IEspNowRadio&\s+radio\);", header_code
+            )
+            and re.search(r"IEspNowRadio&\s+radio_;", header_code)
+            and re.search(
+                r"EspNowTransport::EspNowTransport\(IEspNowRadio&\s+radio\)\s*"
+                r":\s*radio_\(radio\)\s*\{\}",
+                source_code,
+            )
+            and all(
+                re.search(rf"\bradio_\.{method}\(", source_code)
+                for method in (
+                    "init",
+                    "deinit",
+                    "send",
+                    "addPeer",
+                    "removePeer",
+                    "getPeerCounts",
+                    "peerExists",
+                )
             )
         ),
-        "seven_maximum_size_pending_frames": all(
-            marker in header
-            for marker in (
-                "kEspNowRxBufSize = 2048",
-                "kEspNowMaxPayload",
-                "kEspNowRxMaxFrames >= kEspNowRxBaselineMaxFrames",
+        "seven_maximum_size_pending_frames": bool(
+            re.search(r"kEspNowRxBufSize\s*=\s*2048\s*;", header_code)
+            and re.search(r"kEspNowRingItemOverhead\s*=\s*8\s*;", header_code)
+            and re.search(r"kEspNowAddressSize\s*=\s*6\s*;", interface_code)
+            and re.search(r"kEspNowMaxPayload\s*=\s*250\s*;", interface_code)
+            and re.search(
+                r"using\s+EspNowCorrelationToken\s*=\s*uint32_t\s*;", interface_code
             )
-        )
-        and (2048 // (8 + 4 * ((13 + 250 + 3) // 4))) == 7,
-        "bounded_correlation_tokens": all(
-            marker in source
-            for marker in ("nextToken(txToken_)", "std::atomic<EspNowCorrelationToken>")
-        )
-        and "EspNowCorrelationToken" in header,
-        "physical_image_isolation": "platform/qemu" not in cmake.split("else()", 1)[-1]
-        and "QemuEspNow" not in cmake,
+            and re.search(
+                r"kEspNowRxMaxFrames\s*=\s*kEspNowRxBufSize\s*/\s*"
+                r"espNowRingItemStorage\(kEspNowRxMetadataSize\)\s*;",
+                header_code,
+            )
+            and re.search(
+                r"static_assert\(kEspNowRxMaxFrames\s*==\s*"
+                r"kEspNowRxBaselineMaxFrames\s*[,)]",
+                regression_code,
+            )
+            and re.search(
+                r"static_assert\(kEspNowRxBaselineMaxFrames\s*==\s*7\s*\);",
+                regression_code,
+            )
+            and "kEspNowRxMaxFrames + 1" in regression_code
+            and baseline_frames == correlated_frames == 7
+        ),
+        "bounded_correlation_tokens": bool(
+            re.search(
+                r"using\s+EspNowCorrelationToken\s*=\s*uint32_t\s*;", interface_code
+            )
+            and len(re.findall(r"std::atomic<EspNowCorrelationToken>", header_code))
+            >= 3
+            and re.search(
+                r"EspNowTransport::nextToken\(std::atomic<EspNowCorrelationToken>&\s*"
+                r"counter\).*?fetch_add\(1.*?if\s*\(token\s*==\s*0\).*?fetch_add\(1",
+                source_code,
+                re.DOTALL,
+            )
+            and "nextToken(txToken_)" in source_code
+        ),
+        "physical_image_isolation": bool(
+            shared
+            and qemu_root
+            and physical_root
+            and shared | qemu_root == runtime.QEMU_MAIN_SOURCES
+            and shared | physical_root == runtime.PHYSICAL_MAIN_SOURCES
+            and not any("platform/qemu/" in path for path in shared | physical_root)
+            and "transport/espNowTransport.cpp" in physical_root
+            and "transport/espNowTransport.cpp" not in shared | qemu_root
+        ),
     }
     blockers = (
         [] if all(checks.values()) else ["FS-WP-002E seam invariant validation failed"]
@@ -601,6 +890,16 @@ def _seam_report() -> tuple[dict[str, Any], list[str]]:
     return (
         {
             "revision": SPEC_REVISION,
+            "capacity": {
+                "baseline_metadata_bytes": baseline_metadata,
+                "correlated_metadata_bytes": correlated_metadata,
+                "baseline_maximum_frames": baseline_frames,
+                "correlated_maximum_frames": correlated_frames,
+            },
+            "source_composition": {
+                "physical": sorted(shared | physical_root),
+                "qemu": sorted(shared | qemu_root),
+            },
             "checks": checks,
             "result": "PASS" if not blockers else "BLOCKED",
         },
@@ -782,10 +1081,12 @@ def _patch_budget_report() -> tuple[dict[str, Any], list[str]]:
     status = _git("status", "--porcelain=v1", "--untracked-files=all")
     reviewed_paths = [
         path
-        for path in _git("diff", "--name-only", f"{SPEC_REVISION}...HEAD").splitlines()
+        for path in _git(
+            "diff", "--name-only", f"{REQUIRED_BASE_REVISION}...HEAD"
+        ).splitlines()
         if path
     ]
-    numstat = _git("diff", "--numstat", f"{SPEC_REVISION}...HEAD")
+    numstat = _git("diff", "--numstat", f"{REQUIRED_BASE_REVISION}...HEAD")
     reviewed_changed_lines = sum(
         int(added) + int(deleted)
         for line in numstat.splitlines()
@@ -830,7 +1131,7 @@ def _patch_budget_report() -> tuple[dict[str, Any], list[str]]:
                 "prohibited_path_parts": list(PROHIBITED_QEMU_PATH_PARTS),
             },
             "anticipated_qemu_patch": {
-                "source": f"git diff {SPEC_REVISION}...HEAD",
+                "source": f"git diff {REQUIRED_BASE_REVISION}...HEAD",
                 "paths": paths,
                 "non_generated_files": len(paths),
                 "changed_lines": changed_lines,
@@ -853,6 +1154,41 @@ def _patch_budget_report() -> tuple[dict[str, Any], list[str]]:
     )
 
 
+def _pr107_disposition(
+    issue: Mapping[str, Any], old_head: Any, integration_head: Any
+) -> dict[str, Any] | None:
+    matches = []
+    for payload in _structured_payloads(issue):
+        if (
+            set(payload) - {"_comment_url"}
+            == {
+                "schema_version",
+                "kind",
+                "issue",
+                "spec_revision",
+                "legacy_pull_request",
+                "legacy_head",
+                "disposition",
+                "replacement_pull_request",
+                "replacement_head",
+                "acceptance_authority",
+            }
+            and payload.get("schema_version") == 1
+            and payload.get("kind") == "fs-wp-003a-pr-disposition"
+            and payload.get("issue") == FS3_ISSUE
+            and payload.get("spec_revision") == FS3_JUDGMENT["spec_revision"]
+            and payload.get("legacy_pull_request") == 107
+            and payload.get("legacy_head") == old_head
+            and payload.get("disposition") in {"superseded", "integrated"}
+            and payload.get("replacement_pull_request") == 115
+            and payload.get("replacement_head") == integration_head
+            and payload.get("acceptance_authority")
+            == {"actor": TRACKER_ACTOR, "role": "controller", "decision": "accepted"}
+        ):
+            matches.append(payload)
+    return matches[-1] if matches else None
+
+
 def _fs3_report(
     prs: Mapping[int, Mapping[str, Any]], issue: Mapping[str, Any]
 ) -> tuple[dict[str, Any], list[str]]:
@@ -870,14 +1206,28 @@ def _fs3_report(
     )
     old_head = old_pr.get("headRefOid")
     old_head_ancestral = bool(old_head and _is_ancestor(str(old_head), SPEC_REVISION))
-    disposition_resolved = old_pr.get("state") in {"MERGED", "CLOSED"}
+    disposition = _pr107_disposition(issue, old_head, integration_head)
+    disposition_resolved = bool(
+        disposition and old_pr.get("state") in {"MERGED", "CLOSED"}
+    )
     if not disposition_resolved:
         blockers.append(
-            f"PR 107 remains {old_pr.get('state')}; its integration disposition is unresolved"
+            f"PR 107 state/disposition is unresolved ({old_pr.get('state')})"
         )
     software_pass, software_checks = _software_ci(integrated_pr)
     if not integrated or not software_pass:
         blockers.append("FS-WP-003A lacks integrated exact-head successful Software CI")
+
+    acceptance = _latest_judgment(
+        issue,
+        str(integration_head),
+        issue_number=FS3_JUDGMENT["issue"],
+        pull_request=FS3_JUDGMENT["pull_request"],
+        spec_revision=FS3_JUDGMENT["spec_revision"],
+    )
+    accepted = bool(acceptance and acceptance.get("verdict") == "approve")
+    if not accepted:
+        blockers.append("FS-WP-003A lacks independent exact-head acceptance")
 
     accepted_physical, evidence_errors = _physical_evidence(
         issue, str(integration_head)
@@ -929,10 +1279,24 @@ def _fs3_report(
                 **_pr_identity(old_pr),
                 "head_is_ancestor_of_pinned_revision": old_head_ancestral,
                 "disposition_resolved": disposition_resolved,
+                "disposition": (
+                    {
+                        key: value
+                        for key, value in disposition.items()
+                        if key != "_comment_url"
+                    }
+                    if disposition
+                    else None
+                ),
+                "disposition_tracker_comment": (
+                    disposition.get("_comment_url") if disposition else None
+                ),
             },
             "accepted_integration_candidate": {
                 **_pr_identity(integrated_pr),
                 "integrated_in_pinned_revision": integrated,
+                "independent_acceptance": _judgment_identity(acceptance),
+                "exact_head_accepted": accepted,
             },
             "evidence_matrix": evidence,
             "result": "PASS" if not blockers else "BLOCKED",

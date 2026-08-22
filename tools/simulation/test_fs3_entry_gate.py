@@ -18,6 +18,7 @@ assert SPEC and SPEC.loader
 gate = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = gate
 SPEC.loader.exec_module(gate)
+REAL_ARTIFACT_DIGEST_MATCHES = gate._artifact_digest_matches
 
 
 def check(
@@ -49,6 +50,10 @@ def physical_record(evidence_id: str, details: dict, commit: str = "2" * 40) -> 
         },
         "procedure": f"controlled {evidence_id} verification",
         "details": details,
+        "artifact": {
+            "url": f"https://evidence.example/{evidence_id}.json",
+            "sha256": hashlib.sha256(evidence_id.encode()).hexdigest(),
+        },
     }
 
 
@@ -56,20 +61,18 @@ def physical_issue(
     records: list[dict], commit: str = "2" * 40, actor: str = gate.TRACKER_ACTOR
 ) -> dict:
     url = "https://github.com/pcesar22/domes/issues/114#issuecomment-1"
-    digest = hashlib.sha256(
-        json.dumps(records, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
     payload = {
         "schema_version": 1,
         "kind": "fs-wp-003a-physical-acceptance",
         "issue": 114,
+        "pull_request": 115,
+        "spec_revision": gate.FS3_JUDGMENT["spec_revision"],
         "commit": commit,
         "acceptance_authority": {
             "actor": gate.TRACKER_ACTOR,
             "role": "controller",
             "decision": "accepted",
         },
-        "artifact": {"url": url, "sha256": digest},
         "verification": records,
     }
     return {
@@ -121,7 +124,40 @@ def valid_physical_records() -> list[dict]:
     ]
 
 
+def judgment(
+    *,
+    issue: int = 101,
+    pull_request: int = 105,
+    spec_revision: str = "224c22931311e763db3ba304d780daa78552db41",
+    commit: str = "1" * 40,
+    verdict: str = "approve",
+) -> dict:
+    return {
+        "claim_boundary": "Exact-head independent review.",
+        "commit": commit,
+        "criteria": [
+            {
+                "criterion": "Required behavior",
+                "evidence": ["Exact evidence"],
+                "status": "met",
+            }
+        ],
+        "issue": issue,
+        "pull_request": pull_request,
+        "required_rework": [],
+        "spec_revision": spec_revision,
+        "verdict": verdict,
+    }
+
+
 class EntryGateTests(unittest.TestCase):
+    def setUp(self) -> None:
+        artifact_patch = mock.patch.object(
+            gate, "_artifact_digest_matches", return_value=True
+        )
+        artifact_patch.start()
+        self.addCleanup(artifact_patch.stop)
+
     def test_software_ci_requires_successful_gate(self) -> None:
         passed, checks = gate._software_ci(
             {
@@ -136,6 +172,60 @@ class EntryGateTests(unittest.TestCase):
             {"statusCheckRollup": [check("CI Gate", conclusion="FAILURE")]}
         )
         self.assertFalse(failed)
+
+    def test_judgment_schema_binds_every_acceptance_identity(self) -> None:
+        valid = judgment()
+        self.assertTrue(
+            gate._valid_judgment(
+                valid,
+                issue=101,
+                pull_request=105,
+                spec_revision=valid["spec_revision"],
+                commit=valid["commit"],
+            )
+        )
+        mutations = {
+            "issue": {**valid, "issue": 999},
+            "pull_request": {**valid, "pull_request": 999},
+            "spec_revision": {**valid, "spec_revision": "f" * 40},
+            "commit": {**valid, "commit": "f" * 40},
+            "criteria": {**valid, "criteria": []},
+            "rework": {**valid, "required_rework": ["still required"]},
+            "extra_field": {**valid, "schema_version": 1},
+        }
+        for name, candidate in mutations.items():
+            with self.subTest(name=name):
+                self.assertFalse(
+                    gate._valid_judgment(
+                        candidate,
+                        issue=101,
+                        pull_request=105,
+                        spec_revision=valid["spec_revision"],
+                        commit=valid["commit"],
+                    )
+                )
+
+    def test_runtime_artifact_must_be_distinct_and_digest_bound(self) -> None:
+        content = b'{"runtime":"evidence"}'
+        artifact = {
+            "url": "https://github.com/pcesar22/domes/runtime.json",
+            "sha256": hashlib.sha256(content).hexdigest(),
+        }
+        response = mock.MagicMock()
+        response.__enter__.return_value.geturl.return_value = artifact["url"]
+        response.__enter__.return_value.read.return_value = content
+        with mock.patch.object(gate.urllib.request, "urlopen", return_value=response):
+            self.assertTrue(
+                REAL_ARTIFACT_DIGEST_MATCHES(
+                    artifact, "https://github.com/pcesar22/domes/issues/114#comment"
+                )
+            )
+            self.assertFalse(REAL_ARTIFACT_DIGEST_MATCHES(artifact, artifact["url"]))
+            self.assertFalse(
+                REAL_ARTIFACT_DIGEST_MATCHES(
+                    {**artifact, "sha256": "0" * 64}, "https://tracker.example/comment"
+                )
+            )
 
     def test_patch_budget_is_empty_and_bounded(self) -> None:
         def git_result(*args: str) -> str:
@@ -153,6 +243,60 @@ class EntryGateTests(unittest.TestCase):
         self.assertEqual(report["anticipated_qemu_patch"]["paths"], [])
         self.assertEqual(report["adopted_limits"]["non_generated_files"], 10)
         self.assertEqual(report["adopted_limits"]["changed_lines"], 2500)
+
+    def test_seam_checks_reject_marker_only_mutations(self) -> None:
+        paths = {
+            "header": "firmware/domes/main/transport/espNowTransport.hpp",
+            "source": "firmware/domes/main/transport/espNowTransport.cpp",
+            "interface": "firmware/domes/main/transport/iEspNowRadio.hpp",
+            "regression": "firmware/test_app/main/test_esp_now_transport.cpp",
+            "cmake": "firmware/domes/main/CMakeLists.txt",
+        }
+        originals = {
+            name: gate._git_file(gate.SPEC_REVISION, path)
+            for name, path in paths.items()
+        }
+        path_to_name = {path: name for name, path in paths.items()}
+
+        def run(files: dict[str, str]) -> dict:
+            with mock.patch.object(
+                gate,
+                "_git_file",
+                side_effect=lambda _revision, path: files[path_to_name[path]],
+            ):
+                return gate._seam_report()[0]["checks"]
+
+        self.assertTrue(all(run(originals).values()))
+        mutations = {
+            "production_transport_owns_radio_seam": {
+                "header": originals["header"].replace(
+                    "IEspNowRadio& radio_;", "int radio_; // IEspNowRadio& radio_;"
+                )
+            },
+            "seven_maximum_size_pending_frames": {
+                "regression": originals["regression"].replace(
+                    "static_assert(kEspNowRxMaxFrames == kEspNowRxBaselineMaxFrames);",
+                    "static_assert(kEspNowRxMaxFrames >= kEspNowRxBaselineMaxFrames); "
+                    "// static_assert(kEspNowRxMaxFrames == kEspNowRxBaselineMaxFrames);",
+                )
+            },
+            "bounded_correlation_tokens": {
+                "interface": originals["interface"].replace(
+                    "using EspNowCorrelationToken = uint32_t;",
+                    "using EspNowCorrelationToken = uint64_t; "
+                    "// using EspNowCorrelationToken = uint32_t;",
+                )
+            },
+            "physical_image_isolation": {
+                "cmake": originals["cmake"].replace(
+                    '        "transport/espNowTransport.cpp"\n',
+                    '        # "transport/espNowTransport.cpp"\n',
+                )
+            },
+        }
+        for check_name, changed in mutations.items():
+            with self.subTest(check=check_name):
+                self.assertFalse(run({**originals, **changed})[check_name])
 
     def test_skipped_engine_validation_fails_closed(self) -> None:
         report, blockers = gate._engine_report(False)
@@ -202,7 +346,38 @@ class EntryGateTests(unittest.TestCase):
             [item["result"] for item in report["evidence_matrix"]],
             ["PASS", "MISSING", "MISSING", "MISSING", "MISSING"],
         )
-        self.assertEqual(len(blockers), 5)
+        self.assertEqual(len(blockers), 6)
+
+    def test_pr107_disposition_is_explicit_and_identity_bound(self) -> None:
+        old_head = "1" * 40
+        replacement_head = "2" * 40
+        payload = {
+            "schema_version": 1,
+            "kind": "fs-wp-003a-pr-disposition",
+            "issue": 114,
+            "spec_revision": gate.FS3_JUDGMENT["spec_revision"],
+            "legacy_pull_request": 107,
+            "legacy_head": old_head,
+            "disposition": "superseded",
+            "replacement_pull_request": 115,
+            "replacement_head": replacement_head,
+            "acceptance_authority": {
+                "actor": gate.TRACKER_ACTOR,
+                "role": "controller",
+                "decision": "accepted",
+            },
+        }
+        issue = {
+            "comments": [
+                {
+                    "author": {"login": gate.TRACKER_ACTOR},
+                    "url": "https://tracker.example/disposition",
+                    "body": f"```json\n{json.dumps(payload)}\n```",
+                }
+            ]
+        }
+        self.assertIsNotNone(gate._pr107_disposition(issue, old_head, replacement_head))
+        self.assertIsNone(gate._pr107_disposition(issue, old_head, "3" * 40))
 
     def test_non_integrated_ci_head_is_not_reported_as_pass(self) -> None:
         prs = {
@@ -262,7 +437,7 @@ class EntryGateTests(unittest.TestCase):
 
         tampered = physical_issue(valid_physical_records())
         tampered["comments"][0]["body"] = tampered["comments"][0]["body"].replace(
-            '"sha256": "', '"sha256": "0', 1
+            '"schema_version": 1', '"schema_version": 2', 1
         )
         evidence, errors = gate._physical_evidence(tampered, "2" * 40)
         self.assertEqual(evidence, {})
@@ -270,7 +445,7 @@ class EntryGateTests(unittest.TestCase):
 
         unresolved = physical_issue(valid_physical_records())
         unresolved["comments"][0]["body"] = unresolved["comments"][0]["body"].replace(
-            "issues/114#issuecomment-1", "issues/999#issuecomment-404", 1
+            '"pull_request": 115', '"pull_request": 999', 1
         )
         evidence, errors = gate._physical_evidence(unresolved, "2" * 40)
         self.assertEqual(evidence, {})
@@ -307,7 +482,7 @@ class EntryGateTests(unittest.TestCase):
                 "| UNRELATED | package | `Not due` / `Not rated` |\n"
             ),
             "docs/plans/scheduler-trace-observability.md": (
-                "PR 105 final implementation head `abcdef0`"
+                "Reviewed PR 105 candidate `abcdef0`"
             ),
             "docs/plans/esp-now-radio-seam.md": (
                 "Issue #123 implements FS-WP-002E at specification revision\n"
