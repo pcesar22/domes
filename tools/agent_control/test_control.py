@@ -3070,6 +3070,18 @@ class ReviewFixRegressionTest(unittest.TestCase):
                     "agent:rework",
                 ),
             )
+            with self.assertRaisesRegex(control.ControlError, "every criterion met"):
+                control.load_exact_role_handoff(workflow, ticket, "judge", run_root)
+            self.assertEqual(
+                result,
+                control.load_exact_role_handoff(
+                    workflow,
+                    ticket,
+                    "judge",
+                    run_root,
+                    allow_deferred_hardware=True,
+                ),
+            )
 
     def test_unchanged_hardware_result_attests_exact_returned_head(self) -> None:
         ticket = self.hardware_ticket(611, label="agent:verification")

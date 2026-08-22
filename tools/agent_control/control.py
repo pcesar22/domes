@@ -4363,6 +4363,8 @@ def load_exact_role_handoff(
     ticket: Ticket,
     role: str,
     run_root: Path | None = None,
+    *,
+    allow_deferred_hardware: bool = False,
 ) -> dict[str, Any]:
     if run_root is None:
         state_root = Path(
@@ -4411,7 +4413,9 @@ def load_exact_role_handoff(
     sections = parse_sections(ticket.body)
     if result.get("spec_revision") != sections.get("Specification revision"):
         raise ControlError(f"issue #{ticket.number}: {role} handoff spec mismatch")
-    validate_result_semantics(role, result)
+    validate_result_semantics(
+        role, result, allow_deferred_hardware=allow_deferred_hardware
+    )
     return result
 
 
@@ -5944,7 +5948,16 @@ def reconcile_ci_ticket(
             + "; ".join(validation.errors)
         )
     artifact = load_latest_artifact_handoff(workflow, ticket)
-    judge = load_exact_role_handoff(workflow, ticket, "judge")
+    artifact_head = str(artifact.get("commit", ""))
+    judge = load_exact_role_handoff(
+        workflow,
+        ticket,
+        "judge",
+        allow_deferred_hardware=(
+            requires_registered_hardware(validation.sections)
+            and not hardware_attestation_matches_artifact(ticket.number, artifact_head)
+        ),
+    )
     if judge["verdict"] != "approve":
         raise ControlError(f"issue #{ticket.number}: CI state lacks judge approval")
     pull_request_number = artifact.get("pull_request")
