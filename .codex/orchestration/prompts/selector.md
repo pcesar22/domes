@@ -15,10 +15,11 @@ software delivery and retain that blocker in the result.
 
 Prefer an existing issue and pull request. Use `mode: execute` when the issue is already a bounded
 implementation contract; use `mode: plan` only when a milestone must be decomposed. Pin the
-selection to the supplied current `origin/main` commit. Use `software-review-required` only for
-work whose actual diff can avoid every protected autonomous path in
-`.codex/orchestration/autopilot-policy.json`; otherwise use `review-only` or select another eligible
-package. Every pull request requires human review and merge.
+selection to the supplied current `origin/main` commit. Every selected task, including a
+`mode: plan` task, must use `software-review-required` and must avoid every protected autonomous
+path in `.codex/orchestration/autopilot-policy.json`. Never emit a selected `review-only` task: it
+cannot enter the autonomous planner/worker lifecycle. Select another eligible package instead.
+Every pull request requires human review and merge.
 
 Set `existing_pull_request` to a nonzero value only when `existing_issue` identifies the issue that
 owns that pull request. A pull request without an associated available issue is not selectable;
@@ -32,8 +33,9 @@ Do not return `blocked` merely because the highest-priority issue is blocked. Co
 milestone authorities and select the next distinct authorized software implementation or executed
 validation delivery. If repository reality or a stale execution pointer prevents a reliable
 implementation contract, select one bounded `mode: plan` task for an authorized software milestone;
-that planner must inspect current reality and materialize an executable dependency graph. Do not use
-planning to bypass product authority or create documentation-only busywork.
+that planner must inspect current reality and materialize an executable dependency graph under the
+same `software-review-required` policy. Do not use planning to bypass product authority or create
+documentation-only busywork.
 
 For `idle` or `blocked`, use the empty non-execution envelope exactly: `mode`, `work_class`,
 `priority`, and `autonomy_policy` are `none`; `existing_issue` and `existing_pull_request` are zero;
