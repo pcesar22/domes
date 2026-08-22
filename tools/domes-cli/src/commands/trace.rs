@@ -341,25 +341,21 @@ fn validate_session_binding(session: &TraceSessionInfo, events: &[TraceEvent]) -
         (0x3580_0DA2, 4, "espnow_cb"),
         (0xF1F4_511E, 5, "espnow_done"),
     ];
-    let acceptance_count = if session.objects.iter().any(|object| {
-        ACCEPTANCE_OBJECTS[6..]
+    let has_acceptance_object = session.objects.iter().any(|object| {
+        ACCEPTANCE_OBJECTS
             .iter()
             .any(|(_, _, expected_name)| object.name == *expected_name)
-    }) {
-        10
-    } else if session.objects.iter().any(|object| {
-        ACCEPTANCE_OBJECTS[..6]
-            .iter()
-            .any(|(_, _, expected_name)| object.name == *expected_name)
-    }) {
-        6
-    } else {
-        0
-    };
-    if acceptance_count != 0 {
-        for (expected_id, expected_kind, expected_name) in
-            ACCEPTANCE_OBJECTS.iter().take(acceptance_count)
-        {
+    });
+    if has_acceptance_object {
+        let expected_objects = match session.objects.len() {
+            6 => &ACCEPTANCE_OBJECTS[..6],
+            10 => ACCEPTANCE_OBJECTS,
+            count => anyhow::bail!(
+                "Trace acceptance object catalog must contain exactly 6 or 10 entries, got {}",
+                count
+            ),
+        };
+        for (expected_id, expected_kind, expected_name) in expected_objects {
             if !session.objects.iter().any(|object| {
                 object.object_id == *expected_id
                     && object.kind == *expected_kind
@@ -496,6 +492,12 @@ fn validate_esp_now_correlation(events: &[TraceEvent], objects: &HashMap<u32, i3
             let event = correlated[index];
             let context = (event.flags >> 2) & 0x03;
             if event.event_type == 0x19 && context == 0 {
+                if event.task_id == 0 {
+                    anyhow::bail!(
+                        "ESP-NOW task boundary has no task ownership for token {}",
+                        token
+                    );
+                }
                 submissions.push(index);
                 index += 1;
                 continue;
@@ -512,6 +514,15 @@ fn validate_esp_now_correlation(events: &[TraceEvent], objects: &HashMap<u32, i3
                     .iter()
                     .map(|candidate| candidate.event_type)
                     .collect();
+                if correlated[index..=end]
+                    .iter()
+                    .any(|candidate| ((candidate.flags >> 2) & 0x03) != 2 || candidate.task_id != 0)
+                {
+                    anyhow::bail!(
+                        "ESP-NOW callback chain has invalid context or task ownership for token {}",
+                        token
+                    );
+                }
                 if types == [0x1C, 0x19, 0x0D, 0x1D] {
                     rx_callbacks.push(index);
                 } else if types == [0x1C, 0x0D, 0x1D] {
@@ -534,6 +545,15 @@ fn validate_esp_now_correlation(events: &[TraceEvent], objects: &HashMap<u32, i3
                     .iter()
                     .map(|candidate| candidate.event_type)
                     .collect();
+                if correlated[index..=end]
+                    .iter()
+                    .any(|candidate| ((candidate.flags >> 2) & 0x03) != 0 || candidate.task_id == 0)
+                {
+                    anyhow::bail!(
+                        "ESP-NOW task chain has invalid context or task ownership for token {}",
+                        token
+                    );
+                }
                 if types == [0x0C, 0x1A, 0x1E] {
                     rx_completions.push(index);
                 } else if types == [0x0C, 0x1E] {
@@ -1750,6 +1770,49 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("acceptance object mapping"));
+
+        let (mut wrong_callback_context, events) = physical_correlation_session();
+        let mut events = events;
+        events[1].flags = 1;
+        assert!(validate_session_binding(&wrong_callback_context, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid context or task ownership"));
+
+        let (_, mut events) = physical_correlation_session();
+        events[1].task_id = 7;
+        assert!(validate_session_binding(&wrong_callback_context, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid context or task ownership"));
+
+        wrong_callback_context.objects[6].kind = 2;
+        assert!(validate_session_binding(
+            &wrong_callback_context,
+            &physical_correlation_session().1
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("acceptance object mapping"));
+    }
+
+    #[test]
+    fn session_binding_rejects_acceptance_catalog_hybrids() {
+        let (session, events) = physical_correlation_session();
+        let mut probe_only = session.clone();
+        probe_only.objects.truncate(6);
+        probe_only.event_count = 1;
+        probe_only.end_timestamp_us = probe_only.start_timestamp_us;
+        validate_session_binding(&probe_only, &events[..1]).unwrap();
+
+        for count in 7..10 {
+            let mut hybrid = session.clone();
+            hybrid.objects.truncate(count);
+            assert!(validate_session_binding(&hybrid, &events)
+                .unwrap_err()
+                .to_string()
+                .contains("exactly 6 or 10 entries"));
+        }
     }
 
     #[test]
