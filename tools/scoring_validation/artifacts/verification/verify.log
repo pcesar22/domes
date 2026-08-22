@@ -30,12 +30,12 @@ Protocol bindings are current (all).
 -- Check for working C compiler: /usr/bin/cc - skipped
 -- Detecting C compile features
 -- Detecting C compile features - done
--- Found Python3: /usr/bin/python3 (found version "3.14.3") found components: Interpreter 
+-- Found Python3: /usr/bin/python3 (found version "3.14.3") found components: Interpreter
 -- Looking for pthread.h
 -- Looking for pthread.h - found
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
--- Found Threads: TRUE  
+-- Found Threads: TRUE
 -- Configuring done
 -- Generating done
 -- Build files have been written to: /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/.tmp-verify-storage/tmp.VYjln0VYFT/host-test-build
@@ -1641,7 +1641,7 @@ Downloading packages...
 Got dependencies!
 46 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
-Analyzing domes_app...                                          
+Analyzing domes_app...
 No issues found! (ran in 4.2s)
 Resolving dependencies...
 Downloading packages...
@@ -1923,7 +1923,7 @@ Downloading packages...
 Got dependencies!
 46 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
-Building Linux application...                                   
+Building Linux application...
 ✓ Built build/linux/x64/release/bundle/domes_app
 [0;32mPASS[0m Flutter App (37s)
 
@@ -1953,7 +1953,7 @@ Executing action: all (aliases: build)
 Running cmake in directory /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/.tmp-verify-storage/tmp.VYjln0VYFT/idf-build
 Executing "cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=/home/pncosta/.espressif/python_env/idf5.4_py3.14_env/bin/python -DESP_PLATFORM=1 -DIDF_TARGET=esp32s3 -DSDKCONFIG=/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/.tmp-verify-storage/tmp.VYjln0VYFT/sdkconfig -DCCACHE_ENABLE=0 /tmp/domes-issue-132-clean.Z0kZ5L/firmware/domes"...
 -- DOMES firmware version: v0.1.0-96-gb9ce5be
--- Found Git: /usr/bin/git (found version "2.53.0") 
+-- Found Git: /usr/bin/git (found version "2.53.0")
 -- The C compiler identification is GNU 14.2.0
 -- The CXX compiler identification is GNU 14.2.0
 -- The ASM compiler identification is GNU
@@ -1969,7 +1969,7 @@ Executing "cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=/home/pncosta/.espres
 -- Detecting CXX compile features
 -- Detecting CXX compile features - done
 -- Building ESP-IDF components for target esp32s3
-NOTICE: 
+NOTICE:
 Following dependencies have new versions available:
 Dependency "espressif/mdns": "1.9.1" -> "1.11.3"
 Consider running "idf.py update-dependencies" to update your lock file.
@@ -1980,12 +1980,12 @@ NOTICE: [3/3] idf (5.4.4)
 -- Project sdkconfig file /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/.tmp-verify-storage/tmp.VYjln0VYFT/sdkconfig
 Loading defaults file /tmp/domes-issue-132-clean.Z0kZ5L/firmware/domes/sdkconfig.defaults...
 -- Compiler supported targets: xtensa-esp-elf
--- Found Python3: /home/pncosta/.espressif/python_env/idf5.4_py3.14_env/bin/python (found version "3.14.3") found components: Interpreter 
+-- Found Python3: /home/pncosta/.espressif/python_env/idf5.4_py3.14_env/bin/python (found version "3.14.3") found components: Interpreter
 -- Looking for pthread.h
 -- Looking for pthread.h - found
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
--- Found Threads: TRUE  
+-- Found Threads: TRUE
 -- Performing Test C_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS
 -- Performing Test C_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS - Success
 -- USING O3
@@ -3215,7 +3215,7 @@ coredump,data,coredump,0x7e0000,128K,
 [1192/1240] Building CXX object esp-idf/main/CMakeFiles/__idf_main.dir/config/modeManager.cpp.obj
 [1193/1240] Building CXX object esp-idf/main/CMakeFiles/__idf_main.dir/infra/crashDumpHandler.cpp.obj
 [1194/1240] Performing configure step for 'bootloader'
--- Found Git: /usr/bin/git (found version "2.53.0") 
+-- Found Git: /usr/bin/git (found version "2.53.0")
 -- The C compiler identification is GNU 14.2.0
 -- The CXX compiler identification is GNU 14.2.0
 -- The ASM compiler identification is GNU
@@ -3437,7 +3437,7 @@ Executing action: all (aliases: build)
 Running cmake in directory /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/.tmp-verify-storage/tmp.VYjln0VYFT/idf-qemu-build
 Executing "cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=/home/pncosta/.espressif/python_env/idf5.4_py3.14_env/bin/python -DESP_PLATFORM=1 -DIDF_TARGET=esp32s3 -DSDKCONFIG=/home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/.tmp-verify-storage/tmp.VYjln0VYFT/sdkconfig-qemu -DSDKCONFIG_DEFAULTS=/tmp/domes-issue-132-clean.Z0kZ5L/firmware/domes/sdkconfig.qemu.defaults -DCCACHE_ENABLE=0 /tmp/domes-issue-132-clean.Z0kZ5L/firmware/domes"...
 -- DOMES firmware version: v0.1.0-96-gb9ce5be
--- Found Git: /usr/bin/git (found version "2.53.0") 
+-- Found Git: /usr/bin/git (found version "2.53.0")
 -- The C compiler identification is GNU 14.2.0
 -- The CXX compiler identification is GNU 14.2.0
 -- The ASM compiler identification is GNU
@@ -3453,7 +3453,7 @@ Executing "cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=/home/pncosta/.espres
 -- Detecting CXX compile features
 -- Detecting CXX compile features - done
 -- Building ESP-IDF components for target esp32s3
-NOTICE: 
+NOTICE:
 Following dependencies have new versions available:
 Dependency "espressif/mdns": "1.9.1" -> "1.11.3"
 Consider running "idf.py update-dependencies" to update your lock file.
@@ -3464,12 +3464,12 @@ NOTICE: [3/3] idf (5.4.4)
 -- Project sdkconfig file /home/pncosta/domes/.worktrees/autopilot-stacked-prs/.worktrees/agents/issue-132/.tmp-verify-storage/tmp.VYjln0VYFT/sdkconfig-qemu
 Loading defaults file /tmp/domes-issue-132-clean.Z0kZ5L/firmware/domes/sdkconfig.qemu.defaults...
 -- Compiler supported targets: xtensa-esp-elf
--- Found Python3: /home/pncosta/.espressif/python_env/idf5.4_py3.14_env/bin/python (found version "3.14.3") found components: Interpreter 
+-- Found Python3: /home/pncosta/.espressif/python_env/idf5.4_py3.14_env/bin/python (found version "3.14.3") found components: Interpreter
 -- Looking for pthread.h
 -- Looking for pthread.h - found
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
--- Found Threads: TRUE  
+-- Found Threads: TRUE
 -- Performing Test C_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS
 -- Performing Test C_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS - Success
 -- USING O3
@@ -4580,7 +4580,7 @@ coredump,data,coredump,0x7e0000,128K,
 [1069/1082] Building CXX object esp-idf/main/CMakeFiles/__idf_main.dir/trace/traceRecorder.cpp.obj
 [1070/1082] Building CXX object esp-idf/main/CMakeFiles/__idf_main.dir/game/gameEngine.cpp.obj
 [1071/1082] Performing configure step for 'bootloader'
--- Found Git: /usr/bin/git (found version "2.53.0") 
+-- Found Git: /usr/bin/git (found version "2.53.0")
 -- The C compiler identification is GNU 14.2.0
 -- The CXX compiler identification is GNU 14.2.0
 -- The ASM compiler identification is GNU
