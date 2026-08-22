@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "name": "domes-esp32s3-qemu-link",
+  "endianness": "little",
+  "mmio_base": "0x600d0000",
+  "mmio_window_size": 4096,
+  "interrupt_source": 0,
+  "interrupt_name": "ETS_WIFI_MAC_INTR_SOURCE",
+  "capability_magic": "0x444c4e4b",
+  "abi_version": 1,
+  "maximum_payload": 250,
+  "payload_window_size": 256,
+  "registers": {
+    "capability": "0x000", "version": "0x004", "max_payload": "0x008",
+    "tx_destination_low": "0x010", "tx_destination_high": "0x014",
+    "tx_length": "0x018", "tx_correlation": "0x01c", "tx_submit": "0x020",
+    "tx_status": "0x024", "rx_source_low": "0x030", "rx_source_high": "0x034",
+    "rx_rssi": "0x038", "rx_length": "0x03c", "rx_correlation": "0x040",
+    "rx_consume": "0x044", "interrupt_status": "0x050", "interrupt_mask": "0x054",
+    "interrupt_ack": "0x058", "sticky_status": "0x05c",
+    "tx_payload": "0x100", "rx_payload": "0x200"
+  },
+  "interrupt_bits": {"tx_complete": 1, "rx_ready": 2},
+  "sticky_bits": {
+    "overflow": 1, "invalid_access": 2, "exhausted": 4, "model_failure": 8,
+    "sequence": 16, "truncated": 32, "overwrite": 64, "unknown_version": 128
+  },
+  "deterministic_peer_model": {
+    "schema_version": 1,
+    "model": "functional-peer-v1",
+    "activation": "pre-reset QOM properties only",
+    "scenario_model_value": 1,
+    "dut_roles": {"master": 1, "slave": 2},
+    "event_capacity": 8,
+    "event_order": [
+      "deadline_ns", "event_class_priority", "source_id", "destination_id", "sequence"
+    ],
+    "clock": "QEMU_CLOCK_VIRTUAL",
+    "codec": "peer-drill-legacy-v1",
+    "runtime_input": "denied"
+  }
+}

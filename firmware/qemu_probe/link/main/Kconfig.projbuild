@@ -1,0 +1,7 @@
+menu "DOMES QEMU link probe"
+
+config DOMES_RUNTIME_PROFILE_QEMU
+    bool
+    default y
+
+endmenu
