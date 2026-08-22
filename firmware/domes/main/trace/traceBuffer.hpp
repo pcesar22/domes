@@ -32,14 +32,14 @@ namespace domes::trace {
  */
 class TraceBuffer {
 public:
-    /// Default requested capacity: 48 KiB.
+    /// Default requested capacity: 64 KiB.
     ///
     /// FreeRTOS's no-split ring stores metadata beside every 16-byte event, so
     /// a 32 KiB allocation retains only about 1,000 events. A bounded physical
-    /// ping/pong correlation capture produces roughly 1,200 events while the
-    /// scheduler hooks are enabled. Keep enough headroom to retain that proof
-    /// without weakening the recorder's fail-closed overflow semantics.
-    static constexpr size_t kDefaultBufferSize = 48 * 1024;
+    /// two-board regression overflowed a 48 KiB allocation by up to 245 events
+    /// while scheduler hooks and radio correlation were enabled. Keep bounded
+    /// headroom above that capture without weakening fail-closed handling.
+    static constexpr size_t kDefaultBufferSize = 64 * 1024;
 
     /// Size of each trace event
     static constexpr size_t kEventSize = sizeof(TraceEvent);
@@ -50,7 +50,7 @@ public:
     /**
      * @brief Construct trace buffer
      *
-     * @param bufferSize Requested ring buffer capacity in bytes (default 48 KiB)
+     * @param bufferSize Requested ring buffer capacity in bytes (default 64 KiB)
      */
     explicit TraceBuffer(size_t bufferSize = kDefaultBufferSize);
 
