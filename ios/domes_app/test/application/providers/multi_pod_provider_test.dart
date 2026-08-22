@@ -55,8 +55,71 @@ final class _FakeTransport extends Transport {
   Stream<Frame> get unsolicitedFrames => const Stream.empty();
 }
 
+final class _RetainedCallbackStream extends Stream<AppTouchEvent> {
+  _RetainedCallbackStream({this.onCancel});
+
+  final void Function()? onCancel;
+  void Function(AppTouchEvent)? _onData;
+  Function? _onError;
+
+  void emit(AppTouchEvent event) => _onData?.call(event);
+
+  void emitError(Object error, StackTrace stackTrace) {
+    final handler = _onError;
+    if (handler != null) Function.apply(handler, [error, stackTrace]);
+  }
+
+  @override
+  StreamSubscription<AppTouchEvent> listen(
+    void Function(AppTouchEvent event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    _onData = onData;
+    _onError = onError;
+    return _RetainedCallbackSubscription(onCancel);
+  }
+}
+
+final class _RetainedCallbackSubscription
+    implements StreamSubscription<AppTouchEvent> {
+  _RetainedCallbackSubscription(this._onCancel);
+
+  final void Function()? _onCancel;
+  bool _isPaused = false;
+
+  @override
+  Future<void> cancel() async => _onCancel?.call();
+
+  @override
+  void onData(void Function(AppTouchEvent data)? handleData) {}
+
+  @override
+  void onError(Function? handleError) {}
+
+  @override
+  void onDone(void Function()? handleDone) {}
+
+  @override
+  void pause([Future<void>? resumeSignal]) => _isPaused = true;
+
+  @override
+  void resume() => _isPaused = false;
+
+  @override
+  bool get isPaused => _isPaused;
+
+  @override
+  Future<E> asFuture<E>([E? futureValue]) => Completer<E>().future;
+}
+
 final class _FakeRepository implements PodRepository {
-  _FakeRepository({void Function()? onListen, void Function()? onCancel}) {
+  _FakeRepository({
+    void Function()? onListen,
+    void Function()? onCancel,
+    this.retainedCallbackStream,
+  }) {
     eventController = StreamController<AppTouchEvent>.broadcast(
       onListen: onListen,
       onCancel: onCancel,
@@ -64,6 +127,7 @@ final class _FakeRepository implements PodRepository {
   }
 
   late final StreamController<AppTouchEvent> eventController;
+  final _RetainedCallbackStream? retainedCallbackStream;
   (SystemMode, bool) modeResult = (SystemMode.SYSTEM_MODE_GAME, true);
   AppLedPattern? ledResult;
   AppLedPattern? lastLedPattern;
@@ -73,7 +137,8 @@ final class _FakeRepository implements PodRepository {
   int ledCalls = 0;
 
   @override
-  Stream<AppTouchEvent> get touchEvents => eventController.stream;
+  Stream<AppTouchEvent> get touchEvents =>
+      retainedCallbackStream ?? eventController.stream;
 
   @override
   Future<AppLedPattern> setLedPattern(AppLedPattern pattern) async {
@@ -145,19 +210,31 @@ void main() {
     expect(repository.lastLedPattern, same(pattern));
   });
 
-  test('requires a successful mode transition response', () async {
-    repository.modeResult = (SystemMode.SYSTEM_MODE_IDLE, false);
+  test(
+    'rejected mode transition quarantines its connected generation',
+    () async {
+      repository.modeResult = (SystemMode.SYSTEM_MODE_GAME, false);
 
-    await expectLater(
-      notifier.setMode('pod-1', SystemMode.SYSTEM_MODE_GAME),
-      throwsA(isA<StateError>()),
-    );
+      await expectLater(
+        notifier.setMode('pod-1', SystemMode.SYSTEM_MODE_GAME),
+        throwsA(isA<StateError>()),
+      );
 
+      expect(repository.modeCalls, 1);
+      expect(notifier.state['pod-1']!.isConnected, isFalse);
+    },
+  );
+
+  test('reported mode mismatch quarantines its connected generation', () async {
     repository.modeResult = (SystemMode.SYSTEM_MODE_IDLE, true);
+
     await expectLater(
       notifier.setMode('pod-1', SystemMode.SYSTEM_MODE_GAME),
       throwsA(isA<StateError>()),
     );
+
+    expect(repository.modeCalls, 1);
+    expect(notifier.state['pod-1']!.isConnected, isFalse);
   });
 
   test('requires the reported LED state to match the request', () async {
@@ -176,8 +253,11 @@ void main() {
       final oldTransport = _FakeTransport(
         onDisconnect: () => lifecycle.add('disconnect:pod-1:1'),
       )..disconnectGate = Completer<void>();
-      final oldRepository = _FakeRepository(
+      final staleCallbacks = _RetainedCallbackStream(
         onCancel: () => lifecycle.add('cancel:pod-1:1'),
+      );
+      final oldRepository = _FakeRepository(
+        retainedCallbackStream: staleCallbacks,
       );
       final newTransport = _FakeTransport();
       final newRepository = _FakeRepository();
@@ -203,9 +283,11 @@ void main() {
       await localNotifier.connectPod(affected);
       await localNotifier.connectPod(healthy);
       final failures = <PodConnectionFailure>[];
+      final touches = <PodTouchEvent>[];
       final failureSubscription = localNotifier.connectionFailures.listen(
         failures.add,
       );
+      final touchSubscription = localNotifier.touchEvents.listen(touches.add);
 
       final command = localNotifier.setMode(
         affected.address,
@@ -230,7 +312,22 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(affectedConnections, 1, reason: 'reconnect awaits cleanup');
 
-      oldRepository.eventController.addError(StateError('stale generation'));
+      staleCallbacks.emitError(
+        StateError('stale generation'),
+        StackTrace.current,
+      );
+      staleCallbacks.emit(
+        const AppTouchEvent(podId: 1, padIndex: 7, timestampUs: 101),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(failures, isEmpty, reason: 'stale error emits no terminal event');
+      expect(touches, isEmpty, reason: 'stale touch cannot escape generation');
+      expect(
+        localNotifier.state[affected.address]!.error,
+        contains('$commandError'),
+        reason: 'stale callbacks cannot mutate disconnected state',
+      );
+
       oldTransport.disconnectGate!.complete();
       await commandExpectation;
       await reconnect;
@@ -254,6 +351,7 @@ void main() {
       );
       expect(newRepository.modeCalls, 1);
 
+      await touchSubscription.cancel();
       await failureSubscription.cancel();
       localNotifier.dispose();
       await oldRepository.eventController.close();
