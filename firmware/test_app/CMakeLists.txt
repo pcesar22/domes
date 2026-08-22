@@ -72,6 +72,7 @@ add_executable(test_app
     main/test_release_metadata.cpp
     main/test_restart_snapshot_record.cpp
     main/test_config_protocol.cpp
+    main/test_feedback_controller.cpp
     main/test_feature_manager.cpp
     main/test_mode_manager.cpp
     main/test_game_engine.cpp

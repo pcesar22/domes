@@ -254,6 +254,19 @@ Uint8List serializeSetMode(SystemMode mode) {
   return Uint8List.fromList(req.writeToBuffer());
 }
 
+Uint8List serializeSetAudioVolume(int volume) {
+  if (volume < 0 || volume > 100) {
+    throw RangeError.range(volume, 0, 100, 'audio software gain');
+  }
+  return Uint8List.fromList(
+    (SetAudioVolumeRequest()..volume = volume).writeToBuffer(),
+  );
+}
+
+Uint8List serializeTriggerFeedback(FeedbackProbe probe) => Uint8List.fromList(
+  (TriggerFeedbackRequest()..probe = probe).writeToBuffer(),
+);
+
 // --- Parsing ---
 
 /// Parse ListFeaturesResponse payload (pure protobuf, NO status byte).
@@ -307,6 +320,32 @@ AppLedPattern parseLedPatternResponse(Uint8List payload) {
     periodMs: pattern.periodMs,
     brightness: pattern.brightness,
   );
+}
+
+int parseGetAudioVolumeResponse(Uint8List payload) {
+  final volume = GetAudioVolumeResponse.fromBuffer(
+    _checkStatus(payload),
+  ).volume;
+  return _boundedVolume(volume);
+}
+
+int parseSetAudioVolumeResponse(Uint8List payload) {
+  final volume = SetAudioVolumeResponse.fromBuffer(
+    _checkStatus(payload),
+  ).volume;
+  return _boundedVolume(volume);
+}
+
+int _boundedVolume(int volume) {
+  if (volume < 0 || volume > 100) {
+    throw DecodeFailure('Audio software gain $volume is outside 0-100');
+  }
+  return volume;
+}
+
+(FeedbackProbe, bool) parseTriggerFeedbackResponse(Uint8List payload) {
+  final response = TriggerFeedbackResponse.fromBuffer(_checkStatus(payload));
+  return (response.probe, response.accepted);
 }
 
 /// Parse GetModeResponse payload.

@@ -28,6 +28,7 @@ class EspNowTransport;        // Forward declaration
 class EspNowService;          // Forward declaration
 class IOtaManager;            // Forward declaration
 class InjectableTouchDriver;  // Forward declaration
+class FeedbackController;
 
 /**
  * @brief Default TCP port for config server
@@ -135,6 +136,7 @@ public:
      * @brief Set injectable touch driver for simulated touch commands
      */
     void setInjectableTouchDriver(InjectableTouchDriver* driver) { injectableTouch_ = driver; }
+    void setFeedbackController(FeedbackController* controller) { feedback_ = controller; }
 
 private:
     /**
@@ -156,6 +158,7 @@ private:
     EspNowService* espNowService_ = nullptr;
     IOtaManager* otaManager_ = nullptr;
     InjectableTouchDriver* injectableTouch_ = nullptr;
+    FeedbackController* feedback_ = nullptr;
 
     std::atomic<bool> stopRequested_;
     std::atomic<int> listenSocket_;

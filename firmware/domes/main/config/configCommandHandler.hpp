@@ -23,6 +23,7 @@ class EspNowTransport;        // Forward declaration
 class EspNowService;          // Forward declaration
 class IOtaManager;            // Forward declaration
 class InjectableTouchDriver;  // Forward declaration
+class FeedbackController;     // Forward declaration
 }  // namespace domes
 
 namespace domes::config {
@@ -83,6 +84,9 @@ public:
      * @brief Set injectable touch driver for simulated touch commands
      */
     void setInjectableTouchDriver(InjectableTouchDriver* driver) { injectableTouch_ = driver; }
+
+    /** Set the bounded feedback/volume owner for host commands. */
+    void setFeedbackController(FeedbackController* controller) { feedback_ = controller; }
 
     /**
      * @brief Handle an incoming config command
@@ -211,6 +215,8 @@ private:
      */
     void handleSetSimMode(const uint8_t* payload, size_t len);
 
+    void handleFeedbackCommand(MsgType type, const uint8_t* payload, size_t len);
+
     /**
      * @brief Send list features response
      */
@@ -268,6 +274,7 @@ private:
     EspNowService* espNowService_ = nullptr;
     IOtaManager* otaManager_ = nullptr;
     InjectableTouchDriver* injectableTouch_ = nullptr;
+    FeedbackController* feedback_ = nullptr;
 };
 
 }  // namespace domes::config

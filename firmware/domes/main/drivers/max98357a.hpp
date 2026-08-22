@@ -20,6 +20,7 @@
 #include "interfaces/iAudioDriver.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 
 namespace domes {
@@ -212,10 +213,11 @@ public:
 
         while (remaining > 0) {
             size_t chunkSamples = std::min(remaining, kChunkSize);
+            const uint8_t volume = volume_.load(std::memory_order_relaxed);
 
             // Scale samples by volume
             for (size_t i = 0; i < chunkSamples; ++i) {
-                int32_t scaled = (static_cast<int32_t>(src[i]) * volume_) / 100;
+                int32_t scaled = (static_cast<int32_t>(src[i]) * volume) / 100;
                 scaledBuffer[i] = static_cast<int16_t>(
                     std::clamp(scaled, static_cast<int32_t>(-32768), static_cast<int32_t>(32767)));
             }
@@ -249,10 +251,10 @@ public:
     }
 
     void setVolume(uint8_t volume) override {
-        volume_ = std::min(volume, static_cast<uint8_t>(100));
+        volume_.store(std::min(volume, static_cast<uint8_t>(100)), std::memory_order_relaxed);
     }
 
-    uint8_t getVolume() const override { return volume_; }
+    uint8_t getVolume() const override { return volume_.load(std::memory_order_relaxed); }
 
     bool isInitialized() const override { return initialized_; }
 
@@ -270,7 +272,7 @@ private:
     gpio_num_t sdPin_;
 
     i2s_chan_handle_t txHandle_;
-    uint8_t volume_;
+    std::atomic<uint8_t> volume_;
     bool initialized_;
     bool started_;
 };

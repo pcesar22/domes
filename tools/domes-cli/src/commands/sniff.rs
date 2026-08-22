@@ -668,8 +668,9 @@ mod tests {
         assert!(ProtocolFilter::Config.matches(0x49));
         assert!(ProtocolFilter::Config.matches(0x4F));
         assert!(ProtocolFilter::Config.matches(0x50));
-        assert!(!ProtocolFilter::Config.matches(0x2C));
-        assert!(!ProtocolFilter::Config.matches(0x4A));
+        assert!(ProtocolFilter::Config.matches(0x2C));
+        assert!(ProtocolFilter::Config.matches(0x4A));
+        assert!(!ProtocolFilter::Config.matches(0x51));
         assert!(!ProtocolFilter::Config.matches(0x10));
 
         assert!(ProtocolFilter::Trace.matches(0x10));
