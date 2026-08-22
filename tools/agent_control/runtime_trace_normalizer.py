@@ -13,8 +13,20 @@ from typing import Any, Mapping
 
 EVENT_SIZE = 16
 FORMAT_VERSION = 1
-NORMALIZER_VERSION = "1.0.0"
+NORMALIZER_VERSION = "1.1.0"
 MAX_TRACE_DUMP_BYTES = 32 * 1024
+ESP_NOW_TRACE_NAMES = {
+    0x59FB7823: "EspNow.CausalQueue",
+    0xEF2DD8BB: "EspNow.CausalReady",
+    0x35800DA2: "EspNow.Callback",
+    0xF1F4511E: "EspNow.Complete",
+}
+ESP_NOW_OBJECT_NAMES = {
+    0x59FB7823: "espnow_queue",
+    0xEF2DD8BB: "espnow_ready",
+    0x35800DA2: "espnow_cb",
+    0xF1F4511E: "espnow_done",
+}
 
 
 class RuntimeTraceError(ValueError):
@@ -113,35 +125,173 @@ def _catalog(
     return tasks, objects
 
 
-def _complete_chains(
-    events: list[dict[str, Any]], expected: list[tuple[int, int]], kind: str
-) -> list[dict[str, Any]]:
-    by_token: dict[int, list[dict[str, Any]]] = {}
-    expected_ids = {identifier for _event_type, identifier in expected}
+def _validate_scheduler_contract(
+    events: list[dict[str, Any]], event_types: Mapping[str, int]
+) -> None:
+    allowed_contexts = {
+        event_types["EVENT_TYPE_SCHED_QUEUE_SEND"]: {0, 1, 2},
+        event_types["EVENT_TYPE_SCHED_QUEUE_RECEIVE"]: {0, 1, 2},
+        event_types["EVENT_TYPE_CALLBACK_BEGIN"]: {2},
+        event_types["EVENT_TYPE_CALLBACK_END"]: {2},
+        event_types["EVENT_TYPE_CAUSAL_COMPLETE"]: {0},
+        event_types["EVENT_TYPE_SEM_TAKE"]: {0, 1, 2},
+        event_types["EVENT_TYPE_SEM_GIVE"]: {0, 1, 2},
+    }
+    taskless = {
+        event_types["EVENT_TYPE_CALLBACK_BEGIN"],
+        event_types["EVENT_TYPE_CALLBACK_END"],
+    }
+    synchronized = {
+        event_types["EVENT_TYPE_SCHED_QUEUE_SEND"],
+        event_types["EVENT_TYPE_SCHED_QUEUE_RECEIVE"],
+        event_types["EVENT_TYPE_SEM_TAKE"],
+        event_types["EVENT_TYPE_SEM_GIVE"],
+    }
     for event in events:
-        token = event["arg2"]
-        if token and event["arg1"] in expected_ids:
-            by_token.setdefault(token, []).append(event)
-    complete: list[dict[str, Any]] = []
-    for token, candidates in by_token.items():
-        cursor = 0
-        positions: list[int] = []
-        for event in candidates:
-            if (
-                cursor < len(expected)
-                and (event["type"], event["arg1"]) == expected[cursor]
-            ):
-                positions.append(event["sequence"])
-                cursor += 1
-        if cursor == len(expected):
-            complete.append(
+        allowed = allowed_contexts.get(event["type"])
+        if allowed is None:
+            continue
+        if event["context"] not in allowed or event["category"] != 0:
+            raise RuntimeTraceError(
+                "ESP-NOW scheduler boundary has an invalid context or category"
+            )
+        if event["type"] in taskless and event["task_id"] != 0:
+            raise RuntimeTraceError(
+                "ESP-NOW callback boundary unexpectedly owns a task"
+            )
+        if event["type"] in synchronized and (
+            (event["context"] == 0 and event["task_id"] == 0)
+            or (event["context"] != 0 and event["task_id"] != 0)
+        ):
+            raise RuntimeTraceError(
+                "ESP-NOW synchronization boundary has invalid task ownership"
+            )
+
+
+def _correlation_chains(
+    events: list[dict[str, Any]], event_types: Mapping[str, int]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    queue_send = event_types["EVENT_TYPE_SCHED_QUEUE_SEND"]
+    queue_receive = event_types["EVENT_TYPE_SCHED_QUEUE_RECEIVE"]
+    callback_begin = event_types["EVENT_TYPE_CALLBACK_BEGIN"]
+    callback_end = event_types["EVENT_TYPE_CALLBACK_END"]
+    causal_complete = event_types["EVENT_TYPE_CAUSAL_COMPLETE"]
+    sem_take = event_types["EVENT_TYPE_SEM_TAKE"]
+    sem_give = event_types["EVENT_TYPE_SEM_GIVE"]
+    queue_id, ready_id, callback_id, complete_id = ESP_NOW_TRACE_NAMES
+    relevant = {
+        queue_send: queue_id,
+        queue_receive: queue_id,
+        sem_give: ready_id,
+        sem_take: ready_id,
+        callback_begin: callback_id,
+        callback_end: callback_id,
+        causal_complete: complete_id,
+    }
+    token_events: dict[int, list[dict[str, Any]]] = {}
+    for event in events:
+        if relevant.get(event["type"]) != event["arg1"]:
+            continue
+        token = int(event["arg2"])
+        if token == 0:
+            raise RuntimeTraceError("ESP-NOW causal boundary has a zero token")
+        token_events.setdefault(token, []).append(event)
+
+    tx_chains: list[dict[str, Any]] = []
+    rx_chains: list[dict[str, Any]] = []
+    for token, correlated in token_events.items():
+        submissions: list[int] = []
+        callbacks: dict[str, list[list[int]]] = {"rx": [], "tx": []}
+        completions: dict[str, list[list[int]]] = {"rx": [], "tx": []}
+        index = 0
+        while index < len(correlated):
+            event = correlated[index]
+            if event["type"] == queue_send and event["context"] == 0:
+                submissions.append(event["sequence"])
+                index += 1
+                continue
+            if event["type"] == callback_begin:
+                end = index + 1
+                while end < len(correlated) and correlated[end]["type"] != callback_end:
+                    end += 1
+                if end == len(correlated):
+                    raise RuntimeTraceError("ESP-NOW callback chain is incomplete")
+                event_sequence = [item["type"] for item in correlated[index : end + 1]]
+                direction = (
+                    "rx"
+                    if event_sequence
+                    == [callback_begin, queue_send, sem_give, callback_end]
+                    else "tx"
+                )
+                if direction == "tx" and event_sequence != [
+                    callback_begin,
+                    sem_give,
+                    callback_end,
+                ]:
+                    raise RuntimeTraceError("ESP-NOW callback chain is malformed")
+                callbacks[direction].append(
+                    [item["sequence"] for item in correlated[index : end + 1]]
+                )
+                index = end + 1
+                continue
+            if event["type"] == sem_take:
+                end = index + 1
+                while (
+                    end < len(correlated) and correlated[end]["type"] != causal_complete
+                ):
+                    end += 1
+                if end == len(correlated):
+                    raise RuntimeTraceError("ESP-NOW task chain is incomplete")
+                event_sequence = [item["type"] for item in correlated[index : end + 1]]
+                direction = (
+                    "rx"
+                    if event_sequence == [sem_take, queue_receive, causal_complete]
+                    else "tx"
+                )
+                if direction == "tx" and event_sequence != [
+                    sem_take,
+                    causal_complete,
+                ]:
+                    raise RuntimeTraceError("ESP-NOW task chain is malformed")
+                completions[direction].append(
+                    [item["sequence"] for item in correlated[index : end + 1]]
+                )
+                index = end + 1
+                continue
+            raise RuntimeTraceError("ESP-NOW causal chain has an unexpected boundary")
+
+        if len(submissions) != len(callbacks["tx"]) or len(callbacks["tx"]) != len(
+            completions["tx"]
+        ):
+            raise RuntimeTraceError("ESP-NOW TX correlation chain is incomplete")
+        if len(callbacks["rx"]) != len(completions["rx"]):
+            raise RuntimeTraceError("ESP-NOW RX correlation chain is incomplete")
+        for start, callback, complete in zip(
+            submissions, callbacks["tx"], completions["tx"]
+        ):
+            if not start < callback[0] < complete[0]:
+                raise RuntimeTraceError("ESP-NOW TX correlation chain is reordered")
+            tx_chains.append(
                 {
-                    "kind": kind,
+                    "kind": "tx",
                     "token": token,
-                    "positions": positions,
+                    "positions": [start, *callback, *complete],
                 }
             )
-    return sorted(complete, key=lambda chain: chain["positions"][0])
+        for callback, complete in zip(callbacks["rx"], completions["rx"]):
+            if callback[0] >= complete[0]:
+                raise RuntimeTraceError("ESP-NOW RX correlation chain is reordered")
+            rx_chains.append(
+                {
+                    "kind": "rx",
+                    "token": token,
+                    "positions": [*callback, *complete],
+                }
+            )
+    return (
+        sorted(tx_chains, key=lambda chain: chain["positions"][0]),
+        sorted(rx_chains, key=lambda chain: chain["positions"][0]),
+    )
 
 
 def normalize_runtime(
@@ -173,20 +323,34 @@ def normalize_runtime(
     ):
         raise RuntimeTraceError("trace name map is malformed")
     names = {int(key): value for key, value in names_document.items()}
-    reverse_names = {value: key for key, value in names.items()}
-    required_names = {
-        "EspNow.TxSubmit",
-        "EspNow.TxCallback",
-        "EspNow.TxComplete",
-        "EspNow.RxCallback",
-        "EspNow.RxQueue",
-        "EspNow.RxReady",
-        "EspNow.RxDispatch",
-    }
-    if not required_names <= set(reverse_names):
+    if any(
+        names.get(identifier) != name
+        for identifier, name in ESP_NOW_TRACE_NAMES.items()
+    ):
         raise RuntimeTraceError("trace name map omits ESP-NOW correlation boundaries")
 
     tasks, objects = _catalog(session)
+    object_kinds = _enum(proto, "ObjectKind")
+    expected_objects = {
+        0x59FB7823: {
+            "kind": object_kinds["OBJECT_KIND_QUEUE"],
+            "name": ESP_NOW_OBJECT_NAMES[0x59FB7823],
+        },
+        0xEF2DD8BB: {
+            "kind": object_kinds["OBJECT_KIND_SEMAPHORE"],
+            "name": ESP_NOW_OBJECT_NAMES[0xEF2DD8BB],
+        },
+        0x35800DA2: {
+            "kind": object_kinds["OBJECT_KIND_CALLBACK"],
+            "name": ESP_NOW_OBJECT_NAMES[0x35800DA2],
+        },
+        0xF1F4511E: {
+            "kind": object_kinds["OBJECT_KIND_ACTION"],
+            "name": ESP_NOW_OBJECT_NAMES[0xF1F4511E],
+        },
+    }
+    if objects != expected_objects:
+        raise RuntimeTraceError("session ESP-NOW object catalog is unresolved")
     events: list[dict[str, Any]] = []
     for sequence, offset in enumerate(range(0, len(raw), EVENT_SIZE)):
         timestamp, task_id, event_type, flags, arg1, arg2 = struct.unpack_from(
@@ -224,32 +388,14 @@ def normalize_runtime(
             }
         )
     _timestamp_order([event["timestamp_us"] for event in events])
+    _validate_scheduler_contract(events, event_types)
     if (
         int(session.get("start_timestamp_us", -1)) != events[0]["timestamp_us"]
         or int(session.get("end_timestamp_us", -1)) != events[-1]["timestamp_us"]
     ):
         raise RuntimeTraceError("session timestamps do not bound raw evidence")
 
-    tx_expected = [
-        (event_types["EVENT_TYPE_SCHED_QUEUE_SEND"], reverse_names["EspNow.TxSubmit"]),
-        (event_types["EVENT_TYPE_CALLBACK_BEGIN"], reverse_names["EspNow.TxCallback"]),
-        (event_types["EVENT_TYPE_CALLBACK_END"], reverse_names["EspNow.TxCallback"]),
-        (event_types["EVENT_TYPE_CAUSAL_COMPLETE"], reverse_names["EspNow.TxComplete"]),
-    ]
-    rx_expected = [
-        (event_types["EVENT_TYPE_CALLBACK_BEGIN"], reverse_names["EspNow.RxCallback"]),
-        (event_types["EVENT_TYPE_SCHED_QUEUE_SEND"], reverse_names["EspNow.RxQueue"]),
-        (event_types["EVENT_TYPE_SEM_GIVE"], reverse_names["EspNow.RxReady"]),
-        (event_types["EVENT_TYPE_CALLBACK_END"], reverse_names["EspNow.RxCallback"]),
-        (event_types["EVENT_TYPE_SEM_TAKE"], reverse_names["EspNow.RxReady"]),
-        (
-            event_types["EVENT_TYPE_SCHED_QUEUE_RECEIVE"],
-            reverse_names["EspNow.RxQueue"],
-        ),
-        (event_types["EVENT_TYPE_CAUSAL_COMPLETE"], reverse_names["EspNow.RxDispatch"]),
-    ]
-    tx_chains = _complete_chains(events, tx_expected, "tx")
-    rx_chains = _complete_chains(events, rx_expected, "rx")
+    tx_chains, rx_chains = _correlation_chains(events, event_types)
     if not tx_chains or not rx_chains:
         raise RuntimeTraceError(
             "runtime trace lacks complete ESP-NOW TX and RX correlation chains"
