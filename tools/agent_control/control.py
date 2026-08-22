@@ -66,6 +66,7 @@ ROLE_BY_STATE = {
     "agent:agent-review": "judge",
     "agent:verification": "verification-worker",
 }
+SURFACE_RESERVING_ROLES = frozenset({"worker", "verification-worker"})
 SCHEMA_BY_ROLE = {
     "selector": "selector-result.schema.json",
     "planner": "planner-result.schema.json",
@@ -743,14 +744,33 @@ def select_non_overlapping(
     selected: list[TicketValidation] = []
     selected_surfaces = [tuple(surfaces) for surfaces in reserved_surfaces]
     for item in eligible:
-        surfaces = allowed_surfaces(item.sections["Allowed architectural surfaces"])
-        if any(surfaces_overlap(surfaces, existing) for existing in selected_surfaces):
-            continue
+        reserves_surfaces = role_for(item.ticket) in SURFACE_RESERVING_ROLES
+        surfaces = (
+            allowed_surfaces(item.sections["Allowed architectural surfaces"])
+            if reserves_surfaces
+            else ()
+        )
+        if reserves_surfaces:
+            if any(
+                surfaces_overlap(surfaces, existing) for existing in selected_surfaces
+            ):
+                continue
+            selected_surfaces.append(surfaces)
         selected.append(item)
-        selected_surfaces.append(surfaces)
         if len(selected) == maximum:
             break
     return selected
+
+
+def reserved_mutation_surfaces(
+    active: Sequence[TicketValidation],
+) -> list[tuple[str, ...]]:
+    """Return only path reservations held by roles allowed to mutate artifacts."""
+    return [
+        allowed_surfaces(item.sections["Allowed architectural surfaces"])
+        for item in active
+        if role_for(item.ticket) in SURFACE_RESERVING_ROLES
+    ]
 
 
 def dependency_cycles(validations: Iterable[TicketValidation]) -> list[list[int]]:
@@ -6551,12 +6571,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 seen_hardware = True
                             filtered.append(item)
                         candidates = filtered
-                    reserved = [
-                        allowed_surfaces(
-                            item.sections["Allowed architectural surfaces"]
-                        )
-                        for item in active.values()
-                    ]
+                    reserved = reserved_mutation_surfaces(tuple(active.values()))
                     selected = select_non_overlapping(
                         candidates,
                         available_role_slots(
