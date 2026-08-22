@@ -4336,6 +4336,23 @@ class ReviewFixRegressionTest(unittest.TestCase):
             "milestone selector | reading project brain and live tracker", rendered
         )
 
+    def test_dashboard_distinguishes_running_and_surface_waiting_work(self) -> None:
+        workflow = control.load_workflow()
+        running_ticket = make_ticket(67, self.revision, label="agent:running")
+        waiting_ticket = make_ticket(68, self.revision, label="agent:verification")
+        running = control.validate_ticket(running_ticket, check_revision=False)
+        waiting = control.validate_ticket(waiting_ticket, check_revision=False)
+        rendered = control.render_dashboard(
+            workflow,
+            (running_ticket, waiting_ticket),
+            (running,),
+            (running, waiting),
+            {},
+            {"runs": []},
+        )
+        self.assertIn("running #67 worker", rendered)
+        self.assertIn("surface-wait (active #67) #68 verification-worker", rendered)
+
     def test_dashboard_identifies_manual_review_without_pull_request(self) -> None:
         workflow = control.load_workflow()
         ticket = make_ticket(66, self.revision, label="agent:human-review")
