@@ -3233,12 +3233,7 @@ def result_state(
             and ticket_sections is not None
             and automated_delivery(ticket_sections)
         ):
-            approved_state = (
-                "agent:ci-pending"
-                if not requires_registered_hardware(ticket_sections)
-                or hardware_attested
-                else "agent:verification"
-            )
+            approved_state = "agent:ci-pending"
         return {
             "approve": approved_state,
             "reject": "agent:rework",
@@ -4671,7 +4666,16 @@ def _execute_one(
     role = role_for(item.ticket)
     hardware_required = requires_registered_hardware(item.sections)
     hardware_worker = role == "verification-worker"
-    hardware_access = hardware_required and hardware_worker
+    if hardware_required and hardware_worker and hardware_capability is None:
+        raise ControlError(
+            f"issue #{item.ticket.number}: registered hardware requires "
+            "--allow-registered-hardware preflight"
+        )
+    hardware_access = (
+        hardware_required
+        and hardware_worker
+        and exact_head_ci_passed(workflow, item.sections)
+    )
     stack = (
         stack_context(workflow, item, load_live_tickets(workflow))
         if role in {"worker", "verification-worker", "judge"}
@@ -4692,10 +4696,6 @@ def _execute_one(
         if pins_implementation_base
         else None
     )
-    if hardware_access and hardware_capability is None:
-        raise ControlError(
-            f"issue #{item.ticket.number}: registered hardware requires --allow-registered-hardware preflight"
-        )
     state_root = Path(
         os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")
     )
@@ -5735,6 +5735,17 @@ def required_check_summary(
     return overall, records
 
 
+def exact_head_ci_passed(workflow: Workflow, sections: dict[str, str]) -> bool:
+    """Fail closed before provisioning hardware for a verification worker."""
+    pull_request_number = existing_pull_request(sections)
+    if pull_request_number < 1:
+        return False
+    pull_request = load_pull_request(workflow, pull_request_number)
+    policy = load_autopilot_policy()
+    state, _ = required_check_summary(pull_request, policy)
+    return state == "passed"
+
+
 def requires_physical_proof(sections: dict[str, str]) -> bool:
     contract = "\n".join(
         (
@@ -5846,6 +5857,24 @@ def mark_review_ready(
         "checks": list(records),
         "review_authority": "human",
     }
+
+
+def hardware_attestation_matches_artifact(issue: int, artifact_head: str) -> bool:
+    """Return whether private hardware evidence is bound to this exact artifact."""
+    state_root = Path(
+        os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")
+    )
+    path = (
+        state_root
+        / "domes-agent-control"
+        / f"issue-{issue}"
+        / "hardware-attestation.json"
+    )
+    try:
+        attestation = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return attestation.get("artifact_head") == artifact_head
 
 
 def reconcile_ci_ticket(
@@ -5964,6 +5993,28 @@ def reconcile_ci_ticket(
             "worker before human review.",
         )
         return {"issue": ticket.number, "state": "agent:rework"}
+    if requires_registered_hardware(validation.sections) and not (
+        hardware_attestation_matches_artifact(ticket.number, pull_request.head_oid)
+    ):
+        post_controller_comment(
+            workflow,
+            ticket,
+            "Agent control-plane transition (hardware verification)",
+            (
+                f"PR #{pull_request.number} at exact head `{pull_request.head_oid}` "
+                f"passed {len(policy.required_ci_checks)} required checks and the "
+                "first-pass safety judge. Dispatching the separately authorized "
+                "registered-hardware verification worker."
+            ),
+        )
+        transition(workflow, ticket, "agent:verification")
+        return {
+            "issue": ticket.number,
+            "state": "agent:verification",
+            "pull_request": pull_request.number,
+            "head": pull_request.head_oid,
+            "checks": list(records),
+        }
     return mark_review_ready(workflow, policy, ticket, pull_request, records)
 
 

@@ -756,7 +756,7 @@ class ResultSemanticsTest(unittest.TestCase):
         )
         result = {"verdict": "approve"}
         self.assertEqual(
-            "agent:verification",
+            "agent:ci-pending",
             control.result_state(
                 "judge",
                 result,
@@ -775,6 +775,44 @@ class ResultSemanticsTest(unittest.TestCase):
                 hardware_attested=True,
             ),
         )
+
+    def test_passing_ci_dispatches_first_hardware_verification(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        ticket = automated_ticket(702, "a" * 40, label="agent:ci-pending")
+        ticket = control.Ticket(
+            number=ticket.number,
+            title=ticket.title,
+            body=ticket.body.replace(
+                "## Hardware operations\n\nNone",
+                "## Hardware operations\n\ninfo, health",
+            ).replace("## Hardware boards\n\nNone", "## Hardware boards\n\n0"),
+            state=ticket.state,
+            labels=ticket.labels,
+            url=ticket.url,
+        )
+        sections = control.parse_sections(ticket.body)
+        pr = pull_request(policy)
+        artifact = {"commit": pr.head_oid, "pull_request": pr.number}
+        judge = {"verdict": "approve", "commit": pr.head_oid, "pull_request": pr.number}
+        validation = control.TicketValidation(ticket, sections, (), ())
+        with (
+            mock.patch.object(control, "validate_ticket", return_value=validation),
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "load_exact_role_handoff", return_value=judge),
+            mock.patch.object(control, "load_pull_request", return_value=pr),
+            mock.patch.object(
+                control, "hardware_attestation_matches_artifact", return_value=False
+            ),
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            result = control.reconcile_ci_ticket(workflow, policy, ticket)
+        self.assertEqual("agent:verification", result["state"])
+        transition.assert_called_once_with(workflow, ticket, "agent:verification")
+        comment.assert_called_once()
 
     def test_public_handoff_redacts_host_and_device_identity_without_touching_commit(
         self,
