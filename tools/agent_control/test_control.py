@@ -1699,6 +1699,38 @@ class AutopilotReviewTest(unittest.TestCase):
         self.assertIn("runtime capacity", prompt)
         self.assertNotIn("Ignore the contract", prompt)
 
+    def test_ci_repair_cap_ignores_hardware_runs_and_resets_at_worker(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(32, self.revision, label="agent:ci-pending")
+        comments = {
+            "comments": [
+                {
+                    "author": {"login": workflow.tracker_actor},
+                    "body": "Agent control-plane transition (ci)\n\nRequired checks failed; dispatching bounded verification repair.",
+                },
+                {
+                    "author": {"login": workflow.tracker_actor},
+                    "body": "Agent control-plane transition (verification-worker)\n\nPhysical verification completed.",
+                },
+                {
+                    "author": {"login": workflow.tracker_actor},
+                    "body": "Agent control-plane transition (worker)\n\nWorker returned a new implementation artifact.",
+                },
+                {
+                    "author": {"login": workflow.tracker_actor},
+                    "body": "Agent control-plane transition (verification-worker)\n\nUnrelated historical role run.",
+                },
+                {
+                    "author": {"login": workflow.tracker_actor},
+                    "body": "Agent control-plane transition (ci)\n\nRequired checks failed; dispatching bounded verification repair.\n\n```json\n[]\n```",
+                },
+            ]
+        }
+        with mock.patch.object(control, "_run_json", return_value=comments):
+            self.assertEqual(
+                1, control.count_current_ci_repair_dispatches(workflow, ticket)
+            )
+
     def test_hardware_implementation_blocker_routes_to_independent_judge(self) -> None:
         ticket = automated_ticket(33, self.revision, label="agent:rework")
         sections = control.parse_sections(ticket.body)
