@@ -204,7 +204,9 @@ def _forbidden_claim(value: Any) -> bool:
     elif isinstance(value, list):
         return any(_forbidden_claim(item) for item in value)
     elif isinstance(value, str):
-        lowered = value.lower()
+        lowered = value.lower().replace(
+            "without issuing a physical or predictive trust verdict", ""
+        )
         if "predictive" in lowered:
             return True
         if "physical" in lowered:

@@ -174,6 +174,13 @@ class ManifestTests(unittest.TestCase):
                 with self.assertRaisesRegex(soak.SoakError, "physical or predictive"):
                     soak.validate_manifest(candidate, log_bytes())
 
+    def test_negative_predecessor_title_is_not_a_claim(self) -> None:
+        candidate = manifest()
+        candidate["predecessor_reconciliation"][2]["title"] = (
+            "bundle evidence without issuing a physical or predictive trust verdict"
+        )
+        soak.validate_manifest(candidate, log_bytes())
+
     def test_empty_structured_fields_fail_closed(self) -> None:
         for field, replacement in (
             ("tool_versions", {}),
