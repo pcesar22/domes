@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "kind": "vc-prequalification-public-freeze-interface",
+  "specification_revision": "be347355d3747b849b0521e40c539aae88d33614",
+  "creation_phase": "pre-held-out",
+  "controller_attestation": {
+    "kind": "domes-controller-terminal-child-attestation-v1",
+    "specification_revision": "be347355d3747b849b0521e40c539aae88d33614",
+    "task_issue": 165,
+    "parent_issue": 160,
+    "planning_issue": 159,
+    "terminal_child_issue": 171,
+    "terminal_task_key": "fs2h-candidate-acceptance",
+    "terminal_task_uid": "1211337a1d026c6f4bfb9f964887904ccce4af07d22e429f844ae17d94d707ee",
+    "terminal_work_class": "executed-validation",
+    "terminal_state": "accepted",
+    "terminal_commit": "1111111111111111111111111111111111111111",
+    "terminal_evidence_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "terminal_candidate_sha256": "99e09beda5b1a513435dacaec80b4ec4919c295e89b154a3f55e561b0dae097d",
+    "fs_wp_002g_terminal_issue": 164,
+    "fs_wp_002g_commit": "4444444444444444444444444444444444444444",
+    "fs_wp_002g_evidence_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+    "fs_wp_002g_campaign_sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "terminal_candidate": {
+    "issue": 171,
+    "artifact_class": "terminal-executed-validation",
+    "commit": "1111111111111111111111111111111111111111",
+    "evidence_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "candidate_sha256": "99e09beda5b1a513435dacaec80b4ec4919c295e89b154a3f55e561b0dae097d",
+    "fs_wp_002g": {
+      "issue": 164,
+      "commit": "4444444444444444444444444444444444444444",
+      "evidence_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "campaign_sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+    }
+  },
+  "candidate": {
+    "model_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "firmware_revision": "7777777777777777777777777777777777777777",
+    "firmware_image_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+    "hardware": {"id": "nff-v1", "sha256": "9999999999999999999999999999999999999999999999999999999999999999"},
+    "configuration": {"id": "qualification-config-v1", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+    "prediction_envelope": {
+      "id": "transport-scheduler-envelope-v1",
+      "dimensions": ["scheduler", "transport", "stale-event", "recovery", "concurrency"],
+      "sha256": "9bd585a8e3c0399812b3e786519830c2713c17fdc9108620387f70206a17f8ea"
+    },
+    "exclusions": ["analog-touch", "rf-coexistence", "power-and-thermal"],
+    "fs_wp_002g_campaign_sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "datasets": {
+    "calibration": [
+      {"id": "calibration-a", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "scenario": "calibration-link", "scenario_sha256": "823bc95e6217163cceb4941927c41eff776954003644e466c760a7633af52576", "seed": 10, "seed_sha256": "917df3320d778ddbaa5c5c7742bc4046bf803c36ed2b050f30844ed206783469", "raw_trace_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "normalized_trace_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}
+    ],
+    "held_out": [
+      {"id": "held-out-scheduler", "sha256": "0101010101010101010101010101010101010101010101010101010101010101", "scenario": "scheduler", "scenario_sha256": "3ccb9c09519fd83854d12f1dda78f2384e4cc72b80e2fd05f45885b8b028f2a4", "seed": 101, "seed_sha256": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c", "raw_trace_sha256": "0202020202020202020202020202020202020202020202020202020202020202", "normalized_trace_sha256": "0303030303030303030303030303030303030303030303030303030303030303"},
+      {"id": "held-out-transport", "sha256": "0404040404040404040404040404040404040404040404040404040404040404", "scenario": "transport", "scenario_sha256": "a04b6b53b85a6d9a10a3d2c1cf6fab86bfacfd439e6ae9133ef2b0561d0be6d5", "seed": 202, "seed_sha256": "1a55a7d16b47deb40890edb52c2234c4adddf330dbac2e1f1eedf0a9723a4c70", "raw_trace_sha256": "0505050505050505050505050505050505050505050505050505050505050505", "normalized_trace_sha256": "0606060606060606060606060606060606060606060606060606060606060606"},
+      {"id": "held-out-stale-event", "sha256": "0707070707070707070707070707070707070707070707070707070707070707", "scenario": "stale-event", "scenario_sha256": "5f1cd94cff4708912e3c36956b66cee00e0ace09ac518939cfb2f78ce09d8adb", "seed": 303, "seed_sha256": "38c62c0e8256ed8bcb1b23a308d84d8271d6d77121b6e739a993139ee42fa950", "raw_trace_sha256": "0808080808080808080808080808080808080808080808080808080808080808", "normalized_trace_sha256": "0909090909090909090909090909090909090909090909090909090909090909"},
+      {"id": "held-out-recovery", "sha256": "1616161616161616161616161616161616161616161616161616161616161616", "scenario": "recovery", "scenario_sha256": "77c40a24cc765a417e18890269459c67dac6d065737b9b7cfc92b9c155d2ddf3", "seed": 404, "seed_sha256": "f8bf41177a5f5e808a7ccb648b51080b031f15ca8018d91a576263d6cc626eb6", "raw_trace_sha256": "1717171717171717171717171717171717171717171717171717171717171717", "normalized_trace_sha256": "1818181818181818181818181818181818181818181818181818181818181818"},
+      {"id": "held-out-concurrency", "sha256": "1919191919191919191919191919191919191919191919191919191919191919", "scenario": "concurrency", "scenario_sha256": "c9980125e10083dbbb48276a48e7ee4b4858e640ce1dd531845bf392b84538f2", "seed": 505, "seed_sha256": "6edc21b6621379f6ba6b0c31a75044a6a0dc11746064237204c0c1716227fd33", "raw_trace_sha256": "2020202020202020202020202020202020202020202020202020202020202020", "normalized_trace_sha256": "2121212121212121212121212121212121212121212121212121212121212121"}
+    ]
+  },
+  "clock_correlation": {"method": "paired-monotonic-markers-v1", "method_sha256": "3fa564c22a6de5608ddff582564261413b12bc149dea190764cabe17fc0ee519", "uncertainty_ns": 25000},
+  "tools": [
+    {"id": "esp-idf-v5.4.4", "sha256": "1313131313131313131313131313131313131313131313131313131313131313"},
+    {"id": "qemu-esp32s3-9.2.2", "sha256": "1414141414141414141414141414141414141414141414141414141414141414"},
+    {"id": "vc-prequalification-v1", "sha256": "1515151515151515151515151515151515151515151515151515151515151515"}
+  ],
+  "invalidation_rules": [
+    "model_identity_changed",
+    "firmware_revision_or_image_changed",
+    "task_topology_priority_or_affinity_changed",
+    "transport_lifecycle_or_peer_protocol_changed",
+    "timing_source_changed",
+    "esp_idf_or_qemu_version_changed",
+    "board_profile_or_relevant_hardware_changed",
+    "calibrated_environment_changed",
+    "corpus_or_held_out_scenarios_changed",
+    "metrics_bounds_or_thresholds_changed"
+  ]
+}
