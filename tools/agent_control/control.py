@@ -1330,7 +1330,11 @@ def build_prompt(
             "Planning may proceed while the planning ticket's declared dependencies "
             "are nonterminal. The controller will copy those dependencies onto every "
             "materialized child, so design the DAG now without weakening or omitting "
-            "the parent ticket's external gates.\n"
+            "the parent ticket's external gates. Task dependency arrays may contain "
+            "only keys from the returned DAG, never GitHub issue references. Do not "
+            "report a planner blocker solely because an external gate is nonterminal "
+            "or a runtime acceptance input is not yet available; encode those as "
+            "fail-closed task prerequisites and stop conditions.\n"
         )
     if hardware_capability is not None:
         prompt += (
