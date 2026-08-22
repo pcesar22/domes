@@ -91,22 +91,28 @@ publication, independent agent judgment, and CI repair. It never permits GitHub 
 those remain human actions. Planner children inherit that policy and remain blocked on their parent
 until the complete DAG has been materialized. Planner execution itself may run ahead of nonterminal
 dependencies because it is read-only; the controller copies the planning ticket's external
-dependencies onto every materialized child so implementation remains gated. A planner child
+dependencies onto every materialized child so implementation waits for its real prerequisites. A planner child
 explicitly marked `plan` receives a fresh planner context; it may only decompose its inherited
 bounded objective and cannot expand the parent's accepted surfaces, hardware operations, or
 autonomy policy.
 
-An implementation dependency does not globally idle delivery while a human reviews its parent.
-The controller may execute an automated software child with no hardware operations on the exact
-reviewed head of its sole nonterminal `agent:human-review` parent. Linear stacks may extend through
-multiple independently judged, CI-passing parents; the controller recursively validates each exact
-ancestor before dispatch. It rejects fan-in, cycles, unstable or changed ancestor artifacts, and
-any stacked child that needs hardware. An ancestor change or merge invalidates the child's prior
+Every new task records `Pull request base: main` or `Pull request base: dependency`. `main` is the
+default and may wait for any number of genuine prerequisites to merge without creating a review
+stack. `dependency` is permitted only when the implementation needs code from exactly one direct
+dependency before it can merge. The controller then executes the child on the exact reviewed head
+of that sole nonterminal `agent:human-review` parent. It rejects invented ordering dependencies,
+cycles, unstable or changed ancestor artifacts, and any dependency-based child that needs hardware.
+An ancestor change or merge invalidates the child's prior
 worker, judge, and CI evidence; the child must be regenerated against the next exact live base
 before returning to human review. A human may instead merge a review-ready child into the exact
 parent branch. That child remains nonterminal until the controller follows the validated chain and
 proves its integration commit reached `main`; a dropped or abandoned integration is blocked
 without rewriting the governing contract and requires a fresh steward-approved delivery.
+
+The repository-wide open pull-request limit is six. Existing pull requests keep moving through
+repair, judgment, CI, and human review at the limit; new-PR workers and the selector wait. The
+controller reserves capacity before concurrent worker launch so several workers cannot overshoot
+the limit together.
 
 Even with a non-empty hardware operation list, Codex remains workspace-write with no direct device
 access. Dispatch also requires explicit ticketed board aliases, the controller's

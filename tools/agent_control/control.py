@@ -58,6 +58,17 @@ REQUIRED_SECTIONS = (
     "Dependencies",
     "Required proof",
 )
+PR_REQUIRED_SECTIONS = (
+    "Executive summary",
+    "Why this matters",
+    "Status at a glance",
+    "What this PR changes",
+    "What approval means",
+    "What happens next",
+    "Verification summary",
+)
+PR_FORBIDDEN_TERM = re.compile(r"\bgates?\b", re.IGNORECASE)
+PR_INTERNAL_CODE = re.compile(r"\b(?:PS|FS|HW|VC)-WP-[A-Z0-9_-]+\b", re.IGNORECASE)
 ROLE_BY_STATE = {
     "agent:plan": "planner",
     "agent:ready": "worker",
@@ -204,6 +215,7 @@ class Workflow:
     stall_timeout_seconds: int
     max_retry_backoff_seconds: int
     tracker_actor: str = ""
+    max_open_pull_requests: int = 6
 
 
 @dataclass(frozen=True)
@@ -232,6 +244,8 @@ class PullRequest:
     files: tuple[str, ...]
     checks: tuple[dict[str, str], ...]
     merge_commit: str = ""
+    title: str = ""
+    body: str = ""
 
 
 @dataclass(frozen=True)
@@ -337,6 +351,7 @@ def load_workflow(path: Path = WORKFLOW_PATH) -> Workflow:
         "state_prefix",
         "scheduler_host",
         "max_concurrent_workers",
+        "max_open_pull_requests",
         "workspace_root",
         "base_branch",
         "poll_interval_seconds",
@@ -356,6 +371,13 @@ def load_workflow(path: Path = WORKFLOW_PATH) -> Workflow:
     maximum = config["max_concurrent_workers"]
     if not isinstance(maximum, int) or not 1 <= maximum <= 16:
         raise ControlError(f"{path}: max_concurrent_workers must be between 1 and 16")
+    open_pr_maximum = config["max_open_pull_requests"]
+    if (
+        not isinstance(open_pr_maximum, int)
+        or isinstance(open_pr_maximum, bool)
+        or not 1 <= open_pr_maximum <= 100
+    ):
+        raise ControlError(f"{path}: max_open_pull_requests must be between 1 and 100")
     for key in (
         "poll_interval_seconds",
         "stall_timeout_seconds",
@@ -374,6 +396,7 @@ def load_workflow(path: Path = WORKFLOW_PATH) -> Workflow:
         stall_timeout_seconds=config["stall_timeout_seconds"],
         max_retry_backoff_seconds=config["max_retry_backoff_seconds"],
         tracker_actor=tracker_actor,
+        max_open_pull_requests=open_pr_maximum,
     )
 
 
@@ -466,6 +489,19 @@ def existing_pull_request(sections: dict[str, str]) -> int:
     return int(match.group(1))
 
 
+def pull_request_base_strategy(sections: dict[str, str]) -> str:
+    """Return the accepted PR base policy, preserving pre-policy tickets."""
+    value = sections.get("Pull request base", "").strip().casefold()
+    if not value:
+        # Existing accepted contracts predate this field and may already own a
+        # dependency-based PR. Unstarted legacy work defaults to main, and every
+        # newly rendered contract binds the choice explicitly.
+        return "legacy" if existing_pull_request(sections) else "main"
+    if value not in {"main", "dependency"}:
+        raise ControlError("Pull request base must be `main` or `dependency`")
+    return value
+
+
 def _contract_digest_payload(sections: dict[str, str]) -> dict[str, str]:
     names = [
         *REQUIRED_SECTIONS,
@@ -480,6 +516,8 @@ def _contract_digest_payload(sections: dict[str, str]) -> dict[str, str]:
         names.append("Hardware operations")
     if "Hardware boards" in sections:
         names.append("Hardware boards")
+    if "Pull request base" in sections:
+        names.append("Pull request base")
     return {name: sections.get(name, "").strip() for name in names}
 
 
@@ -573,6 +611,13 @@ def validate_ticket(ticket: Ticket, *, check_revision: bool = True) -> TicketVal
         existing_pull_request(sections)
     except ControlError as error:
         errors.append(str(error))
+    try:
+        base_strategy = pull_request_base_strategy(sections)
+    except ControlError as error:
+        errors.append(str(error))
+    else:
+        if base_strategy == "dependency" and not dependencies:
+            errors.append("dependency pull-request base requires a task dependency")
     try:
         hardware_operations(sections)
     except ControlError as error:
@@ -809,6 +854,8 @@ def _stack_parent(
     item: TicketValidation, tickets: Sequence[Ticket]
 ) -> tuple[Ticket | None, str | None]:
     """Return the sole permitted nonterminal dependency, without tracker I/O."""
+    if pull_request_base_strategy(item.sections) == "main":
+        return None, None
     by_number = {ticket.number: ticket for ticket in tickets}
     nonterminal = [
         by_number[number]
@@ -1021,7 +1068,13 @@ def eligible_queue(
             blockers[ticket.number] = reasons
         else:
             eligible.append(item)
-    eligible.sort(key=lambda item: (item.ticket.priority, item.ticket.number))
+    eligible.sort(
+        key=lambda item: (
+            0 if item.ticket.agent_state == "agent:verification" else 1,
+            item.ticket.priority,
+            item.ticket.number,
+        )
+    )
     return eligible, blockers
 
 
@@ -1074,6 +1127,8 @@ def pull_request_from_json(document: dict[str, Any]) -> PullRequest:
                 "name": str(check.get("name") or check.get("context") or ""),
                 "state": state,
                 "url": str(check.get("detailsUrl") or check.get("targetUrl") or ""),
+                "started_at": str(check.get("startedAt") or ""),
+                "completed_at": str(check.get("completedAt") or ""),
             }
         )
     merge_commit = document.get("mergeCommit") or {}
@@ -1093,6 +1148,8 @@ def pull_request_from_json(document: dict[str, Any]) -> PullRequest:
         merge_commit=(
             str(merge_commit.get("oid", "")) if isinstance(merge_commit, dict) else ""
         ),
+        title=str(document.get("title", "")),
+        body=str(document.get("body", "")),
     )
 
 
@@ -1109,7 +1166,7 @@ def load_pull_request(workflow: Workflow, number: int) -> PullRequest:
             (
                 "number,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,"
                 "mergeable,mergeStateStatus,reviewDecision,files,statusCheckRollup,"
-                "mergeCommit,changedFiles"
+                "mergeCommit,changedFiles,title,body"
             ),
         ]
     )
@@ -2651,6 +2708,7 @@ def render_ticket_contract(
     work_package: str,
     work_class: str,
     selected_policy: str,
+    base_strategy: str = "main",
     pull_request: int = 0,
     hardware_operations: Sequence[str] = (),
     hardware_boards: Sequence[int] = (),
@@ -2669,6 +2727,7 @@ def render_ticket_contract(
         "Work package": work_package.strip(),
         "Work class": work_class.strip(),
         "Autonomy policy": selected_policy.strip(),
+        "Pull request base": base_strategy.strip(),
         "Existing pull request": f"#{pull_request}" if pull_request else "None",
         "Hardware operations": (
             ", ".join(hardware_operations) if hardware_operations else "None"
@@ -2708,6 +2767,7 @@ def validate_selector_result(
     if state != "selected":
         if (
             result["mode"] != "none"
+            or result["base_strategy"] != "none"
             or result["autonomy_policy"] != "none"
             or result["priority"] != "none"
             or result["work_class"] != "none"
@@ -2741,6 +2801,18 @@ def validate_selector_result(
             raise ControlError(f"selector returned empty {name}")
     if result["mode"] not in {"execute", "plan"}:
         raise ControlError("selected work must use execute or plan mode")
+    if result["base_strategy"] not in {"main", "dependency"}:
+        raise ControlError(
+            "selected work must declare main or dependency base strategy"
+        )
+    if result["base_strategy"] == "dependency" and len(result["dependencies"]) != 1:
+        raise ControlError(
+            "dependency base strategy requires exactly one direct dependency"
+        )
+    if PR_FORBIDDEN_TERM.search(str(result["title"])):
+        raise ControlError(
+            "selector title must name the prerequisite instead of `gate`"
+        )
     if result["work_class"] not in policy.allowed_work_classes:
         raise ControlError("selector returned a prohibited work class")
     if result["priority"] not in {"p0", "p1", "p2", "p3"}:
@@ -2873,6 +2945,7 @@ def _apply_selector_result_locked(
         work_package=result["work_package"],
         work_class=result["work_class"],
         selected_policy=result["autonomy_policy"],
+        base_strategy=result["base_strategy"],
         pull_request=result["existing_pull_request"],
     )
     target_state = "agent:ready" if result["mode"] == "execute" else "agent:plan"
@@ -2889,6 +2962,13 @@ def _apply_selector_result_locked(
         pull_requests,
         expected_revision=revision,
     )
+    if (
+        not int(result["existing_pull_request"])
+        and len(pull_requests) >= workflow.max_open_pull_requests
+    ):
+        raise ControlError(
+            "open pull-request limit reached before selector materialization"
+        )
 
     existing_number = int(result["existing_issue"])
     if existing_number:
@@ -3029,6 +3109,45 @@ def selector_capacity_available(
     )
 
 
+def creates_new_pull_request(item: TicketValidation) -> bool:
+    return (
+        role_for(item.ticket) == "worker"
+        and automated_delivery(item.sections)
+        and existing_pull_request(item.sections) == 0
+    )
+
+
+def enforce_pull_request_capacity(
+    candidates: Sequence[TicketValidation],
+    active: Sequence[TicketValidation],
+    *,
+    open_pull_requests: int,
+    maximum: int,
+) -> tuple[list[TicketValidation], list[int]]:
+    """Reserve every possible new PR before launching concurrent workers."""
+    reserved = sum(creates_new_pull_request(item) for item in active)
+    slots = max(0, maximum - open_pull_requests - reserved)
+    admitted: list[TicketValidation] = []
+    deferred: list[int] = []
+    for item in candidates:
+        if creates_new_pull_request(item):
+            if slots < 1:
+                deferred.append(item.ticket.number)
+                continue
+            slots -= 1
+        admitted.append(item)
+    return admitted, deferred
+
+
+def selector_pull_request_capacity_available(
+    active: Sequence[TicketValidation], *, open_pull_requests: int, maximum: int
+) -> bool:
+    return (
+        open_pull_requests + sum(creates_new_pull_request(item) for item in active)
+        < maximum
+    )
+
+
 def build_selector_prompt(
     workflow: Workflow,
     policy: AutopilotPolicy,
@@ -3058,6 +3177,7 @@ def build_selector_prompt(
         f"Current origin/main revision: {revision or origin_main_revision(workflow)}\n"
         f"Autopilot policy: {policy.policy_name}\n"
         f"Allowed work classes: {', '.join(policy.allowed_work_classes)}\n\n"
+        f"Open pull-request limit: {workflow.max_open_pull_requests}\n\n"
         "# Live open issue summary\n\n"
         f"```json\n{json.dumps(issue_snapshot, indent=2, sort_keys=True)}\n```\n\n"
         "# Live open pull-request summary\n\n"
@@ -3505,15 +3625,15 @@ def validate_result_semantics(
                 + ", ".join(sorted(duplicate_hardware_operations))
             )
         task_dependencies = {task["key"]: tuple(task["dependencies"]) for task in tasks}
-        fan_in = sorted(
-            key
-            for key, dependencies in task_dependencies.items()
-            if len(dependencies) > 1
+        invalid_dependency_bases = sorted(
+            task["key"]
+            for task in tasks
+            if task["base_strategy"] == "dependency" and len(task["dependencies"]) != 1
         )
-        if fan_in:
+        if invalid_dependency_bases:
             raise ControlError(
-                "planner result contains multi-parent task dependencies unsupported "
-                "by one-level review stacks; serialize each join: " + ", ".join(fan_in)
+                "dependency base strategy requires exactly one direct task dependency: "
+                + ", ".join(invalid_dependency_bases)
             )
         unknown = sorted(
             {
@@ -3630,6 +3750,7 @@ def normalized_plan(result: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "key": task["key"],
                 "mode": task["mode"],
+                "base_strategy": task["base_strategy"],
                 "goal": task["goal"].strip(),
                 "non_goals": sorted(value.strip() for value in task["non_goals"]),
                 "required_behavior": task["required_behavior"].strip(),
@@ -3849,6 +3970,7 @@ def materialize_plan(
                 work_package=parent.sections.get("Work package", task["key"]),
                 work_class=parent.sections.get("Work class", "software"),
                 selected_policy=task["autonomy_policy"],
+                base_strategy=task["base_strategy"],
                 hardware_operations=task.get("hardware_operations", ()),
                 hardware_boards=(
                     hardware_boards(parent.sections)
@@ -3891,6 +4013,7 @@ def materialize_plan(
             work_package=parent.sections.get("Work package", task["key"]),
             work_class=parent.sections.get("Work class", "software"),
             selected_policy=task["autonomy_policy"],
+            base_strategy=task["base_strategy"],
             hardware_operations=task.get("hardware_operations", ()),
             hardware_boards=(
                 hardware_boards(parent.sections)
@@ -5757,6 +5880,7 @@ def verify_worker_artifact(
             f"artifact after bounded tracker reconciliation ({detail})"
         )
     assert pull_request is not None
+    validate_pull_request_presentation(pull_request)
     pr_violations = paths_outside_surfaces(pull_request.files, surfaces)
     if pr_violations:
         raise ControlError(
@@ -5792,6 +5916,84 @@ def verify_worker_artifact(
         raise ControlError(
             ancestry.stderr.strip()
             or f"issue #{item.ticket.number}: cannot verify PR base ancestry"
+        )
+
+
+def _visible_markdown(value: str) -> str:
+    without_comments = re.sub(r"<!--.*?-->", " ", value, flags=re.DOTALL)
+    without_tags = re.sub(r"</?(?:details|summary)>", " ", without_comments)
+    return re.sub(r"\s+", " ", without_tags).strip()
+
+
+def validate_pull_request_presentation(pull_request: PullRequest) -> None:
+    """Reject cryptic or template-incomplete autonomous PR descriptions."""
+    errors: list[str] = []
+    title = pull_request.title.strip()
+    body = pull_request.body.strip()
+    if not title:
+        errors.append("title is empty")
+    if PR_FORBIDDEN_TERM.search(title) or PR_FORBIDDEN_TERM.search(body):
+        errors.append("replace `gate` with the concrete prerequisite or decision")
+    if PR_INTERNAL_CODE.search(title):
+        errors.append("remove the internal work-package code from the title")
+    if "<!--" in body or re.search(r"\b(?:TODO|TBD)\b", body, re.IGNORECASE):
+        errors.append("replace every template placeholder")
+    sections = parse_sections(body)
+    for name in PR_REQUIRED_SECTIONS:
+        if not _visible_markdown(sections.get(name, "")):
+            errors.append(f"missing or empty `{name}` section")
+
+    summary = _visible_markdown(sections.get("Executive summary", ""))
+    if len(summary.split()) < 45 or len(re.findall(r"[.!?](?:\s|$)", summary)) < 3:
+        errors.append(
+            "executive summary must provide at least three contextual sentences and 45 words"
+        )
+    why = _visible_markdown(sections.get("Why this matters", ""))
+    if len(why.split()) < 30:
+        errors.append("`Why this matters` must provide at least 30 words of context")
+
+    status = sections.get("Status at a glance", "")
+    for row in (
+        "Product or user behavior",
+        "Automated software checks",
+        "Physical-device evidence",
+        "Program or release status",
+    ):
+        if row not in status:
+            errors.append(f"status table is missing `{row}`")
+
+    changes = sections.get("What this PR changes", "")
+    if not any(
+        len(line.split()) >= 6
+        for line in changes.splitlines()
+        if re.match(r"^\s*[-*+]\s+\S", line)
+    ):
+        errors.append("`What this PR changes` needs at least one concrete bullet")
+
+    approval = _visible_markdown(sections.get("What approval means", ""))
+    if (
+        "Approving this PR means:" not in approval
+        or "It does not mean:" not in approval
+        or len(approval.split()) < 25
+    ):
+        errors.append("approval section must state both authorization and exclusions")
+
+    if len(_visible_markdown(sections.get("What happens next", "")).split()) < 8:
+        errors.append("`What happens next` must name a concrete follow-up or endpoint")
+
+    verification = sections.get("Verification summary", "")
+    for label in (
+        "Automated software checks:",
+        "Physical-device checks:",
+        "Not tested or intentionally excluded:",
+        "Independent review:",
+    ):
+        if label not in verification:
+            errors.append(f"verification summary is missing `{label}`")
+    if errors:
+        raise ControlError(
+            f"PR #{pull_request.number}: human-facing description is invalid: "
+            + "; ".join(dict.fromkeys(errors))
         )
 
 
@@ -6021,9 +6223,9 @@ def reconcile_stacked_children(
 def required_check_summary(
     pull_request: PullRequest, policy: AutopilotPolicy
 ) -> tuple[str, list[dict[str, str]]]:
-    by_name: dict[str, list[dict[str, str]]] = {}
-    for check in pull_request.checks:
-        by_name.setdefault(check["name"], []).append(check)
+    by_name: dict[str, list[tuple[int, dict[str, str]]]] = {}
+    for index, check in enumerate(pull_request.checks):
+        by_name.setdefault(check["name"], []).append((index, check))
     records: list[dict[str, str]] = []
     overall = "passed"
     failure_states = {
@@ -6037,11 +6239,23 @@ def required_check_summary(
     }
     for name in policy.required_ci_checks:
         matches = by_name.get(name, [])
-        states = {item["state"] for item in matches}
-        if states & failure_states:
+        latest = (
+            max(
+                matches,
+                key=lambda item: (
+                    item[1].get("started_at", ""),
+                    item[1].get("completed_at", ""),
+                    item[0],
+                ),
+            )[1]
+            if matches
+            else None
+        )
+        state_value = latest["state"] if latest is not None else ""
+        if state_value in failure_states:
             state = "failed"
             overall = "failed"
-        elif matches and states == {"SUCCESS"}:
+        elif state_value == "SUCCESS":
             state = "passed"
         else:
             state = "pending"
@@ -6051,7 +6265,7 @@ def required_check_summary(
             {
                 "name": name,
                 "state": state,
-                "url": next((item["url"] for item in matches if item["url"]), ""),
+                "url": latest["url"] if latest is not None else "",
             }
         )
     return overall, records
@@ -6689,6 +6903,11 @@ def render_dashboard(
             f"{workflow.max_concurrent_workers} | eligible {len(eligible)} | "
             f"blocked {len(blockers)}"
         ),
+        (
+            "Pull requests: "
+            f"{payload.get('open_pull_requests', '?')}/"
+            f"{payload.get('max_open_pull_requests', workflow.max_open_pull_requests)} open"
+        ),
         "",
         "ACTIVE AGENTS",
     ]
@@ -6972,7 +7191,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                             ) = load_selector_snapshot(workflow)
                         else:
                             tickets = load_live_tickets(workflow)
-                            pull_request_snapshot = []
+                            pull_request_snapshot = load_open_pull_request_snapshot(
+                                workflow
+                            )
                             current_selector_snapshot = ""
                     except (ControlError, OSError, json.JSONDecodeError) as error:
                         if not args.watch:
@@ -7069,6 +7290,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                             or hardware_capability is not None
                         )
                     ]
+                    candidates, pr_capacity_deferred = enforce_pull_request_capacity(
+                        candidates,
+                        tuple(active.values()),
+                        open_pull_requests=len(pull_request_snapshot),
+                        maximum=workflow.max_open_pull_requests,
+                    )
+                    for issue in pr_capacity_deferred:
+                        blockers.setdefault(issue, []).append(
+                            "open pull-request limit reached; existing PR work continues first"
+                        )
                     # One physical fleet, one exclusive broker lease: reserve at
                     # most one hardware worker before any GitHub claim.
                     if any(
@@ -7139,6 +7370,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         and selector_capacity_available(
                             maximum, len(active), selector_future is not None
                         )
+                        and selector_pull_request_capacity_available(
+                            tuple(active.values()),
+                            open_pull_requests=len(pull_request_snapshot),
+                            maximum=workflow.max_open_pull_requests,
+                        )
                         and time.monotonic() >= next_selector_at
                     ):
                         selector_future = executor.submit(
@@ -7162,6 +7398,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "failures": dispatch_errors,
                         "ci": ci_results,
                         "selector": selector_payload,
+                        "open_pull_requests": len(pull_request_snapshot),
+                        "max_open_pull_requests": workflow.max_open_pull_requests,
                         "blocked": blockers,
                     }
                     phase = (
@@ -7209,6 +7447,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 "failures": dispatch_errors,
                                 "ci": ci_results,
                                 "selector": selector_payload,
+                                "open_pull_requests": len(pull_request_snapshot),
+                                "max_open_pull_requests": workflow.max_open_pull_requests,
                                 "blocked": blockers,
                             },
                             phase=phase,

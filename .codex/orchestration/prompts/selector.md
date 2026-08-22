@@ -21,6 +21,14 @@ path in `.codex/orchestration/autopilot-policy.json`. Never emit a selected `rev
 cannot enter the autonomous planner/worker lifecycle. Select another eligible package instead.
 Every pull request requires human review and merge.
 
+Set `base_strategy` to `main` unless the selected implementation truly requires code from exactly
+one still-unmerged direct dependency. Use `dependency` only for that case. Never invent a
+dependency to create a pull-request stack. The controller admits no new pull-request-producing work
+when the repository already has six open pull requests.
+
+Titles and user-facing descriptions must name the concrete outcome in plain language. Do not use
+the standalone word `gate`; name the actual prerequisite, decision, or verification instead.
+
 Set `existing_pull_request` to a nonzero value only when `existing_issue` identifies the issue that
 owns that pull request. A pull request without an associated available issue is not selectable;
 return zero for both fields or choose another package.

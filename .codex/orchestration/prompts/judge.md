@@ -13,7 +13,7 @@ generated consumers, and evidence that does not reach the required level. Softwa
 acceptance never establishes physical behavior. Return `blocked` only for an external condition
 that prevents a sound verdict; ordinary defects are `reject` with required rework.
 
-Exact-head CI is a controller-owned gate after independent implementation judgment for every
+Exact-head CI is a controller-owned verification stage after independent implementation judgment for every
 automated ticket. On this judgment pass, do not add still-running CI as a criterion, mark the
 implementation deficient because CI is pending, or require a worker to wait for CI. Judge the
 artifact, required worker-executable checks, and retained evidence. Approval advances the ticket to

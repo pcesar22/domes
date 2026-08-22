@@ -58,6 +58,7 @@ def automated_ticket(
     work_class: str = "software",
     hardware_operations: tuple[str, ...] = (),
     hardware_boards: tuple[int, ...] = (),
+    base_strategy: str | None = None,
 ) -> control.Ticket:
     contract = control.render_ticket_contract(
         spec_revision=revision,
@@ -72,6 +73,7 @@ def automated_ticket(
         work_package="FS-WP-TEST",
         work_class=work_class,
         selected_policy="software-review-required",
+        base_strategy=base_strategy or ("dependency" if dependencies else "main"),
         pull_request=pull_request,
         hardware_operations=hardware_operations,
         hardware_boards=hardware_boards,
@@ -100,12 +102,57 @@ def pull_request(
     review_decision: str = "",
     files: tuple[str, ...] = ("firmware/domes/main/app_main.cpp",),
     checks: tuple[dict[str, str], ...] | None = None,
+    title: str = "fix(simulation): explain deterministic peer behavior",
+    body: str | None = None,
 ) -> control.PullRequest:
     if checks is None:
         checks = tuple(
             {"name": name, "state": "SUCCESS", "url": ""}
             for name in policy.required_ci_checks
         )
+    if body is None:
+        body = """## Executive summary
+
+This change repairs deterministic peer behavior so simulations exercise the intended production path. It replaces an incomplete test-only shortcut with observable runtime integration and retained evidence. User-facing product behavior is unchanged, while engineering confidence and review clarity improve substantially for the next implementation and integration decision.
+
+## Why this matters
+
+Reliable simulation evidence prevents the team from approving changes that only appear correct in detached test models. It reduces rework, makes failures reproducible, and lets reviewers understand the actual product risk without decoding internal milestone terminology or implementation-only details.
+
+## Status at a glance
+
+| Area | Result | What it means |
+| --- | --- | --- |
+| Product or user behavior | Unchanged | This is engineering infrastructure. |
+| Automated software checks | Passed | Focused and repository checks passed. |
+| Physical-device evidence | Not tested | No physical behavior is claimed. |
+| Program or release status | Unchanged | No release is authorized. |
+
+## What this PR changes
+
+- Connects the deterministic simulation path to observable production behavior and retained evidence.
+
+## What approval means
+
+Approving this PR means:
+
+> Accept the implementation and automated evidence for human-controlled integration.
+
+It does not mean:
+
+- It does not authorize a release, physical-device claim, or automatic merge of any change.
+
+## What happens next
+
+1. A human reviewer decides whether this exact tested commit should be merged.
+
+## Verification summary
+
+- Automated software checks: Passed focused tests and repository policy checks.
+- Physical-device checks: Not tested because this change makes no physical claim.
+- Not tested or intentionally excluded: Release and hardware validation remain excluded.
+- Independent review: A separate judge evaluates the exact implementation commit.
+"""
     return control.PullRequest(
         number=number,
         state=state,
@@ -120,6 +167,8 @@ def pull_request(
         files=files,
         checks=checks,
         merge_commit="d" * 40 if state == "MERGED" else "",
+        title=title,
+        body=body,
     )
 
 
@@ -130,6 +179,7 @@ class WorkflowTest(unittest.TestCase):
         self.assertEqual("pcesar22", workflow.tracker_actor)
         self.assertEqual("ministrom", workflow.scheduler_host)
         self.assertEqual(4, workflow.max_concurrent_workers)
+        self.assertEqual(6, workflow.max_open_pull_requests)
         self.assertEqual("main", workflow.base_branch)
 
     def test_repository_contracts_validate(self) -> None:
@@ -609,6 +659,41 @@ class TicketValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(control.ControlError, "capacity accounting"):
             control.selector_capacity_available(3, 4, False)
 
+    def test_open_pr_capacity_reserves_concurrent_new_pr_workers(self) -> None:
+        existing = control.validate_ticket(
+            automated_ticket(20, self.revision, label="agent:rework"),
+            check_revision=False,
+        )
+        first = control.validate_ticket(
+            automated_ticket(21, self.revision, label="agent:ready", pull_request=0),
+            check_revision=False,
+        )
+        second = control.validate_ticket(
+            automated_ticket(22, self.revision, label="agent:ready", pull_request=0),
+            check_revision=False,
+        )
+        admitted, deferred = control.enforce_pull_request_capacity(
+            (existing, first, second),
+            (),
+            open_pull_requests=5,
+            maximum=6,
+        )
+        self.assertEqual([20, 21], [item.ticket.number for item in admitted])
+        self.assertEqual([22], deferred)
+        admitted, deferred = control.enforce_pull_request_capacity(
+            (second,),
+            (first,),
+            open_pull_requests=5,
+            maximum=6,
+        )
+        self.assertEqual([], admitted)
+        self.assertEqual([22], deferred)
+        self.assertFalse(
+            control.selector_pull_request_capacity_available(
+                (first,), open_pull_requests=5, maximum=6
+            )
+        )
+
     def test_dependency_blocked_ready_work_leaves_selector_capacity_free(self) -> None:
         dependency = make_ticket(23, self.revision, label="agent:blocked")
         waiting = make_ticket(24, self.revision, dependencies="#23")
@@ -1018,6 +1103,7 @@ class ResultSemanticsTest(unittest.TestCase):
                 {
                     "key": "implementation",
                     "mode": "execute",
+                    "base_strategy": "main",
                     "goal": "Implement it.",
                     "non_goals": ["No release."],
                     "required_behavior": "Feature behaves deterministically.",
@@ -1031,6 +1117,7 @@ class ResultSemanticsTest(unittest.TestCase):
                 {
                     "key": "tests",
                     "mode": "execute",
+                    "base_strategy": "dependency",
                     "goal": "Test it.",
                     "non_goals": ["No redesign."],
                     "required_behavior": "Tests cover the change.",
@@ -1062,12 +1149,21 @@ class ResultSemanticsTest(unittest.TestCase):
                 {
                     **first["tasks"][1],
                     "key": "join",
+                    "base_strategy": "main",
                     "dependencies": ["implementation", "tests"],
                 },
             ],
         }
-        with self.assertRaisesRegex(control.ControlError, "multi-parent"):
-            control.validate_result_semantics("planner", fan_in)
+        control.validate_result_semantics("planner", fan_in)
+        dependency_fan_in = {
+            **fan_in,
+            "tasks": [
+                *fan_in["tasks"][:-1],
+                {**fan_in["tasks"][-1], "base_strategy": "dependency"},
+            ],
+        }
+        with self.assertRaisesRegex(control.ControlError, "exactly one direct"):
+            control.validate_result_semantics("planner", dependency_fan_in)
 
         duplicate_operations = {
             **first,
@@ -2127,7 +2223,7 @@ class AutopilotReviewTest(unittest.TestCase):
         item = control.validate_ticket(ticket, check_revision=False)
         prompt = control.build_prompt(item, "judge")
         self.assertIn(
-            "CI is a controller-owned gate after independent implementation judgment",
+            "CI is a controller-owned verification stage after independent implementation judgment",
             prompt,
         )
         self.assertIn("do not add still-running CI as a criterion", prompt)
@@ -2335,6 +2431,47 @@ class AutopilotReviewTest(unittest.TestCase):
         self.assertEqual("failed", control.required_check_summary(failed, policy)[0])
         missing = pull_request(policy, checks=())
         self.assertEqual("pending", control.required_check_summary(missing, policy)[0])
+
+    def test_required_ci_uses_newest_duplicate_attempt(self) -> None:
+        policy = control.load_autopilot_policy()
+        checks: list[dict[str, str]] = []
+        for name in policy.required_ci_checks:
+            checks.append(
+                {
+                    "name": name,
+                    "state": "FAILURE",
+                    "url": "old",
+                    "started_at": "2026-08-22T16:00:00Z",
+                    "completed_at": "2026-08-22T16:01:00Z",
+                }
+            )
+            checks.append(
+                {
+                    "name": name,
+                    "state": "SUCCESS",
+                    "url": "new",
+                    "started_at": "2026-08-22T17:00:00Z",
+                    "completed_at": "2026-08-22T17:01:00Z",
+                }
+            )
+        state, records = control.required_check_summary(
+            pull_request(policy, checks=tuple(checks)), policy
+        )
+        self.assertEqual("passed", state)
+        self.assertEqual({"new"}, {record["url"] for record in records})
+
+    def test_pull_request_presentation_rejects_cryptic_or_incomplete_copy(self) -> None:
+        policy = control.load_autopilot_policy()
+        good = pull_request(policy)
+        control.validate_pull_request_presentation(good)
+        with self.assertRaisesRegex(control.ControlError, "concrete prerequisite"):
+            control.validate_pull_request_presentation(
+                pull_request(policy, title="test(fs3): retain contract gate")
+            )
+        with self.assertRaisesRegex(control.ControlError, "template placeholder"):
+            control.validate_pull_request_presentation(
+                pull_request(policy, body=good.body + "\n<!-- TODO -->")
+            )
 
     def test_physical_proof_helpers_require_current_passed_artifact(self) -> None:
         ticket = automated_ticket(
@@ -2653,6 +2790,7 @@ class SelectorAndPlanTest(unittest.TestCase):
             "state": "selected",
             "spec_revision": revision or self.revision,
             "mode": "execute",
+            "base_strategy": "main",
             "existing_issue": existing_issue,
             "existing_pull_request": existing_pull_request,
             "work_package": "FS-WP-TEST",
@@ -2686,6 +2824,7 @@ class SelectorAndPlanTest(unittest.TestCase):
             work_package=str(result["work_package"]),
             work_class=str(result["work_class"]),
             selected_policy=str(result["autonomy_policy"]),
+            base_strategy=str(result["base_strategy"]),
             pull_request=int(result["existing_pull_request"]),
         )
         return control.with_autopilot_contract("", contract)
@@ -2882,6 +3021,7 @@ class SelectorAndPlanTest(unittest.TestCase):
                 result = {
                     "state": "blocked",
                     "mode": "none",
+                    "base_strategy": "none",
                     "autonomy_policy": "none",
                     "priority": "none",
                     "work_class": "none",
@@ -2898,6 +3038,7 @@ class SelectorAndPlanTest(unittest.TestCase):
         result = {
             "state": "idle",
             "mode": "none",
+            "base_strategy": "none",
             "autonomy_policy": "none",
             "priority": "none",
             "work_class": "none",
@@ -3245,6 +3386,7 @@ class SelectorAndPlanTest(unittest.TestCase):
         task = {
             "key": "implementation",
             "mode": "execute",
+            "base_strategy": "main",
             "goal": "Implement the bounded task.",
             "non_goals": ["No release."],
             "required_behavior": "The bounded behavior is deterministic.",
@@ -3280,6 +3422,7 @@ class SelectorAndPlanTest(unittest.TestCase):
             work_package="FS-WP-TEST",
             work_class="software",
             selected_policy="software-review-required",
+            base_strategy=task["base_strategy"],
         )
         body = marker + "\n\n" + control.with_autopilot_contract("", contract)
         child = control.Ticket(
@@ -3315,6 +3458,7 @@ class SelectorAndPlanTest(unittest.TestCase):
             {
                 "key": "execute-child",
                 "mode": "execute",
+                "base_strategy": "main",
                 "goal": "Implement one bounded behavior.",
                 "non_goals": ["No release."],
                 "required_behavior": "It is deterministic.",
@@ -3328,6 +3472,7 @@ class SelectorAndPlanTest(unittest.TestCase):
             {
                 "key": "recursive-plan",
                 "mode": "plan",
+                "base_strategy": "dependency",
                 "goal": "Decompose a bounded follow-up.",
                 "non_goals": ["No release."],
                 "required_behavior": "The follow-up remains bounded.",
@@ -3419,6 +3564,7 @@ class SelectorAndPlanTest(unittest.TestCase):
         task = {
             "key": "too-deep",
             "mode": "plan",
+            "base_strategy": "main",
             "goal": "Attempt another recursive planning layer.",
             "non_goals": ["No implementation."],
             "required_behavior": "Planning remains bounded.",
@@ -4698,6 +4844,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
                 {
                     "key": "recover",
                     "mode": "execute",
+                    "base_strategy": "main",
                     "goal": "Recover the planned task.",
                     "non_goals": ["No release."],
                     "required_behavior": "Recovery is deterministic.",

@@ -163,10 +163,12 @@ fresh tracker state, and cannot edit the project brain or implement work. A plan
 marks each child `execute` or `plan`; recursive planning therefore creates another tracked,
 bounded `agent:plan` issue instead of an untracked conversation.
 
-An executable software ticket may also proceed while its sole dependency waits in
+An executable software ticket may proceed on an unmerged dependency only when its accepted
+`Pull request base` is `dependency` and it has exactly one direct dependency in
 `agent:human-review`. The controller validates the parent's exact reviewed PR head, branches the
-child from that commit, and requires the child PR to target the parent branch. This exception is
-one level deep and forbids fan-in and child hardware operations. Parent head movement, requested
+child from that commit, and requires the child PR to target the parent branch. Every other task
+uses `main`; multi-parent joins wait for their prerequisites to land instead of creating artificial
+linear stacks. Dependency-based work forbids child hardware operations. Parent head movement, requested
 changes, conflict, closure, rework, or merge invalidates the child binding and forces a fresh
 worker/judge/CI cycle; after parent merge the child is rebuilt and retargeted to `main`. Neither PR
 is approved or merged by the controller. If a human first merges an already review-ready child into
@@ -174,6 +176,11 @@ its exact parent branch, the child remains nonterminal until the controller prov
 commit reached `main`; a parent that drops or fails to land it blocks only that artifact without
 rewriting its human-authoritative issue contract. The selector continues other work while a fresh
 delivery is stewarded.
+
+The controller admits at most six open pull requests across the repository. At the limit it keeps
+repairing, judging, and verifying existing PRs, but it neither launches a worker that would create
+another PR nor starts the autonomous selector. Concurrent new-PR workers reserve capacity before
+launch.
 
 ## Safety and authority
 

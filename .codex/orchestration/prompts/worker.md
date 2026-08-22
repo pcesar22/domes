@@ -33,6 +33,16 @@ confirm the remote head, and immediately return the structured handoff. The dete
 controller owns CI polling, failure dispatch, and retries; retaining this worker merely to watch
 checks withholds its concurrency slot and architectural-surface reservation from other work.
 
+The pull request is a human decision document, not an internal checkpoint label. Use the complete
+repository pull-request template and replace every placeholder. Write a plain-language executive
+summary that states the problem, concrete change, outcome, and whether user behavior changes;
+explain why it matters; state exactly what approval does and does not authorize; name the next
+action; and separate automated, physical-device, pending, and excluded verification. Do not use the
+standalone word `gate` anywhere in the pull-request title or body; name the actual prerequisite,
+decision, or verification instead. Do not put internal work-package codes in the title. The
+controller validates this presentation and rejects the artifact before review if it is vague or
+incomplete.
+
 Do not copy SDKs, package caches, build toolchains, or other large dependency trees into `/tmp`;
 that filesystem has a shared quota and exhausting it can prevent even Git and sandbox cleanup from
 running. When a writable toolchain or cache is required, stage it under the issue workspace (for
