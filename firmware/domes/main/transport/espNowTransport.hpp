@@ -51,6 +51,13 @@ static constexpr size_t kEspNowRxMaxFrames =
 static_assert(kEspNowRxMaxFrames >= kEspNowRxBaselineMaxFrames,
               "correlation metadata must not reduce maximum-frame queue capacity");
 
+// Stable object IDs published in TraceSessionInfo for ESP-NOW causal events.
+// They are recorder metadata only and never enter the peer payload.
+inline constexpr uint32_t kEspNowQueueTraceId = TRACE_ID("EspNow.CausalQueue");
+inline constexpr uint32_t kEspNowReadyTraceId = TRACE_ID("EspNow.CausalReady");
+inline constexpr uint32_t kEspNowCallbackTraceId = TRACE_ID("EspNow.Callback");
+inline constexpr uint32_t kEspNowCompleteTraceId = TRACE_ID("EspNow.Complete");
+
 /**
  * @brief ESP-NOW transport for peer-to-peer communication
  *
@@ -179,6 +186,7 @@ private:
     TransportError sendToAddress(const EspNowAddress& address, const uint8_t* data, size_t len,
                                  uint32_t timeoutMs, bool requireAck);
     static EspNowCorrelationToken nextToken(std::atomic<EspNowCorrelationToken>& counter);
+    static bool registerTraceObjects();
     void refreshPeerCount();
 
     IEspNowRadio& radio_;

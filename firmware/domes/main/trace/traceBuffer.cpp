@@ -46,8 +46,8 @@ esp_err_t TraceBuffer::init() {
     }
 
     initialized_.store(true);
-    ESP_LOGI(kTag, "Trace buffer initialized (%zu bytes, ~%zu events)", bufferSize_,
-             bufferSize_ / kEventSize);
+    ESP_LOGI(kTag, "Trace buffer initialized (%zu bytes, %zu fixed events)", bufferSize_,
+             bufferSize_ / kEventStorageSize);
 
     return ESP_OK;
 }
