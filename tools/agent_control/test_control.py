@@ -1786,6 +1786,68 @@ class AutopilotReviewTest(unittest.TestCase):
         comment.assert_called_once()
         complete_issue.assert_called_once_with(workflow, ticket)
 
+    def test_auto_closed_human_review_finalizes_after_exact_pr_merge(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        open_ticket = automated_ticket(43, self.revision, label="agent:human-review")
+        ticket = control.Ticket(
+            open_ticket.number,
+            open_ticket.title,
+            open_ticket.body,
+            "CLOSED",
+            open_ticket.labels,
+            open_ticket.url,
+        )
+        merged = pull_request(policy, state="MERGED")
+        artifact = {"commit": merged.head_oid, "pull_request": merged.number}
+        validation = control.TicketValidation(
+            ticket, control.parse_sections(ticket.body), (), ()
+        )
+        with (
+            mock.patch.object(control, "validate_ticket", return_value=validation),
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=merged),
+            mock.patch.object(
+                control,
+                "finalize_human_merged_ticket",
+                return_value={"state": "agent:done"},
+            ) as finalize,
+        ):
+            result = control.reconcile_human_reviews(workflow, (ticket,))
+        self.assertEqual([{"state": "agent:done"}], result)
+        finalize.assert_called_once_with(workflow, ticket, merged)
+
+    def test_manually_closed_human_review_with_open_pr_is_not_reopened(self) -> None:
+        workflow = control.load_workflow()
+        policy = control.load_autopilot_policy()
+        open_ticket = automated_ticket(44, self.revision, label="agent:human-review")
+        ticket = control.Ticket(
+            open_ticket.number,
+            open_ticket.title,
+            open_ticket.body,
+            "CLOSED",
+            open_ticket.labels,
+            open_ticket.url,
+        )
+        pull = pull_request(policy)
+        artifact = {"commit": pull.head_oid, "pull_request": pull.number}
+        validation = control.TicketValidation(
+            ticket, control.parse_sections(ticket.body), (), ()
+        )
+        with (
+            mock.patch.object(control, "validate_ticket", return_value=validation),
+            mock.patch.object(
+                control, "load_latest_artifact_handoff", return_value=artifact
+            ),
+            mock.patch.object(control, "load_pull_request", return_value=pull),
+            mock.patch.object(control, "transition") as transition,
+        ):
+            result = control.reconcile_human_reviews(workflow, (ticket,))
+        self.assertEqual([], result)
+        transition.assert_not_called()
+
     def test_merged_rework_reopens_issue_and_clears_pr_binding(self) -> None:
         workflow = control.load_workflow()
         open_ticket = automated_ticket(42, self.revision, label="agent:rework")

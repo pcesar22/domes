@@ -5898,7 +5898,7 @@ def reconcile_human_reviews(
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for ticket in tickets:
-        if ticket.state != "OPEN" or ticket.agent_state != "agent:human-review":
+        if ticket.agent_state != "agent:human-review":
             continue
         sections = parse_sections(ticket.body)
         if not automated_delivery(sections):
@@ -5918,6 +5918,10 @@ def reconcile_human_reviews(
                 )
             pull_request = load_pull_request(workflow, pull_request_number)
             binding = artifact_stack_binding(artifact)
+            if ticket.state != "OPEN" and pull_request.state != "MERGED":
+                # Preserve human authority over an independently closed issue.
+                # Only an exact merged artifact authorizes final bookkeeping.
+                continue
             if pull_request.head_oid != artifact.get("commit"):
                 transition(workflow, ticket, "agent:rework")
                 post_controller_comment(
