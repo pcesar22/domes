@@ -49,7 +49,7 @@ def manifest(log: bytes | None = None) -> dict:
         "schema_version": 1,
         "campaign": "fs4_command_recovery_soak",
         "specification_revision": soak.SPECIFICATION_REVISION,
-        "tested_git_sha": "a" * 40,
+        "tested_git_sha": soak._git("rev-parse", "HEAD"),
         "predecessor_git_sha": soak.PREDECESSOR_REVISION,
         "tool_versions": soak._tool_versions(),
         "flutter_lockfile": {
@@ -166,6 +166,21 @@ class ManifestTests(unittest.TestCase):
         candidate["specification_revision"] = "f" * 40
         with self.assertRaisesRegex(soak.SoakError, "revision"):
             soak.validate_manifest(candidate, log_bytes())
+
+    def test_tested_git_sha_mismatch_fails_closed(self) -> None:
+        candidate = manifest()
+        candidate["tested_git_sha"] = "a" * 40
+        with self.assertRaisesRegex(soak.SoakError, "validated Git head"):
+            soak.validate_manifest(candidate, log_bytes())
+
+    def test_explicit_expected_git_sha_is_enforced(self) -> None:
+        candidate = manifest()
+        with self.assertRaisesRegex(soak.SoakError, "validated Git head"):
+            soak.validate_manifest(
+                candidate,
+                log_bytes(),
+                expected_git_sha="b" * 40,
+            )
 
     def test_nondeterministic_digest_fails_closed(self) -> None:
         candidate = manifest()

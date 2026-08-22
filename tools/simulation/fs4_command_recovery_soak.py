@@ -245,7 +245,12 @@ def _require_nonempty_string(value: Any, field: str) -> str:
     return value
 
 
-def validate_manifest(manifest: Mapping[str, Any], log_bytes: bytes) -> None:
+def validate_manifest(
+    manifest: Mapping[str, Any],
+    log_bytes: bytes,
+    *,
+    expected_git_sha: str | None = None,
+) -> None:
     if set(manifest) != MANIFEST_FIELDS:
         raise SoakError("manifest has missing or unexpected fields")
     if (
@@ -255,8 +260,14 @@ def validate_manifest(manifest: Mapping[str, Any], log_bytes: bytes) -> None:
         raise SoakError("manifest identity mismatch")
     if manifest.get("specification_revision") != SPECIFICATION_REVISION:
         raise SoakError("specification revision mismatch")
-    if not re.fullmatch(r"[0-9a-f]{40}", str(manifest.get("tested_git_sha", ""))):
+    tested_git_sha = str(manifest.get("tested_git_sha", ""))
+    if not re.fullmatch(r"[0-9a-f]{40}", tested_git_sha):
         raise SoakError("tested Git SHA is invalid")
+    validated_git_sha = expected_git_sha or _git("rev-parse", "HEAD")
+    if not re.fullmatch(r"[0-9a-f]{40}", validated_git_sha):
+        raise SoakError("expected tested Git SHA is invalid")
+    if tested_git_sha != validated_git_sha:
+        raise SoakError("tested Git SHA differs from the validated Git head")
     if manifest.get("predecessor_git_sha") != PREDECESSOR_REVISION:
         raise SoakError("predecessor revision mismatch")
     tools = manifest.get("tool_versions")
