@@ -395,6 +395,107 @@ void main() {
     });
 
     test(
+      'participating stream failure is terminal in every active phase',
+      () async {
+        Future<void> expectFailure({
+          required DrillPhase phase,
+          required Future<void> Function(DrillConfig config) reachPhase,
+        }) async {
+          hardwareNotifier.reset();
+          await Future<void>.delayed(Duration.zero);
+          const config = DrillConfig(
+            roundCount: 3,
+            timeout: Duration(seconds: 1),
+            minDelay: Duration(seconds: 1),
+            maxDelay: Duration(seconds: 1),
+            podAddresses: ['pod-1', 'pod-2'],
+          );
+          var terminalErrors = 0;
+          final subscription = hardwareContainer.listen<DrillState>(
+            drillProvider,
+            (_, next) {
+              if (next.phase == DrillPhase.error) terminalErrors++;
+            },
+          );
+
+          await reachPhase(config);
+          expect(hardwareContainer.read(drillProvider).phase, phase);
+          final completed = List.of(
+            hardwareContainer.read(drillProvider).results,
+          );
+          final failedAddress =
+              hardwareContainer.read(drillProvider).activePodAddress ?? 'pod-1';
+          multiPod.fail(failedAddress);
+          await Future<void>.delayed(Duration.zero);
+
+          final failed = hardwareContainer.read(drillProvider);
+          expect(failed.phase, DrillPhase.error);
+          expect(failed.errorMessage, contains(failedAddress));
+          expect(failed.results, completed);
+          expect(terminalErrors, 1);
+
+          multiPod.gameModeGate?.complete();
+          multiPod.gameModeGate = null;
+          multiPod.nextLedOffGate?.complete();
+          multiPod.nextLedOffGate = null;
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          expect(hardwareContainer.read(drillProvider).phase, DrillPhase.error);
+          expect(hardwareContainer.read(drillProvider).results, completed);
+          subscription.close();
+        }
+
+        await expectFailure(
+          phase: DrillPhase.preparing,
+          reachPhase: (config) async {
+            multiPod.gameModeGate = Completer<void>();
+            unawaited(hardwareNotifier.startDrill(config));
+            await Future<void>.delayed(Duration.zero);
+          },
+        );
+        await expectFailure(
+          phase: DrillPhase.waitingDelay,
+          reachPhase: hardwareNotifier.startDrill,
+        );
+        await expectFailure(
+          phase: DrillPhase.waitingTouch,
+          reachPhase: (config) async {
+            final immediate = DrillConfig(
+              roundCount: config.roundCount,
+              timeout: config.timeout,
+              minDelay: Duration.zero,
+              maxDelay: Duration.zero,
+              podAddresses: config.podAddresses,
+            );
+            await hardwareNotifier.startDrill(immediate);
+            await Future<void>.delayed(Duration.zero);
+          },
+        );
+        await expectFailure(
+          phase: DrillPhase.roundComplete,
+          reachPhase: (config) async {
+            final immediate = DrillConfig(
+              roundCount: config.roundCount,
+              timeout: config.timeout,
+              minDelay: Duration.zero,
+              maxDelay: Duration.zero,
+              podAddresses: const ['pod-1'],
+            );
+            await hardwareNotifier.startDrill(immediate);
+            await Future<void>.delayed(Duration.zero);
+            multiPod.nextLedOffGate = Completer<void>();
+            hardwareNotifier.recordTouch('pod-1');
+          },
+        );
+
+        final idleParticipants = multiPod.addressedModeCalls
+            .where((call) => call.$2 == SystemMode.SYSTEM_MODE_IDLE)
+            .map((call) => call.$1)
+            .toSet();
+        expect(idleParticipants, containsAll(['pod-1', 'pod-2']));
+      },
+    );
+
+    test(
       'preparation command failure identifies pod before stream failure',
       () async {
         const config = DrillConfig(
