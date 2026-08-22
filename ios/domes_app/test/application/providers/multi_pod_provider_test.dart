@@ -67,18 +67,28 @@ final class _FakeRepository implements PodRepository {
   (SystemMode, bool) modeResult = (SystemMode.SYSTEM_MODE_GAME, true);
   AppLedPattern? ledResult;
   AppLedPattern? lastLedPattern;
+  Object? modeError;
+  Object? ledError;
+  int modeCalls = 0;
+  int ledCalls = 0;
 
   @override
   Stream<AppTouchEvent> get touchEvents => eventController.stream;
 
   @override
   Future<AppLedPattern> setLedPattern(AppLedPattern pattern) async {
+    ledCalls++;
     lastLedPattern = pattern;
+    if (ledError case final error?) throw error;
     return ledResult ?? pattern;
   }
 
   @override
-  Future<(SystemMode, bool)> setSystemMode(SystemMode mode) async => modeResult;
+  Future<(SystemMode, bool)> setSystemMode(SystemMode mode) async {
+    modeCalls++;
+    if (modeError case final error?) throw error;
+    return modeResult;
+  }
 
   @override
   Future<AppModeInfo> getSystemMode() => throw UnsupportedError('not used');
@@ -158,6 +168,130 @@ void main() {
       throwsA(isA<StateError>()),
     );
   });
+
+  test(
+    'set-mode failure quarantines once and reconnects after cleanup',
+    () async {
+      final lifecycle = <String>[];
+      final oldTransport = _FakeTransport(
+        onDisconnect: () => lifecycle.add('disconnect:pod-1:1'),
+      )..disconnectGate = Completer<void>();
+      final oldRepository = _FakeRepository(
+        onCancel: () => lifecycle.add('cancel:pod-1:1'),
+      );
+      final newTransport = _FakeTransport();
+      final newRepository = _FakeRepository();
+      final healthyTransport = _FakeTransport();
+      final healthyRepository = _FakeRepository();
+      final commandError = StateError('ambiguous mode response');
+      oldRepository.modeError = commandError;
+      var affectedConnections = 0;
+      final localNotifier = MultiPodNotifier(
+        connector: (pod) async {
+          if (pod.address == 'healthy') {
+            return (transport: healthyTransport, repository: healthyRepository);
+          }
+          affectedConnections++;
+          lifecycle.add('connect:pod-1:$affectedConnections');
+          return affectedConnections == 1
+              ? (transport: oldTransport, repository: oldRepository)
+              : (transport: newTransport, repository: newRepository);
+        },
+      );
+      const affected = PodDevice(name: 'Pod 1', address: 'pod-1');
+      const healthy = PodDevice(name: 'Healthy', address: 'healthy');
+      await localNotifier.connectPod(affected);
+      await localNotifier.connectPod(healthy);
+      final failures = <PodConnectionFailure>[];
+      final failureSubscription = localNotifier.connectionFailures.listen(
+        failures.add,
+      );
+
+      final command = localNotifier.setMode(
+        affected.address,
+        SystemMode.SYSTEM_MODE_GAME,
+      );
+      final commandExpectation = expectLater(
+        command,
+        throwsA(same(commandError)),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(localNotifier.state[affected.address]!.isConnected, isFalse);
+      expect(
+        localNotifier.state[affected.address]!.error,
+        contains('$commandError'),
+      );
+      expect(localNotifier.state[healthy.address]!.isConnected, isTrue);
+      expect(oldRepository.modeCalls, 1, reason: 'commands are never retried');
+      expect(failures, isEmpty, reason: 'failure follows cleanup');
+
+      final reconnect = localNotifier.connectPod(affected);
+      await Future<void>.delayed(Duration.zero);
+      expect(affectedConnections, 1, reason: 'reconnect awaits cleanup');
+
+      oldRepository.eventController.addError(StateError('stale generation'));
+      oldTransport.disconnectGate!.complete();
+      await commandExpectation;
+      await reconnect;
+      await Future<void>.delayed(Duration.zero);
+
+      expect(lifecycle, [
+        'connect:pod-1:1',
+        'cancel:pod-1:1',
+        'disconnect:pod-1:1',
+        'connect:pod-1:2',
+      ]);
+      expect(failures, hasLength(1));
+      expect(failures.single.address, affected.address);
+      expect(failures.single.error, same(commandError));
+      expect(localNotifier.state[affected.address]!.isConnected, isTrue);
+      expect(localNotifier.state[healthy.address]!.isConnected, isTrue);
+
+      await localNotifier.setMode(
+        affected.address,
+        SystemMode.SYSTEM_MODE_GAME,
+      );
+      expect(newRepository.modeCalls, 1);
+
+      await failureSubscription.cancel();
+      localNotifier.dispose();
+      await oldRepository.eventController.close();
+      await newRepository.eventController.close();
+      await healthyRepository.eventController.close();
+    },
+  );
+
+  test(
+    'set-LED failure disconnects and emits one address-bound failure',
+    () async {
+      final commandError = TimeoutException('LED response timed out');
+      repository.ledError = commandError;
+      final failures = <PodConnectionFailure>[];
+      final subscription = notifier.connectionFailures.listen(failures.add);
+
+      await expectLater(
+        notifier.setLedPattern('pod-1', AppLedPattern.solid(1, 2, 3)),
+        throwsA(same(commandError)),
+      );
+      repository.eventController.addError(StateError('stale stream failure'));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        repository.ledCalls,
+        1,
+        reason: 'ambiguous commands are not retried',
+      );
+      expect(transport.disconnectCalls, 1);
+      expect(notifier.state['pod-1']!.isConnected, isFalse);
+      expect(notifier.state['pod-1']!.error, contains('$commandError'));
+      expect(failures, hasLength(1));
+      expect(failures.single.address, 'pod-1');
+      expect(failures.single.error, same(commandError));
+
+      await subscription.cancel();
+    },
+  );
 
   test('associates touch events with their connection address', () async {
     final received = notifier.touchEvents.first;

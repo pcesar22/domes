@@ -83,6 +83,9 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
 
   /// Connect to a pod by address.
   Future<void> connectPod(PodDevice pod) async {
+    await _connectionCleanupTails[pod.address];
+    if (!mounted) return;
+
     final generation = (_connectionGenerations[pod.address] ?? 0) + 1;
     _connectionGenerations[pod.address] = generation;
     final previous = state[pod.address];
@@ -95,8 +98,6 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
 
     Transport? pendingTransport;
     try {
-      await _connectionCleanupTails[pod.address];
-      if (!mounted || _connectionGenerations[pod.address] != generation) return;
       await _touchSubscriptions.remove(pod.address)?.cancel();
       await previous?.transport?.disconnect();
       if (!mounted || _connectionGenerations[pod.address] != generation) return;
@@ -112,8 +113,12 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
       }
 
       _touchSubscriptions[pod.address] = repository.touchEvents.listen(
-        (event) =>
-            _touchEvents.add(PodTouchEvent(address: pod.address, event: event)),
+        (event) {
+          if (!mounted || _connectionGenerations[pod.address] != generation) {
+            return;
+          }
+          _touchEvents.add(PodTouchEvent(address: pod.address, event: event));
+        },
         onError: (Object error, StackTrace stackTrace) {
           _handlePodStreamError(pod.address, generation, error, stackTrace);
         },
@@ -152,41 +157,46 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
     if (!mounted || _connectionGenerations[address] != generation) return;
 
     final entry = state[address];
-    if (entry != null) {
-      _connectionGenerations[address] = generation + 1;
-      final subscription = _touchSubscriptions.remove(address);
-      final transport = entry.transport;
-      if (transport != null) {
-        final cleanup = _cleanupFailedConnection(subscription, transport);
-        _connectionCleanupTails[address] = cleanup;
-        unawaited(
-          cleanup.whenComplete(() {
-            if (identical(_connectionCleanupTails[address], cleanup)) {
-              _connectionCleanupTails.remove(address);
-            }
-          }),
-        );
-      } else if (subscription != null) {
-        final cleanup = _cancelSubscription(subscription);
-        _connectionCleanupTails[address] = cleanup;
-        unawaited(
-          cleanup.whenComplete(() {
-            if (identical(_connectionCleanupTails[address], cleanup)) {
-              _connectionCleanupTails.remove(address);
-            }
-          }),
-        );
-      }
-      state = {
-        ...state,
-        address: PodConnectionEntry(
-          device: entry.device.copyWith(
-            connectionState: PodConnectionState.disconnected,
-          ),
-          error: '$error',
+    if (entry == null) return;
+    unawaited(
+      _quarantineConnection(address, generation, entry, error, stackTrace),
+    );
+  }
+
+  Future<void> _quarantineConnection(
+    String address,
+    int generation,
+    PodConnectionEntry entry,
+    Object error,
+    StackTrace stackTrace,
+  ) async {
+    if (!mounted || _connectionGenerations[address] != generation) return;
+
+    _connectionGenerations[address] = generation + 1;
+    final subscription = _touchSubscriptions.remove(address);
+    final transport = entry.transport;
+    final cleanup = transport == null
+        ? _cancelSubscription(subscription)
+        : _cleanupFailedConnection(subscription, transport);
+    _connectionCleanupTails[address] = cleanup;
+    state = {
+      ...state,
+      address: PodConnectionEntry(
+        device: entry.device.copyWith(
+          connectionState: PodConnectionState.disconnected,
         ),
-      };
+        error: '$error',
+      ),
+    };
+
+    try {
+      await cleanup;
+    } finally {
+      if (identical(_connectionCleanupTails[address], cleanup)) {
+        _connectionCleanupTails.remove(address);
+      }
     }
+    if (!mounted) return;
     _connectionFailures.add(
       PodConnectionFailure(
         address: address,
@@ -285,9 +295,23 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
     if (entry?.repository == null || !entry!.isConnected) {
       throw StateError('Pod $address is not connected');
     }
-    final applied = await entry.repository!.setLedPattern(pattern);
-    if (!pattern.matchesApplied(applied)) {
-      throw StateError('Pod $address reported a different applied LED pattern');
+    final generation = _connectionGenerations[address]!;
+    try {
+      final applied = await entry.repository!.setLedPattern(pattern);
+      if (!pattern.matchesApplied(applied)) {
+        throw StateError(
+          'Pod $address reported a different applied LED pattern',
+        );
+      }
+    } catch (error, stackTrace) {
+      await _quarantineConnection(
+        address,
+        generation,
+        entry,
+        error,
+        stackTrace,
+      );
+      Error.throwWithStackTrace(error, stackTrace);
     }
   }
 
@@ -297,14 +321,25 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
     if (entry?.repository == null || !entry!.isConnected) {
       throw StateError('Pod $address is not connected');
     }
-    final (reportedMode, transitionOk) = await entry.repository!.setSystemMode(
-      mode,
-    );
-    if (!transitionOk || reportedMode != mode) {
-      throw StateError(
-        'Pod $address rejected mode transition to ${mode.name} '
-        '(reported ${reportedMode.name}, transitionOk=$transitionOk)',
+    final generation = _connectionGenerations[address]!;
+    try {
+      final (reportedMode, transitionOk) = await entry.repository!
+          .setSystemMode(mode);
+      if (!transitionOk || reportedMode != mode) {
+        throw StateError(
+          'Pod $address rejected mode transition to ${mode.name} '
+          '(reported ${reportedMode.name}, transitionOk=$transitionOk)',
+        );
+      }
+    } catch (error, stackTrace) {
+      await _quarantineConnection(
+        address,
+        generation,
+        entry,
+        error,
+        stackTrace,
       );
+      Error.throwWithStackTrace(error, stackTrace);
     }
   }
 
