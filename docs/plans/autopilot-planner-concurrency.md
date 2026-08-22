@@ -23,6 +23,8 @@ scheduler applied the same path-conflict rule to every role.
   not discarded.
 - Hydrate network-isolated planners with a concise controller-captured issue, dependency,
   ownership, surface, and open-PR snapshot instead of requiring direct GitHub access.
+- Return a first-attempt worker whose stack invalidates before any handoff to `agent:ready`,
+  avoiding an impossible `agent:rework` contract that demands nonexistent judge evidence.
 
 ## Verification
 
@@ -31,6 +33,7 @@ scheduler applied the same path-conflict rule to every role.
 - Existing worker-overlap tests continue to prove mutation exclusion.
 - Review and stack tests distinguish a mergeable `BEHIND` state from a `DIRTY` conflict.
 - Planner prompt tests prove the authoritative tracker snapshot is structured and injected.
+- Stack-invalidation tests preserve the distinction between first-attempt and judged rework.
 - Contract validation and tooling/documentation verification pass.
 - The live controller dispatches queued planner issue #148 while worker #141 remains active.
 

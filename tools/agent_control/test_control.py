@@ -3959,6 +3959,40 @@ class ReviewFixRegressionTest(unittest.TestCase):
                 )
         transition.assert_called_once_with(workflow, ticket, "agent:rework")
 
+    def test_first_worker_stack_invalidation_returns_ready_without_judge(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(72, self.revision, label="agent:running")
+        item = control.TicketValidation(
+            ticket,
+            control.parse_sections(ticket.body),
+            (),
+            (),
+            source_state="agent:ready",
+        )
+        with (
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            control.block_failed_run(
+                workflow, item, control.StackInvalidated("parent advanced")
+            )
+        transition.assert_called_once_with(workflow, ticket, "agent:ready")
+        self.assertIn("agent:ready", comment.call_args.args[3])
+
+    def test_rework_worker_stack_invalidation_remains_rework(self) -> None:
+        workflow = control.load_workflow()
+        ticket = automated_ticket(73, self.revision, label="agent:rework")
+        item = control.validate_ticket(ticket, check_revision=False)
+        with (
+            mock.patch.object(control, "transition") as transition,
+            mock.patch.object(control, "post_controller_comment") as comment,
+        ):
+            control.block_failed_run(
+                workflow, item, control.StackInvalidated("parent advanced")
+            )
+        transition.assert_called_once_with(workflow, ticket, "agent:rework")
+        self.assertIn("agent:rework", comment.call_args.args[3])
+
     def test_judge_failure_returns_to_agent_review(self) -> None:
         workflow = control.load_workflow()
         ticket = automated_ticket(71, self.revision, label="agent:agent-review")
