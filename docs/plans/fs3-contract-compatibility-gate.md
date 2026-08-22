@@ -4,11 +4,12 @@
 
 The FS3 peer/drill software baseline at specification revision
 `6f197670a49bc8b83753d1dfab0dd1f789b5f4db` is **accepted as internally compatible**.
-The gate ran from descendant base revision `be347355d3747b849b0521e40c539aae88d33614` on
-2026-08-22 UTC. Before running any consumer check, it compared every covered working-tree source
-to its pinned Git object and found no drift. Protocol generation, 48 focused firmware/simulator
-tests, 3 Rust CLI contract tests, 3 Dart contract tests, 13 mobile scoring/result tests, and 22
-scoring validation tests passed.
+The retained rerun executed at descendant revision
+`d2f40a1785ca732cc65914e78812a8e6c62e98a2`, which descends from required base revision
+`be347355d3747b849b0521e40c539aae88d33614`, on 2026-08-22 UTC. Before running any consumer
+check, it compared every covered working-tree source to its pinned Git object and found no drift.
+Protocol generation, 48 focused firmware/simulator tests, 3 Rust CLI contract tests, 3 Dart
+contract tests, 13 mobile scoring/result tests, and 22 scoring validation tests passed.
 
 This verdict accepts only the pinned software compatibility baseline. It does not authorize FS3
 convergence work until this artifact is reviewed and merged. PR #107 is excluded as authority.

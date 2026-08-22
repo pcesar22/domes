@@ -3,14 +3,17 @@
 set -Eeuo pipefail
 
 readonly SPEC_REVISION="6f197670a49bc8b83753d1dfab0dd1f789b5f4db"
-readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-readonly RUN_ROOT="$(mktemp -d)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+readonly REPO_ROOT
+RUN_ROOT="$(mktemp -d)"
+readonly RUN_ROOT
 readonly FIRMWARE_BUILD="$RUN_ROOT/firmware-test-app"
 readonly CARGO_TARGET="$RUN_ROOT/cargo-target"
 if [[ -n "${DOMES_FLUTTER_ROOT:-}" ]]; then
     readonly FLUTTER_ROOT="$DOMES_FLUTTER_ROOT"
 else
-    readonly FLUTTER_ROOT="$(cd "$(dirname "$(command -v flutter)")/.." && pwd)"
+    FLUTTER_ROOT="$(cd "$(dirname "$(command -v flutter)")/.." && pwd)"
+    readonly FLUTTER_ROOT
 fi
 readonly PUB_CACHE_ROOT="${DOMES_PUB_CACHE:-${PUB_CACHE:-$HOME/.pub-cache}}"
 readonly DART_BIN="$FLUTTER_ROOT/bin/cache/dart-sdk/bin/dart"
@@ -24,7 +27,8 @@ cleanup() {
     rm -rf "$RUN_ROOT"
 }
 trap cleanup EXIT
-trap 'status=$?; printf "GATE_FAILURE status=%s line=%s command=%q\n" "$status" "$LINENO" "$BASH_COMMAND" >&2; exit "$status"' ERR
+gate_status=0
+trap 'gate_status=$?; printf "GATE_FAILURE status=%s line=%s command=%q\n" "$gate_status" "$LINENO" "$BASH_COMMAND" >&2; exit "$gate_status"' ERR
 
 cd "$REPO_ROOT"
 
