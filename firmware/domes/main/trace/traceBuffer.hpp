@@ -35,10 +35,9 @@ public:
     /// Default requested capacity: 64 KiB.
     ///
     /// FreeRTOS's no-split ring stores metadata beside every 16-byte event, so
-    /// a 32 KiB allocation retains only about 1,000 events. A bounded physical
-    /// two-board regression overflowed a 48 KiB allocation by up to 245 events
-    /// while scheduler hooks and radio correlation were enabled. Keep bounded
-    /// headroom above that capture without weakening fail-closed handling.
+    /// the requested capacity is not the retained event capacity. Keep bounded
+    /// headroom for correlation-heavy traces without weakening fail-closed
+    /// overflow handling. This sizing is not physical-verification evidence.
     static constexpr size_t kDefaultBufferSize = 64 * 1024;
 
     /// Size of each trace event
