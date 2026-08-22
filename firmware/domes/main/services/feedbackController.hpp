@@ -4,6 +4,7 @@
 #include "config/featureManager.hpp"
 #include "infra/configKeys.hpp"
 #include "interfaces/iConfigStorage.hpp"
+#include "nvs.h"
 #include "utils/mutex.hpp"
 
 #include <cstdint>
