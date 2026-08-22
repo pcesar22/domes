@@ -94,6 +94,10 @@ TEST_F(SimDrillTest, FixedTwoPodScoringFixture) {
 
     ASSERT_EQ(result.rounds.size(), scoring_fixture::kRoundCount);
     for (size_t i = 0; i < result.rounds.size(); ++i) {
+        EXPECT_NE(result.rounds[i].roundToken, 0u);
+        if (i > 0) {
+            EXPECT_NE(result.rounds[i].roundToken, result.rounds[i - 1].roundToken);
+        }
         EXPECT_EQ(result.rounds[i].targetPodId, scoring_fixture::kRounds[i].fixedPodId);
         EXPECT_EQ(result.rounds[i].roundToken, scoring_fixture::kRounds[i].roundToken);
         EXPECT_EQ(result.rounds[i].hit, scoring_fixture::kRounds[i].hit);
@@ -141,6 +145,60 @@ TEST_F(SimDrillTest, FixedTwoPodScoringFixture) {
         output << "  ],\n  \"schema_version\": 1\n}\n";
         ASSERT_TRUE(output.good());
     }
+}
+
+TEST_F(SimDrillTest, RoundTokensResetDeterministicallyForLocalAndPeerResults) {
+    DrillEnv env(2);
+    const std::vector<DrillStep> steps = {
+        {0, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+        {1, 0, 100, 0x03, domes::Color::rgb(255, 0, 0)},
+    };
+    const std::vector<TouchScenario> touches = {
+        {0, 100, 1},
+        {1, 0, 0},
+    };
+
+    env.drill->resetRoundTokens(41u);
+    const DrillResult first = env.drill->execute(steps, touches);
+    env.drill->resetRoundTokens(41u);
+    const DrillResult second = env.drill->execute(steps, touches);
+
+    ASSERT_EQ(first.rounds.size(), 2u);
+    ASSERT_EQ(second.rounds.size(), first.rounds.size());
+    EXPECT_EQ(first.rounds[0].roundToken, 42u);
+    EXPECT_EQ(first.rounds[1].roundToken, 43u);
+    for (size_t i = 0; i < first.rounds.size(); ++i) {
+        EXPECT_EQ(second.rounds[i].roundToken, first.rounds[i].roundToken);
+        EXPECT_EQ(second.rounds[i].targetPodId, first.rounds[i].targetPodId);
+        EXPECT_EQ(second.rounds[i].hit, first.rounds[i].hit);
+        EXPECT_EQ(second.rounds[i].reactionTimeUs, first.rounds[i].reactionTimeUs);
+        EXPECT_EQ(second.rounds[i].padIndex, first.rounds[i].padIndex);
+    }
+    EXPECT_TRUE(first.rounds[0].hit);
+    EXPECT_FALSE(first.rounds[1].hit);
+}
+
+TEST_F(SimDrillTest, RoundTokensWrapFromUint32MaxToOneWithoutZero) {
+    DrillEnv env(2);
+    env.drill->resetRoundTokens(UINT32_MAX - 1u);
+    const std::vector<DrillStep> steps = {
+        {0, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+        {1, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+    };
+    const std::vector<TouchScenario> touches = {
+        {0, 100, 0},
+        {1, 100, 0},
+    };
+
+    const DrillResult result = env.drill->execute(steps, touches);
+
+    ASSERT_EQ(result.rounds.size(), 2u);
+    EXPECT_EQ(result.rounds[0].roundToken, UINT32_MAX);
+    EXPECT_EQ(result.rounds[1].roundToken, 1u);
+    EXPECT_NE(result.rounds[0].roundToken, 0u);
+    EXPECT_NE(result.rounds[1].roundToken, 0u);
+    EXPECT_TRUE(result.rounds[0].hit);
+    EXPECT_TRUE(result.rounds[1].hit);
 }
 
 // =============================================================================
@@ -307,6 +365,8 @@ TEST_F(SimDrillTest, StaleDelayedTimeoutDoesNotMaskNextTouchResponse) {
     DrillResult result = env.drill->execute(steps, touches);
 
     ASSERT_EQ(result.rounds.size(), 2u);
+    EXPECT_EQ(result.rounds[0].roundToken, 1u);
+    EXPECT_EQ(result.rounds[1].roundToken, 2u);
     EXPECT_FALSE(result.rounds[0].hit);
     EXPECT_TRUE(result.rounds[1].hit);
     EXPECT_EQ(result.rounds[1].reactionTimeUs, 100'000u);
@@ -320,6 +380,42 @@ TEST_F(SimDrillTest, StaleDelayedTimeoutDoesNotMaskNextTouchResponse) {
         [](const FlowEvent& event) { return event.type == domes::espnow::kTouchEvent; });
     ASSERT_NE(touchFlow, env.bus->flowEvents().end());
     EXPECT_EQ(touchFlow->timestampUs, 427'000u);
+}
+
+TEST_F(SimDrillTest, MismatchedPeerTouchAndTimeoutCannotCompleteActiveRound) {
+    DrillEnv env(2);
+    bool injectedMismatch = false;
+    size_t touchEventCount = 0;
+    env.bus->setDeliveryPolicy(
+        [&env, &injectedMismatch, &touchEventCount](const DeliveryContext& context) {
+            if (context.type == domes::espnow::kArmTouch && !injectedMismatch) {
+                injectedMismatch = true;
+                env.bus->send(makeTouchEvent(1, 0, 1, 0, 99));
+                env.bus->send(makeTimeoutEvent(1, 0, 99));
+            }
+            if (context.type == domes::espnow::kTouchEvent) {
+                touchEventCount++;
+                if (touchEventCount > 1) {
+                    return DeliveryDirective{.action = DeliveryAction::kDrop};
+                }
+            }
+            return DeliveryDirective{};
+        });
+
+    const std::vector<DrillStep> steps = {
+        {1, 0, 3000, 0x03, domes::Color::rgb(0, 255, 0)},
+    };
+    const std::vector<TouchScenario> touches = {{1, 100, 0}};
+
+    const DrillResult result = env.drill->execute(steps, touches);
+
+    ASSERT_EQ(result.rounds.size(), 1u);
+    EXPECT_TRUE(injectedMismatch);
+    EXPECT_EQ(result.rounds[0].roundToken, 1u);
+    EXPECT_FALSE(result.rounds[0].hit);
+    EXPECT_EQ(result.rounds[0].reactionTimeUs, 0u);
+    EXPECT_EQ(result.rounds[0].padIndex, 0u);
+    EXPECT_EQ(touchEventCount, 2u);
 }
 
 TEST_F(SimDrillTest, DelayedOldArmCannotClaimNextRoundTouch) {
@@ -348,6 +444,8 @@ TEST_F(SimDrillTest, DelayedOldArmCannotClaimNextRoundTouch) {
     DrillResult result = env.drill->execute(steps, touches);
 
     ASSERT_EQ(result.rounds.size(), 2u);
+    EXPECT_EQ(result.rounds[0].roundToken, 1u);
+    EXPECT_EQ(result.rounds[1].roundToken, 2u);
     EXPECT_FALSE(result.rounds[0].hit);
     EXPECT_FALSE(result.rounds[1].hit);
     auto touchFlow = std::find_if(
