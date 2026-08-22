@@ -450,6 +450,35 @@ class TicketValidationTest(unittest.TestCase):
         )
         self.assertEqual([], selected)
 
+    def test_parallel_selection_allows_planner_to_overlap_running_worker(self) -> None:
+        planner = make_ticket(2, self.revision, label="agent:plan")
+        eligible, blockers = control.eligible_queue([planner], check_revision=False)
+        self.assertEqual({}, blockers)
+        selected = control.select_non_overlapping(
+            eligible, 1, (("tools/agent_control",),)
+        )
+        self.assertEqual([2], [item.ticket.number for item in selected])
+
+    def test_parallel_selection_planner_does_not_reserve_worker_surface(self) -> None:
+        planner = make_ticket(1, self.revision, label="agent:plan")
+        worker = make_ticket(2, self.revision)
+        eligible, blockers = control.eligible_queue(
+            [planner, worker], check_revision=False
+        )
+        self.assertEqual({}, blockers)
+        selected = control.select_non_overlapping(eligible, 2)
+        self.assertEqual([1, 2], [item.ticket.number for item in selected])
+
+    def test_only_mutating_active_roles_reserve_surfaces(self) -> None:
+        planner = make_ticket(1, self.revision, label="agent:plan")
+        worker = make_ticket(2, self.revision, label="agent:running")
+        planner_item = control.validate_ticket(planner, check_revision=False)
+        worker_item = control.validate_ticket(worker, check_revision=False)
+        self.assertEqual(
+            [("tools/agent_control",)],
+            control.reserved_mutation_surfaces((planner_item, worker_item)),
+        )
+
     def test_rendered_queue_contains_no_ticket_body(self) -> None:
         ticket = make_ticket(7, self.revision)
         eligible, blockers = control.eligible_queue([ticket], check_revision=False)
