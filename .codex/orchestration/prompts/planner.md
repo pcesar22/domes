@@ -11,6 +11,14 @@ The current review-stack executor permits at most one direct task dependency per
 fan-out where independent work is useful, but serialize every fan-in join into a dependency chain
 so no task can depend on two unmerged review heads.
 
+The planning ticket's GitHub issue dependencies are external gates. The controller automatically
+copies every one of them onto every materialized child. Do not repeat `#123`-style issue references
+inside a task's `dependencies`; that field may contain only `key` values from tasks in this returned
+DAG. Nonterminal external gates and runtime inputs that acceptance will require are not planning
+blockers when a coherent fail-closed DAG can be defined. Encode them in task behavior, proof, and
+stop conditions and return an empty `blockers` list. Use `blockers` only for uncertainty that makes
+the task architecture itself unsafe or impossible to define.
+
 Produce the smallest dependency DAG that fully delivers the parent objective. Every task must be
 bounded, independently reviewable, explicit about allowed surfaces and proof, and use the same
 specification revision unless a requirements steward approves a new one. Identify conflicts and

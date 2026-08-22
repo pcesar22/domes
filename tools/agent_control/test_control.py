@@ -539,6 +539,8 @@ class TicketValidationTest(unittest.TestCase):
         self.assertIn("Controller-captured tracker snapshot", prompt)
         self.assertIn("instead of attempting network access", prompt)
         self.assertIn(self.revision, prompt)
+        self.assertIn("only keys from the returned DAG", prompt)
+        self.assertIn("external gate is nonterminal", prompt)
 
     def test_rendered_queue_contains_no_ticket_body(self) -> None:
         ticket = make_ticket(7, self.revision)
