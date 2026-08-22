@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the host trace-name registry from production TRACE_ID literals."""
+"""Generate the host trace-name registry from firmware TRACE_ID literals."""
 
 from __future__ import annotations
 
@@ -145,7 +145,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source-root",
         type=Path,
-        default=repo_root / "firmware" / "domes" / "main",
+        default=repo_root / "firmware",
     )
     parser.add_argument(
         "--output",

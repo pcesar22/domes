@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000..4898d99
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,256 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
@@ -36,6 +36,7 @@ index 0000000..4898d99
 +#define IRQ_RX BIT(1)
 +#define ST_OVERFLOW BIT(0)
 +#define ST_INVALID BIT(1)
++#define ST_EXHAUSTED BIT(2)
 +#define ST_MODEL_FAILURE BIT(3)
 +#define ST_SEQUENCE BIT(4)
 +#define ST_TRUNCATED BIT(5)
@@ -51,6 +52,17 @@ index 0000000..4898d99
 +static bool word_access(hwaddr addr, unsigned size)
 +{
 +    return size == 4 && (addr & 3) == 0;
++}
++
++static bool tx_locked(DomesLinkState *s)
++{
++    return s->tx_status != TX_IDLE || (s->irq_status & IRQ_TX) != 0;
++}
++
++static void reject_tx_mutation(DomesLinkState *s)
++{
++    /* The single bounded submission slot remains owned through IRQ acknowledgment. */
++    s->sticky |= ST_EXHAUSTED | ST_OVERWRITE;
 +}
 +
 +static uint64_t link_read(void *opaque, hwaddr addr, unsigned size)
@@ -122,6 +134,10 @@ index 0000000..4898d99
 +        return;
 +    }
 +    if (addr >= TX_PAYLOAD && addr < TX_PAYLOAD + sizeof(s->tx_payload)) {
++        if (tx_locked(s)) {
++            reject_tx_mutation(s);
++            return;
++        }
 +        stl_le_p(&s->tx_payload[addr - TX_PAYLOAD], value);
 +        return;
 +    }
@@ -133,24 +149,33 @@ index 0000000..4898d99
 +    case ABI_VERSION:
 +        if (value != VERSION) s->sticky |= ST_UNKNOWN_VERSION;
 +        break;
-+    case TX_DEST_LOW: s->tx_destination_low = value; break;
++    case TX_DEST_LOW:
++        if (tx_locked(s)) reject_tx_mutation(s);
++        else s->tx_destination_low = value;
++        break;
 +    case TX_DEST_HIGH:
-+        if (value & 0xffff0000) s->sticky |= ST_INVALID;
++        if (tx_locked(s)) reject_tx_mutation(s);
++        else if (value & 0xffff0000) s->sticky |= ST_INVALID;
 +        else s->tx_destination_high = value;
 +        break;
 +    case TX_LENGTH:
-+        if (!value || value > DOMES_LINK_MAX_PAYLOAD) s->sticky |= ST_TRUNCATED;
++        if (tx_locked(s)) reject_tx_mutation(s);
++        else if (!value || value > DOMES_LINK_MAX_PAYLOAD) s->sticky |= ST_TRUNCATED;
 +        else s->tx_length = value;
 +        break;
 +    case TX_CORRELATION:
-+        if (!value) s->sticky |= ST_SEQUENCE;
++        if (tx_locked(s)) reject_tx_mutation(s);
++        else if (!value) s->sticky |= ST_SEQUENCE;
 +        else s->tx_correlation = value;
 +        break;
 +    case TX_SUBMIT:
-+        if (value != 1 || s->sticky || s->tx_status == TX_PENDING || !s->tx_length ||
++        if (value != 1 || s->sticky || tx_locked(s) || !s->tx_length ||
 +            !s->tx_correlation) {
-+            s->sticky |= s->tx_status == TX_PENDING ? ST_OVERWRITE : ST_SEQUENCE;
-+            s->tx_status = TX_FAILURE;
++            if (tx_locked(s)) reject_tx_mutation(s);
++            else {
++                s->sticky |= ST_SEQUENCE;
++                s->tx_status = TX_FAILURE;
++            }
 +        } else {
 +            s->tx_status = TX_PENDING;
 +            qemu_bh_schedule(s->completion_bh);
@@ -171,6 +196,12 @@ index 0000000..4898d99
 +    case IRQ_ACK:
 +        if (value & ~(IRQ_TX | IRQ_RX)) s->sticky |= ST_INVALID;
 +        s->irq_status &= ~(value & (IRQ_TX | IRQ_RX));
++        if ((value & IRQ_TX) != 0 && (s->irq_status & IRQ_TX) == 0) {
++            s->tx_destination_low = s->tx_destination_high = s->tx_length = 0;
++            s->tx_correlation = 0;
++            s->tx_status = TX_IDLE;
++            memset(s->tx_payload, 0, sizeof(s->tx_payload));
++        }
 +        update_irq(s);
 +        break;
 +    default: s->sticky |= ST_INVALID; break;

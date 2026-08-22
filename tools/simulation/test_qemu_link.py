@@ -1,4 +1,6 @@
 import importlib.util
+import os
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,50 +11,33 @@ assert SPEC.loader
 SPEC.loader.exec_module(MODULE)
 
 
-class QemuLinkModelTest(unittest.TestCase):
-    def test_valid_submission_and_consumption(self):
-        model = MODULE.LinkModel()
-        model.length(250)
-        model.token(0x1234)
-        model.submit()
-        model.complete()
-        self.assertEqual(model.sticky, 0)
-        self.assertTrue(model.rx_ready)
-        model.consume()
-        self.assertFalse(model.rx_ready)
+class QemuLinkVerificationTest(unittest.TestCase):
+    def test_complete_manifest_cross_check_and_patch_audit(self):
+        report = MODULE.verify(None, None, None)
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(report["prohibited_paths"], [])
+        self.assertEqual(report["physical_source_closure"], "denied")
 
-    def test_unknown_version_fails_closed(self):
-        model = MODULE.LinkModel()
-        model.version(2)
-        model.length(1)
-        model.token(1)
-        model.submit()
-        self.assertTrue(model.sticky & model.ST_UNKNOWN_VERSION)
-        self.assertNotEqual(model.tx_status, model.TX_PENDING)
+    @unittest.skipUnless(
+        os.environ.get("DOMES_QEMU_TEST_BINARY"),
+        "set DOMES_QEMU_TEST_BINARY to exercise the compiled patch",
+    )
+    def test_compiled_qemu_device_rejections(self):
+        binary = Path(os.environ["DOMES_QEMU_TEST_BINARY"])
+        abi = MODULE.json.loads(MODULE.ABI.read_text())
+        cases = MODULE.run_qtest_rejections(binary, abi)
+        self.assertTrue(all(cases.values()), cases)
 
-    def test_invalid_access_overlength_sequence_overflow_and_overwrite(self):
-        model = MODULE.LinkModel()
-        model.access(1, 4)
-        self.assertTrue(model.sticky & 2)
-        model = MODULE.LinkModel()
-        model.length(251)
-        self.assertTrue(model.sticky & 32)
-        model = MODULE.LinkModel()
-        model.submit()
-        self.assertTrue(model.sticky & 16)
-        model = MODULE.LinkModel()
-        model.length(1)
-        model.token(1)
-        model.submit()
-        model.submit()
-        self.assertTrue(model.sticky & 64)
-        model = MODULE.LinkModel()
-        model.length(1)
-        model.token(1)
-        model.submit()
-        model.rx_ready = True
-        model.complete()
-        self.assertTrue(model.sticky & 1)
+    def test_runtime_validator_rejects_hard_coded_result_without_trace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "runtime.log"
+            log.write_text(
+                "DOMES_QEMU_LINK_RESULT schema=2 status=PASS failure_mask=0x00000000 "
+                "token=1 service_dispatches=1 trace_drops=0 trace_discontinuities=0\n"
+            )
+            report = MODULE.validate_runtime_log(log)
+            self.assertEqual(report["status"], "FAIL")
+            self.assertFalse(all(report["stages"].values()))
 
 
 if __name__ == "__main__":

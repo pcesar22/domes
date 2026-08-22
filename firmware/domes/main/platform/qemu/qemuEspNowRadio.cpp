@@ -166,7 +166,9 @@ EspNowRadioResult QemuEspNowRadio::send(const EspNowAddress& destination, const 
     write(qemu_link::Register::kTxSubmit, kSubmit);
     const uint32_t status = read(qemu_link::Register::kTxStatus);
     return status == static_cast<uint32_t>(qemu_link::TxStatus::kPending) ||
-                   status == static_cast<uint32_t>(qemu_link::TxStatus::kSuccess)
+                   status == static_cast<uint32_t>(qemu_link::TxStatus::kSuccess) ||
+                   (status == static_cast<uint32_t>(qemu_link::TxStatus::kIdle) &&
+                    read(qemu_link::Register::kStickyStatus) == 0)
                ? EspNowRadioResult::kOk
                : EspNowRadioResult::kError;
 }
