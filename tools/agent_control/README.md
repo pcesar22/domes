@@ -80,6 +80,13 @@ A failed preflight blocks only that ticket. It is automatically requeued only wh
 preflight succeeds and the saved typed blocker still matches the same issue, specification, and PR
 head. Old comments and prose are not recovery authority.
 
+The finite `espnow-regression` operation is fleet-wide and requires aliases `0, 1`. It runs only
+after both boards have a broker-recorded ordinary flash of the exact judge-approved head. The
+broker—not the worker—executes the disabled lifecycle, cancellation probe, complementary one-peer
+discovery, three simulation-off benchmarks in both directions, and the separate simulated drill;
+the worker receives only a privacy-safe summary and evidence hash. `trace-dump` remains a separate
+ticketed operation for retaining each board's drill trace.
+
 For a live tmux/operator view instead of machine-readable JSON snapshots:
 
 ```bash
