@@ -100,6 +100,12 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
   Stream<PodConnectionFailure> get lifecycleFailures =>
       _lifecycleFailures.stream;
 
+  /// The live connection generation for [address], if it is connected.
+  int? activeConnectionGeneration(String address) {
+    if (state[address]?.isConnected != true) return null;
+    return _connectionGenerations[address];
+  }
+
   /// Connect to a pod by address.
   Future<void> connectPod(PodDevice pod) async {
     await _connectionCleanupTails[pod.address];

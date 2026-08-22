@@ -19,6 +19,7 @@ final class _FakeMultiPodNotifier extends MultiPodNotifier {
   final List<AppLedPattern> ledCalls = [];
   final List<(String, SystemMode)> addressedModeCalls = [];
   final List<(String, AppLedPattern)> addressedLedCalls = [];
+  final Map<String, int> connectionGenerations = {};
   Completer<void>? gameModeGate;
   Completer<void>? idleModeGate;
   Completer<void>? nextLedOffGate;
@@ -31,6 +32,10 @@ final class _FakeMultiPodNotifier extends MultiPodNotifier {
 
   @override
   Stream<PodConnectionFailure> get lifecycleFailures => lifecycleEvents.stream;
+
+  @override
+  int? activeConnectionGeneration(String address) =>
+      connectionGenerations[address] ?? 1;
 
   @override
   Future<void> setMode(String address, SystemMode mode) async {
@@ -441,6 +446,45 @@ void main() {
       expect(hardwareContainer.read(drillProvider), same(before));
     });
 
+    test('non-participating lifecycle does not mutate active drill', () async {
+      const config = DrillConfig(
+        minDelay: Duration(seconds: 1),
+        maxDelay: Duration(seconds: 1),
+        podAddresses: ['pod-1'],
+      );
+      await hardwareNotifier.startDrill(config);
+      final before = hardwareContainer.read(drillProvider);
+
+      multiPod.lifecycle('pod-outside', 'replacement connect');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(hardwareContainer.read(drillProvider), same(before));
+    });
+
+    test(
+      'queued lifecycle from prior generation cannot fail restart',
+      () async {
+        const config = DrillConfig(
+          minDelay: Duration(seconds: 1),
+          maxDelay: Duration(seconds: 1),
+          podAddresses: ['pod-1'],
+        );
+        multiPod.connectionGenerations['pod-1'] = 1;
+        await hardwareNotifier.startDrill(config);
+
+        multiPod.lifecycle('pod-1', 'replacement connect', 1);
+        hardwareNotifier.stopDrill();
+        multiPod.connectionGenerations['pod-1'] = 2;
+        unawaited(hardwareNotifier.startDrill(config));
+        await Future<void>.delayed(Duration.zero);
+
+        final restarted = hardwareContainer.read(drillProvider);
+        expect(restarted.isRunning, isTrue);
+        expect(restarted.phase, isNot(DrillPhase.error));
+        expect(restarted.errorMessage, isNull);
+      },
+    );
+
     test(
       'lifecycle events cannot mutate inactive or terminal drills',
       () async {
@@ -485,7 +529,7 @@ void main() {
         expect(hardwareContainer.read(drillProvider), same(finished));
 
         await hardwareNotifier.startDrill(delayed);
-        multiPod.lifecycle('pod-1', 'disconnectPod', 5);
+        multiPod.lifecycle('pod-1', 'disconnectPod');
         await Future<void>.delayed(Duration.zero);
         final failed = hardwareContainer.read(drillProvider);
         expect(failed.phase, DrillPhase.error);
@@ -695,6 +739,10 @@ void main() {
         );
         completedRounds += completed.results.length;
 
+        final lifecycleGeneration = cycle + 1;
+        for (final identity in identities) {
+          stressMultiPod.connectionGenerations[identity] = lifecycleGeneration;
+        }
         await stressNotifier.startDrill(lifecycleConfig);
         await waitForPhase(DrillPhase.waitingTouch, cycle);
         stressNotifier.simulateTouch();
@@ -714,7 +762,7 @@ void main() {
         stressMultiPod.lifecycle(
           failedAddress,
           cycle.isEven ? 'disconnectPod' : 'replacement connect',
-          cycle + 1,
+          lifecycleGeneration,
         );
         await Future<void>.delayed(Duration.zero);
         final failed = stressContainer.read(drillProvider);
