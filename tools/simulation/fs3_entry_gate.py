@@ -13,6 +13,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,11 +24,12 @@ from typing import Any, Mapping, Sequence
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
+import generate_runtime_profile as profile_generator
 import qemu_feasibility as feasibility
 import qemu_runtime as runtime
 
 SPEC_REVISION = "498ae0203dc8b7048682fbff718a0629243a98a8"
-REQUIRED_BASE_REVISION = "d9f84e4eca153d1f637b869681eae6e04a6adac6"
+REQUIRED_BASE_REVISION = "6f197670a49bc8b83753d1dfab0dd1f789b5f4db"
 REPOSITORY = "pcesar22/domes"
 PR_NUMBERS = (105, 107, 115, 130)
 ISSUE_NUMBERS = (101, 114, 123)
@@ -430,9 +432,9 @@ def _physical_record_valid(
     return False
 
 
-def _artifact_digest_matches(artifact: Any, tracker_comment: Any) -> bool:
+def _download_artifact(artifact: Any, tracker_comment: Any) -> bytes | None:
     if not isinstance(artifact, dict) or set(artifact) != {"url", "sha256"}:
-        return False
+        return None
     url = artifact.get("url")
     digest = artifact.get("sha256")
     parsed = urllib.parse.urlparse(url) if isinstance(url, str) else None
@@ -445,19 +447,59 @@ def _artifact_digest_matches(artifact: Any, tracker_comment: Any) -> bool:
         or not isinstance(digest, str)
         or re.fullmatch(r"[0-9a-f]{64}", digest) is None
     ):
-        return False
+        return None
     try:
         with urllib.request.urlopen(url, timeout=20) as response:
             final_host = urllib.parse.urlparse(response.geturl()).hostname
             if final_host not in RETAINED_ARTIFACT_HOSTS:
-                return False
+                return None
             content = response.read(16 * 1024 * 1024 + 1)
     except (OSError, urllib.error.URLError, ValueError):
-        return False
-    return (
-        len(content) <= 16 * 1024 * 1024
-        and hashlib.sha256(content).hexdigest() == digest
-    )
+        return None
+    if len(content) > 16 * 1024 * 1024 or hashlib.sha256(content).hexdigest() != digest:
+        return None
+    return content
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key {key!r}")
+        value[key] = item
+    return value
+
+
+def _validated_physical_artifact(
+    artifact: Any,
+    tracker_comment: Any,
+    *,
+    evidence_id: str,
+    exact_commit: str,
+    configuration: Any,
+    procedure: Any,
+    details: Any,
+) -> dict[str, Any] | None:
+    """Return a retained artifact only when its own content proves the claim."""
+    content = _download_artifact(artifact, tracker_comment)
+    if content is None:
+        return None
+    try:
+        raw = json.loads(content, object_pairs_hook=_reject_duplicate_json_keys)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return None
+    expected = {
+        "schema_version": 1,
+        "kind": "fs-wp-003a-physical-evidence",
+        "evidence_id": evidence_id,
+        "commit": exact_commit,
+        "level": "physical",
+        "result": "passed",
+        "configuration": configuration,
+        "procedure": procedure,
+        "details": details,
+    }
+    return raw if raw == expected else None
 
 
 def _physical_evidence(
@@ -473,6 +515,10 @@ def _physical_evidence(
     }
     invalid: set[str] = set()
     for payload in _structured_payloads(issue):
+        # Independent judgments and disposition records are required on the same
+        # commit, but are not physical records and must not poison this category.
+        if payload.get("kind") != "fs-wp-003a-physical-acceptance":
+            continue
         if payload.get("commit") != exact_commit:
             continue
         records = payload.get("verification")
@@ -522,15 +568,22 @@ def _physical_evidence(
                 and isinstance(record.get("configuration"), dict)
                 and isinstance(record.get("procedure"), str)
                 and bool(record.get("procedure"))
-                and _artifact_digest_matches(
-                    record.get("artifact"), payload.get("_comment_url")
-                )
                 and _physical_record_valid(
                     str(evidence_id),
                     record.get("details"),
                     record.get("configuration"),
                     str(exact_commit),
                 )
+                and _validated_physical_artifact(
+                    record.get("artifact"),
+                    payload.get("_comment_url"),
+                    evidence_id=str(evidence_id),
+                    exact_commit=str(exact_commit),
+                    configuration=record.get("configuration"),
+                    procedure=record.get("procedure"),
+                    details=record.get("details"),
+                )
+                is not None
             )
             if not valid:
                 invalid.add(str(evidence_id))
@@ -908,47 +961,75 @@ def _seam_report() -> tuple[dict[str, Any], list[str]]:
 
 
 def _fidelity_schema_report() -> tuple[dict[str, Any], list[str]]:
-    expected_root = {
-        "schema_version",
-        "component_catalog",
-        "task_catalog",
-        "fidelity_contracts",
-        "profiles",
-    }
-    expected_contract = {
-        "implementation",
-        "inputs",
-        "outputs",
-        "timing",
-        "calibration",
-        "limitations",
-    }
-    raw = json.loads(
-        _git_file(SPEC_REVISION, "firmware/domes/profiles/runtime_profiles.json")
-    )
-    contracts = raw.get("fidelity_contracts") if isinstance(raw, dict) else None
-    valid = (
-        isinstance(raw, dict)
-        and set(raw) == expected_root
-        and raw.get("schema_version") == 1
-        and isinstance(contracts, dict)
-        and bool(contracts)
-        and all(
-            isinstance(value, dict)
-            and set(value) == expected_contract
-            and all(isinstance(item, str) and item for item in value.values())
-            for value in contracts.values()
-        )
-    )
+    path = "firmware/domes/profiles/runtime_profiles.json"
+    source = _git_file(SPEC_REVISION, path)
+    valid = False
+    error: str | None = None
+    manifests: dict[str, dict[str, Any]] = {}
+    try:
+        with tempfile.TemporaryDirectory(prefix="domes-fidelity-gate-") as directory:
+            root = Path(directory)
+            spec_path = root / "runtime_profiles.json"
+            spec_path.write_text(source, encoding="utf-8")
+            configs = {
+                "qemu": (
+                    'CONFIG_IDF_TARGET="esp32s3"\n'
+                    "CONFIG_DOMES_RUNTIME_PROFILE_QEMU=y\n"
+                    "CONFIG_APP_REPRODUCIBLE_BUILD=y\n"
+                    "CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y\n"
+                    "CONFIG_ESP_CONSOLE_UART_DEFAULT=y\n"
+                    "CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096\n"
+                    "CONFIG_ESP_MAIN_TASK_AFFINITY_CPU0=y\n"
+                    "CONFIG_FREERTOS_HZ=1000\n"
+                    "# CONFIG_FREERTOS_UNICORE is not set\n"
+                    "# CONFIG_BT_ENABLED is not set\n"
+                    "# CONFIG_DOMES_OTA_AUTO_CHECK is not set\n"
+                    "# CONFIG_DOMES_WIFI_AUTO_CONNECT is not set\n"
+                    "# CONFIG_ESP_COEX_SW_COEXIST_ENABLE is not set\n"
+                    "# CONFIG_ESP_TASK_WDT_EN is not set\n"
+                    "# CONFIG_SPIRAM is not set\n"
+                    "# CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH is not set\n"
+                ),
+                "physical": (
+                    'CONFIG_IDF_TARGET="esp32s3"\n'
+                    "CONFIG_DOMES_RUNTIME_PROFILE_PHYSICAL=y\n"
+                    "# CONFIG_DOMES_RUNTIME_PROFILE_QEMU is not set\n"
+                    "CONFIG_DOMES_WIFI_AUTO_CONNECT=y\n"
+                    "CONFIG_DOMES_OTA_AUTO_CHECK=y\n"
+                    "CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y\n"
+                    "CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y\n"
+                    "CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096\n"
+                    "CONFIG_ESP_MAIN_TASK_AFFINITY_CPU0=y\n"
+                    "CONFIG_FREERTOS_HZ=1000\n"
+                    "CONFIG_FREERTOS_USE_STATS_FORMATTING_FUNCTIONS=y\n"
+                    "CONFIG_FREERTOS_VTASKLIST_INCLUDE_COREID=y\n"
+                    "# CONFIG_FREERTOS_UNICORE is not set\n"
+                ),
+            }
+            for profile_key, config in configs.items():
+                config_path = root / f"sdkconfig.{profile_key}"
+                config_path.write_text(config, encoding="utf-8")
+                resolved = profile_generator.resolve_profile(
+                    spec_path, profile_key, config_path
+                )
+                manifest = resolved["manifest"]
+                manifests[profile_key] = {
+                    "profile": manifest["profile"],
+                    "component_count": len(manifest["components"]),
+                    "task_count": len(manifest["tasks"]),
+                    "manifest_sha256": resolved["manifest_sha256"],
+                }
+            valid = set(manifests) == {"qemu", "physical"}
+    except (OSError, profile_generator.ProfileError, KeyError, TypeError) as exc:
+        error = str(exc)
     return (
         {
-            "path": "firmware/domes/profiles/runtime_profiles.json",
+            "path": path,
             "revision": SPEC_REVISION,
-            "schema_version": (
-                raw.get("schema_version") if isinstance(raw, dict) else None
-            ),
-            "contract_count": len(contracts) if isinstance(contracts, dict) else 0,
+            "canonical_validator": "generate_runtime_profile.resolve_profile",
+            "validated_profiles": manifests,
             "exact_schema": valid,
+            "error": error,
             "result": "PASS" if valid else "BLOCKED",
         },
         [] if valid else ["fidelity-manifest schema is missing or has drifted"],

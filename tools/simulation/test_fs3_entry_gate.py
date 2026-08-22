@@ -18,7 +18,8 @@ assert SPEC and SPEC.loader
 gate = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = gate
 SPEC.loader.exec_module(gate)
-REAL_ARTIFACT_DIGEST_MATCHES = gate._artifact_digest_matches
+REAL_DOWNLOAD_ARTIFACT = gate._download_artifact
+REAL_VALIDATE_PHYSICAL_ARTIFACT = gate._validated_physical_artifact
 
 
 def check(
@@ -153,7 +154,7 @@ def judgment(
 class EntryGateTests(unittest.TestCase):
     def setUp(self) -> None:
         artifact_patch = mock.patch.object(
-            gate, "_artifact_digest_matches", return_value=True
+            gate, "_validated_physical_artifact", return_value={"validated": True}
         )
         artifact_patch.start()
         self.addCleanup(artifact_patch.stop)
@@ -216,14 +217,73 @@ class EntryGateTests(unittest.TestCase):
         response.__enter__.return_value.read.return_value = content
         with mock.patch.object(gate.urllib.request, "urlopen", return_value=response):
             self.assertTrue(
-                REAL_ARTIFACT_DIGEST_MATCHES(
+                REAL_DOWNLOAD_ARTIFACT(
                     artifact, "https://github.com/pcesar22/domes/issues/114#comment"
                 )
             )
-            self.assertFalse(REAL_ARTIFACT_DIGEST_MATCHES(artifact, artifact["url"]))
-            self.assertFalse(
-                REAL_ARTIFACT_DIGEST_MATCHES(
+            self.assertIsNone(REAL_DOWNLOAD_ARTIFACT(artifact, artifact["url"]))
+            self.assertIsNone(
+                REAL_DOWNLOAD_ARTIFACT(
                     {**artifact, "sha256": "0" * 64}, "https://tracker.example/comment"
+                )
+            )
+
+    def test_retained_artifact_content_binds_the_physical_claim(self) -> None:
+        record = valid_physical_records()[0]
+        payload = {
+            "schema_version": 1,
+            "kind": "fs-wp-003a-physical-evidence",
+            "evidence_id": record["evidence_id"],
+            "commit": "2" * 40,
+            "level": "physical",
+            "result": "passed",
+            "configuration": record["configuration"],
+            "procedure": record["procedure"],
+            "details": record["details"],
+        }
+        with mock.patch.object(
+            gate, "_download_artifact", return_value=json.dumps(payload).encode()
+        ):
+            validated = REAL_VALIDATE_PHYSICAL_ARTIFACT(
+                record["artifact"],
+                "https://github.com/pcesar22/domes/issues/114#comment",
+                evidence_id=record["evidence_id"],
+                exact_commit="2" * 40,
+                configuration=record["configuration"],
+                procedure=record["procedure"],
+                details=record["details"],
+            )
+            self.assertEqual(validated, payload)
+
+            tampered = {**payload, "commit": "3" * 40}
+            with mock.patch.object(
+                gate, "_download_artifact", return_value=json.dumps(tampered).encode()
+            ):
+                self.assertIsNone(
+                    REAL_VALIDATE_PHYSICAL_ARTIFACT(
+                        record["artifact"],
+                        "https://github.com/pcesar22/domes/issues/114#comment",
+                        evidence_id=record["evidence_id"],
+                        exact_commit="2" * 40,
+                        configuration=record["configuration"],
+                        procedure=record["procedure"],
+                        details=record["details"],
+                    )
+                )
+
+    def test_retained_artifact_rejects_duplicate_json_keys(self) -> None:
+        record = valid_physical_records()[0]
+        content = b'{"schema_version":1,"schema_version":1}'
+        with mock.patch.object(gate, "_download_artifact", return_value=content):
+            self.assertIsNone(
+                REAL_VALIDATE_PHYSICAL_ARTIFACT(
+                    record["artifact"],
+                    "https://github.com/pcesar22/domes/issues/114#comment",
+                    evidence_id=record["evidence_id"],
+                    exact_commit="2" * 40,
+                    configuration=record["configuration"],
+                    procedure=record["procedure"],
+                    details=record["details"],
                 )
             )
 
@@ -411,6 +471,101 @@ class EntryGateTests(unittest.TestCase):
             evidence["two_board_discovery"]["acceptance_authority"],
             {"actor": "pcesar22", "role": "controller", "decision": "accepted"},
         )
+
+    def test_fs3_pass_is_reachable_with_judgment_and_physical_records(self) -> None:
+        commit = "2" * 40
+        old_head = "1" * 40
+        issue = physical_issue(valid_physical_records(), commit=commit)
+        approval = judgment(
+            issue=114,
+            pull_request=115,
+            spec_revision=gate.FS3_JUDGMENT["spec_revision"],
+            commit=commit,
+        )
+        disposition = {
+            "schema_version": 1,
+            "kind": "fs-wp-003a-pr-disposition",
+            "issue": 114,
+            "spec_revision": gate.FS3_JUDGMENT["spec_revision"],
+            "legacy_pull_request": 107,
+            "legacy_head": old_head,
+            "disposition": "superseded",
+            "replacement_pull_request": 115,
+            "replacement_head": commit,
+            "acceptance_authority": {
+                "actor": gate.TRACKER_ACTOR,
+                "role": "controller",
+                "decision": "accepted",
+            },
+        }
+        for index, payload in enumerate((approval, disposition), 2):
+            issue["comments"].append(
+                {
+                    "author": {"login": gate.TRACKER_ACTOR},
+                    "url": f"https://github.com/pcesar22/domes/issues/114#comment-{index}",
+                    "body": f"```json\n{json.dumps(payload)}\n```",
+                }
+            )
+        prs = {
+            107: {
+                "number": 107,
+                "state": "CLOSED",
+                "headRefOid": old_head,
+                "mergeCommit": None,
+                "statusCheckRollup": [],
+            },
+            115: {
+                "number": 115,
+                "state": "MERGED",
+                "headRefOid": commit,
+                "mergeCommit": {"oid": "3" * 40},
+                "statusCheckRollup": [
+                    check(name) for name in gate.REQUIRED_SOFTWARE_CHECKS
+                ],
+            },
+        }
+        with mock.patch.object(gate, "_is_ancestor", return_value=True):
+            report, blockers = gate._fs3_report(prs, issue)
+        self.assertEqual(blockers, [])
+        self.assertEqual(report["result"], "PASS")
+        self.assertTrue(report["accepted_integration_candidate"]["exact_head_accepted"])
+        self.assertEqual(
+            [record["result"] for record in report["evidence_matrix"]],
+            ["PASS", "PASS", "PASS", "PASS", "PASS"],
+        )
+
+    def test_canonical_fidelity_validation_rejects_manifest_drift(self) -> None:
+        source = (
+            MODULE_PATH.parents[2] / "firmware/domes/profiles/runtime_profiles.json"
+        ).read_text(encoding="utf-8")
+        mutations: dict[str, str] = {}
+        duplicate = source.replace(
+            '"schema_version": 1,',
+            '"schema_version": 1, "schema_version": 1,',
+            1,
+        )
+        mutations["duplicate_key"] = duplicate
+        unknown_component = json.loads(source)
+        unknown_component["profiles"]["qemu"]["components"]["unknown"] = "modeled"
+        mutations["unknown_component"] = json.dumps(unknown_component)
+        unknown_contract = json.loads(source)
+        unknown_contract["profiles"]["qemu"]["component_contracts"][
+            "cpu.core0"
+        ] = "missing.contract"
+        mutations["unknown_contract"] = json.dumps(unknown_contract)
+        missing_task = json.loads(source)
+        missing_task["profiles"]["qemu"]["tasks"].pop(
+            next(iter(missing_task["profiles"]["qemu"]["tasks"]))
+        )
+        mutations["missing_task_projection"] = json.dumps(missing_task)
+        for name, candidate in mutations.items():
+            with self.subTest(name=name), mock.patch.object(
+                gate, "_git_file", return_value=candidate
+            ):
+                report, blockers = gate._fidelity_schema_report()
+                self.assertEqual(report["result"], "BLOCKED")
+                self.assertFalse(report["exact_schema"])
+                self.assertTrue(blockers)
 
     def test_free_text_cannot_satisfy_multiple_physical_categories(self) -> None:
         record = {
