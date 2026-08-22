@@ -106,12 +106,12 @@ $ cmake -S firmware/test_app -B /tmp/tmp.cJcRYdJpGc/firmware-test-app -DCMAKE_BU
 -- Check for working C compiler: /usr/bin/cc - skipped
 -- Detecting C compile features
 -- Detecting C compile features - done
--- Found Python3: /usr/bin/python3 (found version "3.14.3") found components: Interpreter 
+-- Found Python3: /usr/bin/python3 (found version "3.14.3") found components: Interpreter
 -- Looking for pthread.h
 -- Looking for pthread.h - found
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
--- Found Threads: TRUE  
+-- Found Threads: TRUE
 -- Configuring done
 -- Generating done
 -- Build files have been written to: /tmp/tmp.cJcRYdJpGc/firmware-test-app
