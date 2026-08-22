@@ -3112,6 +3112,7 @@ def result_state(
     if (
         role == "worker"
         and result["blockers"]
+        and result.get("pull_request") is None
         and not (
             ticket_sections is not None
             and requires_registered_hardware(ticket_sections)
