@@ -36,7 +36,7 @@ physical feedback result.
 - [x] Added and generated the shared schema, firmware integration, and focused host tests.
 - [x] Implemented and tested the CLI and Flutter consumers.
 - [x] Ran the complete required software gate and retained exact artifacts.
-- [ ] Commit, push, open the one review-ready PR, and reconcile its exact head.
+- [x] Committed, pushed, opened PR 145 against `main`, and reconciled its exact head.
 
 ## Verification
 
@@ -115,9 +115,12 @@ accepted command upgrades any entry.
   on macOS; it is not recorded as passed.
 - The full software gate reports hardware `NOT_ASSESSED`; no hardware operation or transport was
   searched for or invoked.
+- Final reconciliation found issue 138 open, PR 145 as the only PR owning this slice, base branch
+  `main`, and no competing controller workspace. Implementation commit
+  `c104162c29c08885f60d5b5b955d72e3231b6dc9` descends from the required base. The exact final
+  publication head is recorded by PR 145 and the worker result after this evidence-only update.
 
 ## Resume checkpoint
 
-Implementation and the complete software gate are complete. Publish this exact candidate on the
-single issue-138 branch, record the implementation commit and PR below, and leave review and all
-physical evidence to the independent stages.
+Implementation, publication, and the complete software gate are complete. PR 145 is ready for
+independent review. Leave approval, merge, and all physical evidence to their authorized stages.
