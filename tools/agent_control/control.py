@@ -916,7 +916,7 @@ def stack_context(
         or pull_request.is_draft
         or pull_request.base_ref != workflow.base_branch
         or pull_request.head_oid != parent_head
-        or pull_request.merge_state in {"BEHIND", "DIRTY"}
+        or pull_request.merge_state == "DIRTY"
         or pull_request.mergeable in {"CONFLICTING", "UNMERGEABLE"}
         or pull_request.review_decision == "CHANGES_REQUESTED"
     ):
@@ -5863,7 +5863,7 @@ def reconcile_ci_ticket(
             f"issue #{ticket.number}: autonomous PR path policy rejected: "
             + ", ".join(outside or protected)
         )
-    if pull_request.merge_state in {"BEHIND", "DIRTY"} or pull_request.mergeable in {
+    if pull_request.merge_state == "DIRTY" or pull_request.mergeable in {
         "CONFLICTING",
         "UNMERGEABLE",
     }:
@@ -5872,7 +5872,7 @@ def reconcile_ci_ticket(
             workflow,
             ticket,
             "Agent control-plane transition (review readiness)",
-            "The pull request is behind or conflicting; returning it to the "
+            "The pull request is conflicting; returning it to the "
             "worker before human review.",
         )
         return {"issue": ticket.number, "state": "agent:rework"}
@@ -5984,7 +5984,7 @@ def reconcile_human_reviews(
                     )
                     results.append({"issue": ticket.number, "state": "agent:rework"})
                     continue
-            if pull_request.merge_state in {"BEHIND", "DIRTY"} or (
+            if pull_request.merge_state == "DIRTY" or (
                 pull_request.mergeable in {"CONFLICTING", "UNMERGEABLE"}
             ):
                 transition(workflow, ticket, "agent:rework")
@@ -5992,7 +5992,7 @@ def reconcile_human_reviews(
                     workflow,
                     ticket,
                     "Agent control-plane transition (human review)",
-                    "The reviewed PR is now behind or conflicting with its base; "
+                    "The reviewed PR is now conflicting with its base; "
                     "returning it through worker and independent-judge validation.",
                 )
                 results.append({"issue": ticket.number, "state": "agent:rework"})
