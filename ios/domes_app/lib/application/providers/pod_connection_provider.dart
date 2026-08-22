@@ -82,7 +82,7 @@ class PodConnectionNotifier extends StateNotifier<ConnectedPodState> {
       _connectionSubscription = repository.touchEvents.listen(
         (_) {},
         onError: (Object error, StackTrace _) {
-          _handleConnectionStreamError(pod, transport, generation, error);
+          repository.quarantine(error);
         },
       );
 
@@ -100,15 +100,6 @@ class PodConnectionNotifier extends StateNotifier<ConnectedPodState> {
         error: 'Connection failed: $e',
       );
     }
-  }
-
-  void _handleConnectionStreamError(
-    PodDevice pod,
-    Transport transport,
-    int generation,
-    Object error,
-  ) {
-    _quarantine(pod, transport, generation, error);
   }
 
   void _quarantine(
@@ -205,12 +196,22 @@ final class _QuarantiningPodRepository implements PodRepository {
 
   final PodRepository _delegate;
   final void Function(Object error) _onFailure;
+  bool _quarantined = false;
+
+  void quarantine(Object error) {
+    if (_quarantined) return;
+    _quarantined = true;
+    _onFailure(error);
+  }
 
   Future<T> _guard<T>(Future<T> Function() operation) async {
+    if (_quarantined) {
+      throw StateError('Pod repository requires an explicit reconnect');
+    }
     try {
       return await operation();
     } catch (error) {
-      _onFailure(error);
+      quarantine(error);
       rethrow;
     }
   }

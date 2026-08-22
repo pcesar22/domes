@@ -54,11 +54,15 @@ final class _FakeTransport extends Transport {
 }
 
 final class _FakeRepository implements PodRepository {
-  _FakeRepository({void Function()? onCancel, this.infoResult})
-    : events = StreamController<AppTouchEvent>.broadcast(onCancel: onCancel);
+  _FakeRepository({
+    void Function()? onCancel,
+    this.infoResult,
+    this.retainedEvents,
+  }) : events = StreamController<AppTouchEvent>.broadcast(onCancel: onCancel);
 
   final StreamController<AppTouchEvent> events;
   final Completer<AppSystemInfo>? infoResult;
+  final _RetainedCallbackStream? retainedEvents;
   final List<String> calls = [];
 
   Future<T> _fail<T>(String operation) {
@@ -67,7 +71,7 @@ final class _FakeRepository implements PodRepository {
   }
 
   @override
-  Stream<AppTouchEvent> get touchEvents => events.stream;
+  Stream<AppTouchEvent> get touchEvents => retainedEvents ?? events.stream;
 
   @override
   Future<AppModeInfo> getSystemMode() => _fail('getSystemMode');
@@ -105,6 +109,70 @@ final class _FakeRepository implements PodRepository {
 
   @override
   Future<bool> triggerFeedback(FeedbackProbe probe) => _fail('triggerFeedback');
+}
+
+final class _RetainedCallbackStream extends Stream<AppTouchEvent> {
+  void Function(AppTouchEvent)? _onData;
+  Function? _onError;
+  int retainedDataCalls = 0;
+  int retainedErrorCalls = 0;
+
+  void emit(AppTouchEvent event) {
+    final handler = _onData;
+    if (handler != null) {
+      retainedDataCalls++;
+      handler(event);
+    }
+  }
+
+  void emitError(Object error) {
+    final handler = _onError;
+    if (handler != null) {
+      retainedErrorCalls++;
+      Function.apply(handler, [error, StackTrace.current]);
+    }
+  }
+
+  @override
+  StreamSubscription<AppTouchEvent> listen(
+    void Function(AppTouchEvent event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    _onData = onData;
+    _onError = onError;
+    return _RetainedCallbackSubscription();
+  }
+}
+
+final class _RetainedCallbackSubscription
+    implements StreamSubscription<AppTouchEvent> {
+  bool _isPaused = false;
+
+  @override
+  Future<void> cancel() async {}
+
+  @override
+  void onData(void Function(AppTouchEvent data)? handleData) {}
+
+  @override
+  void onError(Function? handleError) {}
+
+  @override
+  void onDone(void Function()? handleDone) {}
+
+  @override
+  void pause([Future<void>? resumeSignal]) => _isPaused = true;
+
+  @override
+  void resume() => _isPaused = false;
+
+  @override
+  bool get isPaused => _isPaused;
+
+  @override
+  Future<E> asFuture<E>([E? futureValue]) => Completer<E>().future;
 }
 
 typedef _Operation = Future<Object?> Function(PodRepository repository);
@@ -204,7 +272,7 @@ void main() {
         await Future<void>.delayed(Duration.zero);
         expect(errorTransitions, 1);
         expect(transport.disconnectCalls, 1);
-        expect(repository.calls, [operation.key, operation.key]);
+        expect(repository.calls, [operation.key]);
 
         notifier.dispose();
         await repository.events.close();
@@ -266,9 +334,17 @@ void main() {
     () async {
       final delayedSuccess = Completer<AppSystemInfo>();
       final delayedError = Completer<AppSystemInfo>();
+      final retainedSuccessEvents = _RetainedCallbackStream();
+      final retainedErrorEvents = _RetainedCallbackStream();
       final repositories = [
-        _FakeRepository(infoResult: delayedSuccess),
-        _FakeRepository(infoResult: delayedError),
+        _FakeRepository(
+          infoResult: delayedSuccess,
+          retainedEvents: retainedSuccessEvents,
+        ),
+        _FakeRepository(
+          infoResult: delayedError,
+          retainedEvents: retainedErrorEvents,
+        ),
         _FakeRepository(),
       ];
       final transports = [_FakeTransport(), _FakeTransport(), _FakeTransport()];
@@ -297,21 +373,26 @@ void main() {
         ),
       );
       await staleSuccess;
-      repositories[0].events.add(
+      retainedSuccessEvents.emit(
         const AppTouchEvent(podId: 1, padIndex: 0, timestampUs: 1),
       );
-      repositories[0].events.addError(
+      retainedSuccessEvents.emitError(
         StateError('retained stale stream error'),
       );
       await Future<void>.delayed(Duration.zero);
       expect(notifier.state.repository, isNotNull);
       expect(notifier.state.error, isNull);
+      expect(retainedSuccessEvents.retainedDataCalls, 1);
+      expect(retainedSuccessEvents.retainedErrorCalls, 1);
 
       final staleError = notifier.state.repository!.getSystemInfo();
       await notifier.connect(pod);
       delayedError.completeError(StateError('late command failure'));
       await expectLater(staleError, throwsStateError);
-      repositories[1].events.addError(StateError('late stream failure'));
+      retainedErrorEvents.emit(
+        const AppTouchEvent(podId: 1, padIndex: 1, timestampUs: 2),
+      );
+      retainedErrorEvents.emitError(StateError('late stream failure'));
       await Future<void>.delayed(Duration.zero);
 
       expect(notifier.state.repository, isNotNull);
@@ -319,6 +400,8 @@ void main() {
       expect(notifier.state.isConnected, isTrue);
       expect(repositories[0].calls, ['getSystemInfo']);
       expect(repositories[1].calls, ['getSystemInfo']);
+      expect(retainedErrorEvents.retainedDataCalls, 1);
+      expect(retainedErrorEvents.retainedErrorCalls, 1);
 
       notifier.dispose();
       for (final repository in repositories) {
@@ -326,4 +409,39 @@ void main() {
       }
     },
   );
+
+  test('retained callbacks cannot republish after quarantine', () async {
+    final retainedEvents = _RetainedCallbackStream();
+    final transport = _FakeTransport();
+    final repository = _FakeRepository(retainedEvents: retainedEvents);
+    final notifier = PodConnectionNotifier(
+      connector: (_) async => (transport: transport, repository: repository),
+    );
+    var errorTransitions = 0;
+    notifier.addListener((state) {
+      if (state.error != null) errorTransitions++;
+    });
+    await notifier.connect(pod);
+
+    await expectLater(
+      notifier.state.repository!.getSystemInfo(),
+      throwsStateError,
+    );
+    final quarantinedError = notifier.state.error;
+    retainedEvents.emit(
+      const AppTouchEvent(podId: 1, padIndex: 0, timestampUs: 1),
+    );
+    retainedEvents.emitError(StateError('retained post-quarantine error'));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(notifier.state.repository, isNull);
+    expect(notifier.state.error, quarantinedError);
+    expect(errorTransitions, 1);
+    expect(transport.disconnectCalls, 1);
+    expect(retainedEvents.retainedDataCalls, 1);
+    expect(retainedEvents.retainedErrorCalls, 1);
+
+    notifier.dispose();
+    await repository.events.close();
+  });
 }
