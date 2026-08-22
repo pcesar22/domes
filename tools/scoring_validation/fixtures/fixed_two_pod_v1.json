@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "fixture_id": "fixed-two-pod-mobile-v1",
+  "specification_revision": "740115873780634765772618a68917c16de41555",
+  "paths": {
+    "fixed": {
+      "clock": {
+        "kind": "simulated_monotonic",
+        "origin": "SimClock::nowUs",
+        "unit": "microseconds"
+      },
+      "result": {
+        "origin": "sim::DrillOrchestrator::execute",
+        "reaction_resolution_us": 1000
+      }
+    },
+    "mobile": {
+      "clock": {
+        "kind": "host_wall_clock",
+        "origin": "DateTime.now",
+        "unit": "milliseconds"
+      },
+      "result": {
+        "origin": "DrillResult getters",
+        "reaction_resolution_us": 1000
+      }
+    }
+  },
+  "pods": [
+    {
+      "identity": "local-pod-0",
+      "role": "local",
+      "fixed_id": 0,
+      "mobile_address": "local-pod-0"
+    },
+    {
+      "identity": "peer-pod-1",
+      "role": "peer",
+      "fixed_id": 1,
+      "mobile_address": "peer-pod-1"
+    }
+  ],
+  "rounds": [
+    {"index": 0, "round_token": 1, "target_identity": "local-pod-0", "hit": true, "reaction_time_us": 1000, "timeout_us": 3000000},
+    {"index": 1, "round_token": 2, "target_identity": "peer-pod-1", "hit": true, "reaction_time_us": 100000, "timeout_us": 3000000},
+    {"index": 2, "round_token": 3, "target_identity": "local-pod-0", "hit": false, "reaction_time_us": null, "timeout_us": 3000000},
+    {"index": 3, "round_token": 4, "target_identity": "peer-pod-1", "hit": false, "reaction_time_us": null, "timeout_us": 3000000},
+    {"index": 4, "round_token": 5, "target_identity": "peer-pod-1", "hit": true, "reaction_time_us": 2999000, "timeout_us": 3000000},
+    {"index": 5, "round_token": 6, "target_identity": "local-pod-0", "hit": true, "reaction_time_us": 1000000, "timeout_us": 3000000}
+  ]
+}
