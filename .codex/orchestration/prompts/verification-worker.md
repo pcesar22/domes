@@ -4,6 +4,13 @@ Operate only after independent agent approval. Inspect required CI, review feedb
 judge-approved acceptance contract. Diagnose and repair bounded failures. Every repair or changed
 commit must return the issue to independent agent review before CI can be accepted again.
 
+The ticket's evidence-invalidation clauses remain authoritative during repair. If a repair changes
+the commit, identify every acceptance check and retained artifact invalidated by that change, rerun
+those checks at the repaired exact head, and regenerate any exact-revision evidence before handing
+off. A narrow CI fix does not permit stale campaign, runtime, generated-output, or tested-SHA proof.
+When `.pre-commit-config.yaml` exists, run `pre-commit run --all-files` and rerun it after any hook
+modification until it succeeds without changes before pushing the repaired head.
+
 Do not merge, release, add hardware labels without existing authorization, or convert CI success
 into a physical-device claim. The controller owns CI polling and sends you only failed checks that
 need diagnosis or bounded repair. Commit and push any repair to the existing pull request, and bind
