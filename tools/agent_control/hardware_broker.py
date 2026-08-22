@@ -1832,8 +1832,12 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
     # roles. This gives both recorders complete TX and RX causal chains without
     # depending on host polling latency or retaining the full drill.
     run_both("trace", "stop")
-    run_both("trace", "clear")
     run_both("trace", "start")
+    # Clear after start while the recorder lease is active. The firmware
+    # briefly pauses and resumes recording around TRACE_CLEAR, removing the
+    # command/startup scheduler traffic that otherwise consumes enough of the
+    # 1,024-event ring to invalidate this short exchange.
+    run_both("trace", "clear")
     traced_output = run_cli(slave, "espnow", "bench", "--rounds", "1", timeout=30)
     run_both("trace", "stop")
     if not re.search(
