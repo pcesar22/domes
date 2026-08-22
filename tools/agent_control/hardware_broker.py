@@ -9,6 +9,7 @@ and identity snapshots) stays with this host process.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import fcntl
 import fnmatch
 import hashlib
@@ -1716,34 +1717,45 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
         }
 
     cli = _cli_path(cap)
-    transcript: list[str] = []
+    transcript: list[tuple[int, str]] = []
     invocation = 0
+    transcript_lock = threading.Lock()
 
     def run_cli(board: int, *arguments: str, timeout: float = 90) -> str:
         nonlocal invocation
-        invocation += 1
+        with transcript_lock:
+            invocation += 1
+            current_invocation = invocation
         port = _verified_port(cap, board)
         returncode, stdout, stderr = _run_with_bounded_logs(
             cap,
             _resource_limited(cap, [cli, "--port", port, *arguments]),
-            f"espnow-regression-{invocation:03d}",
+            f"espnow-regression-{current_invocation:03d}",
             timeout,
         )
-        transcript.append(
-            json.dumps(
-                {
-                    "board": board,
-                    "arguments": list(arguments),
-                    "returncode": returncode,
-                    "stdout": stdout,
-                    "stderr": stderr,
-                },
-                sort_keys=True,
-            )
+        record = json.dumps(
+            {
+                "board": board,
+                "arguments": list(arguments),
+                "returncode": returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+            },
+            sort_keys=True,
         )
+        with transcript_lock:
+            transcript.append((current_invocation, record))
         if returncode:
             raise BrokerError("ESP-NOW regression command failed")
         return stdout
+
+    def run_both(*arguments: str) -> tuple[str, str]:
+        """Run the same bounded command on both independent serial endpoints."""
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = tuple(
+                executor.submit(run_cli, board, *arguments) for board in (0, 1)
+            )
+            return tuple(future.result() for future in futures)  # type: ignore[return-value]
 
     def status(board: int) -> tuple[str, int, int]:
         return _espnow_status_fields(run_cli(board, "espnow", "status"))
@@ -1821,10 +1833,8 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
     for board in (0, 1):
         run_cli(board, "trace", "stop")
         run_cli(board, "trace", "clear")
-        run_cli(board, "trace", "start")
-    time.sleep(0.2)
-    for board in (0, 1):
-        run_cli(board, "trace", "stop")
+    run_both("trace", "start")
+    run_both("trace", "stop")
 
     time.sleep(35)
     final = [status(board) for board in (0, 1)]
@@ -1833,7 +1843,7 @@ def _execute_espnow_regression(cap: Capability, artifact_head: str) -> dict[str,
         for state, peers, failures in final
     ):
         raise BrokerError("ESP-NOW simulated drill did not finish cleanly")
-    encoded = ("\n".join(transcript) + "\n").encode()
+    encoded = ("\n".join(record for _, record in sorted(transcript)) + "\n").encode()
     ensure_capability_evidence_budget(cap, len(encoded))
     transcript_path = cap.evidence / f"espnow-regression-{artifact_head[:16]}.jsonl"
     transcript_path.write_bytes(encoded)
