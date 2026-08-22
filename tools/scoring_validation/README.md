@@ -51,18 +51,20 @@ fields do not establish physical BLE, ESP-NOW, touch, host-clock capture, or wal
 
 ## Retained verification
 
-`artifacts/verification/` retains the complete output from the software-only acceptance rerun at
-commit `16b4591f5d4f4d986620e5b933685bf8d8b3d40e`:
+`artifacts/verification/` retains the complete output from the software-only acceptance rerun of
+commit `b9ce5be2b1a852bc00a6d20ea4e86222ce0d5483`:
 
 - `cpp-tests.log` records the exact CMake build and CTest commands and all 321 passing host tests.
 - `flutter-tests.log` records Flutter 3.44.8, locked dependency restore, the exact affected-test
   command, and all 40 passing affected tests.
-- `campaign-tests.log` records all 10 passing comparator and fail-closed negative tests plus the
+- `campaign-tests.log` records all 22 passing comparator and fail-closed negative tests plus the
   fixture, normalized-output, and verdict SHA-256 digests.
-- `verify.log` records the no-argument `scripts/verify.sh` full gate: six checks passed, none failed
-  or skipped. It was executed from a clean isolated checkout because this worker's governing
-  `.codex` paths are mounted read-only; the checkout contained the same exact commit and fetched
-  `origin/main` at `93b8e7d3d95001290e2cebde7851f9b686f1d921`.
+- `verify.log` records the no-argument `scripts/verify.sh` full gate from a clean isolated checkout
+  with initialized submodules. Protocol generation, host firmware, the Rust CLI, Flutter, and the
+  ESP-IDF firmware build passed; host tooling failed on the supplied base revision because
+  `test_materialize_plan_sets_execute_and_plan_child_states` does not mock the newly required
+  `update_issue_body` call and therefore invokes unauthenticated `gh`. No live credential was
+  supplied because doing so would mutate a real issue from a unit test.
 
 The rerun is software evidence only. Physical BLE, ESP-NOW, touch, device timing, host-clock
 capture, and wall-clock equivalence remain unverified.
