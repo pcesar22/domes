@@ -8,11 +8,21 @@ from pathlib import Path
 from unittest import mock
 
 PATH = Path(__file__).with_name("fault_replay_acceptance.py")
+if str(PATH.parent) not in sys.path:
+    sys.path.insert(0, str(PATH.parent))
 SPEC = importlib.util.spec_from_file_location("fault_replay_acceptance", PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+CAMPAIGN_PATH = Path(__file__).with_name("fault_replay_qemu_campaign.py")
+CAMPAIGN_SPEC = importlib.util.spec_from_file_location(
+    "fault_replay_qemu_campaign", CAMPAIGN_PATH
+)
+CAMPAIGN_MODULE = importlib.util.module_from_spec(CAMPAIGN_SPEC)
+assert CAMPAIGN_SPEC.loader
+CAMPAIGN_SPEC.loader.exec_module(CAMPAIGN_MODULE)
 
 
 def build_campaign_fixture(root: Path) -> Path:
@@ -214,6 +224,23 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
             self.assertEqual(first, replay)
             self.assertEqual(first["raw"]["unconsumed_events"], 0)
             self.assertEqual(first["raw_sha256"], MODULE.digest(first["raw"]))
+
+    def test_replay_trace_preserves_packet_detail_and_duplicate_events(self):
+        trace = "\n".join(
+            (
+                "DOMES_QEMU_LINK_TRACE schema=1 index=0 timestamp=10 task=1 "
+                "type=35 arg1=7 token=11",
+                "DOMES_QEMU_LINK_TRACE schema=1 index=1 timestamp=11 task=1 "
+                "type=35 arg1=7 token=11",
+            )
+        )
+        self.assertEqual(
+            CAMPAIGN_MODULE._replay_trace(trace),
+            [
+                {"index": 0, "task": 1, "type": 35, "arg1": 7, "token": 11},
+                {"index": 1, "task": 1, "type": 35, "arg1": 7, "token": 11},
+            ],
+        )
 
     def test_overflow_and_corrupted_identity_fail_closed(self):
         overflow = MODULE.Case(

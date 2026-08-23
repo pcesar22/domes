@@ -142,21 +142,8 @@ def _normalized_deliveries(
 
 
 def _replay_trace(text: str) -> list[dict[str, object]]:
-    """Collapse repeated causal callbacks while preserving their first order."""
-    result: list[dict[str, object]] = []
-    seen: set[tuple[object, object, object]] = set()
-    for event in normalized_trace(text):
-        # Type 35 is packet-detail telemetry whose count depends on whether a
-        # duplicate callback drains before the bounded result marker.  Its raw
-        # record is retained, but it is not part of the causal replay trace.
-        if event["type"] == 35:
-            continue
-        identity = (event["type"], event["arg1"], event["token"])
-        if identity in seen:
-            continue
-        seen.add(identity)
-        result.append({**event, "index": len(result)})
-    return result
+    """Retain every ordered event in the replay-normalized trace."""
+    return normalized_trace(text)
 
 
 def _result(text: str) -> dict[str, object]:
