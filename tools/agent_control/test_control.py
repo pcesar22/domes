@@ -104,6 +104,11 @@ def pull_request(
     checks: tuple[dict[str, str], ...] | None = None,
     title: str = "fix(simulation): explain deterministic peer behavior",
     body: str | None = None,
+    additions: int = 0,
+    deletions: int = 0,
+    evidence_files: int = 0,
+    evidence_lines: int = 0,
+    raw_evidence_files: tuple[str, ...] = (),
 ) -> control.PullRequest:
     if checks is None:
         checks = tuple(
@@ -113,7 +118,10 @@ def pull_request(
     if body is None:
         body = """## Executive summary
 
-This change repairs deterministic peer behavior so simulations exercise the intended production path. It replaces an incomplete test-only shortcut with observable runtime integration and retained evidence. User-facing product behavior is unchanged, while engineering confidence and review clarity improve substantially for the next implementation and integration decision.
+- **Problem:** The simulation skipped behavior that the real firmware uses.
+- **Change:** This connects the simulation to the real firmware path.
+- **Result:** Tests now catch failures that the old shortcut missed.
+- **User impact:** Product behavior is unchanged; this improves engineering checks.
 
 ## Why this matters
 
@@ -169,6 +177,11 @@ It does not mean:
         merge_commit="d" * 40 if state == "MERGED" else "",
         title=title,
         body=body,
+        additions=additions,
+        deletions=deletions,
+        evidence_files=evidence_files,
+        evidence_lines=evidence_lines,
+        raw_evidence_files=raw_evidence_files,
     )
 
 
@@ -2503,6 +2516,60 @@ class AutopilotReviewTest(unittest.TestCase):
             control.validate_pull_request_presentation(
                 pull_request(policy, body=good.body + "\n<!-- TODO -->")
             )
+
+    def test_pull_request_presentation_requires_plain_labeled_summary(self) -> None:
+        policy = control.load_autopilot_policy()
+        good = pull_request(policy)
+        opaque = good.body.replace(
+            "- **Problem:** The simulation skipped behavior that the real firmware uses.\n"
+            "- **Change:** This connects the simulation to the real firmware path.\n"
+            "- **Result:** Tests now catch failures that the old shortcut missed.\n"
+            "- **User impact:** Product behavior is unchanged; this improves engineering checks.",
+            "A deterministic executor seals an exact qualification artifact for review.",
+        )
+        with self.assertRaisesRegex(control.ControlError, "four bullets"):
+            control.validate_pull_request_presentation(
+                pull_request(policy, body=opaque)
+            )
+
+    def test_reviewable_change_set_rejects_generated_evidence_dump(self) -> None:
+        policy = control.load_autopilot_policy()
+        with self.assertRaisesRegex(control.ControlError, "too large for human review"):
+            control.validate_reviewable_change_set(
+                pull_request(
+                    policy,
+                    files=tuple(
+                        f"tools/simulation/evidence/run-{i}.json" for i in range(13)
+                    ),
+                    evidence_files=13,
+                    evidence_lines=2_000,
+                )
+            )
+        with self.assertRaisesRegex(control.ControlError, "changes 6000 lines"):
+            control.validate_reviewable_change_set(
+                pull_request(policy, additions=5_500, deletions=500)
+            )
+        with self.assertRaisesRegex(control.ControlError, "raw generated evidence"):
+            control.validate_reviewable_change_set(
+                pull_request(
+                    policy,
+                    files=("tools/simulation/evidence/run.log",),
+                    evidence_files=1,
+                    evidence_lines=20,
+                    raw_evidence_files=("tools/simulation/evidence/run.log",),
+                )
+            )
+
+    def test_reviewable_change_set_accepts_small_aggregate_report(self) -> None:
+        policy = control.load_autopilot_policy()
+        control.validate_reviewable_change_set(
+            pull_request(
+                policy,
+                files=("tools/simulation/evidence/summary.json",),
+                evidence_files=1,
+                evidence_lines=40,
+            )
+        )
 
     def test_physical_proof_helpers_require_current_passed_artifact(self) -> None:
         ticket = automated_ticket(

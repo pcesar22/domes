@@ -69,6 +69,12 @@ PR_REQUIRED_SECTIONS = (
 )
 PR_FORBIDDEN_TERM = re.compile(r"\bgates?\b", re.IGNORECASE)
 PR_INTERNAL_CODE = re.compile(r"\b(?:PS|FS|HW|VC)-WP-[A-Z0-9_-]+\b", re.IGNORECASE)
+PR_SUMMARY_FIELDS = ("Problem", "Change", "Result", "User impact")
+MAX_AUTONOMOUS_PR_FILES = 120
+MAX_AUTONOMOUS_PR_LINES = 5_000
+MAX_TRACKED_EVIDENCE_FILES = 12
+MAX_TRACKED_EVIDENCE_LINES = 1_000
+RAW_EVIDENCE_SUFFIXES = frozenset({".bin", ".jsonl", ".log", ".raw", ".trace"})
 ROLE_BY_STATE = {
     "agent:plan": "planner",
     "agent:ready": "worker",
@@ -246,6 +252,11 @@ class PullRequest:
     merge_commit: str = ""
     title: str = ""
     body: str = ""
+    additions: int = 0
+    deletions: int = 0
+    evidence_files: int = 0
+    evidence_lines: int = 0
+    raw_evidence_files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1154,6 +1165,11 @@ def pull_request_from_json(document: dict[str, Any]) -> PullRequest:
         ),
         title=str(document.get("title", "")),
         body=str(document.get("body", "")),
+        additions=int(document.get("additions", 0)),
+        deletions=int(document.get("deletions", 0)),
+        evidence_files=int(document.get("evidenceFiles", 0)),
+        evidence_lines=int(document.get("evidenceLines", 0)),
+        raw_evidence_files=tuple(document.get("rawEvidenceFiles") or ()),
     )
 
 
@@ -1170,7 +1186,7 @@ def load_pull_request(workflow: Workflow, number: int) -> PullRequest:
             (
                 "number,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,"
                 "mergeable,mergeStateStatus,reviewDecision,files,statusCheckRollup,"
-                "mergeCommit,changedFiles,title,body"
+                "mergeCommit,changedFiles,additions,deletions,title,body"
             ),
         ]
     )
@@ -1193,6 +1209,9 @@ def load_pull_request(workflow: Workflow, number: int) -> PullRequest:
         for file in page
         if isinstance(file, dict)
     ]
+    changed_file_records = [
+        file for page in pages for file in page if isinstance(file, dict)
+    ]
     expected_files = document.get("changedFiles")
     if (
         not isinstance(expected_files, int)
@@ -1203,6 +1222,22 @@ def load_pull_request(workflow: Workflow, number: int) -> PullRequest:
     ):
         raise TrackerError(f"PR #{number}: changed-file list is incomplete")
     document["files"] = [{"path": filename} for filename in filenames]
+    evidence_records = [
+        file
+        for file in changed_file_records
+        if "/evidence/" in f"/{str(file.get('filename', '')).casefold()}"
+    ]
+    document["evidenceFiles"] = len(evidence_records)
+    document["evidenceLines"] = sum(
+        int(file.get("additions", 0)) + int(file.get("deletions", 0))
+        for file in evidence_records
+    )
+    document["rawEvidenceFiles"] = [
+        str(file.get("filename", ""))
+        for file in evidence_records
+        if Path(str(file.get("filename", ""))).suffix.casefold()
+        in RAW_EVIDENCE_SUFFIXES
+    ]
     return pull_request_from_json(document)
 
 
@@ -5977,6 +6012,7 @@ def verify_worker_artifact(
         )
     assert pull_request is not None
     validate_pull_request_presentation(pull_request)
+    validate_reviewable_change_set(pull_request)
     pr_violations = paths_outside_surfaces(pull_request.files, surfaces)
     if pr_violations:
         raise ControlError(
@@ -6021,6 +6057,51 @@ def _visible_markdown(value: str) -> str:
     return re.sub(r"\s+", " ", without_tags).strip()
 
 
+def validate_reviewable_change_set(pull_request: PullRequest) -> None:
+    """Keep autonomous PRs small enough for meaningful human review."""
+    errors: list[str] = []
+    if len(pull_request.files) > MAX_AUTONOMOUS_PR_FILES:
+        errors.append(
+            f"changes {len(pull_request.files)} files; limit is {MAX_AUTONOMOUS_PR_FILES}"
+        )
+    changed_lines = pull_request.additions + pull_request.deletions
+    if changed_lines > MAX_AUTONOMOUS_PR_LINES:
+        errors.append(
+            f"changes {changed_lines} lines; limit is {MAX_AUTONOMOUS_PR_LINES}"
+        )
+    if pull_request.raw_evidence_files:
+        sample = ", ".join(pull_request.raw_evidence_files[:3])
+        errors.append(f"commits raw generated evidence ({sample})")
+    if pull_request.evidence_files > MAX_TRACKED_EVIDENCE_FILES:
+        errors.append(
+            f"changes {pull_request.evidence_files} evidence files; limit is "
+            f"{MAX_TRACKED_EVIDENCE_FILES}"
+        )
+    if pull_request.evidence_lines > MAX_TRACKED_EVIDENCE_LINES:
+        errors.append(
+            f"changes {pull_request.evidence_lines} evidence lines; limit is "
+            f"{MAX_TRACKED_EVIDENCE_LINES}"
+        )
+    if errors:
+        raise ControlError(
+            f"PR #{pull_request.number}: diff is too large for human review: "
+            + "; ".join(errors)
+            + ". Keep raw runs outside Git and commit source, tests, and at most one "
+            "small aggregate result."
+        )
+
+
+def _summary_field_values(summary: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in summary.splitlines():
+        visible = re.sub(r"^\s*[-*+]\s+", "", line).strip()
+        visible = visible.replace("**", "")
+        match = re.match(r"^(Problem|Change|Result|User impact):\s*(.+)$", visible)
+        if match:
+            values[match.group(1)] = match.group(2).strip()
+    return values
+
+
 def validate_pull_request_presentation(pull_request: PullRequest) -> None:
     """Reject cryptic or template-incomplete autonomous PR descriptions."""
     errors: list[str] = []
@@ -6039,10 +6120,21 @@ def validate_pull_request_presentation(pull_request: PullRequest) -> None:
         if not _visible_markdown(sections.get(name, "")):
             errors.append(f"missing or empty `{name}` section")
 
-    summary = _visible_markdown(sections.get("Executive summary", ""))
-    if len(summary.split()) < 45 or len(re.findall(r"[.!?](?:\s|$)", summary)) < 3:
+    summary_source = sections.get("Executive summary", "")
+    summary = _visible_markdown(summary_source)
+    summary_fields = _summary_field_values(summary_source)
+    if tuple(summary_fields) != PR_SUMMARY_FIELDS:
         errors.append(
-            "executive summary must provide at least three contextual sentences and 45 words"
+            "executive summary must contain four bullets in this order: Problem, "
+            "Change, Result, User impact"
+        )
+    for field in PR_SUMMARY_FIELDS:
+        word_count = len(summary_fields.get(field, "").split())
+        if word_count < 4 or word_count > 30:
+            errors.append(f"`{field}` must use 4-30 plain-language words")
+    if PR_INTERNAL_CODE.search(summary) or re.search(r"\b[0-9a-f]{40}\b", summary):
+        errors.append(
+            "move internal codes and commit hashes out of the executive summary"
         )
     why = _visible_markdown(sections.get("Why this matters", ""))
     if len(why.split()) < 30:

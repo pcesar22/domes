@@ -136,6 +136,15 @@ prerequisite or decision. The controller rejects incomplete summaries, unexplain
 package codes in titles, template placeholders, and descriptions that omit the outcome, why it
 matters, approval boundary, next action, or verification boundary.
 
+The executive summary uses four short labeled bullets: `Problem`, `Change`, `Result`, and
+`User impact`. Technical terminology belongs in the collapsed appendix. Autonomous pull requests
+may not commit raw logs, per-run result streams, traces, binary captures, or repeated generated
+campaign output. The controller limits tracked evidence to 12 files and 1,000 changed lines, and
+limits the complete pull request to 120 changed files. Raw evidence remains in ignored workspace
+storage or controller-private state. The complete pull request is also limited to 5,000 changed
+lines. A pull request may retain one small aggregate report when its acceptance contract requires a
+durable repository result.
+
 ## Role routing
 
 | Ticket state | Role | Successful handoff |

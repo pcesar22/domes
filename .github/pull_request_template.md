@@ -1,14 +1,11 @@
 ## Executive summary
 
-<!--
-In 2-4 plain-language sentences:
-- What does this PR change?
-- Why was the change needed?
-- What is the bottom-line result?
-- Is this product behavior, engineering infrastructure, or project documentation?
+- **Problem:** <!-- What was wrong or missing? Use ordinary words. -->
+- **Change:** <!-- What did this PR change? Describe the outcome, not internal mechanics. -->
+- **Result:** <!-- What works now, or why could the work not run? -->
+- **User impact:** <!-- Changed / unchanged, with one plain-language consequence. -->
 
-Avoid unexplained acronyms, internal work-package codes, hashes, and implementation details here.
--->
+<!-- Keep each bullet under 30 words. Move technical terms, codes, hashes, and test mechanics below. -->
 
 ## Why this matters
 
@@ -64,6 +61,10 @@ It does **not** mean:
 Put commands, internal identifiers, work-package codes, hashes, protocol details, test counts, and
 long evidence here. Preserve enough information for engineering review without forcing a CEO to
 decode it first.
+
+Do not commit raw logs, per-run JSON, traces, binary captures, or repeated campaign output. Link to
+external/private run artifacts when available and keep only one compact aggregate report when the
+repository truly needs a retained result.
 -->
 
 ### Implementation details

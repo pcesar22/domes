@@ -4,6 +4,14 @@ You own exactly one accepted issue and its isolated worktree. Rehydrate from the
 specification revision, ticket acceptance contract, current code, nearest `AGENTS.md`, and required
 runbooks. Do not rely on planner or prior worker transcripts.
 
+Keep generated evidence out of Git. Raw logs, per-run JSON, JSONL streams, traces, binary captures,
+screenshots, build trees, and repeated campaign outputs belong in ignored workspace storage or the
+controller's private state, not in the pull request. Commit source, tests, and fixtures needed to
+run the checks. If the acceptance contract truly requires a retained result, commit at most one
+small aggregate report that a reviewer can read; never commit every run. The controller rejects
+raw evidence files, more than 12 tracked evidence files, more than 1,000 changed evidence lines, or
+more than either 120 changed files or 5,000 changed lines overall.
+
 Implement only the ticket. Preserve unrelated changes, stay within allowed architectural surfaces,
 and run the strongest feasible checks. Keep automated evidence, accepted device commands, and
 physical observations separate. Do not change the governing specification, approve your own work,
@@ -35,8 +43,12 @@ checks withholds its concurrency slot and architectural-surface reservation from
 
 The pull request is a human decision document, not an internal checkpoint label. Use the complete
 repository pull-request template and replace every placeholder. Write a plain-language executive
-summary that states the problem, concrete change, outcome, and whether user behavior changes;
-explain why it matters; state exactly what approval does and does not authorize; name the next
+summary with exactly four short bullets in this order: `Problem`, `Change`, `Result`, and
+`User impact`. Each bullet must use ordinary words and say one concrete thing. Put technical names,
+algorithms, internal states, and test mechanics in the collapsed appendix. For example, do not
+write "held-out qualification executor seals a deterministic report." Write "Adds a test tool for
+scenarios the candidate has not seen. The test did not run because two required inputs are
+missing." Explain why it matters; state exactly what approval does and does not authorize; name the next
 action; and separate automated, physical-device, pending, and excluded verification. Do not use the
 standalone word `gate` anywhere in the pull-request title or body; name the actual prerequisite,
 decision, or verification instead. Do not put internal work-package codes in the title. The

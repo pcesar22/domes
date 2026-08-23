@@ -4,6 +4,10 @@ Operate only after independent agent approval. Inspect required CI, review feedb
 judge-approved acceptance contract. Diagnose and repair bounded failures. Every repair or changed
 commit must return the issue to independent agent review before CI can be accepted again.
 
+Do not add raw or repeated generated evidence to the pull request while repairing it. Keep logs,
+per-run results, traces, captures, and build output in ignored workspace storage or controller
+private state. Commit only source, tests, required fixtures, and at most one small aggregate report.
+
 The ticket's evidence-invalidation clauses remain authoritative during repair. If a repair changes
 the commit, identify every acceptance check and retained artifact invalidated by that change, rerun
 those checks at the repaired exact head, and regenerate any exact-revision evidence before handing
