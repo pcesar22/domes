@@ -58,10 +58,8 @@ class Fixture:
         targets = [f"alpha-{number}" for number in range(1, 7)]
         prerequisites = []
         for issue in acceptance.REQUIRED_ISSUES:
-            tool_sha256 = str(issue % 10) * 64
-            lockfiles = [
-                self.file(f"locks/{issue}.lock", f"lock {issue}\n".encode())
-            ]
+            tool = self.file(f"tools/upstream/{issue}.py", f"tool {issue}\n".encode())
+            lockfiles = [self.file(f"locks/{issue}.lock", f"lock {issue}\n".encode())]
             prerequisites.append(
                 {
                     "issue": issue,
@@ -69,15 +67,14 @@ class Fixture:
                     "source_git_sha": SOURCE_SHAS[issue],
                     "status": "accepted",
                     "tool": {
-                        "path": f"tools/upstream/{issue}.py",
+                        **tool,
                         "version": "1",
-                        "sha256": tool_sha256,
                     },
                     "lockfiles": lockfiles,
                     "artifacts": [
                         self.artifact(
                             issue,
-                            tool_sha256,
+                            tool["sha256"],
                             [item["sha256"] for item in lockfiles],
                         )
                     ],
@@ -121,8 +118,10 @@ class Fixture:
                 "targets": targets,
                 "stages": list(acceptance.REQUIRED_STAGES),
                 "cycles": 1000,
-                "per_target": {target: 1000 for target in targets},
-                "per_stage": {stage: 1000 for stage in acceptance.REQUIRED_STAGES},
+                "per_target": acceptance._rotating_totals(targets, 1000),
+                "per_stage": acceptance._rotating_totals(
+                    acceptance.REQUIRED_STAGES, 1000
+                ),
                 "invariant_counters": {
                     counter: 0 for counter in acceptance.REQUIRED_COUNTERS
                 },
@@ -161,8 +160,12 @@ class AcceptanceTests(unittest.TestCase):
     def test_accepts_complete_digest_bound_evidence(self) -> None:
         verdict = self.build()
         self.assertEqual(verdict["result"], "passed")
-        self.assertEqual(verdict["claim_boundaries"]["physical_validation"], "unverified")
-        self.assertEqual(verdict["claim_boundaries"]["additional_alpha_nodes_unavailable"], 4)
+        self.assertEqual(
+            verdict["claim_boundaries"]["physical_validation"], "unverified"
+        )
+        self.assertEqual(
+            verdict["claim_boundaries"]["additional_alpha_nodes_unavailable"], 4
+        )
         self.assertRegex(verdict["canonical_verdict_sha256"], r"^[0-9a-f]{64}$")
 
     def test_missing_prerequisite_stops(self) -> None:
@@ -179,19 +182,25 @@ class AcceptanceTests(unittest.TestCase):
             with self.subTest(mutate=mutate):
                 candidate = copy.deepcopy(self.document)
                 mutate(candidate["prerequisites"])
-                with self.assertRaisesRegex(acceptance.AcceptanceError, "prerequisites"):
+                with self.assertRaisesRegex(
+                    acceptance.AcceptanceError, "prerequisites"
+                ):
                     self.build(candidate)
 
     def test_unaccepted_prerequisite_stops(self) -> None:
         candidate = copy.deepcopy(self.document)
         candidate["prerequisites"][0]["status"] = "pending"
-        with self.assertRaisesRegex(acceptance.AcceptanceError, "unavailable or not accepted"):
+        with self.assertRaisesRegex(
+            acceptance.AcceptanceError, "unavailable or not accepted"
+        ):
             self.build(candidate)
 
     def test_foreign_revision_stops(self) -> None:
         candidate = copy.deepcopy(self.document)
         candidate["specification_revision"] = "f" * 40
-        with self.assertRaisesRegex(acceptance.AcceptanceError, "foreign specification"):
+        with self.assertRaisesRegex(
+            acceptance.AcceptanceError, "foreign specification"
+        ):
             self.build(candidate)
 
     def test_foreign_tested_commit_stops(self) -> None:
@@ -207,8 +216,16 @@ class AcceptanceTests(unittest.TestCase):
 
     def test_foreign_tool_identity_stops(self) -> None:
         candidate = copy.deepcopy(self.document)
-        candidate["prerequisites"][0]["tool"]["sha256"] = "f" * 64
+        tool = candidate["prerequisites"][0]["tool"]
+        replacement = self.fixture.file(tool["path"], b"replacement tool\n")
+        tool["sha256"] = replacement["sha256"]
         with self.assertRaisesRegex(acceptance.AcceptanceError, "another toolchain"):
+            self.build(candidate)
+
+    def test_tool_hash_mismatch_stops(self) -> None:
+        candidate = copy.deepcopy(self.document)
+        candidate["prerequisites"][0]["tool"]["sha256"] = "f" * 64
+        with self.assertRaisesRegex(acceptance.AcceptanceError, "tool hash mismatch"):
             self.build(candidate)
 
     def test_foreign_lockfile_identity_stops(self) -> None:
@@ -275,13 +292,17 @@ class AcceptanceTests(unittest.TestCase):
     def test_reordered_targets_stop(self) -> None:
         candidate = copy.deepcopy(self.document)
         candidate["execution"]["targets"] = list(reversed(candidate["targets"]))
-        with self.assertRaisesRegex(acceptance.AcceptanceError, "target inventory changed"):
+        with self.assertRaisesRegex(
+            acceptance.AcceptanceError, "target inventory changed"
+        ):
             self.build(candidate)
 
     def test_incomplete_lifecycle_stops(self) -> None:
         candidate = copy.deepcopy(self.document)
         candidate["execution"]["stages"].pop()
-        with self.assertRaisesRegex(acceptance.AcceptanceError, "coverage is incomplete"):
+        with self.assertRaisesRegex(
+            acceptance.AcceptanceError, "coverage is incomplete"
+        ):
             self.build(candidate)
 
     def test_short_soak_stops(self) -> None:
@@ -295,7 +316,9 @@ class AcceptanceTests(unittest.TestCase):
             with self.subTest(counter=counter):
                 candidate = copy.deepcopy(self.document)
                 candidate["execution"]["invariant_counters"][counter] = 1
-                with self.assertRaisesRegex(acceptance.AcceptanceError, "invariants are nonzero"):
+                with self.assertRaisesRegex(
+                    acceptance.AcceptanceError, "invariants are nonzero"
+                ):
                     self.build(candidate)
 
     def test_unexplained_divergence_stops(self) -> None:

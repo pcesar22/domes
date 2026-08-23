@@ -47,10 +47,10 @@ The execution inventory contains these lifecycle and fault stages in order:
 2. `miss_feedback`, `miss_clear`, `cleanup_clear`, and `cleanup_mode`
 3. `command_failure`, `stream_failure`, `disconnect`, and `reconnect`
 
-At least 1,000 cycles are required for every target and every stage. Stale mutations, leaked
-subscriptions, quarantined-generation reuse, lost or duplicate results, cleanup-order violations,
-unhealthy-peer mutations, and unexplained runtime divergences must all remain zero. Every target
-must finish disconnected.
+At least 1,000 total cycles are required, with cycles rotating deterministically across all six
+targets and every declared stage. Stale mutations, leaked subscriptions, quarantined-generation
+reuse, lost or duplicate results, cleanup-order violations, unhealthy-peer mutations, and
+unexplained runtime divergences must all remain zero. Every target must finish disconnected.
 
 ## Reproduction
 
