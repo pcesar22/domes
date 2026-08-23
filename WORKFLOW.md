@@ -141,7 +141,7 @@ The executive summary uses four short labeled bullets: `Problem`, `Change`, `Res
 may not commit raw logs, per-run result streams, traces, binary captures, or repeated generated
 campaign output. The controller limits tracked evidence to 12 files and 1,000 changed lines, and
 limits the complete pull request to 120 changed files. Raw evidence remains in ignored workspace
-storage or controller-private state. The complete pull request is also limited to 5,000 changed
+storage or controller-private state. The complete pull request is also limited to 2,500 changed
 lines. A pull request may retain one small aggregate report when its acceptance contract requires a
 durable repository result.
 

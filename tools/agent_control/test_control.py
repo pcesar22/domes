@@ -2545,9 +2545,9 @@ class AutopilotReviewTest(unittest.TestCase):
                     evidence_lines=2_000,
                 )
             )
-        with self.assertRaisesRegex(control.ControlError, "changes 6000 lines"):
+        with self.assertRaisesRegex(control.ControlError, "changes 3000 lines"):
             control.validate_reviewable_change_set(
-                pull_request(policy, additions=5_500, deletions=500)
+                pull_request(policy, additions=2_750, deletions=250)
             )
         with self.assertRaisesRegex(control.ControlError, "raw generated evidence"):
             control.validate_reviewable_change_set(

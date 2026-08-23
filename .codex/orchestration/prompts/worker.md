@@ -10,7 +10,7 @@ controller's private state, not in the pull request. Commit source, tests, and f
 run the checks. If the acceptance contract truly requires a retained result, commit at most one
 small aggregate report that a reviewer can read; never commit every run. The controller rejects
 raw evidence files, more than 12 tracked evidence files, more than 1,000 changed evidence lines, or
-more than either 120 changed files or 5,000 changed lines overall.
+more than either 120 changed files or 2,500 changed lines overall.
 
 Implement only the ticket. Preserve unrelated changes, stay within allowed architectural surfaces,
 and run the strongest feasible checks. Keep automated evidence, accepted device commands, and
