@@ -190,6 +190,8 @@ def verify_observation_bundle(
         "observation_bundle",
     )
     _sha(expected_bundle_sha256, "externally pinned observation bundle digest")
+    if bundle["manifest_sha256"] != manifest_sha256:
+        raise CampaignError("observation bundle manifest identity drifted")
     expected = {
         "schema_version": 1,
         "kind": "vc-wp-002a-held-out-observation-bundle",

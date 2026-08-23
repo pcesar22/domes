@@ -148,6 +148,13 @@ class HeldOutCampaignTests(unittest.TestCase):
                 bundle, "f" * 64, value["manifest_sha256"]
             )
 
+        drifted = copy.deepcopy(bundle)
+        drifted["manifest_sha256"] = "f" * 64
+        with self.assertRaises(campaign.CampaignError):
+            campaign.verify_observation_bundle(
+                drifted, bundle["artifact_set_sha256"], value["manifest_sha256"]
+            )
+
     def test_rerun_is_byte_identical(self) -> None:
         first = evaluate()
         second = evaluate()
