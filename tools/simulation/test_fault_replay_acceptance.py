@@ -268,6 +268,10 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
         report = MODULE.run(self.campaign)
         self.assertEqual(report["status"], "PASS")
         self.assertEqual(
+            report["dependency_acceptance_matrix"][0]["artifact"],
+            "controller-private qemu_link.verify JSON",
+        )
+        self.assertEqual(
             report["role_rotation"]["two_firmware_state_machines"], "OUTSIDE_SCOPE"
         )
         with tempfile.TemporaryDirectory() as directory:

@@ -954,7 +954,7 @@ def run(campaign: Path) -> dict[str, Any]:
             {
                 "contract": "link ABI and bounded storage",
                 "test": "qemu_link.verify",
-                "artifact": "tools/simulation/evidence/issue-143/qemu-link-report.json",
+                "artifact": "controller-private qemu_link.verify JSON",
             },
             {
                 "contract": "virtual ordering and host-time prohibition",
