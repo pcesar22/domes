@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""Run every fixed FS-WP-002F fault through one real firmware DUT in QEMU."""
-
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -18,7 +15,14 @@ from deterministic_peer_campaign import (
     normalized_trace,
     parse_delivery_records,
 )
-from fault_replay_acceptance import Case, cases, expected_result
+from fault_replay_acceptance import (
+    MODELED_STAGES,
+    Case,
+    canonical,
+    cases,
+    digest,
+    expected_result,
+)
 from qemu_feasibility import (
     Toolchain,
     build_qemu_command,
@@ -45,18 +49,14 @@ RESULT_PATTERN = re.compile(
     r"token=(\d+) service_dispatches=(\d+) trace_drops=(\d+) trace_discontinuities=(\d+)"
 )
 STATE_PATTERN = re.compile(r"DOMES_FAULT_STATE schema=1 virtual_ns=(\d+) queued=(\d+)")
+PIPELINE_PATTERN = re.compile(
+    r"DOMES_PIPELINE_DELAY schema=1 tx_queue=(\d+) channel=(\d+) airtime=(\d+) "
+    r"completion=(\d+) peer=(\d+) rx_callback=(\d+)"
+)
 
 
 class CampaignFailure(RuntimeError):
-    """The real-DUT fault campaign failed closed."""
-
-
-def canonical(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-
-
-def digest(value: object) -> str:
-    return hashlib.sha256(canonical(value)).hexdigest()
+    pass
 
 
 def repository_revision() -> str:
@@ -132,7 +132,6 @@ def _fault_records(text: str) -> list[dict[str, object]]:
 
 
 def _replay_trace(text: str) -> list[dict[str, object]]:
-    """Retain every ordered event in the replay-normalized trace."""
     return normalized_trace(text)
 
 
@@ -161,6 +160,21 @@ def _required_stages(fault_id: int) -> set[str]:
     if expected_result(fault_id)["status"] == "PASS":
         stages.add("service_dispatch")
     return stages
+
+
+def _pipeline_records(text: str) -> list[dict[str, int]]:
+    names = (
+        "tx_queue_delay",
+        "channel_access",
+        "airtime",
+        "completion_delay",
+        "peer_processing",
+        "rx_callback_delay",
+    )
+    return [
+        dict(zip(names, map(int, values), strict=True))
+        for values in PIPELINE_PATTERN.findall(text)
+    ]
 
 
 def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
@@ -209,6 +223,15 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         != 11_000
     ):
         raise CampaignFailure(f"{case.name}: declared stage latency was not injected")
+    if fault_id >= 21 and run["pipeline_records"] != [
+        {
+            stage: 10_000 if stage == case.injection_stage else 0
+            for stage in MODELED_STAGES
+        }
+    ]:
+        raise CampaignFailure(
+            f"{case.name}: latency changed an undeclared pipeline stage"
+        )
     final = run["final_state"]
     if final["queued"] != 0:
         raise CampaignFailure(f"{case.name}: {final['queued']} unconsumed QEMU events")
@@ -272,6 +295,7 @@ def _run_once(
     log.write_text(text, newline="\n")
     device_text = device_log.read_text().replace("\r", "")
     faults = _fault_records(device_text)
+    pipeline_records = _pipeline_records(device_text)
     deliveries = (
         parse_delivery_records(device_text)
         if "DOMES_PEER_DELIVERY" in device_text
@@ -318,10 +342,12 @@ def _run_once(
         "flash_sha256": images["flash_sha256"],
         "efuse_sha256": images["efuse_sha256"],
         "fault_records": faults,
+        "pipeline_records": pipeline_records,
         "delivery_records": deliveries,
         "absolute_delivery_deadlines": absolute_delivery_deadlines,
         "final_state": final_state,
         "fault_records_sha256": digest(faults),
+        "pipeline_records_sha256": digest(pipeline_records),
         "delivery_records_sha256": digest(deliveries),
         "trace_sha256": digest(trace),
         "result_sha256": digest(result),
@@ -354,6 +380,7 @@ def _require_replay(case: Case, runs: list[dict[str, object]]) -> None:
     for field in (
         "flash_sha256",
         "fault_records_sha256",
+        "pipeline_records_sha256",
         "delivery_records_sha256",
         "trace_sha256",
         "result_sha256",

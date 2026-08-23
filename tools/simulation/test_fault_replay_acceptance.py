@@ -271,7 +271,7 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                     "type": 35,
                     "arg1": 7,
                     "token": 11,
-                    "timestamp_scale": 0,
+                    "timestamp_ns": 0,
                 },
                 {
                     "index": 1,
@@ -279,12 +279,12 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                     "type": 35,
                     "arg1": 7,
                     "token": 11,
-                    "timestamp_scale": 1,
+                    "timestamp_ns": 1,
                 },
             ],
         )
 
-    def test_replay_trace_retains_virtual_timing_buckets(self):
+    def test_replay_trace_retains_exact_relative_virtual_timing(self):
         def trace(second_timestamp: int) -> str:
             return "\n".join(
                 (
@@ -295,13 +295,9 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(
+        self.assertNotEqual(
             CAMPAIGN_MODULE._replay_trace(trace(1010)),
             CAMPAIGN_MODULE._replay_trace(trace(1011)),
-        )
-        self.assertNotEqual(
-            CAMPAIGN_MODULE._replay_trace(trace(1033)),
-            CAMPAIGN_MODULE._replay_trace(trace(1034)),
         )
 
     def test_overflow_and_corrupted_identity_fail_closed(self):

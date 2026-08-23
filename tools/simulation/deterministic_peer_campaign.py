@@ -145,11 +145,7 @@ def normalized_trace(text: str) -> list[dict[str, int]]:
         raise CampaignFailure("runtime trace virtual time regressed")
     base_timestamp = timestamps[0]
     for record in records:
-        timestamp_delta = record.pop("timestamp") - base_timestamp
-        # Raw logs retain exact virtual microseconds.  The replay projection
-        # retains the elapsed-time scale without treating instruction-boundary
-        # jitter as a causal difference.
-        record["timestamp_scale"] = timestamp_delta.bit_length()
+        record["timestamp_ns"] = record.pop("timestamp") - base_timestamp
     return records
 
 

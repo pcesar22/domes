@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""Fail-closed deterministic fault/replay acceptance for the one-DUT QEMU tier.
-
-The runner deliberately separates unavailable-radio outcomes, which are owned by
-the deterministic backplane, from target-owned stages proven by the retained
-real-firmware campaign.  It does not use host time, sockets, threads, or random
-APIs.  Every scenario is executed twice and the complete canonical records must
-match before the scenario is accepted.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -100,7 +91,7 @@ REQUIRED_DIMENSIONS = (
 
 
 class AcceptanceFailure(RuntimeError):
-    """A matrix, replay, evidence, or policy invariant failed."""
+    pass
 
 
 def canonical(value: object) -> bytes:
@@ -126,7 +117,6 @@ REJECTED_DELIVERY = {5, 6, 18}
 
 
 def expected_result(fault_id: int) -> dict[str, Any]:
-    """Return the pinned contract outcome, never an outcome learned from a run."""
     rejected = fault_id in NO_DELIVERY or fault_id in REJECTED_DELIVERY
     deliveries = (
         0
@@ -162,7 +152,6 @@ def expected_result(fault_id: int) -> dict[str, Any]:
 
 
 def cases() -> tuple[Case, ...]:
-    """Return the fixed admission corpus; this is not a seed sweep."""
     latency = tuple(
         Case(
             f"latency_{stage}",
@@ -450,7 +439,6 @@ def execute(case: Case, seed: int = 17) -> dict[str, Any]:
 
 
 def validate_execution(case: Case, result: Mapping[str, Any]) -> None:
-    """Reject incomplete, altered, or partly consumed deterministic executions."""
     raw = result.get("raw")
     if not isinstance(raw, Mapping):
         raise AcceptanceFailure(f"{case.name}: missing raw execution")
@@ -577,7 +565,6 @@ def physical_image_isolation() -> dict[str, Any]:
 
 
 def protected_path_audit() -> dict[str, Any]:
-    """Check the complete ticket diff instead of trusting a declared path list."""
     base = subprocess.run(
         ["git", "cat-file", "-e", f"{REQUIRED_BASE_REVISION}^{{commit}}"],
         cwd=ROOT,

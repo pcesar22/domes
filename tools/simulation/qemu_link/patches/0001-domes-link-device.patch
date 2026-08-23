@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..abeab164c0
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,583 @@
+@@ -0,0 +1,609 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
@@ -84,6 +84,7 @@ index 0000000000..abeab164c0
 +    FAULT_LATENCY_RX_CALLBACK,
 +    FAULT_COUNT,
 +};
++enum { STAGE_TX_QUEUE, STAGE_CHANNEL, STAGE_AIRTIME, STAGE_COMPLETION, STAGE_PEER, STAGE_RX_CALLBACK };
 +
 +static const char *fault_stage(uint32_t fault_id)
 +{
@@ -197,7 +198,11 @@ index 0000000000..abeab164c0
 +    else if (type == MSG_JOIN_GAME || type == MSG_SET_COLOR || type == MSG_STOP_ALL) return true;
 +    else return false;
 +
-+    event->deadline_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1000000 * 1000000 + s->peer_delay_ns;
++    if (s->fault_id == FAULT_LATENCY_PEER) s->stage_delay_ns[STAGE_PEER] = 10000;
++    event->deadline_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1000000 * 1000000 +
++                         s->peer_delay_ns + s->stage_delay_ns[STAGE_TX_QUEUE] +
++                         s->stage_delay_ns[STAGE_CHANNEL] + s->stage_delay_ns[STAGE_COMPLETION] +
++                         s->stage_delay_ns[STAGE_PEER];
 +    event->event_class_priority = 1;
 +    event->source_id = 2;
 +    event->destination_id = 1;
@@ -275,6 +280,13 @@ index 0000000000..abeab164c0
 +{
 +    DomesLinkState *s = opaque;
 +    int64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++    if (s->fault_id == FAULT_LATENCY_RX_CALLBACK && !s->stage_delay_ns[STAGE_RX_CALLBACK] &&
++        s->event_count && s->events[0].deadline_ns <= now_ns) {
++        s->stage_delay_ns[STAGE_RX_CALLBACK] = 10000;
++        for (uint32_t index = 0; index < s->event_count; index++) s->events[index].deadline_ns += 10000;
++        timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
++        return;
++    }
 +    while (s->event_count && s->events[0].deadline_ns <= now_ns) {
 +        if (s->irq_status & IRQ_RX) {
 +            break;
@@ -283,6 +295,15 @@ index 0000000000..abeab164c0
 +        memmove(&s->events[0], &s->events[1],
 +                (s->event_count - 1) * sizeof(s->events[0]));
 +        s->event_count--;
++        if (s->fault_id >= FAULT_LATENCY_TX_QUEUE && s->fault_id <= FAULT_LATENCY_RX_CALLBACK) {
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "DOMES_PIPELINE_DELAY schema=1 tx_queue=%" PRIu64 " channel=%" PRIu64
++                          " airtime=%" PRIu64 " completion=%" PRIu64 " peer=%" PRIu64
++                          " rx_callback=%" PRIu64 "\n", s->stage_delay_ns[STAGE_TX_QUEUE],
++                          s->stage_delay_ns[STAGE_CHANNEL], s->stage_delay_ns[STAGE_AIRTIME],
++                          s->stage_delay_ns[STAGE_COMPLETION], s->stage_delay_ns[STAGE_PEER],
++                          s->stage_delay_ns[STAGE_RX_CALLBACK]);
++        }
 +        s->rx_source_low = event.source_low;
 +        s->rx_source_high = event.source_high;
 +        s->rx_rssi = (uint8_t)-42;
@@ -314,6 +335,8 @@ index 0000000000..abeab164c0
 +{
 +    DomesLinkState *s = opaque;
 +    DomesLinkEvent event = { 0 };
++    if (s->fault_id == FAULT_LATENCY_COMPLETION) s->stage_delay_ns[STAGE_COMPLETION] = 10000;
++    if (s->fault_id == FAULT_LATENCY_CHANNEL) s->stage_delay_ns[STAGE_CHANNEL] = 10000;
 +    if (s->tx_status != TX_PENDING || !s->tx_correlation || !s->tx_length ||
 +        s->tx_length > DOMES_LINK_MAX_PAYLOAD) {
 +        s->sticky |= ST_MODEL_FAILURE;
@@ -380,8 +403,9 @@ index 0000000000..abeab164c0
 +        if (s->fault_id == FAULT_JITTER) {
 +            event.deadline_ns += (s->scenario_seed & 1) ? 7000 : 0;
 +        }
-+        if (s->fault_id >= FAULT_LATENCY_TX_QUEUE && s->fault_id <= FAULT_LATENCY_RX_CALLBACK) {
-+            event.deadline_ns += 10000;
++        if (s->fault_id == FAULT_LATENCY_AIRTIME) {
++            s->stage_delay_ns[STAGE_AIRTIME] = 10000;
++            event.deadline_ns += s->stage_delay_ns[STAGE_AIRTIME];
 +        }
 +        for (uint32_t copy = 0; copy < copies; copy++) {
 +            DomesLinkEvent candidate = event;
@@ -484,8 +508,9 @@ index 0000000000..abeab164c0
 +            s->tx_status = TX_PENDING;
 +            record_fault(s, "completion_delay", "missing");
 +        } else {
++            if (s->fault_id == FAULT_LATENCY_TX_QUEUE) s->stage_delay_ns[STAGE_TX_QUEUE] = 10000;
 +            s->tx_status = TX_PENDING;
-+            qemu_bh_schedule(s->completion_bh);
++            timer_mod_ns(s->completion_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000);
 +        }
 +        break;
 +    case RX_CONSUME:
@@ -537,6 +562,7 @@ index 0000000000..abeab164c0
 +    memset(s->tx_payload, 0, sizeof(s->tx_payload));
 +    memset(s->rx_payload, 0, sizeof(s->rx_payload));
 +    memset(s->events, 0, sizeof(s->events));
++    timer_del(s->completion_timer);
 +    timer_del(s->delivery_timer);
 +    update_irq(s);
 +}
@@ -544,14 +570,14 @@ index 0000000000..abeab164c0
 +static void link_realize(DeviceState *dev, Error **errp)
 +{
 +    DomesLinkState *s = DOMES_LINK(dev);
-+    s->completion_bh = qemu_bh_new(complete, s);
++    s->completion_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, complete, s);
 +    s->delivery_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, deliver_due, s);
 +}
 +
 +static void link_finalize(Object *obj)
 +{
 +    DomesLinkState *s = DOMES_LINK(obj);
-+    qemu_bh_delete(s->completion_bh);
++    timer_free(s->completion_timer);
 +    timer_free(s->delivery_timer);
 +}
 +
@@ -651,7 +677,7 @@ new file mode 100644
 index 0000000000..89c86d6f15
 --- /dev/null
 +++ b/include/hw/misc/domes_link.h
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,37 @@
 +#pragma once
 +#include "hw/sysbus.h"
 +#include "qemu/main-loop.h"
@@ -676,7 +702,7 @@ index 0000000000..89c86d6f15
 +    SysBusDevice parent_obj;
 +    MemoryRegion mmio;
 +    qemu_irq irq;
-+    QEMUBH *completion_bh;
++    QEMUTimer *completion_timer;
 +    QEMUTimer *delivery_timer;
 +    uint32_t tx_destination_low, tx_destination_high, tx_length, tx_correlation, tx_status;
 +    uint32_t rx_source_low, rx_source_high, rx_rssi, rx_length, rx_correlation;
@@ -687,4 +713,5 @@ index 0000000000..89c86d6f15
 +    int64_t last_observation_ns;
 +    uint32_t scenario_model, scenario_seed, dut_role, fault_id, fault_sequence;
 +    uint64_t peer_delay_ns;
++    uint64_t stage_delay_ns[6];
 +};

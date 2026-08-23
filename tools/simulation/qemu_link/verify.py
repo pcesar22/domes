@@ -137,9 +137,10 @@ class QtestClient:
                 str(binary),
                 "-M",
                 "esp32s3",
+                "-accel",
+                "qtest",
                 "-display",
                 "none",
-                "-S",
                 *(extra_args or []),
                 "-qtest",
                 f"unix:{self.socket_path},server=on,wait=off",
@@ -216,7 +217,7 @@ def run_qtest_rejections(binary: Path, abi: dict[str, object]) -> dict[str, bool
         while time.monotonic() < deadline:
             if client.read(registers["tx_status"]) == 2:
                 return True
-            time.sleep(0.005)
+            client.command("clock_step 1000000")
         return False
 
     cases: dict[str, bool] = {}
@@ -317,7 +318,7 @@ def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str
         while time.monotonic() < deadline:
             if client.read(registers["tx_status"]) == expected_status:
                 return True
-            time.sleep(0.005)
+            client.command("clock_step 1000000")
         return False
 
     cases: dict[str, bool] = {}
@@ -390,7 +391,7 @@ def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str
                         slave.read(registers["rx_length"]) == 11
                         and (slave.read(registers["rx_payload"]) & 0xFF) == 3
                     )
-                time.sleep(0.005)
+                slave.command("clock_step 1000000")
             return False
         finally:
             slave.close()
@@ -425,7 +426,7 @@ def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str
                 while time.monotonic() < deadline:
                     if queued.read(registers["tx_status"]) == expected:
                         break
-                    time.sleep(0.005)
+                    queued.command("clock_step 1000000")
                 else:
                     return False
                 if token < 9:
