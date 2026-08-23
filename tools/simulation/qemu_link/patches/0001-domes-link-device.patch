@@ -375,9 +375,10 @@ index 0000000000..abeab164c0
 +        }
 +        for (uint32_t copy = 0; copy < copies; copy++) {
 +            DomesLinkEvent candidate = event;
-+            candidate.deadline_ns += copy * spacing_ns;
 +            if (s->fault_id == FAULT_REORDERING || s->fault_id == FAULT_COMPLETION_ORDER) {
 +                candidate.deadline_ns += (copies - copy) * spacing_ns;
++            } else {
++                candidate.deadline_ns += copy * spacing_ns;
 +            }
 +            if (s->fault_id == FAULT_STALE_TRAFFIC && copy == 0) {
 +                candidate.source_low = 0x00000003;
