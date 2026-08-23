@@ -1,9 +1,9 @@
 diff --git a/hw/misc/domes_link.c b/hw/misc/domes_link.c
 new file mode 100644
-index 0000000000..fe642931fd
+index 0000000000..abeab164c0
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,405 @@
+@@ -0,0 +1,554 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
@@ -53,6 +53,82 @@ index 0000000000..fe642931fd
 +       MSG_TOUCH_EVENT = 0x20, MSG_TIMEOUT_EVENT = 0x21 };
 +
 +static const uint8_t actor_mac[6] = { 0x02, 0, 0, 0, 0, 0x02 };
++
++enum {
++    FAULT_PASS,
++    FAULT_LOSS,
++    FAULT_DUPLICATION,
++    FAULT_REORDERING,
++    FAULT_JITTER,
++    FAULT_CORRUPTION,
++    FAULT_TRUNCATION,
++    FAULT_SUBMIT_FAILURE,
++    FAULT_COMPLETION_FAILURE,
++    FAULT_MISSING_COMPLETION,
++    FAULT_CALLBACK_BURST,
++    FAULT_COMPLETION_ORDER,
++    FAULT_SATURATION,
++    FAULT_BACKPRESSURE_RECOVERY,
++    FAULT_PEER_JOIN,
++    FAULT_PEER_DISAPPEARANCE,
++    FAULT_PEER_RESTART,
++    FAULT_STALE_TRAFFIC,
++    FAULT_IDENTITY_MISMATCH,
++    FAULT_CHANNEL_OUTCOME,
++    FAULT_INTERFERENCE_OUTCOME,
++    FAULT_LATENCY_TX_QUEUE,
++    FAULT_LATENCY_CHANNEL,
++    FAULT_LATENCY_AIRTIME,
++    FAULT_LATENCY_COMPLETION,
++    FAULT_LATENCY_PEER,
++    FAULT_LATENCY_RX_CALLBACK,
++    FAULT_COUNT,
++};
++
++static const char *fault_stage(uint32_t fault_id)
++{
++    switch (fault_id) {
++    case FAULT_CORRUPTION:
++    case FAULT_TRUNCATION:
++    case FAULT_IDENTITY_MISMATCH:
++        return "before_production_validation";
++    case FAULT_SUBMIT_FAILURE:
++        return "radio_submit";
++    case FAULT_COMPLETION_FAILURE:
++    case FAULT_MISSING_COMPLETION:
++    case FAULT_COMPLETION_ORDER:
++    case FAULT_LATENCY_COMPLETION:
++        return "completion_delay";
++    case FAULT_DUPLICATION:
++    case FAULT_REORDERING:
++    case FAULT_INTERFERENCE_OUTCOME:
++    case FAULT_LATENCY_AIRTIME:
++        return "airtime";
++    case FAULT_JITTER:
++    case FAULT_PEER_JOIN:
++    case FAULT_PEER_DISAPPEARANCE:
++    case FAULT_PEER_RESTART:
++    case FAULT_STALE_TRAFFIC:
++    case FAULT_LATENCY_PEER:
++        return "peer_processing";
++    case FAULT_CALLBACK_BURST:
++    case FAULT_LATENCY_RX_CALLBACK:
++        return "rx_callback_delay";
++    case FAULT_LATENCY_TX_QUEUE:
++        return "tx_queue_delay";
++    default:
++        return "channel_access";
++    }
++}
++
++static void record_fault(DomesLinkState *s, const char *stage, const char *outcome)
++{
++    qemu_log_mask(LOG_GUEST_ERROR,
++                  "DOMES_FAULT_RECORD schema=1 fault=%u sequence=%u virtual_ns=%" PRIi64
++                  " stage=%s outcome=%s queued=%u\n",
++                  s->fault_id, s->fault_sequence++,
++                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), stage, outcome, s->event_count);
++}
 +
 +static bool event_before(const DomesLinkEvent *a, const DomesLinkEvent *b)
 +{
@@ -115,6 +191,8 @@ index 0000000000..fe642931fd
 +    event->source_id = 2;
 +    event->destination_id = 1;
 +    event->correlation = s->tx_correlation;
++    event->source_low = 0x00000002;
++    event->source_high = 0x00000200;
 +    event->length = wire_size(response);
 +    event->payload[0] = response;
 +    memcpy(&event->payload[1], actor_mac, sizeof(actor_mac));
@@ -195,8 +273,8 @@ index 0000000000..fe642931fd
 +            s->sticky |= ST_OVERFLOW | ST_OVERWRITE;
 +            break;
 +        }
-+        s->rx_source_low = 0x00000002;
-+        s->rx_source_high = 0x00000200;
++        s->rx_source_low = event.source_low;
++        s->rx_source_high = event.source_high;
 +        s->rx_rssi = (uint8_t)-42;
 +        s->rx_length = event.length;
 +        s->rx_correlation = event.correlation;
@@ -232,6 +310,13 @@ index 0000000000..fe642931fd
 +        update_irq(s);
 +        return;
 +    }
++    if (s->fault_id == FAULT_COMPLETION_FAILURE) {
++        s->tx_status = TX_FAILURE;
++        s->irq_status |= IRQ_TX;
++        record_fault(s, "completion_delay", "failure");
++        update_irq(s);
++        return;
++    }
 +    s->tx_status = TX_SUCCESS;
 +    s->irq_status |= IRQ_TX;
 +    if (s->scenario_model == SCENARIO_LOOPBACK) {
@@ -251,7 +336,59 @@ index 0000000000..fe642931fd
 +        s->sticky |= ST_MODEL_FAILURE;
 +        s->tx_status = TX_FAILURE;
 +    } else if (event.length) {
-+        if (!enqueue_event(s, event)) {
++        uint32_t copies = 1;
++        uint64_t spacing_ns = 1000;
++        uint32_t initial_count = s->event_count;
++        if (s->fault_id == FAULT_LOSS || s->fault_id == FAULT_PEER_DISAPPEARANCE ||
++            s->fault_id == FAULT_CHANNEL_OUTCOME ||
++            s->fault_id == FAULT_INTERFERENCE_OUTCOME) {
++            record_fault(s, fault_stage(s->fault_id), "unavailable");
++            update_irq(s);
++            return;
++        }
++        if (s->fault_id == FAULT_CORRUPTION) {
++            event.payload[0] ^= 0x80;
++        } else if (s->fault_id == FAULT_TRUNCATION) {
++            event.length = 7;
++        } else if (s->fault_id == FAULT_IDENTITY_MISMATCH) {
++            event.source_low = 0x00000003;
++        } else if (s->fault_id == FAULT_DUPLICATION || s->fault_id == FAULT_REORDERING ||
++                   s->fault_id == FAULT_COMPLETION_ORDER ||
++                   s->fault_id == FAULT_PEER_RESTART || s->fault_id == FAULT_STALE_TRAFFIC) {
++            copies = 2;
++        } else if (s->fault_id == FAULT_CALLBACK_BURST) {
++            copies = 4;
++            spacing_ns = 1;
++        } else if (s->fault_id == FAULT_SATURATION ||
++                   s->fault_id == FAULT_BACKPRESSURE_RECOVERY) {
++            copies = DOMES_LINK_EVENT_CAPACITY;
++            spacing_ns = 100000000000;
++        }
++        if (s->fault_id == FAULT_PEER_RESTART || s->fault_id == FAULT_STALE_TRAFFIC) {
++            spacing_ns = 100000000000;
++        }
++        if (s->fault_id == FAULT_JITTER) {
++            event.deadline_ns += (s->scenario_seed & 1) ? 7000 : 0;
++        }
++        if (s->fault_id >= FAULT_LATENCY_TX_QUEUE && s->fault_id <= FAULT_LATENCY_RX_CALLBACK) {
++            event.deadline_ns += 10000;
++        }
++        for (uint32_t copy = 0; copy < copies; copy++) {
++            DomesLinkEvent candidate = event;
++            candidate.deadline_ns += copy * spacing_ns;
++            if (s->fault_id == FAULT_REORDERING || s->fault_id == FAULT_COMPLETION_ORDER) {
++                candidate.deadline_ns += (copies - copy) * spacing_ns;
++            }
++            if (s->fault_id == FAULT_STALE_TRAFFIC && copy == 0) {
++                candidate.source_low = 0x00000003;
++            }
++            if (!enqueue_event(s, candidate)) {
++                break;
++            }
++        }
++        record_fault(s, fault_stage(s->fault_id),
++                     copies > 1 ? "scheduled_multiple" : "scheduled");
++        if (s->event_count != initial_count + copies) {
 +            s->sticky |= ST_MODEL_FAILURE;
 +            s->tx_status = TX_FAILURE;
 +        } else {
@@ -312,6 +449,12 @@ index 0000000000..fe642931fd
 +                s->sticky |= ST_SEQUENCE;
 +                s->tx_status = TX_FAILURE;
 +            }
++        } else if (s->fault_id == FAULT_SUBMIT_FAILURE) {
++            s->tx_status = TX_FAILURE;
++            record_fault(s, "radio_submit", "failure");
++        } else if (s->fault_id == FAULT_MISSING_COMPLETION) {
++            s->tx_status = TX_PENDING;
++            record_fault(s, "completion_delay", "missing");
 +        } else {
 +            s->tx_status = TX_PENDING;
 +            qemu_bh_schedule(s->completion_bh);
@@ -323,6 +466,11 @@ index 0000000000..fe642931fd
 +            s->irq_status &= ~IRQ_RX;
 +            s->rx_length = s->rx_correlation = 0;
 +            update_irq(s);
++            if (s->event_count) {
++                timer_mod_ns(s->delivery_timer,
++                             MAX(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
++                                 s->events[0].deadline_ns));
++            }
 +        }
 +        break;
 +    case IRQ_MASK:
@@ -356,7 +504,7 @@ index 0000000000..fe642931fd
 +    s->tx_correlation = 0; s->tx_status = TX_IDLE;
 +    s->rx_source_low = s->rx_source_high = s->rx_rssi = s->rx_length = 0;
 +    s->rx_correlation = s->irq_status = s->irq_mask = s->sticky = 0;
-+    s->event_count = s->next_sequence = 0;
++    s->event_count = s->next_sequence = s->fault_sequence = 0;
 +    memset(s->tx_payload, 0, sizeof(s->tx_payload));
 +    memset(s->rx_payload, 0, sizeof(s->rx_payload));
 +    memset(s->events, 0, sizeof(s->events));
@@ -396,6 +544,7 @@ index 0000000000..fe642931fd
 +        DEFINE_PROP_UINT32("scenario-seed", DomesLinkState, scenario_seed, 0),
 +        DEFINE_PROP_UINT32("dut-role", DomesLinkState, dut_role, DUT_ROLE_MASTER),
 +        DEFINE_PROP_UINT64("peer-delay-ns", DomesLinkState, peer_delay_ns, 0),
++        DEFINE_PROP_UINT32("fault-id", DomesLinkState, fault_id, FAULT_PASS),
 +        DEFINE_PROP_END_OF_LIST(),
 +    };
 +    device_class_set_props(dc, properties);
@@ -415,7 +564,7 @@ index 4c2b5b3cae..dca39005d1 100644
 +++ b/hw/misc/meson.build
 @@ -159,6 +159,7 @@ system_ss.add(when: 'CONFIG_RISCV_ESP32C3', if_true: files(
  ))
-
+ 
  system_ss.add(when: 'CONFIG_XTENSA_ESP32S3', if_true: files(
 +  'domes_link.c',
    'esp32s3_cache.c',
@@ -431,27 +580,27 @@ index 091657e842..c21cf04bb5 100644
  #include "hw/misc/esp32s3_pms.h"
 +#include "hw/misc/domes_link.h"
  #include "hw/net/can/esp32s3_twai.h"
-
+ 
  #include "cpu_esp32s3.h"
 @@ -124,6 +125,7 @@ typedef struct Esp32s3SocState {
      ESP32S3GPIOState gpio;
      Esp32s3RngState rng;
      Esp32S3TWAIState twai;
 +    DomesLinkState domes_link;
-
+ 
      Esp32s3RtcCntlState rtc_cntl;
-
+ 
 @@ -527,6 +529,7 @@ static void esp32s3_soc_init(Object *obj)
      qdev_init_gpio_in_named(DEVICE(s), esp32s3_clk_update, ESP32S3_RTC_CLK_UPDATE_GPIO, 1);
-
+ 
      object_initialize_child(obj, "twai", &s->twai, TYPE_ESP32S3_TWAI);
 +    object_initialize_child(obj, "domes-link", &s->domes_link, TYPE_DOMES_LINK);
  }
-
+ 
  static Property esp32s3_soc_properties[] = {
 @@ -635,6 +638,13 @@ static void esp32s3_machine_init(MachineState *machine)
      object_initialize_child(OBJECT(ss), "rgb", &ss->rgb, TYPE_ESP_RGB);
-
+ 
      DeviceState* intmatrix_dev = DEVICE(&ss->intmatrix);
 +    {
 +        sysbus_realize(SYS_BUS_DEVICE(&ss->domes_link), &error_fatal);
@@ -465,15 +614,15 @@ index 091657e842..c21cf04bb5 100644
          MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->intmatrix), 0);
 @@ -972,4 +982,3 @@ static void esp32s3_machine_type_init(void)
  }
-
+ 
  type_init(esp32s3_machine_type_init);
 -
 diff --git a/include/hw/misc/domes_link.h b/include/hw/misc/domes_link.h
 new file mode 100644
-index 0000000000..61b520bd68
+index 0000000000..89c86d6f15
 --- /dev/null
 +++ b/include/hw/misc/domes_link.h
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,35 @@
 +#pragma once
 +#include "hw/sysbus.h"
 +#include "qemu/main-loop.h"
@@ -490,6 +639,7 @@ index 0000000000..61b520bd68
 +    uint32_t event_class_priority;
 +    uint32_t source_id, destination_id, sequence;
 +    uint32_t correlation, length;
++    uint32_t source_low, source_high;
 +    uint8_t payload[DOMES_LINK_MAX_PAYLOAD];
 +} DomesLinkEvent;
 +
@@ -505,6 +655,6 @@ index 0000000000..61b520bd68
 +    uint8_t tx_payload[256], rx_payload[256];
 +    DomesLinkEvent events[DOMES_LINK_EVENT_CAPACITY];
 +    uint32_t event_count, next_sequence;
-+    uint32_t scenario_model, scenario_seed, dut_role;
++    uint32_t scenario_model, scenario_seed, dut_role, fault_id, fault_sequence;
 +    uint64_t peer_delay_ns;
 +};

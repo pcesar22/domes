@@ -21,6 +21,13 @@ PATCH = HERE / "patches/0001-domes-link-device.patch"
 HEADER = ROOT / "firmware/domes/main/platform/qemu/qemuLinkAbi.hpp"
 ADAPTER_HEADER = ROOT / "firmware/domes/main/platform/qemu/qemuEspNowRadio.hpp"
 TRACE_NAMES = ROOT / "tools/trace/trace_names.json"
+LEGACY_CAUSAL_NAMES = {
+    814375161: "EspNow.RxDispatch",
+    1457209874: "EspNow.TxComplete",
+    1917337756: "EspNow.RxCallback",
+    2454392546: "EspNow.RxQueue",
+    3765542678: "EspNow.TxCallback",
+}
 
 REGISTER_NAMES = {
     "capability": ("kCapability", "CAPABILITY"),
@@ -419,11 +426,22 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
             "index": int(i),
             "task": int(task),
             "type": int(kind),
-            "name": names.get(int(arg1)),
+            "name": names.get(int(arg1), LEGACY_CAUSAL_NAMES.get(int(arg1))),
             "token": int(token),
         }
         for i, _timestamp, task, kind, arg1, token in event_pattern.findall(text)
     ]
+
+    def first_index(predicate, after: int = -1):
+        return next(
+            (
+                event["index"]
+                for event in events
+                if event["index"] > after and predicate(event)
+            ),
+            None,
+        )
+
     result = re.search(
         r"DOMES_QEMU_LINK_RESULT schema=2 status=(PASS|FAIL) failure_mask=(0x[0-9a-f]+) "
         r"token=(\d+) service_dispatches=(\d+) trace_drops=(\d+) trace_discontinuities=(\d+)",
@@ -432,6 +450,39 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
     if not result:
         raise ValueError("missing schema-2 QEMU link result")
     token = int(result.group(3))
+    token_events = [event for event in events if event["token"] == token]
+    mmio = first_index(
+        lambda event: event["token"] == token and event["name"] == "QemuLink.MmioSubmit"
+    )
+    task_handoff = first_index(
+        lambda event: event["token"] == token
+        and event["name"] == "QemuLink.TaskHandoff",
+        mmio if mmio is not None else -1,
+    )
+    callback_entries = [event["index"] for event in token_events if event["type"] == 28]
+    callback_exits = [event["index"] for event in token_events if event["type"] == 29]
+    tx_callback = callback_entries[0] if callback_entries else None
+    tx_complete = callback_exits[0] if callback_exits else None
+    rx_callback = callback_entries[1] if len(callback_entries) > 1 else None
+    rx_queue = first_index(
+        lambda event: event["token"] == token
+        and event["type"] == 25
+        and event["name"] in {"EspNow.RxQueue", "EspNow.CausalQueue"},
+        rx_callback if rx_callback is not None else -1,
+    )
+    rx_dispatch = first_index(
+        lambda event: event["token"] == token
+        and (
+            event["name"] == "EspNow.RxDispatch"
+            or (event["name"] == "EspNow.Complete" and event["type"] == 30)
+        ),
+        rx_queue if rx_queue is not None else -1,
+    )
+    service_dispatch = first_index(
+        lambda event: event["token"] == token
+        and event["name"] == "QemuLink.ServiceDispatch",
+        rx_dispatch if rx_dispatch is not None else -1,
+    )
     causal_names = [
         "QemuLink.MmioSubmit",
         "QemuLink.TaskHandoff",
@@ -442,17 +493,22 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
         "EspNow.RxDispatch",
         "QemuLink.ServiceDispatch",
     ]
-    positions = {
-        name: next(
+    positions = dict(
+        zip(
+            causal_names,
             (
-                event["index"]
-                for event in events
-                if event["name"] == name and event["token"] == token
+                mmio,
+                task_handoff,
+                tx_callback,
+                tx_complete,
+                rx_callback,
+                rx_queue,
+                rx_dispatch,
+                service_dispatch,
             ),
-            None,
+            strict=True,
         )
-        for name in causal_names
-    }
+    )
     isr = [
         event
         for event in events

@@ -159,7 +159,7 @@ class ProductionActorTest(unittest.TestCase):
         self.assertTrue(all(token in patch for token in required))
         self.assertNotIn("QEMU_CLOCK_REALTIME", patch)
         self.assertNotIn("QEMU_CLOCK_HOST", patch)
-        self.assertIn("if (!enqueue_event(s, event))", patch)
+        self.assertIn("if (!enqueue_event(s, candidate))", patch)
 
     def test_active_production_wire_variants_are_exchanged(self):
         actor = MODULE.FunctionalActor(MODULE.resolve_scenario(scenario()).actors[0])
