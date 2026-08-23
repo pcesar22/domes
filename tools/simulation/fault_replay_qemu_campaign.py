@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -318,25 +319,44 @@ def run_campaign(args: argparse.Namespace) -> dict[str, object]:
     profile = Path(
         json.loads((build_dir / "project_description.json").read_text())["config_file"]
     )
+    run_inputs = [
+        (case, fault_id, role, role_number, index)
+        for fault_id, case in enumerate(cases())
+        for role, role_number in ROLES.items()
+        for index in (1, 2)
+    ]
+
+    def execute_run(
+        inputs: tuple[Case, int, str, int, int],
+    ) -> tuple[int, str, int, dict[str, object]]:
+        case, fault_id, role, role_number, index = inputs
+        return (
+            fault_id,
+            role,
+            index,
+            _run_once(
+                toolchain,
+                build_dir,
+                artifact_dir,
+                case,
+                fault_id,
+                role,
+                role_number,
+                index,
+                args.timeout,
+            ),
+        )
+
+    completed_runs: dict[tuple[int, str, int], dict[str, object]] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        for fault_id, role, index, run in executor.map(execute_run, run_inputs):
+            completed_runs[(fault_id, role, index)] = run
     matrix = []
     all_runs = 0
     for fault_id, case in enumerate(cases()):
         role_entries = []
         for role, role_number in ROLES.items():
-            runs = [
-                _run_once(
-                    toolchain,
-                    build_dir,
-                    artifact_dir,
-                    case,
-                    fault_id,
-                    role,
-                    role_number,
-                    index,
-                    args.timeout,
-                )
-                for index in (1, 2)
-            ]
+            runs = [completed_runs[(fault_id, role, index)] for index in (1, 2)]
             _require_replay(case, runs)
             all_runs += len(runs)
             identity = {
