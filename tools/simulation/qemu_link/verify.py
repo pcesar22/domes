@@ -76,6 +76,40 @@ def changed_patch_paths(text: str) -> list[str]:
     return re.findall(r"^diff --git a/(\S+) b/\S+$", text, re.MULTILINE)
 
 
+def unified_diff_hunks_are_well_formed(text: str) -> bool:
+    """Return whether every unified-diff hunk contains its declared line counts."""
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        match = re.match(
+            r"^@@ -(?:\d+)(?:,(\d+))? \+(?:\d+)(?:,(\d+))? @@", lines[index]
+        )
+        if not match:
+            index += 1
+            continue
+        old_expected = int(match.group(1) or 1)
+        new_expected = int(match.group(2) or 1)
+        old_count = new_count = 0
+        index += 1
+        while index < len(lines) and not lines[index].startswith(
+            ("@@ ", "diff --git ")
+        ):
+            prefix = lines[index][:1]
+            if prefix == " ":
+                old_count += 1
+                new_count += 1
+            elif prefix == "-" and not lines[index].startswith("--- "):
+                old_count += 1
+            elif prefix == "+" and not lines[index].startswith("+++ "):
+                new_count += 1
+            elif prefix != "\\":
+                return False
+            index += 1
+        if old_count != old_expected or new_count != new_expected:
+            return False
+    return True
+
+
 def parse_int(value: str) -> int:
     value = value.split("//", 1)[0].strip().rstrip("UuLl")
     bit = re.fullmatch(r"(?:1U?\s*<<|BIT\()\s*(\d+)\)?", value)
@@ -640,6 +674,8 @@ def verify(
         failures.append(f"prohibited QEMU paths: {prohibited}")
     if sha256(PATCH) != manifest["patch_sha256"]:
         failures.append("QEMU patch digest mismatch")
+    if not unified_diff_hunks_are_well_formed(patch):
+        failures.append("QEMU patch hunk counts are malformed")
 
     physical_sources = subprocess.run(
         [

@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..abeab164c0
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,554 @@
+@@ -0,0 +1,555 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
