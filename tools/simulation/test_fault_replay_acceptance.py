@@ -243,7 +243,7 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                     "type": 35,
                     "arg1": 7,
                     "token": 11,
-                    "timestamp_delta": 0,
+                    "timestamp_scale": 0,
                 },
                 {
                     "index": 1,
@@ -251,9 +251,29 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                     "type": 35,
                     "arg1": 7,
                     "token": 11,
-                    "timestamp_delta": 1,
+                    "timestamp_scale": 1,
                 },
             ],
+        )
+
+    def test_replay_trace_retains_virtual_timing_buckets(self):
+        def trace(second_timestamp: int) -> str:
+            return "\n".join(
+                (
+                    "DOMES_QEMU_LINK_TRACE schema=1 index=0 timestamp=10 task=1 "
+                    "type=35 arg1=7 token=11",
+                    "DOMES_QEMU_LINK_TRACE schema=1 index=1 "
+                    f"timestamp={second_timestamp} task=1 type=35 arg1=7 token=11",
+                )
+            )
+
+        self.assertEqual(
+            CAMPAIGN_MODULE._replay_trace(trace(1010)),
+            CAMPAIGN_MODULE._replay_trace(trace(1011)),
+        )
+        self.assertNotEqual(
+            CAMPAIGN_MODULE._replay_trace(trace(1033)),
+            CAMPAIGN_MODULE._replay_trace(trace(1034)),
         )
 
     def test_overflow_and_corrupted_identity_fail_closed(self):

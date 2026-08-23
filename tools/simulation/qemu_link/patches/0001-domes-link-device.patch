@@ -127,7 +127,7 @@ index 0000000000..abeab164c0
 +                  "DOMES_FAULT_RECORD schema=1 fault=%u sequence=%u virtual_ns=%" PRIi64
 +                  " stage=%s outcome=%s queued=%u\n",
 +                  s->fault_id, s->fault_sequence++,
-+                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), stage, outcome, s->event_count);
++                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1000000 * 1000000, stage, outcome, s->event_count);
 +}
 +
 +static bool event_before(const DomesLinkEvent *a, const DomesLinkEvent *b)
@@ -186,7 +186,7 @@ index 0000000000..abeab164c0
 +    else if (type == MSG_JOIN_GAME || type == MSG_SET_COLOR || type == MSG_STOP_ALL) return true;
 +    else return false;
 +
-+    event->deadline_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->peer_delay_ns;
++    event->deadline_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1000000 * 1000000 + s->peer_delay_ns;
 +    event->event_class_priority = 1;
 +    event->source_id = 2;
 +    event->destination_id = 1;
