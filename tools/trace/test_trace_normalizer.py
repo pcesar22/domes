@@ -5,11 +5,21 @@ import struct
 import unittest
 
 from tools.trace.trace_normalizer import (
+    CALLBACK_BEGIN,
+    CALLBACK_END,
+    CAUSAL_COMPLETE,
+    ESP_NOW_OBJECTS,
+    PHYSICAL_OBJECTS,
     PROBE_OBJECTS,
+    QUEUE_RECEIVE,
+    QUEUE_SEND,
+    SEM_GIVE,
+    SEM_TAKE,
     TraceNormalizationError,
     normalize_trace,
     object_map_from_qemu_log,
     raw_from_qemu_log,
+    validate_scheduler_contract,
     validate_session,
 )
 
@@ -97,11 +107,130 @@ class TraceNormalizerTests(unittest.TestCase):
             ],
         }
 
+    def physical_trace(self, *, include_probe=True):
+        queue_id, ready_id, callback_id, complete_id = ESP_NOW_OBJECTS
+        rx_token = 417
+        tx_token = 418
+        rx = [
+            (CALLBACK_BEGIN, callback_id, 0, 9),
+            (QUEUE_SEND, queue_id, 0, 9),
+            (SEM_GIVE, ready_id, 0, 9),
+            (CALLBACK_END, callback_id, 0, 9),
+            (SEM_TAKE, ready_id, 1, 1),
+            (QUEUE_RECEIVE, queue_id, 1, 1),
+            (CAUSAL_COMPLETE, complete_id, 1, 1),
+        ]
+        tx = [
+            (QUEUE_SEND, queue_id, 1, 1),
+            (CALLBACK_BEGIN, callback_id, 0, 9),
+            (SEM_GIVE, ready_id, 0, 9),
+            (CALLBACK_END, callback_id, 0, 9),
+            (SEM_TAKE, ready_id, 1, 1),
+            (CAUSAL_COMPLETE, complete_id, 1, 1),
+        ]
+        encoded = self.raw if include_probe else event(0, 0x10, 1, 1)
+        start = 20 if include_probe else 1
+        for offset, (event_type, object_id, task, flags) in enumerate(rx, start=start):
+            encoded += event(
+                offset, event_type, object_id, rx_token, task=task, flags=flags
+            )
+        for offset, (event_type, object_id, task, flags) in enumerate(
+            tx, start=start + len(rx)
+        ):
+            encoded += event(
+                offset, event_type, object_id, tx_token, task=task, flags=flags
+            )
+        return encoded
+
     def test_decodes_little_endian_and_validates_causal_chain(self):
         normalized = normalize_trace(self.raw, self.manifest, objects=PROBE_OBJECTS)
         self.assertEqual(normalized["events"][0]["relative_us"], 0)
         self.assertEqual(normalized["causal_positions"], list(range(1, 11)))
-        self.assertEqual(normalized["normalizer"]["version"], "1.0.1")
+        self.assertEqual(normalized["normalizer"]["version"], "1.0.2")
+
+    def test_normalizes_encoded_ten_object_rx_and_tx_session(self):
+        raw = self.physical_trace()
+        session = self.session(raw)
+        session["objects"] = [
+            {"object_id": object_id, **entry}
+            for object_id, entry in PHYSICAL_OBJECTS.items()
+        ]
+        objects = validate_session(raw, session)
+        self.assertEqual(objects, PHYSICAL_OBJECTS)
+        normalized = normalize_trace(raw, self.manifest, objects=objects)
+        correlated = [
+            item for item in normalized["events"] if item["arg1"] in ESP_NOW_OBJECTS
+        ]
+        self.assertEqual({item["arg2"] for item in correlated}, {417, 418})
+        self.assertTrue(all(item["category"] == 0 for item in correlated))
+
+        reordered = bytearray(raw)
+        first_tx = (len(self.raw) // 16 + 7) * 16
+        struct.pack_into("<I", reordered, first_tx + 12, 419)
+        with self.assertRaisesRegex(TraceNormalizationError, "TX correlation"):
+            normalize_trace(bytes(reordered), self.manifest, objects=objects)
+
+    def test_normalizes_encoded_four_object_rx_and_tx_session(self):
+        raw = self.physical_trace(include_probe=False)
+        session = self.session(raw)
+        session["objects"] = [
+            {"object_id": object_id, **entry}
+            for object_id, entry in ESP_NOW_OBJECTS.items()
+        ]
+        objects = validate_session(raw, session)
+        self.assertEqual(objects, ESP_NOW_OBJECTS)
+        normalized = normalize_trace(raw, self.manifest, objects=objects)
+        correlated = [
+            item for item in normalized["events"] if item["arg1"] in ESP_NOW_OBJECTS
+        ]
+        self.assertEqual({item["arg2"] for item in correlated}, {417, 418})
+        self.assertTrue(all(item["category"] == 0 for item in correlated))
+        self.assertIsNone(normalized["causal_id"])
+        self.assertIsNone(normalized["overhead_us"])
+
+        for field, value in (("name", "wrong_queue"), ("kind", 2)):
+            malformed = self.session(raw)
+            malformed["objects"] = [
+                {"object_id": object_id, **entry}
+                for object_id, entry in ESP_NOW_OBJECTS.items()
+            ]
+            malformed["objects"][0][field] = value
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(
+                    TraceNormalizationError, "object IDs, kinds, or names"
+                ):
+                    validate_session(raw, malformed)
+
+        first_callback = 16
+        for name, byte_offset, value, error in (
+            ("context", first_callback + 7, 1, "context|ownership"),
+            ("task", first_callback + 4, 1, "task|ownership"),
+        ):
+            malformed = bytearray(raw)
+            if name == "task":
+                struct.pack_into("<H", malformed, byte_offset, value)
+            else:
+                malformed[byte_offset] = value
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(TraceNormalizationError, error):
+                    normalize_trace(bytes(malformed), self.manifest, objects=objects)
+
+        zero_token = bytearray(raw)
+        struct.pack_into("<I", zero_token, first_callback + 12, 0)
+        with self.assertRaisesRegex(TraceNormalizationError, "zero token"):
+            normalize_trace(bytes(zero_token), self.manifest, objects=objects)
+
+        reordered = bytearray(raw)
+        second = reordered[2 * 16 : 3 * 16]
+        third = reordered[3 * 16 : 4 * 16]
+        reordered[2 * 16 : 3 * 16] = third
+        reordered[3 * 16 : 4 * 16] = second
+        struct.pack_into("<I", reordered, 2 * 16, 102)
+        struct.pack_into("<I", reordered, 3 * 16, 103)
+        with self.assertRaisesRegex(
+            TraceNormalizationError, "callback chain is malformed"
+        ):
+            normalize_trace(bytes(reordered), self.manifest, objects=objects)
 
     def test_rejects_overflow_unresolved_ids_and_truncation(self):
         with self.assertRaises(TraceNormalizationError):
@@ -211,6 +340,21 @@ class TraceNormalizerTests(unittest.TestCase):
         wrong_context = self.raw + event(12, 0x16, 3, 0, task=0, flags=1)
         with self.assertRaises(TraceNormalizationError):
             normalize_trace(wrong_context, self.manifest, objects=PROBE_OBJECTS)
+
+    def test_accepts_taskless_callback_owned_queue_and_semaphore_edges(self):
+        events = [
+            {
+                "type": event_type,
+                "context": 2,
+                "category": 0,
+                "task_id": 0,
+            }
+            for event_type in (CALLBACK_BEGIN, QUEUE_SEND, SEM_GIVE, CALLBACK_END)
+        ]
+        validate_scheduler_contract(events)
+        events[1]["task_id"] = 1
+        with self.assertRaisesRegex(TraceNormalizationError, "ownership/context"):
+            validate_scheduler_contract(events)
 
     def test_rejects_switch_below_highest_ready_priority(self):
         manifest = {

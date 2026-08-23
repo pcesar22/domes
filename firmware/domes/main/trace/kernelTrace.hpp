@@ -14,7 +14,9 @@ namespace domes::trace {
 class TraceBuffer;
 
 constexpr uint32_t kTraceEventFormatVersion = 1;
-constexpr size_t kMaxTraceObjects = 8;
+// The six acceptance-probe identities and four ESP-NOW causal identities fit
+// together while keeping worst-case TraceSessionInfo below one framed payload.
+constexpr size_t kMaxTraceObjects = 10;
 constexpr size_t kMaxTraceObjectNameLength = 16;
 
 enum class ObjectKind : uint8_t {
@@ -39,9 +41,12 @@ struct ObjectNameEntry {
 class KernelTrace {
 public:
     static constexpr size_t kCoreCount = 2;
-    static constexpr size_t kEventsPerCore = 512;
-    static constexpr size_t kCaptureCapacityBytes =
-        kCoreCount * kEventsPerCore * sizeof(TraceEvent);
+    // The brokered correlation drill exceeded the former 512-event per-core
+    // arrays. Double the actual allocation-free capture storage while keeping
+    // the callback and cache-disabled paths fixed-capacity and DRAM-backed.
+    static constexpr size_t kEventsPerCore = 1024;
+    static constexpr size_t kPerCoreCaptureBytes = kEventsPerCore * sizeof(TraceEvent);
+    static constexpr size_t kCaptureCapacityBytes = kCoreCount * kPerCoreCaptureBytes;
 
     static void start();
     static void enable();

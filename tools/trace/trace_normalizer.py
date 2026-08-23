@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 FORMAT_VERSION = 1
-NORMALIZER_VERSION = "1.0.1"
+NORMALIZER_VERSION = "1.0.2"
 EVENT_SIZE = 16
 MAX_TRACE_DUMP_BYTES = 32 * 1024
 TRACE_LINE = re.compile(r"DOMES_QEMU_TRACE schema=(\d+) index=(\d+) raw=([0-9a-f]{32})")
@@ -87,6 +87,22 @@ PROBE_OBJECTS = {
     object_id: {"kind": PROBE_OBJECT_KINDS[object_id], "name": name}
     for object_id, name in PROBE_OBJECT_NAMES.items()
 }
+ESP_NOW_OBJECTS = {
+    0x59FB7823: {"kind": OBJECT_KINDS["OBJECT_KIND_QUEUE"], "name": "espnow_queue"},
+    0xEF2DD8BB: {
+        "kind": OBJECT_KINDS["OBJECT_KIND_SEMAPHORE"],
+        "name": "espnow_ready",
+    },
+    0x35800DA2: {
+        "kind": OBJECT_KINDS["OBJECT_KIND_CALLBACK"],
+        "name": "espnow_cb",
+    },
+    0xF1F4511E: {
+        "kind": OBJECT_KINDS["OBJECT_KIND_ACTION"],
+        "name": "espnow_done",
+    },
+}
+PHYSICAL_OBJECTS = PROBE_OBJECTS | ESP_NOW_OBJECTS
 
 
 class TraceNormalizationError(ValueError):
@@ -171,6 +187,151 @@ def _validate_timestamp_order(timestamps: list[int]) -> None:
                 raise TraceNormalizationError("trace timestamps wrap more than once")
 
 
+def validate_scheduler_contract(events: list[Mapping[str, Any]]) -> None:
+    """Validate scheduler category, execution context, and task ownership."""
+    scheduler_contexts = {
+        TASK_CREATE: {0},
+        TASK_DELETE: {0},
+        TASK_READY: {0, 1},
+        TASK_BLOCK: {0},
+        SWITCH_IN: {0},
+        SWITCH_OUT: {0},
+        ISR_ENTER: {1},
+        ISR_EXIT: {1},
+        QUEUE_SEND: {0, 1, 2},
+        QUEUE_RECEIVE: {0, 1, 2},
+        TIMEOUT: {0},
+        CALLBACK_BEGIN: {2},
+        CALLBACK_END: {2},
+        CAUSAL_COMPLETE: {0},
+        SEM_TAKE: {0, 1, 2},
+        SEM_GIVE: {0, 1, 2},
+        TRACE_OVERHEAD: {0},
+    }
+    taskless_contexts = {ISR_ENTER, ISR_EXIT, CALLBACK_BEGIN, CALLBACK_END}
+    for event in events:
+        allowed = scheduler_contexts.get(event["type"])
+        if allowed is not None and event["context"] not in allowed:
+            raise TraceNormalizationError(
+                "scheduler event has an invalid execution context"
+            )
+        if allowed is not None and event["category"] != 0:
+            raise TraceNormalizationError(
+                "scheduler evidence event does not use the kernel category"
+            )
+        if event["type"] in taskless_contexts and event["task_id"] != 0:
+            raise TraceNormalizationError("ISR/callback event unexpectedly owns a task")
+        if event["type"] in (QUEUE_SEND, QUEUE_RECEIVE, SEM_TAKE, SEM_GIVE):
+            if (event["context"] == 0 and event["task_id"] == 0) or (
+                event["context"] != 0 and event["task_id"] != 0
+            ):
+                raise TraceNormalizationError(
+                    "synchronization event ownership/context is invalid"
+                )
+
+
+def validate_esp_now_correlation(
+    events: list[Mapping[str, Any]], objects: Mapping[int, Any]
+) -> None:
+    """Validate complete ESP-NOW callback and task chains without assuming token uniqueness."""
+    if not all(objects.get(key) == value for key, value in ESP_NOW_OBJECTS.items()):
+        return
+    queue_id, ready_id, callback_id, complete_id = ESP_NOW_OBJECTS
+    relevant = {
+        QUEUE_SEND: queue_id,
+        QUEUE_RECEIVE: queue_id,
+        SEM_GIVE: ready_id,
+        SEM_TAKE: ready_id,
+        CALLBACK_BEGIN: callback_id,
+        CALLBACK_END: callback_id,
+        CAUSAL_COMPLETE: complete_id,
+    }
+    token_events: dict[int, list[Mapping[str, Any]]] = {}
+    for event in events:
+        if relevant.get(event["type"]) != event["arg1"]:
+            continue
+        token = int(event["arg2"])
+        if token == 0:
+            raise TraceNormalizationError("ESP-NOW causal event has a zero token")
+        token_events.setdefault(token, []).append(event)
+
+    for token, correlated in token_events.items():
+        submissions: list[int] = []
+        callbacks: dict[str, list[int]] = {"rx": [], "tx": []}
+        completions: dict[str, list[int]] = {"rx": [], "tx": []}
+        index = 0
+        while index < len(correlated):
+            event = correlated[index]
+            if event["type"] == QUEUE_SEND and event["context"] == 0:
+                submissions.append(event["sequence"])
+                index += 1
+                continue
+            if event["type"] == CALLBACK_BEGIN:
+                end = index + 1
+                while end < len(correlated) and correlated[end]["type"] != CALLBACK_END:
+                    end += 1
+                if end == len(correlated):
+                    raise TraceNormalizationError(
+                        "ESP-NOW callback chain is incomplete"
+                    )
+                types = [item["type"] for item in correlated[index : end + 1]]
+                direction = (
+                    "rx"
+                    if types == [CALLBACK_BEGIN, QUEUE_SEND, SEM_GIVE, CALLBACK_END]
+                    else "tx"
+                )
+                if direction == "tx" and types != [
+                    CALLBACK_BEGIN,
+                    SEM_GIVE,
+                    CALLBACK_END,
+                ]:
+                    raise TraceNormalizationError("ESP-NOW callback chain is malformed")
+                callbacks[direction].append(event["sequence"])
+                index = end + 1
+                continue
+            if event["type"] == SEM_TAKE:
+                end = index + 1
+                while (
+                    end < len(correlated) and correlated[end]["type"] != CAUSAL_COMPLETE
+                ):
+                    end += 1
+                if end == len(correlated):
+                    raise TraceNormalizationError("ESP-NOW task chain is incomplete")
+                types = [item["type"] for item in correlated[index : end + 1]]
+                direction = (
+                    "rx"
+                    if types == [SEM_TAKE, QUEUE_RECEIVE, CAUSAL_COMPLETE]
+                    else "tx"
+                )
+                if direction == "tx" and types != [SEM_TAKE, CAUSAL_COMPLETE]:
+                    raise TraceNormalizationError("ESP-NOW task chain is malformed")
+                completions[direction].append(event["sequence"])
+                index = end + 1
+                continue
+            raise TraceNormalizationError(
+                "ESP-NOW causal chain has an unexpected boundary"
+            )
+
+        if len(submissions) != len(callbacks["tx"]) or len(callbacks["tx"]) != len(
+            completions["tx"]
+        ):
+            raise TraceNormalizationError("ESP-NOW TX correlation chain is incomplete")
+        if len(callbacks["rx"]) != len(completions["rx"]):
+            raise TraceNormalizationError("ESP-NOW RX correlation chain is incomplete")
+        if any(
+            not (start < callback < complete)
+            for start, callback, complete in zip(
+                submissions, callbacks["tx"], completions["tx"]
+            )
+        ):
+            raise TraceNormalizationError("ESP-NOW TX correlation chain is reordered")
+        if any(
+            callback >= complete
+            for callback, complete in zip(callbacks["rx"], completions["rx"])
+        ):
+            raise TraceNormalizationError("ESP-NOW RX correlation chain is reordered")
+
+
 def normalize_trace(
     raw: bytes,
     manifest: Mapping[str, Any],
@@ -196,7 +357,7 @@ def normalize_trace(
         raise TraceNormalizationError(
             "trace has malformed stable object mappings"
         ) from error
-    if object_ids != PROBE_OBJECTS:
+    if object_ids not in (ESP_NOW_OBJECTS, PROBE_OBJECTS, PHYSICAL_OBJECTS):
         raise TraceNormalizationError("trace has invalid stable object mappings")
     required_tasks = [
         task for task in manifest.get("tasks", []) if task.get("presence") == "required"
@@ -268,6 +429,7 @@ def normalize_trace(
         event
         for event in events
         if event["arg2"] == 1
+        and event["arg1"] in PROBE_OBJECTS
         and event["type"]
         in {
             SEM_TAKE,
@@ -295,7 +457,10 @@ def normalize_trace(
         (CAUSAL_COMPLETE, 5),
     ]
     actual_causal = [(event["type"], event["arg1"]) for event in causal]
-    if actual_causal != required:
+    has_probe_objects = all(
+        object_ids.get(key) == value for key, value in PROBE_OBJECTS.items()
+    )
+    if has_probe_objects and actual_causal != required:
         raise TraceNormalizationError(
             "causal chain is missing, duplicated, reordered, or contains extra edges"
         )
@@ -324,28 +489,28 @@ def normalize_trace(
                 "mutex event uses an unresolved object ID or kind"
             )
         if event["type"] in (QUEUE_SEND, QUEUE_RECEIVE) and (
-            event["arg1"] != 1
-            or object_entry is None
+            object_entry is None
             or object_entry["kind"] != OBJECT_KINDS["OBJECT_KIND_QUEUE"]
         ):
             raise TraceNormalizationError("queue event uses an unresolved object ID")
         if event["type"] in (SEM_TAKE, SEM_GIVE) and (
-            event["arg1"] != 2
-            or object_entry is None
+            object_entry is None
             or object_entry["kind"] != OBJECT_KINDS["OBJECT_KIND_SEMAPHORE"]
         ):
             raise TraceNormalizationError(
                 "semaphore event uses an unresolved object ID"
             )
-        expected_object = {
-            ISR_ENTER: 3,
-            ISR_EXIT: 3,
-            TIMEOUT: 6,
-            CALLBACK_BEGIN: 4,
-            CALLBACK_END: 4,
-            CAUSAL_COMPLETE: 5,
+        expected_kind = {
+            ISR_ENTER: OBJECT_KINDS["OBJECT_KIND_INTERRUPT"],
+            ISR_EXIT: OBJECT_KINDS["OBJECT_KIND_INTERRUPT"],
+            TIMEOUT: OBJECT_KINDS["OBJECT_KIND_TIMEOUT"],
+            CALLBACK_BEGIN: OBJECT_KINDS["OBJECT_KIND_CALLBACK"],
+            CALLBACK_END: OBJECT_KINDS["OBJECT_KIND_CALLBACK"],
+            CAUSAL_COMPLETE: OBJECT_KINDS["OBJECT_KIND_ACTION"],
         }.get(event["type"])
-        if expected_object is not None and event["arg1"] != expected_object:
+        if expected_kind is not None and (
+            object_entry is None or object_entry["kind"] != expected_kind
+        ):
             raise TraceNormalizationError("causal event uses an unresolved object ID")
 
     create_events = [event for event in events if event["type"] == TASK_CREATE]
@@ -369,45 +534,8 @@ def normalize_trace(
                 "task catalog priority or affinity mapping is invalid"
             )
 
-    scheduler_contexts = {
-        TASK_CREATE: {0},
-        TASK_DELETE: {0},
-        TASK_READY: {0, 1},
-        TASK_BLOCK: {0},
-        SWITCH_IN: {0},
-        SWITCH_OUT: {0},
-        ISR_ENTER: {1},
-        ISR_EXIT: {1},
-        QUEUE_SEND: {0, 1},
-        QUEUE_RECEIVE: {0, 1},
-        TIMEOUT: {0},
-        CALLBACK_BEGIN: {2},
-        CALLBACK_END: {2},
-        CAUSAL_COMPLETE: {0},
-        SEM_TAKE: {0, 1},
-        SEM_GIVE: {0, 1},
-        TRACE_OVERHEAD: {0},
-    }
-    taskless_contexts = {ISR_ENTER, ISR_EXIT, CALLBACK_BEGIN, CALLBACK_END}
-    for event in events:
-        allowed = scheduler_contexts.get(event["type"])
-        if allowed is not None and event["context"] not in allowed:
-            raise TraceNormalizationError(
-                "scheduler event has an invalid execution context"
-            )
-        if allowed is not None and event["category"] != 0:
-            raise TraceNormalizationError(
-                "scheduler evidence event does not use the kernel category"
-            )
-        if event["type"] in taskless_contexts and event["task_id"] != 0:
-            raise TraceNormalizationError("ISR/callback event unexpectedly owns a task")
-        if event["type"] in (QUEUE_SEND, QUEUE_RECEIVE, SEM_TAKE, SEM_GIVE):
-            if (event["context"] == 0 and event["task_id"] == 0) or (
-                event["context"] == 1 and event["task_id"] != 0
-            ):
-                raise TraceNormalizationError(
-                    "synchronization event ownership/context is invalid"
-                )
+    validate_scheduler_contract(events)
+    validate_esp_now_correlation(events, object_ids)
 
     lifecycle_stacks = {
         (core, kind): [] for core in (0, 1) for kind in ("isr", "callback")
@@ -501,7 +629,9 @@ def normalize_trace(
         if event["type"] in (ISR_ENTER, ISR_EXIT, CALLBACK_BEGIN, CALLBACK_END)
     }
     completions = [event for event in explicit if event["type"] == CAUSAL_COMPLETE]
-    if len(irq_cores) != 1 or len(completions) != 1 or completions[0]["task_id"] != 1:
+    if has_probe_objects and (
+        len(irq_cores) != 1 or len(completions) != 1 or completions[0]["task_id"] != 1
+    ):
         raise TraceNormalizationError(
             "causal ownership does not resolve to one ISR core and main task"
         )
@@ -528,7 +658,7 @@ def normalize_trace(
         ):
             raise TraceNormalizationError("task-side causal event is not owned by main")
     overhead_events = [event for event in events if event["type"] == TRACE_OVERHEAD]
-    if (
+    if has_probe_objects and (
         len(overhead_events) != 1
         or overhead_events[0]["task_id"] != 1
         or overhead_events[0]["context"] != 0
@@ -566,12 +696,16 @@ def normalize_trace(
         "objects": {str(key): object_ids[key] for key in sorted(object_ids)},
         "dropped_count": dropped,
         "discontinuity_count": discontinuities,
-        "causal_id": 1,
+        "causal_id": 1 if has_probe_objects else None,
         "causal_positions": positions,
-        "overhead_us": {
-            "disabled_32_records": overhead_events[0]["arg1"],
-            "enabled_32_records": overhead_events[0]["arg2"],
-        },
+        "overhead_us": (
+            {
+                "disabled_32_records": overhead_events[0]["arg1"],
+                "enabled_32_records": overhead_events[0]["arg2"],
+            }
+            if has_probe_objects
+            else None
+        ),
         "events": events,
     }
     normalized["normalized_sha256"] = hashlib.sha256(_canonical(normalized)).hexdigest()
@@ -759,15 +893,16 @@ def validate_session(
             )
         object_names[object_id] = name
         object_kinds[object_id] = kind
-    if object_names != PROBE_OBJECT_NAMES or object_kinds != PROBE_OBJECT_KINDS:
+    resolved_objects = {
+        object_id: {"kind": object_kinds[object_id], "name": object_names[object_id]}
+        for object_id in sorted(object_names)
+    }
+    if resolved_objects not in (ESP_NOW_OBJECTS, PROBE_OBJECTS, PHYSICAL_OBJECTS):
         raise TraceNormalizationError(
             "session object IDs, kinds, or names are unresolved"
         )
     _manifest_from_session(session)
-    return {
-        object_id: {"kind": object_kinds[object_id], "name": object_names[object_id]}
-        for object_id in sorted(object_names)
-    }
+    return resolved_objects
 
 
 def main() -> int:

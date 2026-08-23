@@ -325,8 +325,51 @@ fn validate_session_binding(session: &TraceSessionInfo, events: &[TraceEvent]) -
 
     let mut object_catalog = HashMap::new();
     let mut object_names = HashSet::new();
-    if session.objects.len() > 8 {
-        anyhow::bail!("Trace object catalog exceeds the firmware limit of 8 entries");
+    if session.objects.len() > 10 {
+        anyhow::bail!("Trace object catalog exceeds the firmware limit of 10 entries");
+    }
+
+    const ACCEPTANCE_OBJECTS: &[(u32, i32, &str)] = &[
+        (1, 1, "probe_queue"),
+        (2, 2, "probe_sem"),
+        (3, 3, "probe_irq"),
+        (4, 4, "probe_callback"),
+        (5, 5, "probe_action"),
+        (6, 7, "probe_timeout"),
+        (0x59FB_7823, 1, "espnow_queue"),
+        (0xEF2D_D8BB, 2, "espnow_ready"),
+        (0x3580_0DA2, 4, "espnow_cb"),
+        (0xF1F4_511E, 5, "espnow_done"),
+    ];
+    let has_acceptance_object = session.objects.iter().any(|object| {
+        ACCEPTANCE_OBJECTS
+            .iter()
+            .any(|(expected_id, _, expected_name)| {
+                object.object_id == *expected_id || object.name == *expected_name
+            })
+    });
+    if has_acceptance_object {
+        let expected_objects = match session.objects.len() {
+            4 => &ACCEPTANCE_OBJECTS[6..],
+            6 => &ACCEPTANCE_OBJECTS[..6],
+            10 => ACCEPTANCE_OBJECTS,
+            count => anyhow::bail!(
+                "Trace acceptance object catalog must contain exactly 4, 6, or 10 entries, got {}",
+                count
+            ),
+        };
+        for (expected_id, expected_kind, expected_name) in expected_objects {
+            if !session.objects.iter().any(|object| {
+                object.object_id == *expected_id
+                    && object.kind == *expected_kind
+                    && object.name == *expected_name
+            }) {
+                anyhow::bail!(
+                    "Trace acceptance object mapping is missing or invalid for {}",
+                    expected_name
+                );
+            }
+        }
     }
     for object in &session.objects {
         if object.object_id == 0
@@ -405,6 +448,146 @@ fn validate_session_binding(session: &TraceSessionInfo, events: &[TraceEvent]) -
         }
     }
 
+    validate_esp_now_correlation(events, &object_catalog)?;
+
+    Ok(())
+}
+
+fn validate_esp_now_correlation(events: &[TraceEvent], objects: &HashMap<u32, i32>) -> Result<()> {
+    const QUEUE_ID: u32 = 0x59FB_7823;
+    const READY_ID: u32 = 0xEF2D_D8BB;
+    const CALLBACK_ID: u32 = 0x3580_0DA2;
+    const COMPLETE_ID: u32 = 0xF1F4_511E;
+    if objects.get(&QUEUE_ID) != Some(&1)
+        || objects.get(&READY_ID) != Some(&2)
+        || objects.get(&CALLBACK_ID) != Some(&4)
+        || objects.get(&COMPLETE_ID) != Some(&5)
+    {
+        return Ok(());
+    }
+
+    let expected_object = |event_type: u8| match event_type {
+        0x19 | 0x1A => Some(QUEUE_ID),
+        0x0C | 0x0D => Some(READY_ID),
+        0x1C | 0x1D => Some(CALLBACK_ID),
+        0x1E => Some(COMPLETE_ID),
+        _ => None,
+    };
+    let mut by_token: HashMap<u32, Vec<&TraceEvent>> = HashMap::new();
+    for event in events {
+        if expected_object(event.event_type) != Some(event.arg1) {
+            continue;
+        }
+        if event.arg2 == 0 {
+            anyhow::bail!("ESP-NOW causal event has a zero token");
+        }
+        by_token.entry(event.arg2).or_default().push(event);
+    }
+
+    for (token, correlated) in by_token {
+        let mut submissions = Vec::new();
+        let mut rx_callbacks = Vec::new();
+        let mut tx_callbacks = Vec::new();
+        let mut rx_completions = Vec::new();
+        let mut tx_completions = Vec::new();
+        let mut index = 0;
+        while index < correlated.len() {
+            let event = correlated[index];
+            let context = (event.flags >> 2) & 0x03;
+            if event.event_type == 0x19 && context == 0 {
+                if event.task_id == 0 {
+                    anyhow::bail!(
+                        "ESP-NOW task boundary has no task ownership for token {}",
+                        token
+                    );
+                }
+                submissions.push(index);
+                index += 1;
+                continue;
+            }
+            if event.event_type == 0x1C {
+                let Some(end) = correlated[index + 1..]
+                    .iter()
+                    .position(|candidate| candidate.event_type == 0x1D)
+                    .map(|offset| index + 1 + offset)
+                else {
+                    anyhow::bail!("ESP-NOW callback chain is incomplete for token {}", token);
+                };
+                let types: Vec<u8> = correlated[index..=end]
+                    .iter()
+                    .map(|candidate| candidate.event_type)
+                    .collect();
+                if correlated[index..=end]
+                    .iter()
+                    .any(|candidate| ((candidate.flags >> 2) & 0x03) != 2 || candidate.task_id != 0)
+                {
+                    anyhow::bail!(
+                        "ESP-NOW callback chain has invalid context or task ownership for token {}",
+                        token
+                    );
+                }
+                if types == [0x1C, 0x19, 0x0D, 0x1D] {
+                    rx_callbacks.push(index);
+                } else if types == [0x1C, 0x0D, 0x1D] {
+                    tx_callbacks.push(index);
+                } else {
+                    anyhow::bail!("ESP-NOW callback chain is malformed for token {}", token);
+                }
+                index = end + 1;
+                continue;
+            }
+            if event.event_type == 0x0C {
+                let Some(end) = correlated[index + 1..]
+                    .iter()
+                    .position(|candidate| candidate.event_type == 0x1E)
+                    .map(|offset| index + 1 + offset)
+                else {
+                    anyhow::bail!("ESP-NOW task chain is incomplete for token {}", token);
+                };
+                let types: Vec<u8> = correlated[index..=end]
+                    .iter()
+                    .map(|candidate| candidate.event_type)
+                    .collect();
+                if correlated[index..=end]
+                    .iter()
+                    .any(|candidate| ((candidate.flags >> 2) & 0x03) != 0 || candidate.task_id == 0)
+                {
+                    anyhow::bail!(
+                        "ESP-NOW task chain has invalid context or task ownership for token {}",
+                        token
+                    );
+                }
+                if types == [0x0C, 0x1A, 0x1E] {
+                    rx_completions.push(index);
+                } else if types == [0x0C, 0x1E] {
+                    tx_completions.push(index);
+                } else {
+                    anyhow::bail!("ESP-NOW task chain is malformed for token {}", token);
+                }
+                index = end + 1;
+                continue;
+            }
+            anyhow::bail!(
+                "ESP-NOW causal chain has an unexpected boundary for token {}",
+                token
+            );
+        }
+        if submissions.len() != tx_callbacks.len()
+            || tx_callbacks.len() != tx_completions.len()
+            || rx_callbacks.len() != rx_completions.len()
+            || submissions
+                .iter()
+                .zip(&tx_callbacks)
+                .zip(&tx_completions)
+                .any(|((start, callback), complete)| !(start < callback && callback < complete))
+            || rx_callbacks
+                .iter()
+                .zip(&rx_completions)
+                .any(|(callback, complete)| callback >= complete)
+        {
+            anyhow::bail!("ESP-NOW RX/TX correlation chain is incomplete or reordered");
+        }
+    }
     Ok(())
 }
 
@@ -1357,6 +1540,110 @@ mod tests {
         ]
     }
 
+    fn encoded_events(events: &[TraceEvent]) -> Vec<u8> {
+        let mut raw = Vec::with_capacity(events.len() * TRACE_EVENT_SIZE);
+        for event in events {
+            raw.extend_from_slice(&event.timestamp.to_le_bytes());
+            raw.extend_from_slice(&event.task_id.to_le_bytes());
+            raw.push(event.event_type);
+            raw.push(event.flags);
+            raw.extend_from_slice(&event.arg1.to_le_bytes());
+            raw.extend_from_slice(&event.arg2.to_le_bytes());
+        }
+        raw
+    }
+
+    fn physical_correlation_session() -> (TraceSessionInfo, Vec<TraceEvent>) {
+        const QUEUE: u32 = 0x59FB_7823;
+        const READY: u32 = 0xEF2D_D8BB;
+        const CALLBACK: u32 = 0x3580_0DA2;
+        const COMPLETE: u32 = 0xF1F4_511E;
+        let objects = [
+            (1, 1, "probe_queue"),
+            (2, 2, "probe_sem"),
+            (3, 3, "probe_irq"),
+            (4, 4, "probe_callback"),
+            (5, 5, "probe_action"),
+            (6, 7, "probe_timeout"),
+            (QUEUE, 1, "espnow_queue"),
+            (READY, 2, "espnow_ready"),
+            (CALLBACK, 4, "espnow_cb"),
+            (COMPLETE, 5, "espnow_done"),
+        ];
+        let mut events = vec![TraceEvent {
+            timestamp: 100,
+            task_id: 7,
+            event_type: 0x10,
+            flags: 1,
+            arg1: 2,
+            arg2: 1,
+        }];
+        let rx = [
+            (0x1C, CALLBACK, 0, 9),
+            (0x19, QUEUE, 0, 9),
+            (0x0D, READY, 0, 9),
+            (0x1D, CALLBACK, 0, 9),
+            (0x0C, READY, 7, 1),
+            (0x1A, QUEUE, 7, 1),
+            (0x1E, COMPLETE, 7, 1),
+        ];
+        let tx = [
+            (0x19, QUEUE, 7, 1),
+            (0x1C, CALLBACK, 0, 9),
+            (0x0D, READY, 0, 9),
+            (0x1D, CALLBACK, 0, 9),
+            (0x0C, READY, 7, 1),
+            (0x1E, COMPLETE, 7, 1),
+        ];
+        for (event_type, arg1, task_id, flags) in rx {
+            events.push(TraceEvent {
+                timestamp: 100 + events.len() as u32,
+                task_id,
+                event_type,
+                flags,
+                arg1,
+                arg2: 417,
+            });
+        }
+        for (event_type, arg1, task_id, flags) in tx {
+            events.push(TraceEvent {
+                timestamp: 100 + events.len() as u32,
+                task_id,
+                event_type,
+                flags,
+                arg1,
+                arg2: 418,
+            });
+        }
+        let session = TraceSessionInfo {
+            event_count: events.len() as u32,
+            start_timestamp_us: 100,
+            end_timestamp_us: events.last().unwrap().timestamp,
+            tasks: vec![TaskEntry {
+                task_id: 7,
+                name: "worker".into(),
+                priority: 2,
+                core_affinity_mask: 1,
+            }],
+            buffer_size_bytes: 32 * 1024,
+            trace_event_format_version: TRACE_EVENT_FORMAT_VERSION,
+            objects: objects
+                .into_iter()
+                .map(|(object_id, kind, name)| ObjectEntry {
+                    object_id,
+                    kind,
+                    name: name.into(),
+                })
+                .collect(),
+            firmware_version: "host-test".into(),
+            app_elf_sha256: vec![0xA5; 32],
+            app_image_sha256: vec![0x5A; 32],
+            device_uid: vec![0x02, 0, 0, 0, 0, 1],
+            ..Default::default()
+        };
+        (session, events)
+    }
+
     fn candidate_image_bytes(version: &str, elf_sha256: &[u8; 32]) -> Vec<u8> {
         let mut image =
             vec![0u8; ESP_IMAGE_HEADER_SIZE + ESP_SEGMENT_HEADER_SIZE + ESP_APP_DESC_SIZE];
@@ -1465,6 +1752,131 @@ mod tests {
         let start = u32::MAX - 5;
         let end = 4;
         validate_session_binding(&bound_session(start, end), &bound_events(start, end)).unwrap();
+    }
+
+    #[test]
+    fn session_binding_decodes_complete_ten_object_rx_and_tx_chains() {
+        let (session, events) = physical_correlation_session();
+        let decoded = decode_trace_events(&encoded_events(&events)).unwrap();
+        validate_session_binding(&session, &decoded).unwrap();
+
+        let mut broken_token = decoded;
+        broken_token[8].arg2 = 419;
+        assert!(validate_session_binding(&session, &broken_token)
+            .unwrap_err()
+            .to_string()
+            .contains("correlation chain"));
+
+        let mut wrong_mapping = session;
+        wrong_mapping.objects[0].name = "wrong_queue".into();
+        assert!(validate_session_binding(&wrong_mapping, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("acceptance object mapping"));
+
+        let (mut wrong_callback_context, events) = physical_correlation_session();
+        let mut events = events;
+        events[1].flags = 1;
+        assert!(validate_session_binding(&wrong_callback_context, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid context or task ownership"));
+
+        let (_, mut events) = physical_correlation_session();
+        events[1].task_id = 7;
+        assert!(validate_session_binding(&wrong_callback_context, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid context or task ownership"));
+
+        wrong_callback_context.objects[6].kind = 2;
+        assert!(validate_session_binding(
+            &wrong_callback_context,
+            &physical_correlation_session().1
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("acceptance object mapping"));
+    }
+
+    #[test]
+    fn session_binding_decodes_complete_four_object_rx_and_tx_chains() {
+        let (mut session, events) = physical_correlation_session();
+        session.objects.drain(..6);
+        let decoded = decode_trace_events(&encoded_events(&events)).unwrap();
+        validate_session_binding(&session, &decoded).unwrap();
+
+        let mut wrong_mapping = session.clone();
+        wrong_mapping.objects[0].name = "wrong_queue".into();
+        assert!(validate_session_binding(&wrong_mapping, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("acceptance object mapping"));
+
+        let mut all_names_wrong = session.clone();
+        for (index, object) in all_names_wrong.objects.iter_mut().enumerate() {
+            object.name = format!("object_{index}");
+        }
+        assert!(validate_session_binding(&all_names_wrong, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("acceptance object mapping"));
+
+        let mut wrong_kind = session.clone();
+        wrong_kind.objects[0].kind = 2;
+        assert!(validate_session_binding(&wrong_kind, &events)
+            .unwrap_err()
+            .to_string()
+            .contains("acceptance object mapping"));
+
+        let mut wrong_context = events.clone();
+        wrong_context[1].flags = 1;
+        assert!(validate_session_binding(&session, &wrong_context)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid context or task ownership"));
+
+        let mut wrong_owner = events.clone();
+        wrong_owner[1].task_id = 7;
+        assert!(validate_session_binding(&session, &wrong_owner)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid context or task ownership"));
+
+        let mut zero_token = events.clone();
+        zero_token[1].arg2 = 0;
+        assert!(validate_session_binding(&session, &zero_token)
+            .unwrap_err()
+            .to_string()
+            .contains("zero token"));
+
+        let mut reordered = events;
+        reordered.swap(2, 3);
+        reordered[2].timestamp = 102;
+        reordered[3].timestamp = 103;
+        assert!(validate_session_binding(&session, &reordered)
+            .unwrap_err()
+            .to_string()
+            .contains("callback chain is malformed"));
+    }
+
+    #[test]
+    fn session_binding_rejects_acceptance_catalog_hybrids() {
+        let (session, events) = physical_correlation_session();
+        let mut probe_only = session.clone();
+        probe_only.objects.truncate(6);
+        probe_only.event_count = 1;
+        probe_only.end_timestamp_us = probe_only.start_timestamp_us;
+        validate_session_binding(&probe_only, &events[..1]).unwrap();
+
+        for count in 7..10 {
+            let mut hybrid = session.clone();
+            hybrid.objects.truncate(count);
+            assert!(validate_session_binding(&hybrid, &events)
+                .unwrap_err()
+                .to_string()
+                .contains("exactly 4, 6, or 10 entries"));
+        }
     }
 
     #[test]

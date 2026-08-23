@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/espressif/qemu.git",
+  "upstream_revision": "4f4148e2f68689eb8861bf9fce0b46ada9200fef",
+  "patch": "patches/0001-domes-link-device.patch",
+  "patch_sha256": "b067e0d264dd7378a1d9e05f320933397e1f825c801dc988cc006ff0f5d5a245",
+  "maximum_non_generated_files": 10,
+  "maximum_changed_lines": 2500,
+  "prohibited_prefixes": ["accel/", "target/", "tcg/", "replay/", "softmmu/cpus.c"],
+  "maintenance_boundary": "One ESP32-S3 sysbus device, machine wiring, and build registration only"
+}

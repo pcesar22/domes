@@ -48,14 +48,27 @@ class PodTouchEvent {
 /// A connection failure associated with the pod connection that reported it.
 class PodConnectionFailure {
   final String address;
+  final int generation;
   final Object error;
   final StackTrace stackTrace;
 
   const PodConnectionFailure({
     required this.address,
+    required this.generation,
     required this.error,
     required this.stackTrace,
   });
+}
+
+/// An operator action that superseded a live multi-pod connection.
+class PodLifecycleFailure implements Exception {
+  final String address;
+  final String action;
+
+  const PodLifecycleFailure({required this.address, required this.action});
+
+  @override
+  String toString() => 'Pod $address connection superseded by $action';
 }
 
 /// Manages multiple pod connections.
@@ -70,6 +83,8 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
       StreamController<PodTouchEvent>.broadcast();
   final StreamController<PodConnectionFailure> _connectionFailures =
       StreamController<PodConnectionFailure>.broadcast();
+  final StreamController<PodConnectionFailure> _lifecycleFailures =
+      StreamController<PodConnectionFailure>.broadcast();
   final Map<String, StreamSubscription<AppTouchEvent>> _touchSubscriptions = {};
   final Map<String, int> _connectionGenerations = {};
   final Map<String, Future<void>> _connectionCleanupTails = {};
@@ -81,22 +96,41 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
   Stream<PodConnectionFailure> get connectionFailures =>
       _connectionFailures.stream;
 
+  /// Operator-driven transitions away from live connection generations.
+  Stream<PodConnectionFailure> get lifecycleFailures =>
+      _lifecycleFailures.stream;
+
+  /// The live connection generation for [address], if it is connected.
+  int? activeConnectionGeneration(String address) {
+    if (state[address]?.isConnected != true) return null;
+    return _connectionGenerations[address];
+  }
+
   /// Connect to a pod by address.
   Future<void> connectPod(PodDevice pod) async {
+    await _connectionCleanupTails[pod.address];
+    if (!mounted) return;
+
+    final previousGeneration = _connectionGenerations[pod.address];
+    final previous = state[pod.address];
     final generation = (_connectionGenerations[pod.address] ?? 0) + 1;
     _connectionGenerations[pod.address] = generation;
-    final previous = state[pod.address];
     state = {
       ...state,
       pod.address: PodConnectionEntry(
         device: pod.copyWith(connectionState: PodConnectionState.connecting),
       ),
     };
+    if (previousGeneration != null && previous?.isConnected == true) {
+      _publishLifecycleFailure(
+        pod.address,
+        previousGeneration,
+        'replacement connect',
+      );
+    }
 
     Transport? pendingTransport;
     try {
-      await _connectionCleanupTails[pod.address];
-      if (!mounted || _connectionGenerations[pod.address] != generation) return;
       await _touchSubscriptions.remove(pod.address)?.cancel();
       await previous?.transport?.disconnect();
       if (!mounted || _connectionGenerations[pod.address] != generation) return;
@@ -112,8 +146,12 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
       }
 
       _touchSubscriptions[pod.address] = repository.touchEvents.listen(
-        (event) =>
-            _touchEvents.add(PodTouchEvent(address: pod.address, event: event)),
+        (event) {
+          if (!mounted || _connectionGenerations[pod.address] != generation) {
+            return;
+          }
+          _touchEvents.add(PodTouchEvent(address: pod.address, event: event));
+        },
         onError: (Object error, StackTrace stackTrace) {
           _handlePodStreamError(pod.address, generation, error, stackTrace);
         },
@@ -152,46 +190,64 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
     if (!mounted || _connectionGenerations[address] != generation) return;
 
     final entry = state[address];
-    if (entry != null) {
-      _connectionGenerations[address] = generation + 1;
-      final subscription = _touchSubscriptions.remove(address);
-      final transport = entry.transport;
-      if (transport != null) {
-        final cleanup = _cleanupFailedConnection(subscription, transport);
-        _connectionCleanupTails[address] = cleanup;
-        unawaited(
-          cleanup.whenComplete(() {
-            if (identical(_connectionCleanupTails[address], cleanup)) {
-              _connectionCleanupTails.remove(address);
-            }
-          }),
-        );
-      } else if (subscription != null) {
-        final cleanup = _cancelSubscription(subscription);
-        _connectionCleanupTails[address] = cleanup;
-        unawaited(
-          cleanup.whenComplete(() {
-            if (identical(_connectionCleanupTails[address], cleanup)) {
-              _connectionCleanupTails.remove(address);
-            }
-          }),
-        );
-      }
-      state = {
-        ...state,
-        address: PodConnectionEntry(
-          device: entry.device.copyWith(
-            connectionState: PodConnectionState.disconnected,
-          ),
-          error: '$error',
+    if (entry == null) return;
+    unawaited(
+      _quarantineConnection(address, generation, entry, error, stackTrace),
+    );
+  }
+
+  Future<void> _quarantineConnection(
+    String address,
+    int generation,
+    PodConnectionEntry entry,
+    Object error,
+    StackTrace stackTrace,
+  ) async {
+    if (!mounted || _connectionGenerations[address] != generation) return;
+
+    _connectionGenerations[address] = generation + 1;
+    final subscription = _touchSubscriptions.remove(address);
+    final transport = entry.transport;
+    final cleanup = transport == null
+        ? _cancelSubscription(subscription)
+        : _cleanupFailedConnection(subscription, transport);
+    _connectionCleanupTails[address] = cleanup;
+    state = {
+      ...state,
+      address: PodConnectionEntry(
+        device: entry.device.copyWith(
+          connectionState: PodConnectionState.disconnected,
         ),
-      };
+        error: '$error',
+      ),
+    };
+
+    try {
+      await cleanup;
+    } finally {
+      if (identical(_connectionCleanupTails[address], cleanup)) {
+        _connectionCleanupTails.remove(address);
+      }
     }
+    if (!mounted) return;
     _connectionFailures.add(
       PodConnectionFailure(
         address: address,
+        generation: generation,
         error: error,
         stackTrace: stackTrace,
+      ),
+    );
+  }
+
+  void _publishLifecycleFailure(String address, int generation, String action) {
+    if (!mounted) return;
+    _lifecycleFailures.add(
+      PodConnectionFailure(
+        address: address,
+        generation: generation,
+        error: PodLifecycleFailure(address: address, action: action),
+        stackTrace: StackTrace.current,
       ),
     );
   }
@@ -230,10 +286,14 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
 
   /// Disconnect a specific pod.
   Future<void> disconnectPod(String address) async {
+    final generation = _connectionGenerations[address];
+    final entry = state[address];
     _connectionGenerations[address] =
         (_connectionGenerations[address] ?? 0) + 1;
-    final entry = state[address];
     if (entry == null) return;
+    if (generation != null && entry.isConnected) {
+      _publishLifecycleFailure(address, generation, 'disconnectPod');
+    }
 
     await _cancelSubscription(_touchSubscriptions.remove(address));
     try {
@@ -254,9 +314,19 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
 
   /// Disconnect all pods.
   Future<void> disconnectAll() async {
+    final connectedGenerations = <String, int>{};
+    for (final entry in state.entries) {
+      final generation = _connectionGenerations[entry.key];
+      if (entry.value.isConnected && generation != null) {
+        connectedGenerations[entry.key] = generation;
+      }
+    }
     for (final address in state.keys) {
       _connectionGenerations[address] =
           (_connectionGenerations[address] ?? 0) + 1;
+    }
+    for (final entry in connectedGenerations.entries) {
+      _publishLifecycleFailure(entry.key, entry.value, 'disconnectAll');
     }
     for (final subscription in _touchSubscriptions.values) {
       await _cancelSubscription(subscription);
@@ -285,9 +355,23 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
     if (entry?.repository == null || !entry!.isConnected) {
       throw StateError('Pod $address is not connected');
     }
-    final applied = await entry.repository!.setLedPattern(pattern);
-    if (!pattern.matchesApplied(applied)) {
-      throw StateError('Pod $address reported a different applied LED pattern');
+    final generation = _connectionGenerations[address]!;
+    try {
+      final applied = await entry.repository!.setLedPattern(pattern);
+      if (!pattern.matchesApplied(applied)) {
+        throw StateError(
+          'Pod $address reported a different applied LED pattern',
+        );
+      }
+    } catch (error, stackTrace) {
+      await _quarantineConnection(
+        address,
+        generation,
+        entry,
+        error,
+        stackTrace,
+      );
+      Error.throwWithStackTrace(error, stackTrace);
     }
   }
 
@@ -297,14 +381,25 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
     if (entry?.repository == null || !entry!.isConnected) {
       throw StateError('Pod $address is not connected');
     }
-    final (reportedMode, transitionOk) = await entry.repository!.setSystemMode(
-      mode,
-    );
-    if (!transitionOk || reportedMode != mode) {
-      throw StateError(
-        'Pod $address rejected mode transition to ${mode.name} '
-        '(reported ${reportedMode.name}, transitionOk=$transitionOk)',
+    final generation = _connectionGenerations[address]!;
+    try {
+      final (reportedMode, transitionOk) = await entry.repository!
+          .setSystemMode(mode);
+      if (!transitionOk || reportedMode != mode) {
+        throw StateError(
+          'Pod $address rejected mode transition to ${mode.name} '
+          '(reported ${reportedMode.name}, transitionOk=$transitionOk)',
+        );
+      }
+    } catch (error, stackTrace) {
+      await _quarantineConnection(
+        address,
+        generation,
+        entry,
+        error,
+        stackTrace,
       );
+      Error.throwWithStackTrace(error, stackTrace);
     }
   }
 
@@ -326,6 +421,7 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
     }
     unawaited(_touchEvents.close());
     unawaited(_connectionFailures.close());
+    unawaited(_lifecycleFailures.close());
     super.dispose();
   }
 }

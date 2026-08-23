@@ -31,6 +31,15 @@ The calculation is encoded as compile-time constants and a static assertion. The
 fills seven maximum frames, verifies the eighth is dropped, and drains all seven with their original
 tokens.
 
+## Trace capture capacity
+
+Kernel trace capture uses two fixed `DRAM_ATTR` arrays of 1,024 16-byte events, for an actual
+allocation-free capture capacity of 32 KiB. The downstream 96 KiB no-split ring accounts for its
+eight-byte item header and retains 4,096 events, at least twice the 2,048-event capture maximum.
+Compile-time invariants tie the per-core arrays, reported capture bytes, and downstream capacity;
+a focused host regression exposes the same calculation. The earlier 512-event arrays retained only
+16 KiB and could overflow before the downstream ring was used.
+
 ## Verification boundary
 
 Host tests cover adapter and transport lifecycle, peer operations, synchronous and asynchronous

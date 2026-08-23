@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/gameEngine.hpp"
+#include "services/roundTokenSequence.hpp"
 #include "sim/podCommandHandler.hpp"
 #include "sim/simEspNowBus.hpp"
 #include "sim/simOrchestrator.hpp"
@@ -86,6 +87,9 @@ public:
     DrillOrchestrator(SimOrchestrator& sim, SimEspNowBus& bus, SimLog& log)
         : sim_(sim), bus_(bus), log_(log) {}
 
+    /** Resets the production-owned token sequence to its deterministic seed. */
+    void resetRoundTokens(uint32_t seed = 0) { roundTokens_.reset(seed); }
+
     DrillResult execute(const std::vector<DrillStep>& steps,
                         const std::vector<TouchScenario>& touches) {
         DrillResult result;
@@ -114,7 +118,7 @@ public:
             advanceNetworkTimeMs(step.delayBeforeMs);
             sim_.tickAll();
             masterReceived.clear();
-            uint32_t roundToken = nextRoundToken_++;
+            const uint32_t roundToken = roundTokens_.next();
 
             RoundResult roundResult{step.targetPodId, roundToken, false, 0, 0};
 
@@ -278,7 +282,7 @@ private:
     SimOrchestrator& sim_;
     SimEspNowBus& bus_;
     SimLog& log_;
-    uint32_t nextRoundToken_ = 1;
+    domes::RoundTokenSequence roundTokens_;
 };
 
 }  // namespace sim
