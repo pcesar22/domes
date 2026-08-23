@@ -237,8 +237,22 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
         self.assertEqual(
             CAMPAIGN_MODULE._replay_trace(trace),
             [
-                {"index": 0, "task": 1, "type": 35, "arg1": 7, "token": 11},
-                {"index": 1, "task": 1, "type": 35, "arg1": 7, "token": 11},
+                {
+                    "index": 0,
+                    "task": 1,
+                    "type": 35,
+                    "arg1": 7,
+                    "token": 11,
+                    "timestamp_delta": 0,
+                },
+                {
+                    "index": 1,
+                    "task": 1,
+                    "type": 35,
+                    "arg1": 7,
+                    "token": 11,
+                    "timestamp_delta": 1,
+                },
             ],
         )
 

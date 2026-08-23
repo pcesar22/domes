@@ -110,7 +110,7 @@ def _campaign_toolchain(qemu: Path) -> Toolchain:
 
 
 def _fault_records(text: str) -> list[dict[str, object]]:
-    return [
+    records = [
         {
             "fault_id": int(fault),
             "sequence": int(sequence),
@@ -123,22 +123,11 @@ def _fault_records(text: str) -> list[dict[str, object]]:
             text
         )
     ]
-
-
-def _normalized_faults(records: list[dict[str, object]]) -> list[dict[str, object]]:
-    return [
-        {key: value for key, value in record.items() if key != "virtual_ns"}
-        for record in records
-    ]
-
-
-def _normalized_deliveries(
-    records: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    return [
-        {key: value for key, value in record.items() if key != "deadline_ns"}
-        for record in records
-    ]
+    if records:
+        base_virtual_ns = int(records[0]["virtual_ns"])
+        for record in records:
+            record["virtual_ns"] = int(record["virtual_ns"]) - base_virtual_ns
+    return records
 
 
 def _replay_trace(text: str) -> list[dict[str, object]]:
@@ -277,8 +266,8 @@ def _run_once(
         "flash_sha256": images["flash_sha256"],
         "efuse_sha256": images["efuse_sha256"],
         "fault_records": faults,
-        "fault_records_sha256": digest(_normalized_faults(faults)),
-        "delivery_records_sha256": digest(_normalized_deliveries(deliveries)),
+        "fault_records_sha256": digest(faults),
+        "delivery_records_sha256": digest(deliveries),
         "trace_sha256": digest(trace),
         "result_sha256": digest(result),
         "result": result,

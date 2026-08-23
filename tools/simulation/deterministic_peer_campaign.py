@@ -143,10 +143,10 @@ def normalized_trace(text: str) -> list[dict[str, int]]:
     timestamps = [record["timestamp"] for record in records]
     if timestamps != sorted(timestamps):
         raise CampaignFailure("runtime trace virtual time regressed")
-    return [
-        {key: value for key, value in record.items() if key != "timestamp"}
-        for record in records
-    ]
+    base_timestamp = timestamps[0]
+    for record in records:
+        record["timestamp_delta"] = record.pop("timestamp") - base_timestamp
+    return records
 
 
 def require_identical(role: str, runs: Sequence[Mapping[str, object]]) -> None:

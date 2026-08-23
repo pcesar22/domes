@@ -323,6 +323,17 @@ def _record(case: Case, index: int, op: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalized_records(records: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    base_virtual_ns = int(records[0]["virtual_ns"]) if records else 0
+    return [
+        {
+            **record,
+            "virtual_ns": int(record["virtual_ns"]) - base_virtual_ns,
+        }
+        for record in records
+    ]
+
+
 def execute(case: Case, seed: int = 17) -> dict[str, Any]:
     if case.termination_bound_ns <= 0:
         raise AcceptanceFailure(f"{case.name}: termination bound must be positive")
@@ -371,10 +382,7 @@ def execute(case: Case, seed: int = 17) -> dict[str, Any]:
         "unconsumed_events": 0,
         "assertions": assertions,
     }
-    normalized = [
-        {key: value for key, value in record.items() if key != "virtual_ns"}
-        for record in records
-    ]
+    normalized = _normalized_records(records)
     result = {
         "raw": raw,
         "raw_sha256": digest(raw),
@@ -426,10 +434,7 @@ def validate_execution(case: Case, result: Mapping[str, Any]) -> None:
         or raw.get("termination_bound_ns") != case.termination_bound_ns
     ):
         raise AcceptanceFailure(f"{case.name}: invalid replay contract")
-    normalized = [
-        {key: value for key, value in record.items() if key != "virtual_ns"}
-        for record in records
-    ]
+    normalized = _normalized_records(records)
     hashes = {
         "raw_sha256": digest(raw),
         "normalized_trace_sha256": digest(normalized),
@@ -796,21 +801,9 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 delivery = json.loads((run_dir / "delivery-records.json").read_text())
                 faults = json.loads((run_dir / "fault-records.json").read_text())
                 trace = json.loads((run_dir / "trace.normalized.json").read_text())
-                normalized_delivery = [
-                    {
-                        key: value
-                        for key, value in record.items()
-                        if key != "deadline_ns"
-                    }
-                    for record in delivery
-                ]
-                normalized_faults = [
-                    {key: value for key, value in record.items() if key != "virtual_ns"}
-                    for record in faults
-                ]
                 artifacts_ok = artifacts_ok and (
-                    digest(normalized_delivery) == run.get("delivery_records_sha256")
-                    and digest(normalized_faults) == run.get("fault_records_sha256")
+                    digest(delivery) == run.get("delivery_records_sha256")
+                    and digest(faults) == run.get("fault_records_sha256")
                     and digest(trace) == run.get("trace_sha256")
                 )
             role_identities[case.name].append(
