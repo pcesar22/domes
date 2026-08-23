@@ -169,6 +169,7 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(
             verdict["claim_boundaries"]["additional_alpha_nodes_unavailable"], 4
         )
+        self.assertEqual(verdict["coverage"]["uncovered_software_behavior"], [])
         self.assertRegex(verdict["canonical_verdict_sha256"], r"^[0-9a-f]{64}$")
 
     def test_missing_prerequisite_stops(self) -> None:
@@ -185,6 +186,19 @@ class AcceptanceTests(unittest.TestCase):
             with self.subTest(mutate=mutate):
                 candidate = copy.deepcopy(self.document)
                 mutate(candidate["prerequisites"])
+                with self.assertRaisesRegex(
+                    acceptance.AcceptanceError, "prerequisites"
+                ):
+                    self.build(candidate)
+
+    def test_malformed_prerequisite_inventory_stops_cleanly(self) -> None:
+        for records in (
+            [*self.document["prerequisites"], None],
+            [None, *self.document["prerequisites"][1:]],
+        ):
+            with self.subTest(records=records):
+                candidate = copy.deepcopy(self.document)
+                candidate["prerequisites"] = records
                 with self.assertRaisesRegex(
                     acceptance.AcceptanceError, "prerequisites"
                 ):
@@ -367,6 +381,23 @@ class AcceptanceTests(unittest.TestCase):
     def test_coverage_owner_change_stops(self) -> None:
         candidate = copy.deepcopy(self.document)
         candidate["coverage"][0]["tracker_issues"] = [143]
+        with self.assertRaisesRegex(acceptance.AcceptanceError, "foreign owner"):
+            self.build(candidate)
+
+    def test_malformed_coverage_stops_cleanly(self) -> None:
+        for coverage in (
+            [*self.document["coverage"], None],
+            [None, *self.document["coverage"][1:]],
+        ):
+            with self.subTest(coverage=coverage):
+                candidate = copy.deepcopy(self.document)
+                candidate["coverage"] = coverage
+                with self.assertRaisesRegex(acceptance.AcceptanceError, "coverage map"):
+                    self.build(candidate)
+
+    def test_malformed_coverage_owner_stops_cleanly(self) -> None:
+        candidate = copy.deepcopy(self.document)
+        candidate["coverage"][0]["tracker_issues"] = None
         with self.assertRaisesRegex(acceptance.AcceptanceError, "foreign owner"):
             self.build(candidate)
 

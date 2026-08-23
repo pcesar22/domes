@@ -172,9 +172,12 @@ def _validate_source_is_integrated(source_sha: Any, tested_sha: str, label: str)
 def _validate_prerequisites(
     root: Path, records: Any, tested_sha: str
 ) -> list[dict[str, Any]]:
-    if not isinstance(records, list) or [
-        r.get("issue") for r in records if isinstance(r, dict)
-    ] != list(REQUIRED_ISSUES):
+    if (
+        not isinstance(records, list)
+        or len(records) != len(REQUIRED_ISSUES)
+        or any(not isinstance(record, dict) for record in records)
+        or [record.get("issue") for record in records] != list(REQUIRED_ISSUES)
+    ):
         raise AcceptanceError("prerequisites are missing, duplicated, or reordered")
     validated = []
     for expected_issue, raw in zip(REQUIRED_ISSUES, records, strict=True):
@@ -259,16 +262,24 @@ def _validate_prerequisites(
 
 
 def _validate_coverage(records: Any) -> list[dict[str, Any]]:
-    if not isinstance(records, list) or [
-        r.get("area") for r in records if isinstance(r, dict)
-    ] != list(REQUIRED_COVERAGE):
+    if (
+        not isinstance(records, list)
+        or len(records) != len(REQUIRED_COVERAGE)
+        or any(not isinstance(record, dict) for record in records)
+        or [record.get("area") for record in records] != list(REQUIRED_COVERAGE)
+    ):
         raise AcceptanceError("coverage map is missing, duplicated, or reordered")
     validated = []
     for raw, (area, owners) in zip(records, REQUIRED_COVERAGE.items(), strict=True):
         record = _require_keys(
             raw, {"area", "tracker_issues", "implementation_paths"}, f"coverage {area}"
         )
-        if record["area"] != area or tuple(record["tracker_issues"]) != owners:
+        tracker_issues = record["tracker_issues"]
+        if (
+            record["area"] != area
+            or not isinstance(tracker_issues, list)
+            or tuple(tracker_issues) != owners
+        ):
             raise AcceptanceError(f"coverage {area} has a foreign owner")
         paths = record["implementation_paths"]
         if (
@@ -419,7 +430,10 @@ def build_verdict(
         "tested_git_sha": tested_sha,
         "input_manifest_sha256": inputs_digest,
         "targets": targets,
-        "coverage": coverage,
+        "coverage": {
+            "records": coverage,
+            "uncovered_software_behavior": [],
+        },
         "prerequisites": prerequisites,
         "duplication_audit": audit,
         "execution": execution,
