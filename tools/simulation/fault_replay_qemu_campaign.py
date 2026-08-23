@@ -259,12 +259,19 @@ def _run_once(
         ]
     )
     log = run_dir / "qemu.log"
+    device_log = run_dir / "qemu-device.log"
+    command.extend(["-D", str(device_log)])
     execution = execute_until_marker(command, log, timeout, MARKER)
     raw_text = str(execution.pop("text")).replace("\r", "")
     text = "\n".join(line.rstrip() for line in raw_text.splitlines()) + "\n"
     log.write_text(text, newline="\n")
-    faults = _fault_records(text)
-    deliveries = parse_delivery_records(text) if "DOMES_PEER_DELIVERY" in text else []
+    device_text = device_log.read_text().replace("\r", "")
+    faults = _fault_records(device_text)
+    deliveries = (
+        parse_delivery_records(device_text)
+        if "DOMES_PEER_DELIVERY" in device_text
+        else []
+    )
     trace = _replay_trace(text)
     result = _result(text)
     runtime = validate_runtime_log(log)
@@ -298,6 +305,7 @@ def _run_once(
                 "efuse-generation.log",
                 "fault-records.json",
                 "flash-generation.log",
+                "qemu-device.log",
                 "qemu.log",
                 "trace.normalized.json",
             )

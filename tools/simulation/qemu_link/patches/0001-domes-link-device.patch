@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..abeab164c0
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,555 @@
+@@ -0,0 +1,557 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
@@ -265,14 +265,13 @@ index 0000000000..abeab164c0
 +    DomesLinkState *s = opaque;
 +    int64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 +    while (s->event_count && s->events[0].deadline_ns <= now_ns) {
++        if (s->irq_status & IRQ_RX) {
++            break;
++        }
 +        DomesLinkEvent event = s->events[0];
 +        memmove(&s->events[0], &s->events[1],
 +                (s->event_count - 1) * sizeof(s->events[0]));
 +        s->event_count--;
-+        if (s->irq_status & IRQ_RX) {
-+            s->sticky |= ST_OVERFLOW | ST_OVERWRITE;
-+            break;
-+        }
 +        s->rx_source_low = event.source_low;
 +        s->rx_source_high = event.source_high;
 +        s->rx_rssi = (uint8_t)-42;
@@ -294,7 +293,9 @@ index 0000000000..abeab164c0
 +                          event.destination_id, event.sequence, event.correlation, payload);
 +        }
 +    }
-+    if (s->event_count) timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
++    if (s->event_count && !(s->irq_status & IRQ_RX)) {
++        timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
++    }
 +    update_irq(s);
 +}
 +
@@ -466,11 +467,12 @@ index 0000000000..abeab164c0
 +        else {
 +            s->irq_status &= ~IRQ_RX;
 +            s->rx_length = s->rx_correlation = 0;
-+            update_irq(s);
 +            if (s->event_count) {
 +                timer_mod_ns(s->delivery_timer,
-+                             MAX(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
++                             MAX(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000000,
 +                                 s->events[0].deadline_ns));
++            } else {
++                update_irq(s);
 +            }
 +        }
 +        break;

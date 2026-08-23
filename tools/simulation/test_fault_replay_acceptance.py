@@ -41,6 +41,7 @@ def build_campaign_fixture(root: Path) -> Path:
         "efuse-generation.log": b"",
         "fault-records.json": b"[]",
         "flash-generation.log": b"fixture\n",
+        "qemu-device.log": b"fixture\n",
         "qemu.log": b"fixture\n",
         "trace.normalized.json": b"[]",
     }

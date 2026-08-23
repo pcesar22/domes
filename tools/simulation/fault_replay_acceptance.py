@@ -575,6 +575,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
         "efuse-generation.log",
         "fault-records.json",
         "flash-generation.log",
+        "qemu-device.log",
         "qemu.log",
         "trace.normalized.json",
     }
