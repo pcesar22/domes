@@ -828,7 +828,29 @@ class ResultSemanticsTest(unittest.TestCase):
             "pull_request": None,
             "blockers": ["external input"],
         }
+        self.assertTrue(control.blocker_only_worker_result("worker", result))
         self.assertEqual("agent:blocked", control.result_state("worker", result))
+
+    def test_only_blocker_only_software_worker_skips_artifact_verification(
+        self,
+    ) -> None:
+        blocked = {"pull_request": None, "blockers": ["external input"]}
+        completed = {"pull_request": None, "blockers": []}
+        reviewable = {"pull_request": 144, "blockers": ["product blocker"]}
+        hardware_sections = {
+            "Hardware operations": "info",
+            "Hardware boards": "0",
+        }
+
+        self.assertTrue(control.blocker_only_worker_result("worker", blocked))
+        self.assertFalse(control.blocker_only_worker_result("worker", completed))
+        self.assertFalse(control.blocker_only_worker_result("worker", reviewable))
+        self.assertFalse(
+            control.blocker_only_worker_result("verification-worker", blocked)
+        )
+        self.assertFalse(
+            control.blocker_only_worker_result("worker", blocked, hardware_sections)
+        )
 
     def test_worker_pr_routes_reported_product_blockers_to_judge(self) -> None:
         result = {
