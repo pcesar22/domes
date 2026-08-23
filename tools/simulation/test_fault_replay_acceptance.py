@@ -47,7 +47,7 @@ def build_campaign_fixture(root: Path) -> Path:
             (MODULE.HERE / "fault_replay_acceptance.py").read_bytes()
         ).hexdigest(),
     }
-    artifact_contents = {
+    common_artifacts = {
         "delivery-records.json": b"[]",
         "efuse-generation.log": b"",
         "fault-records.json": b"[]",
@@ -56,11 +56,6 @@ def build_campaign_fixture(root: Path) -> Path:
         "qemu.log": b"fixture\n",
         "trace.normalized.json": b"[]",
     }
-    artifact_hashes = {
-        name: MODULE.hashlib.sha256(content).hexdigest()
-        for name, content in artifact_contents.items()
-    }
-    empty_digest = MODULE.digest([])
     stages = {
         name: True
         for name in (
@@ -76,11 +71,39 @@ def build_campaign_fixture(root: Path) -> Path:
         )
     }
     matrix = []
-    no_service_dispatch = {1, 5, 6, 7, 8, 9, 15, 17, 18, 19, 20}
-    expected_failure = no_service_dispatch | {2, 3, 10}
     for fault_id, case in enumerate(MODULE.cases()):
-        expected_status = "FAIL" if fault_id in expected_failure else "PASS"
-        expected_dispatches = 0 if fault_id in no_service_dispatch else 1
+        expected = MODULE.expected_result(fault_id)
+        outcomes = {
+            13: ["scheduled_multiple", "dequeued", "readmitted"],
+            16: ["restart_epoch_2"],
+            17: ["stale_epoch_1_then_2"],
+        }.get(fault_id, ["fixture"])
+        faults = [
+            {
+                "fault_id": fault_id,
+                "sequence": index,
+                "virtual_ns": 0,
+                "absolute_virtual_ns": 100,
+                "stage": case.injection_stage,
+                "outcome": outcome,
+                "queued": 0,
+            }
+            for index, outcome in enumerate(outcomes)
+        ]
+        delivery_sequences = {3: [1, 0], 11: [2, 0, 1]}.get(
+            fault_id, list(range(expected["delivery_records"]))
+        )
+        deliveries = [{"sequence": index} for index in delivery_sequences]
+        artifact_contents = {
+            **common_artifacts,
+            "fault-records.json": MODULE.canonical(faults),
+            "delivery-records.json": MODULE.canonical(deliveries),
+        }
+        artifact_hashes = {
+            name: MODULE.hashlib.sha256(content).hexdigest()
+            for name, content in artifact_contents.items()
+        }
+        fault_digest, delivery_digest = MODULE.digest(faults), MODULE.digest(deliveries)
         roles = []
         for role in ("master", "slave"):
             role_dir = root / case.name / role
@@ -94,23 +117,31 @@ def build_campaign_fixture(root: Path) -> Path:
                     {
                         "index": index,
                         "flash_sha256": "1" * 64,
-                        "fault_records_sha256": empty_digest,
-                        "delivery_records_sha256": empty_digest,
-                        "trace_sha256": empty_digest,
+                        "fault_records_sha256": fault_digest,
+                        "delivery_records_sha256": delivery_digest,
+                        "absolute_delivery_deadlines": (
+                            [11_100] * len(deliveries)
+                            if fault_id >= 21
+                            else [101] * len(deliveries)
+                        ),
+                        "trace_sha256": MODULE.digest([]),
                         "result_sha256": "2" * 64,
                         "result": {
-                            "status": expected_status,
-                            "failure_mask": (
-                                "0x00000020"
-                                if fault_id in expected_failure
-                                else "0x00000000"
-                            ),
-                            "service_dispatches": expected_dispatches,
+                            "status": expected["status"],
+                            "failure_mask": expected["failure_mask"],
+                            "service_dispatches": expected["service_dispatches"],
                             "trace_drops": 0,
                             "trace_discontinuities": 0,
                         },
                         "artifact_sha256": artifact_hashes,
                         "runtime": {"stages": stages},
+                        "final_state": {
+                            "virtual_ns": 100,
+                            "queued": 0,
+                            "tx_status": 0,
+                            "irq_status": 0,
+                            "sticky": 0,
+                        },
                     }
                 )
             identity = {
@@ -139,16 +170,13 @@ def build_campaign_fixture(root: Path) -> Path:
                     "real_dut_count": 1,
                 },
                 "unconsumed_events": 0,
-                "fault_records_sha256": empty_digest,
-                "delivery_records_sha256": empty_digest,
+                "fault_records_sha256": fault_digest,
+                "delivery_records_sha256": delivery_digest,
                 "raw_trace_sha256": "a" * 64,
-                "normalized_trace_sha256": empty_digest,
+                "normalized_trace_sha256": MODULE.digest([]),
                 "assertions": ["production_qemu_radio_submission"],
                 "termination": "firmware_bounded_result",
-                "expected_result": {
-                    "status": expected_status,
-                    "service_dispatches": expected_dispatches,
-                },
+                "expected_result": expected,
             }
             manifest = {
                 "case": case.name,
@@ -338,6 +366,32 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                 ],
                 "FAIL",
             )
+
+    def test_retained_campaign_rejects_self_authored_result_and_bypass(self):
+        for mutation in ("expected", "stage", "termination", "empty_faults"):
+            with self.subTest(
+                mutation=mutation
+            ), tempfile.TemporaryDirectory() as directory:
+                copied = Path(directory) / "qemu-campaign"
+                shutil.copytree(self.campaign.parent, copied)
+                manifest_path = copied / "pass/master/replay-manifest.json"
+                manifest = json.loads(manifest_path.read_text())
+                if mutation == "expected":
+                    manifest["identity"]["expected_result"]["status"] = "FAIL"
+                elif mutation == "stage":
+                    manifest["runs"][0]["runtime"]["stages"]["mmio"] = False
+                elif mutation == "termination":
+                    manifest["runs"][0]["final_state"]["virtual_ns"] = 2_000_000
+                else:
+                    (copied / "pass/master/001/fault-records.json").write_text("[]")
+                manifest["identity_sha256"] = MODULE.digest(manifest["identity"])
+                manifest_path.write_text(json.dumps(manifest))
+                self.assertEqual(
+                    MODULE.validate_real_dut_campaign(copied / self.campaign.name)[
+                        "status"
+                    ],
+                    "FAIL",
+                )
 
     def test_report_is_self_contained_and_json_round_trips(self):
         path_audit = {

@@ -121,6 +121,46 @@ class Case:
     operations: tuple[Mapping[str, Any], ...]
 
 
+NO_DELIVERY = {1, 7, 8, 9, 15, 19, 20}
+REJECTED_DELIVERY = {5, 6, 18}
+
+
+def expected_result(fault_id: int) -> dict[str, Any]:
+    """Return the pinned contract outcome, never an outcome learned from a run."""
+    rejected = fault_id in NO_DELIVERY or fault_id in REJECTED_DELIVERY
+    deliveries = (
+        0
+        if fault_id in NO_DELIVERY
+        else {
+            2: 2,
+            3: 2,
+            5: 2,
+            6: 2,
+            10: 8,
+            11: 3,
+            18: 2,
+            12: 8,
+            13: 8,
+            16: 2,
+            17: 2,
+        }.get(fault_id, 1)
+    )
+    return {
+        "status": "FAIL" if rejected else "PASS",
+        "failure_mask": (
+            {
+                5: "0x00000020",
+                6: "0x00000020",
+                7: "0x00000070",
+                9: "0x00000070",
+                18: "0x00000060",
+            }.get(fault_id, "0x00000060" if rejected else "0x00000000")
+        ),
+        "service_dispatches": 0 if rejected else 1,
+        "delivery_records": deliveries,
+    }
+
+
 def cases() -> tuple[Case, ...]:
     """Return the fixed admission corpus; this is not a seed sweep."""
     latency = tuple(
@@ -308,7 +348,22 @@ def cases() -> tuple[Case, ...]:
             ({"op": "outcome", "state": "interference_loss", "delivered": False},),
         ),
     )
-    return fixed + latency
+    corpus = fixed + latency
+    return tuple(
+        Case(
+            case.name,
+            case.dimensions,
+            case.injection_stage,
+            case.invariant,
+            (
+                2_000_000_000
+                if expected_result(index)["status"] == "FAIL"
+                else case.termination_bound_ns
+            ),
+            case.operations,
+        )
+        for index, case in enumerate(corpus)
+    )
 
 
 def _record(case: Case, index: int, op: Mapping[str, Any]) -> dict[str, Any]:
@@ -774,19 +829,28 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 expected = identity.get("expected_result", {})
                 result = run.get("result", {})
                 expected_ok = (
-                    result.get("status") == expected.get("status")
-                    and result.get("service_dispatches")
-                    == expected.get("service_dispatches")
-                    and (result.get("failure_mask") == "0x00000000")
-                    == (expected.get("status") == "PASS")
+                    expected == expected_result(fault_id)
+                    and all(
+                        result.get(field) == expected.get(field)
+                        for field in ("status", "failure_mask", "service_dispatches")
+                    )
                     and result.get("trace_drops") == 0
                     and result.get("trace_discontinuities") == 0
+                    and run.get("final_state", {}).get("queued") == 0
                 )
                 identities_ok = identities_ok and expected_ok
                 stages = run["runtime"]["stages"]
                 stages_ok = stages_ok and set(stages) == required_stages
-                if fault_id == 0:
-                    stages_ok = stages_ok and all(stages.values())
+                case_stages = {"mmio"}
+                if fault_id not in {7, 9}:
+                    case_stages.add("task")
+                if fault_id not in {7, 9}:
+                    case_stages |= {"irq", "tx_complete"}
+                if expected_result(fault_id)["delivery_records"]:
+                    case_stages |= {"callback", "ring", "semaphore", "dequeue"}
+                if expected_result(fault_id)["status"] == "PASS":
+                    case_stages.add("service_dispatch")
+                stages_ok = stages_ok and all(stages[name] for name in case_stages)
                 run_dir = manifest_path.parent / f"{int(run['index']):03d}"
                 declared = run.get("artifact_sha256", {})
                 if set(declared) != artifact_names:
@@ -801,10 +865,39 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 delivery = json.loads((run_dir / "delivery-records.json").read_text())
                 faults = json.loads((run_dir / "fault-records.json").read_text())
                 trace = json.loads((run_dir / "trace.normalized.json").read_text())
+                sequences = [item.get("sequence") for item in delivery]
+                outcomes = {item.get("outcome") for item in faults}
+                semantics_ok = (
+                    (fault_id != 3 or sequences == [1, 0])
+                    and (fault_id != 11 or sequences == [2, 0, 1])
+                    and (fault_id not in {10, 12} or sequences == list(range(8)))
+                    and (fault_id != 13 or {"dequeued", "readmitted"} <= outcomes)
+                    and (fault_id != 16 or "restart_epoch_2" in outcomes)
+                    and (fault_id != 17 or "stale_epoch_1_then_2" in outcomes)
+                    and (
+                        fault_id < 21
+                        or run.get("absolute_delivery_deadlines", [0])[0]
+                        - faults[0].get("absolute_virtual_ns", 0)
+                        == 11_000
+                    )
+                )
                 artifacts_ok = artifacts_ok and (
                     digest(delivery) == run.get("delivery_records_sha256")
                     and digest(faults) == run.get("fault_records_sha256")
                     and digest(trace) == run.get("trace_sha256")
+                    and len(delivery) == expected_result(fault_id)["delivery_records"]
+                    and bool(faults)
+                    and all(
+                        record.get("fault_id") == fault_id
+                        and record.get("stage") == case.injection_stage
+                        for record in faults
+                    )
+                    and [record.get("sequence") for record in faults]
+                    == list(range(len(faults)))
+                    and run.get("final_state", {}).get("virtual_ns", -1)
+                    - faults[0].get("absolute_virtual_ns", 0)
+                    <= case.termination_bound_ns
+                    and semantics_ok
                 )
             role_identities[case.name].append(
                 {

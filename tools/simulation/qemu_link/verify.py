@@ -484,6 +484,15 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
     if not result:
         raise ValueError("missing schema-2 QEMU link result")
     token = int(result.group(3))
+    if token == 0:
+        token = next(
+            (
+                event["token"]
+                for event in events
+                if event["name"] == "QemuLink.MmioSubmit"
+            ),
+            0,
+        )
     token_events = [event for event in events if event["token"] == token]
     mmio = first_index(
         lambda event: event["token"] == token and event["name"] == "QemuLink.MmioSubmit"

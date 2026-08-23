@@ -18,7 +18,7 @@ from deterministic_peer_campaign import (
     normalized_trace,
     parse_delivery_records,
 )
-from fault_replay_acceptance import Case, cases
+from fault_replay_acceptance import Case, cases, expected_result
 from qemu_feasibility import (
     Toolchain,
     build_qemu_command,
@@ -44,6 +44,7 @@ RESULT_PATTERN = re.compile(
     r"DOMES_QEMU_LINK_RESULT schema=2 status=(PASS|FAIL) failure_mask=(0x[0-9a-f]+) "
     r"token=(\d+) service_dispatches=(\d+) trace_drops=(\d+) trace_discontinuities=(\d+)"
 )
+STATE_PATTERN = re.compile(r"DOMES_FAULT_STATE schema=1 virtual_ns=(\d+) queued=(\d+)")
 
 
 class CampaignFailure(RuntimeError):
@@ -150,21 +151,16 @@ def _result(text: str) -> dict[str, object]:
 
 
 def _required_stages(fault_id: int) -> set[str]:
-    # The probe emits stage markers only after a successful round trip.  Fault
-    # records themselves prove the preceding production MMIO submission for
-    # negative outcomes; the fault-free case closes the complete target path.
-    if fault_id == 0:
-        return {
-            "mmio",
-            "irq",
-            "task",
-            "callback",
-            "ring",
-            "semaphore",
-            "dequeue",
-            "tx_complete",
-        }
-    return set()
+    stages = {"mmio"}
+    if fault_id not in {7, 9}:
+        stages.add("task")
+    if fault_id not in {7, 9}:
+        stages |= {"irq", "tx_complete"}
+    if expected_result(fault_id)["delivery_records"]:
+        stages |= {"callback", "ring", "semaphore", "dequeue"}
+    if expected_result(fault_id)["status"] == "PASS":
+        stages.add("service_dispatch")
+    return stages
 
 
 def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
@@ -179,13 +175,46 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         raise CampaignFailure(f"{case.name}: discontinuous fault record sequence")
     if run["result"]["trace_drops"] or run["result"]["trace_discontinuities"]:
         raise CampaignFailure(f"{case.name}: firmware trace overflow or discontinuity")
-    if (
-        run["result"]["status"] not in {"PASS", "FAIL"}
-        or run["result"]["service_dispatches"] not in {0, 1}
-        or (run["result"]["failure_mask"] == "0x00000000")
-        != (run["result"]["status"] == "PASS")
+    expected = expected_result(fault_id)
+    if any(
+        run["result"].get(field) != expected[field]
+        for field in ("status", "failure_mask", "service_dispatches")
     ):
-        raise CampaignFailure(f"{case.name}: firmware outcome violated its invariant")
+        raise CampaignFailure(
+            f"{case.name}: firmware outcome differs from specification"
+        )
+    if len(run["delivery_records"]) != expected["delivery_records"]:
+        raise CampaignFailure(f"{case.name}: incomplete delivery record")
+    deliveries = run["delivery_records"]
+    sequences = [item["sequence"] for item in deliveries]
+    if fault_id == 3 and sequences != [1, 0]:
+        raise CampaignFailure(f"{case.name}: submit order was not reversed")
+    if fault_id == 11 and sequences != [2, 0, 1]:
+        raise CampaignFailure(f"{case.name}: completion order did not change to 3,1,2")
+    if fault_id in {10, 12} and sequences != list(range(8)):
+        raise CampaignFailure(
+            f"{case.name}: callback order or saturation capacity changed"
+        )
+    outcomes = [record["outcome"] for record in records]
+    if fault_id == 13 and not {"dequeued", "readmitted"} <= set(outcomes):
+        raise CampaignFailure(f"{case.name}: no dequeue and readmission recovery")
+    if fault_id == 16 and "restart_epoch_2" not in outcomes:
+        raise CampaignFailure(f"{case.name}: peer epoch did not restart")
+    if fault_id == 17 and "stale_epoch_1_then_2" not in outcomes:
+        raise CampaignFailure(
+            f"{case.name}: stale and fresh epochs were not distinguished"
+        )
+    if fault_id >= 21 and (
+        run["absolute_delivery_deadlines"][0] - records[0]["absolute_virtual_ns"]
+        != 11_000
+    ):
+        raise CampaignFailure(f"{case.name}: declared stage latency was not injected")
+    final = run["final_state"]
+    if final["queued"] != 0:
+        raise CampaignFailure(f"{case.name}: {final['queued']} unconsumed QEMU events")
+    elapsed = final["virtual_ns"] - records[0]["absolute_virtual_ns"]
+    if elapsed < 0 or elapsed > case.termination_bound_ns:
+        raise CampaignFailure(f"{case.name}: termination bound exceeded ({elapsed} ns)")
     stages = run["runtime"]["stages"]
     missing = sorted(stage for stage in _required_stages(fault_id) if not stages[stage])
     if missing:
@@ -248,6 +277,29 @@ def _run_once(
         if "DOMES_PEER_DELIVERY" in device_text
         else []
     )
+    absolute_delivery_deadlines = [
+        int(value)
+        for value in re.findall(
+            r"DOMES_PEER_DELIVERY schema=1 deadline_ns=(\d+)", device_text
+        )
+    ]
+    for record, match in zip(faults, FAULT_PATTERN.findall(device_text), strict=True):
+        record["absolute_virtual_ns"] = int(match[2])
+    observations = [
+        (int(virtual_ns), int(queued))
+        for virtual_ns, queued in STATE_PATTERN.findall(device_text)
+    ]
+    if not observations:
+        raise CampaignFailure(f"{case.name}: QEMU emitted no observed queue state")
+    final_state = {
+        "virtual_ns": max(
+            [record["absolute_virtual_ns"] for record in faults]
+            + absolute_delivery_deadlines
+            + [item[0] for item in observations]
+        ),
+        "queued": observations[-1][1],
+        "observations": len(observations),
+    }
     trace = _replay_trace(text)
     result = _result(text)
     runtime = validate_runtime_log(log)
@@ -266,6 +318,9 @@ def _run_once(
         "flash_sha256": images["flash_sha256"],
         "efuse_sha256": images["efuse_sha256"],
         "fault_records": faults,
+        "delivery_records": deliveries,
+        "absolute_delivery_deadlines": absolute_delivery_deadlines,
+        "final_state": final_state,
         "fault_records_sha256": digest(faults),
         "delivery_records_sha256": digest(deliveries),
         "trace_sha256": digest(trace),
@@ -381,11 +436,8 @@ def run_campaign(args: argparse.Namespace) -> dict[str, object]:
                     *sorted(_required_stages(fault_id)),
                 ],
                 "termination": "firmware_bounded_result",
-                "expected_result": {
-                    "status": runs[0]["result"]["status"],
-                    "service_dispatches": runs[0]["result"]["service_dispatches"],
-                },
-                "unconsumed_events": 0,
+                "expected_result": expected_result(fault_id),
+                "unconsumed_events": runs[0]["final_state"]["queued"],
             }
             manifest = {
                 "schema_version": 1,
