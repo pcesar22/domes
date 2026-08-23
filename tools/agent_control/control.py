@@ -3589,6 +3589,23 @@ def verify_repository_policy(
     )
 
 
+def blocker_only_worker_result(
+    role: str,
+    result: dict[str, Any],
+    ticket_sections: dict[str, str] | None = None,
+) -> bool:
+    """Return whether a worker reported an external blocker without an artifact."""
+    return (
+        role == "worker"
+        and bool(result["blockers"])
+        and result.get("pull_request") is None
+        and not (
+            ticket_sections is not None
+            and requires_registered_hardware(ticket_sections)
+        )
+    )
+
+
 def result_state(
     role: str,
     result: dict[str, Any],
@@ -3597,15 +3614,7 @@ def result_state(
     ticket_sections: dict[str, str] | None = None,
     hardware_attested: bool = False,
 ) -> str:
-    if (
-        role == "worker"
-        and result["blockers"]
-        and result.get("pull_request") is None
-        and not (
-            ticket_sections is not None
-            and requires_registered_hardware(ticket_sections)
-        )
-    ):
+    if blocker_only_worker_result(role, result, ticket_sections):
         return "agent:blocked"
     if (
         role == "worker"
@@ -5515,7 +5524,11 @@ def _execute_one(
                 f"issue #{item.ticket.number}: every CI repair must return through "
                 "independent agent review"
             )
-    if role in {"worker", "verification-worker"} and automated_delivery(item.sections):
+    if (
+        role in {"worker", "verification-worker"}
+        and automated_delivery(item.sections)
+        and not blocker_only_worker_result(role, result, item.sections)
+    ):
         verify_worker_artifact(
             workflow,
             workspace,
