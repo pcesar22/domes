@@ -38,8 +38,9 @@ The input is canonical JSON beside all referenced files. It binds the specificat
 tested Git SHA, exactly six unique ordered target identities, accepted prerequisite source commits,
 tracker identities, producing tool identities, lockfiles, artifacts, execution tool versions, raw
 logs, lifecycle and fault stages, per-target and per-stage totals, terminal states, and all invariant
-counters with SHA-256. Each prerequisite source commit must be an ancestor of the tested commit.
-Each prerequisite artifact must repeat its source, producing-tool, and lockfile identities.
+counters with SHA-256. Execution-tool version strings carry a checked SHA-256 identity. Each
+prerequisite source commit must be an ancestor of the tested commit. Each prerequisite artifact
+must repeat its accepted result, source, producing-tool, and lockfile identities.
 
 The execution inventory contains these lifecycle and fault stages in order:
 

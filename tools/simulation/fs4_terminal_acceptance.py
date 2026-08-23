@@ -124,6 +124,30 @@ def _read_bound_tool(root: Path, record: Any, label: str) -> dict[str, str]:
     return dict(item)
 
 
+def _validate_version_identities(records: Any) -> dict[str, dict[str, str]]:
+    if not isinstance(records, dict) or set(records) != {
+        "python",
+        "flutter",
+        "dart",
+        "rust",
+    }:
+        raise AcceptanceError("execution toolchain identity is incomplete")
+    validated = {}
+    for name, raw in records.items():
+        record = _require_keys(raw, {"version", "sha256"}, f"execution tool {name}")
+        version = record["version"]
+        if not isinstance(version, str) or not version:
+            raise AcceptanceError(f"execution tool {name} version is incomplete")
+        expected = sha256(version.encode())
+        if (
+            _require_sha256(record["sha256"], f"execution tool {name}.sha256")
+            != expected
+        ):
+            raise AcceptanceError(f"execution tool {name} version hash mismatch")
+        validated[name] = dict(record)
+    return validated
+
+
 def _rotating_totals(items: Sequence[str], cycles: int) -> dict[str, int]:
     return {
         item: sum(1 for index in range(cycles) if items[index % len(items)] == item)
@@ -225,6 +249,10 @@ def _validate_prerequisites(
                 raise AcceptanceError(
                     f"prerequisite #{expected_issue} artifact {index} has foreign lockfile identities"
                 )
+            if parsed.get("result") != "accepted":
+                raise AcceptanceError(
+                    f"prerequisite #{expected_issue} artifact {index} is not accepted"
+                )
             artifacts.append(item)
         validated.append(dict(record, lockfiles=lockfiles, artifacts=artifacts))
     return validated
@@ -277,13 +305,10 @@ def _validate_execution(
     )
     if execution["tested_git_sha"] != tested_sha:
         raise AcceptanceError("execution belongs to another Git revision")
-    tools = execution["tool_versions"]
-    if (
-        not isinstance(tools, dict)
-        or set(tools) != {"python", "flutter", "dart", "rust"}
-        or any(not isinstance(v, str) or not v for v in tools.values())
-    ):
-        raise AcceptanceError("execution toolchain identity is incomplete")
+    execution = dict(execution)
+    execution["tool_versions"] = _validate_version_identities(
+        execution["tool_versions"]
+    )
     for field in ("lockfiles", "raw_logs"):
         values = execution[field]
         if not isinstance(values, list) or not values:
@@ -323,7 +348,7 @@ def _validate_execution(
         or execution["simulation_result"] != "passed"
     ):
         raise AcceptanceError("software and simulation evidence did not both pass")
-    return dict(execution)
+    return execution
 
 
 def build_verdict(

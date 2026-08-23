@@ -108,10 +108,13 @@ class Fixture:
             "execution": {
                 "tested_git_sha": TESTED_SHA,
                 "tool_versions": {
-                    "python": "3.12",
-                    "flutter": "3.32",
-                    "dart": "3.8",
-                    "rust": "1.89",
+                    name: {"version": version, "sha256": digest(version.encode())}
+                    for name, version in {
+                        "python": "3.12",
+                        "flutter": "3.32",
+                        "dart": "3.8",
+                        "rust": "1.89",
+                    }.items()
                 },
                 "lockfiles": [self.file("locks/execution.lock", b"execution lock\n")],
                 "raw_logs": raw_logs,
@@ -276,6 +279,34 @@ class AcceptanceTests(unittest.TestCase):
         )
         candidate["prerequisites"][0]["artifacts"][0] = foreign
         with self.assertRaisesRegex(acceptance.AcceptanceError, "another source"):
+            self.build(candidate)
+
+    def test_unaccepted_artifact_stops(self) -> None:
+        candidate = copy.deepcopy(self.document)
+        item = candidate["prerequisites"][0]["artifacts"][0]
+        rejected = self.fixture.file(
+            item["path"],
+            acceptance.canonical(
+                {
+                    "tested_git_sha": SOURCE_SHAS[154],
+                    "tool_sha256": candidate["prerequisites"][0]["tool"]["sha256"],
+                    "lockfile_sha256s": [
+                        candidate["prerequisites"][0]["lockfiles"][0]["sha256"]
+                    ],
+                    "result": "failed",
+                }
+            ),
+        )
+        candidate["prerequisites"][0]["artifacts"][0] = rejected
+        with self.assertRaisesRegex(acceptance.AcceptanceError, "is not accepted"):
+            self.build(candidate)
+
+    def test_tool_version_hash_mismatch_stops(self) -> None:
+        candidate = copy.deepcopy(self.document)
+        candidate["execution"]["tool_versions"]["python"]["sha256"] = "f" * 64
+        with self.assertRaisesRegex(
+            acceptance.AcceptanceError, "version hash mismatch"
+        ):
             self.build(candidate)
 
     def test_missing_or_duplicate_target_stops(self) -> None:
