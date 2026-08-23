@@ -348,7 +348,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, object]:
         )
 
     completed_runs: dict[tuple[int, str, int], dict[str, object]] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
         for fault_id, role, index, run in executor.map(execute_run, run_inputs):
             completed_runs[(fault_id, role, index)] = run
     matrix = []
