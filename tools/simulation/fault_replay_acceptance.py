@@ -518,13 +518,49 @@ def physical_image_isolation() -> dict[str, Any]:
 
 def protected_path_audit() -> dict[str, Any]:
     """Check the complete ticket diff instead of trusting a declared path list."""
+    base = subprocess.run(
+        ["git", "cat-file", "-e", f"{REQUIRED_BASE_REVISION}^{{commit}}"],
+        cwd=ROOT,
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if base.returncode != 0:
+        # pull_request jobs use a depth-one synthetic merge checkout, so the
+        # controller-supplied base object is intentionally absent.  Keep the
+        # acceptance runner fail-closed while allowing callers to distinguish
+        # that checkout limitation from an out-of-scope path.
+        return {
+            "status": "UNAVAILABLE",
+            "required_base_revision": REQUIRED_BASE_REVISION,
+            "reason": "required base revision is unavailable in this checkout",
+            "changed_paths": [],
+            "outside_allowed_paths": [],
+            "changed_files": 0,
+            "maximum_changed_files": 120,
+            "changed_lines": 0,
+            "maximum_changed_lines": 2_500,
+        }
     completed = subprocess.run(
         ["git", "diff", "--numstat", REQUIRED_BASE_REVISION, "--"],
         cwd=ROOT,
-        check=True,
+        check=False,
         text=True,
         stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
+    if completed.returncode != 0:
+        return {
+            "status": "FAIL",
+            "required_base_revision": REQUIRED_BASE_REVISION,
+            "reason": "git could not compute the protected-path diff",
+            "changed_paths": [],
+            "outside_allowed_paths": [],
+            "changed_files": 0,
+            "maximum_changed_files": 120,
+            "changed_lines": 0,
+            "maximum_changed_lines": 2_500,
+        }
     changed_paths: list[str] = []
     changed_lines = 0
     for line in completed.stdout.splitlines():

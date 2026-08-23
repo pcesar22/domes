@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 PATH = Path(__file__).with_name("fault_replay_acceptance.py")
 SPEC = importlib.util.spec_from_file_location("fault_replay_acceptance", PATH)
@@ -243,8 +244,20 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
         self.assertEqual(MODULE.patch_budget()["status"], "PASS")
         self.assertEqual(MODULE.physical_image_isolation()["status"], "PASS")
         path_audit = MODULE.protected_path_audit()
-        self.assertEqual(path_audit["status"], "PASS")
-        self.assertEqual(path_audit["outside_allowed_paths"], [])
+        self.assertIn(path_audit["status"], {"PASS", "UNAVAILABLE"})
+        if path_audit["status"] == "PASS":
+            self.assertEqual(path_audit["outside_allowed_paths"], [])
+        else:
+            self.assertIn("base revision", path_audit["reason"])
+
+    def test_protected_path_audit_reports_a_shallow_checkout(self):
+        completed = MODULE.subprocess.CompletedProcess(
+            args=[], returncode=128, stdout="", stderr="unknown revision"
+        )
+        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+            result = MODULE.protected_path_audit()
+        self.assertEqual(result["status"], "UNAVAILABLE")
+        self.assertEqual(result["changed_paths"], [])
 
     def test_retained_real_dut_campaign_closes_roles_and_production_stages(self):
         result = MODULE.validate_real_dut_campaign(self.campaign)
@@ -266,7 +279,18 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
             )
 
     def test_report_is_self_contained_and_json_round_trips(self):
-        report = MODULE.run(self.campaign)
+        path_audit = {
+            "status": "PASS",
+            "required_base_revision": MODULE.REQUIRED_BASE_REVISION,
+            "changed_paths": ["tools/simulation/fault_replay_acceptance.py"],
+            "outside_allowed_paths": [],
+            "changed_files": 1,
+            "maximum_changed_files": 120,
+            "changed_lines": 1,
+            "maximum_changed_lines": 2_500,
+        }
+        with mock.patch.object(MODULE, "protected_path_audit", return_value=path_audit):
+            report = MODULE.run(self.campaign)
         self.assertEqual(report["status"], "PASS")
         self.assertEqual(
             report["dependency_acceptance_matrix"][0]["artifact"],
