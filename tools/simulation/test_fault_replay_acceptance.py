@@ -95,7 +95,7 @@ def build_campaign_fixture(root: Path) -> Path:
         deliveries = [
             {"sequence": index, "payload_hex": ""} for index in delivery_sequences
         ]
-        trace = ([{"arg1": 1184188258, "token": token} for token in (1, 1, 1, 2, 1, 1)] + [{"arg1": 3517568895, "token": token} for token in (1, 2)] + [{"arg1": 4059320606, "token": token, "type": 30} for token in (1, 2)]) if fault_id == 11 else []  # fmt: skip
+        trace = ([{"arg1": 1184188258, "token": token} for token in (1, 1, 1, 2, 1, 1)] + [{"arg1": 3517568895, "token": token} for token in (1, 2)] + [{"arg1": 4059320606, "token": token, "type": 30} for token in (1, 2, 1)]) if fault_id == 11 else []  # fmt: skip
         artifact_contents = {
             **common_artifacts,
             "fault-records.json": MODULE.canonical(faults),

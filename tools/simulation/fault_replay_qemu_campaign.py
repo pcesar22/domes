@@ -244,7 +244,7 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
     if fault_id == 11:
         submissions = [event["token"] for event in run["trace"] if event["arg1"] == 3517568895]  # fmt: skip
         completions = [event["token"] for event in run["trace"] if event["arg1"] == 4059320606 and event["type"] == 30]  # fmt: skip
-        if submissions != [1, 2] or completions != [1, 2] or handoffs[-3:] != [2, 1, 1]:  # fmt: skip
+        if submissions != [1, 2] or not {1, 2} <= set(completions) or max(i for i, token in enumerate(completions) if token == 2) >= max(i for i, token in enumerate(completions) if token == 1) or handoffs[-3:] != [2, 1, 1]:  # fmt: skip
             raise CampaignFailure(
                 f"{case.name}: reordered callbacks changed production request ownership"
             )
