@@ -457,35 +457,25 @@ def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str
         )
         try:
             payload = bytes((2,)) + mac + (6).to_bytes(4, "little")
-            for offset in range(0, len(payload), 4):
-                ordered.write(
-                    registers["tx_payload"] + offset,
-                    int.from_bytes(payload[offset : offset + 4], "little"),
-                )
-            ordered.write(registers["tx_destination_low"], 2)
-            ordered.write(registers["tx_destination_high"], 0x200)
-            ordered.write(registers["tx_length"], len(payload))
-            ordered.write(registers["tx_correlation"], 1)
-            ordered.write(registers["tx_submit"], 1)
-            deadline = time.monotonic() + 2
-            while time.monotonic() < deadline:
-                if ordered.read(registers["tx_status"]) == 2:
-                    break
-                ordered.command("clock_step 1000000")
-            else:
-                return False
             tokens = []
-            for _ in range(3):
-                if not (
-                    ordered.read(registers["interrupt_status"])
-                    & abi["interrupt_bits"]["tx_complete"]
-                ):
-                    return False
-                tokens.append(ordered.read(registers["tx_correlation"]))
-                ordered.write(
-                    registers["interrupt_ack"], abi["interrupt_bits"]["tx_complete"]
-                )
-            return tokens == [2, 1, 1] and ordered.read(registers["tx_status"]) == 0
+            for correlation, callbacks in ((1, 1), (2, 3)):
+                for offset in range(0, len(payload), 4):
+                    ordered.write(registers["tx_payload"] + offset, int.from_bytes(payload[offset : offset + 4], "little"))  # fmt: skip
+                for register, value in (("tx_destination_low", 2), ("tx_destination_high", 0x200), ("tx_length", len(payload)), ("tx_correlation", correlation), ("tx_submit", 1)):  # fmt: skip
+                    ordered.write(registers[register], value)
+                deadline = time.monotonic() + 2
+                while ordered.read(registers["tx_status"]) != 2:
+                    if time.monotonic() >= deadline:
+                        return False
+                    ordered.command("clock_step 1000000")
+                for _ in range(callbacks):
+                    if not ordered.read(registers["interrupt_status"]) & abi["interrupt_bits"]["tx_complete"]:  # fmt: skip
+                        return False
+                    tokens.append(ordered.read(registers["tx_correlation"]))
+                    ordered.write(
+                        registers["interrupt_ack"], abi["interrupt_bits"]["tx_complete"]
+                    )
+            return tokens == [1, 1, 2, 2] and ordered.read(registers["tx_status"]) == 0
         finally:
             ordered.close()
 
@@ -649,7 +639,7 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
             "isr": len(isr),
             "callbacks": len(callbacks),
             "rx_queue": sum(event["index"] > (rx_callback or -1) and event["name"] in {"EspNow.RxQueue", "EspNow.CausalQueue"} and event["type"] == 25 for event in events),  # fmt: skip
-            "service_messages": [event["name"] for event in events if event["name"] in {"EspNow.RxBeacon", "EspNow.RxJoinGame"}],  # fmt: skip
+            "service_messages": [event["name"] for event in events if event["name"] in {"EspNow.RxBeacon", "EspNow.RxJoinGame", "EspNow.RxPing"}],  # fmt: skip
         },
         "event_count": len(events),
     }

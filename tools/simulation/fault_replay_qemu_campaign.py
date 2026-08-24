@@ -242,18 +242,11 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         raise CampaignFailure(f"{case.name}: submit order was not reversed")
     handoffs = [event["token"] for event in run["trace"] if event["arg1"] == 1184188258]
     if fault_id == 11:
-        callback_tokens = [
-            event["token"]
-            for event in run["trace"]
-            if event["arg1"] == 897584546 and event["type"] == 28
-        ]
-        if (
-            handoffs[:3] != [2, 1, 1]
-            or callback_tokens.count(1) != 2
-            or 2 in callback_tokens
-        ):
+        submissions = [event["token"] for event in run["trace"] if event["arg1"] == 3517568895]  # fmt: skip
+        completions = [event["token"] for event in run["trace"] if event["arg1"] == 4059320606 and event["type"] == 30]  # fmt: skip
+        if submissions != [1, 2] or 1 not in completions or completions.count(2) != 1 or completions.index(1) > completions.index(2) or handoffs[-3:] != [1, 2, 2]:  # fmt: skip
             raise CampaignFailure(
-                f"{case.name}: unknown or duplicate completion released production ownership"
+                f"{case.name}: reordered callbacks changed production request ownership"
             )
     if fault_id == 10 and sequences != list(range(3)):
         raise CampaignFailure(
@@ -272,7 +265,11 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         )
     service_messages = counts["service_messages"]
     expected_message = "EspNow.RxBeacon" if run["role"] == "master" else "EspNow.RxJoinGame"  # fmt: skip
-    if expected["status"] == "PASS" and (expected_message not in service_messages or any(name != expected_message for name in service_messages)):  # fmt: skip
+    expected_messages = {expected_message, "EspNow.RxPing"} if fault_id == 11 else {expected_message}  # fmt: skip
+    if expected["status"] == "PASS" and (
+        set(service_messages) != expected_messages
+        or not expected_messages <= set(service_messages)
+    ):
         raise CampaignFailure(f"{case.name}: wrong production role interaction")
     outcomes = [record["outcome"] for record in records]
     if fault_id == 12 and (sequences != list(range(4)) or counts["rx_queue"] != 4):
@@ -330,9 +327,6 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         event["type"] == 25 and event["arg1"] == 1509652515 for event in run["trace"]
     )
     if fault_id == 11 and reordered_ring and "ring" in missing:
-        # Reordered completion tokens intentionally break the single-token
-        # positional chain, while the raw trace still proves the production
-        # receive ring accepted the peer response.
         missing.remove("ring")
     if missing:
         raise CampaignFailure(

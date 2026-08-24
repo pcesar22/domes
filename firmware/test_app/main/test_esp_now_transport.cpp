@@ -216,9 +216,12 @@ TEST(EspNowTransportTest, UnknownAndDuplicateCompletionsDoNotReleaseOwnership) {
     EspNowTransport transport(radio);
     ASSERT_EQ(transport.init(), TransportError::kOk);
     radio.emitUnownedCompletions = true;
+    radio.sendBehavior = FakeEspNowRadio::SendBehavior::kCompleteFailure;
     const uint8_t payload = 1;
-    EXPECT_EQ(transport.send(&payload, 1), TransportError::kOk);
-    EXPECT_EQ(transport.getTxCount(), 1u);
+    const EspNowAddress peer = {6, 5, 4, 3, 2, 1};
+    EXPECT_EQ(transport.sendTo(peer.data(), &payload, 1), TransportError::kIoError);
+    EXPECT_EQ(transport.getTxCount(), 0u);
+    EXPECT_EQ(transport.getTxFailCount(), 1u);
 }
 
 TEST(EspNowTransportTest, CopiesReceiveMetadataPayloadAndCorrelationToken) {

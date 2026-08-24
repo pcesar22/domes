@@ -77,7 +77,7 @@ class Case:
 
 NO_DELIVERY = {1, 7, 8, 9, 15, 19, 20}
 REJECTED_DELIVERY = {5, 6, 18}
-DELIVERY_COUNTS = (1, 0, 2, 2, 1, 2, 2, 0, 0, 0, 3, 1, 4, 5, 1, 0, 2, 2, 2, 0, 0) + (1,) * 6  # fmt: skip
+DELIVERY_COUNTS = (1, 0, 2, 2, 1, 2, 2, 0, 0, 0, 3, 2, 4, 5, 1, 0, 2, 2, 2, 0, 0) + (1,) * 6  # fmt: skip
 FAILURE_MASKS = {
     5: "0x00000020",
     6: "0x00000020",
@@ -111,7 +111,6 @@ def cases() -> tuple[Case, ...]:
         )
         for stage in MODELED_STAGES
     )
-    # This is the machine-checked acceptance table; keeping one row per case makes omissions visible.
     # fmt: off
     fixed = (
         Case("pass", ("pass",), "channel_access", "one canonical delivery", 1_000_000, ({"op": "deliver"},)),
@@ -125,7 +124,7 @@ def cases() -> tuple[Case, ...]:
         Case("completion_failure", ("delayed_completion_failure",), "completion_delay", "owned submission completes once with failure", 2_000_000, ({"op": "completion", "status": "failure", "delay_ns": 100_000},)),
         Case("missing_completion", ("missing_completion",), "completion_delay", "production timeout poisons the transport", 500_000_000, ({"op": "completion", "status": "missing"}, {"op": "poison"})),
         Case("callback_burst", ("callback_burst",), "rx_callback_delay", "bounded callbacks retain total order", 2_000_000, ({"op": "burst", "count": 3},)),
-        Case("completion_reorder", ("completion_order_change",), "completion_delay", "unknown and duplicate completions cannot release an owned submission", 2_000_000, ({"op": "completion_order", "order": [2, 1, 1]},)),
+        Case("completion_reorder", ("completion_order_change",), "completion_delay", "stale and duplicate callbacks cannot release either of two production-owned submissions", 2_000_000, ({"op": "completion_order", "order": [1, 1, 2, 2]},)),
         Case("saturation", ("saturation",), "channel_access", "production four-entry radio handoff capacity is reached without overflow", 5_000_000, ({"op": "fill", "count": 4, "capacity": 4},)),
         Case("recovery", ("backpressure_recovery",), "channel_access", "one bounded dequeue restores admission", 5_000_000, ({"op": "fill", "count": 4, "capacity": 4}, {"op": "drain", "count": 1}, {"op": "deliver"})),
         Case("join", ("peer_join",), "peer_processing", "new identity becomes routable once", 2_000_000, ({"op": "peer", "state": "join", "epoch": 1},)),
@@ -584,7 +583,9 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                     for event in run.get("trace", [])
                     if event.get("arg1") == 1184188258
                 ]
-                completion_order_ok = handoffs[:3] == [2, 1, 1]
+                submissions = [event.get("token") for event in run.get("trace", []) if event.get("arg1") == 3517568895]  # fmt: skip
+                completions = [event.get("token") for event in run.get("trace", []) if event.get("arg1") == 4059320606 and event.get("type") == 30]  # fmt: skip
+                completion_order_ok = submissions == [1, 2] and 1 in completions and completions.count(2) == 1 and completions.index(1) < completions.index(2) and handoffs[-3:] == [1, 2, 2]  # fmt: skip
                 semantics_ok = (
                     (fault_id != 3 or sequences == [1, 0])
                     and (fault_id != 11 or completion_order_ok)
