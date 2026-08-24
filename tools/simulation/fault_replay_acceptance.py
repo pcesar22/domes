@@ -114,40 +114,25 @@ class Case:
 
 NO_DELIVERY = {1, 7, 8, 9, 15, 19, 20}
 REJECTED_DELIVERY = {5, 6, 18}
+DELIVERY_COUNTS = (1, 0, 2, 2, 1, 2, 2, 0, 0, 0, 3, 3, 4, 5, 1, 0, 2, 2, 2, 0, 0) + (1,) * 6  # fmt: skip
+FAILURE_MASKS = {
+    5: "0x00000020",
+    6: "0x00000020",
+    7: "0x00000070",
+    9: "0x00000070",
+    18: "0x00000060",
+}
 
 
 def expected_result(fault_id: int) -> dict[str, Any]:
     rejected = fault_id in NO_DELIVERY or fault_id in REJECTED_DELIVERY
-    deliveries = (
-        0
-        if fault_id in NO_DELIVERY
-        else {
-            2: 2,
-            3: 2,
-            5: 2,
-            6: 2,
-            10: 3,
-            11: 3,
-            18: 2,
-            12: 3,
-            13: 4,
-            16: 2,
-            17: 2,
-        }.get(fault_id, 1)
-    )
     return {
         "status": "FAIL" if rejected else "PASS",
-        "failure_mask": (
-            {
-                5: "0x00000020",
-                6: "0x00000020",
-                7: "0x00000070",
-                9: "0x00000070",
-                18: "0x00000060",
-            }.get(fault_id, "0x00000060" if rejected else "0x00000000")
+        "failure_mask": FAILURE_MASKS.get(
+            fault_id, "0x00000060" if rejected else "0x00000000"
         ),
         "service_dispatches": 0 if rejected else 1,
-        "delivery_records": deliveries,
+        "delivery_records": DELIVERY_COUNTS[fault_id],
     }
 
 
@@ -264,7 +249,7 @@ def cases() -> tuple[Case, ...]:
             "saturation",
             ("saturation",),
             "channel_access",
-            "production callback capacity is reached without overflow and terminates",
+            "production four-entry radio handoff capacity is reached without overflow",
             5_000_000,
             ({"op": "fill", "count": 4, "capacity": 4},),
         ),
@@ -853,8 +838,9 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 semantics_ok = (
                     (fault_id != 3 or sequences == [1, 0])
                     and (fault_id != 11 or sequences == [2, 0, 1])
-                    and (fault_id not in {10, 12} or sequences == list(range(3)))
-                    and (fault_id != 13 or sequences == list(range(4)))
+                    and (fault_id != 10 or sequences == list(range(3)))
+                    and (fault_id != 12 or sequences == list(range(4)))
+                    and (fault_id != 13 or sequences == list(range(5)))
                     and (
                         fault_id not in {10, 12, 13}
                         or run.get("runtime", {})

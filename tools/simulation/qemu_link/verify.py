@@ -601,6 +601,8 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
         "stage_counts": {
             "isr": len(isr),
             "callbacks": len(callbacks),
+            "rx_queue": sum(event["index"] > (rx_callback or -1) and event["name"] in {"EspNow.RxQueue", "EspNow.CausalQueue"} and event["type"] == 25 for event in events),  # fmt: skip
+            "service_messages": [event["name"] for event in events if event["name"] in {"EspNow.RxBeacon", "EspNow.RxJoinGame"}],  # fmt: skip
         },
         "event_count": len(events),
     }

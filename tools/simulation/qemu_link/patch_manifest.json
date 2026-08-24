@@ -3,7 +3,7 @@
   "upstream_repository": "https://github.com/espressif/qemu.git",
   "upstream_revision": "4f4148e2f68689eb8861bf9fce0b46ada9200fef",
   "patch": "patches/0001-domes-link-device.patch",
-  "patch_sha256": "a882384b10bd5f23e364c057fd464af044fe070c2678d9b8caf21166ae6d1d68",
+  "patch_sha256": "269bf63b9173acc6544f0b3d629af3b9edbc88a03ddc09eb3ea57560dfbd9544",
   "maximum_non_generated_files": 10,
   "maximum_changed_lines": 2500,
   "prohibited_prefixes": ["accel/", "target/", "tcg/", "replay/", "softmmu/cpus.c"],

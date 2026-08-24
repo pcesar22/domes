@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..abeab164c0
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,588 @@
+@@ -0,0 +1,589 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
@@ -380,7 +380,7 @@ index 0000000000..abeab164c0
 +            copies = 3;
 +        } else if (s->fault_id == FAULT_SATURATION ||
 +                   s->fault_id == FAULT_BACKPRESSURE_RECOVERY) {
-+            copies = s->fault_id == FAULT_SATURATION ? 3 : 4;
++            copies = s->fault_id == FAULT_SATURATION ? 4 : 5;
 +            spacing_ns = 1;
 +        }
 +        if (s->fault_id == FAULT_JITTER) {
@@ -390,9 +390,10 @@ index 0000000000..abeab164c0
 +            s->stage_delay_ns[STAGE_AIRTIME] = 10000;
 +            event.deadline_ns += s->stage_delay_ns[STAGE_AIRTIME];
 +        }
++        if (s->fault_id == FAULT_SATURATION || s->fault_id == FAULT_BACKPRESSURE_RECOVERY) event.deadline_ns += 100000;
 +        for (uint32_t copy = 0; copy < copies; copy++) {
 +            DomesLinkEvent candidate = event;
-+            if (s->fault_id >= FAULT_CALLBACK_BURST && s->fault_id <= FAULT_BACKPRESSURE_RECOVERY && copy + 1 < copies)
++            if ((s->fault_id >= FAULT_CALLBACK_BURST && s->fault_id < FAULT_SATURATION && copy > 0) || (s->fault_id >= FAULT_SATURATION && s->fault_id <= FAULT_BACKPRESSURE_RECOVERY && copy != 3))
 +                candidate.payload[0] = MSG_TOUCH_EVENT, candidate.length = wire_size(MSG_TOUCH_EVENT);
 +            if (s->fault_id == FAULT_COMPLETION_ORDER) {
 +                static const uint32_t order[] = { 1, 2, 0 };
@@ -405,7 +406,7 @@ index 0000000000..abeab164c0
 +            if (s->fault_id == FAULT_STALE_TRAFFIC && copy == 0) {
 +                candidate.source_low = 0x00000003;
 +            }
-+            if (s->fault_id == FAULT_BACKPRESSURE_RECOVERY && copy == 3) {
++            if (s->fault_id == FAULT_BACKPRESSURE_RECOVERY && copy == 4) {
 +                s->readmission_event = candidate;
 +                s->readmission_pending = true;
 +            } else if (!enqueue_event(s, candidate)) break;

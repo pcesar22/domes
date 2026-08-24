@@ -159,7 +159,7 @@ def build_campaign_fixture(root: Path) -> Path:
                         "artifact_sha256": artifact_hashes,
                         "runtime": {
                             "stages": stages,
-                            "stage_counts": {"callbacks": 8},
+                            "stage_counts": {"callbacks": 12 if fault_id == 13 else 10 if fault_id == 12 else 8, "rx_queue": 5 if fault_id == 13 else 4 if fault_id == 12 else len(deliveries), "service_messages": ["EspNow.RxBeacon" if role == "master" else "EspNow.RxJoinGame"] if expected["status"] == "PASS" else []},  # fmt: skip
                         },
                         "final_state": {
                             "virtual_ns": 100,
