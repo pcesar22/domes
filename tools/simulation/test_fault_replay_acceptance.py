@@ -129,6 +129,7 @@ def build_campaign_fixture(root: Path) -> Path:
                         "index": index,
                         "flash_sha256": "1" * 64,
                         "fault_records_sha256": fault_digest,
+                        "pipeline_records_sha256": MODULE.digest([]),
                         "delivery_records_sha256": delivery_digest,
                         "absolute_delivery_deadlines": (
                             [
@@ -197,6 +198,7 @@ def build_campaign_fixture(root: Path) -> Path:
                 },
                 "unconsumed_events": 0,
                 "fault_records_sha256": fault_digest,
+                "pipeline_records_sha256": MODULE.digest([]),
                 "delivery_records_sha256": delivery_digest,
                 "raw_trace_sha256": "a" * 64,
                 "normalized_trace_sha256": MODULE.digest([]),

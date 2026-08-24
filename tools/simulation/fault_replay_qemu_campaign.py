@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
@@ -50,8 +49,7 @@ RESULT_PATTERN = re.compile(
 )
 STATE_PATTERN = re.compile(r"DOMES_FAULT_STATE schema=1 virtual_ns=(\d+) queued=(\d+)")
 PIPELINE_PATTERN = re.compile(
-    r"DOMES_PIPELINE_DELAY schema=1 tx_queue=(\d+) channel=(\d+) airtime=(\d+) "
-    r"completion=(\d+) peer=(\d+) rx_callback=(\d+)"
+    r"DOMES_PIPELINE_BOUNDARY schema=1 stage=(\S+) enter_ns=(\d+) exit_ns=(\d+)"
 )
 
 
@@ -162,18 +160,10 @@ def _required_stages(fault_id: int) -> set[str]:
     return stages
 
 
-def _pipeline_records(text: str) -> list[dict[str, int]]:
-    names = (
-        "tx_queue_delay",
-        "channel_access",
-        "airtime",
-        "completion_delay",
-        "peer_processing",
-        "rx_callback_delay",
-    )
+def _pipeline_records(text: str) -> list[dict[str, object]]:
     return [
-        dict(zip(names, map(int, values), strict=True))
-        for values in PIPELINE_PATTERN.findall(text)
+        {"stage": stage, "enter_ns": int(enter), "exit_ns": int(exit)}
+        for stage, enter, exit in PIPELINE_PATTERN.findall(text)
     ]
 
 
@@ -247,14 +237,22 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         )
     ):
         raise CampaignFailure(f"{case.name}: declared stage latency was not injected")
-    if fault_id >= 21 and run["pipeline_records"] != [
-        {
-            stage: 10_000 if stage == case.injection_stage else 0
+    boundaries = run["pipeline_records"]
+    durations = {
+        item["stage"]: item["exit_ns"] - item["enter_ns"] for item in boundaries
+    }
+    baseline = {"channel_access": 1_000, "peer_processing": 1_000}
+    if fault_id >= 21 and (
+        len(boundaries) != len(MODELED_STAGES)
+        or set(durations) != set(MODELED_STAGES)
+        or any(
+            durations[stage]
+            != baseline.get(stage, 0) + (10_000 if stage == case.injection_stage else 0)
             for stage in MODELED_STAGES
-        }
-    ]:
+        )
+    ):
         raise CampaignFailure(
-            f"{case.name}: latency changed an undeclared pipeline stage"
+            f"{case.name}: causal pipeline boundaries changed an undeclared stage"
         )
     final = run["final_state"]
     if final["queued"] != 0:
@@ -477,6 +475,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, object]:
                     "real_dut_count": 1,
                 },
                 "fault_records_sha256": runs[0]["fault_records_sha256"],
+                "pipeline_records_sha256": runs[0]["pipeline_records_sha256"],
                 "delivery_records_sha256": runs[0]["delivery_records_sha256"],
                 "raw_trace_sha256": sha256_file(
                     artifact_dir / case.name / role / "001/qemu.log"

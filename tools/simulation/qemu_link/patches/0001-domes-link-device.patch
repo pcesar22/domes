@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..abeab164c0
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,589 @@
+@@ -0,0 +1,612 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
@@ -83,6 +83,12 @@ index 0000000000..abeab164c0
 +    FAULT_COUNT,
 +};
 +enum { STAGE_TX_QUEUE, STAGE_CHANNEL, STAGE_AIRTIME, STAGE_COMPLETION, STAGE_PEER, STAGE_RX_CALLBACK };
++static const char *stage_name[] = { "tx_queue_delay", "channel_access", "airtime", "completion_delay", "peer_processing", "rx_callback_delay" };
++static void record_stage(uint32_t stage, int64_t enter_ns, int64_t exit_ns)
++{
++    qemu_log_mask(LOG_GUEST_ERROR, "DOMES_PIPELINE_BOUNDARY schema=1 stage=%s enter_ns=%" PRIi64
++                  " exit_ns=%" PRIi64 "\n", stage_name[stage], enter_ns, exit_ns);
++}
 +static const char *fault_stage(uint32_t fault_id)
 +{
 +    switch (fault_id) {
@@ -223,7 +229,6 @@ index 0000000000..abeab164c0
 +}
 +static void reject_tx_mutation(DomesLinkState *s)
 +{
-+    /* The single bounded submission slot remains owned through IRQ acknowledgment. */
 +    s->sticky |= ST_EXHAUSTED | ST_OVERWRITE;
 +}
 +static uint64_t link_read(void *opaque, hwaddr addr, unsigned size)
@@ -266,10 +271,14 @@ index 0000000000..abeab164c0
 +    if (s->fault_id == FAULT_LATENCY_RX_CALLBACK && !s->stage_delay_ns[STAGE_RX_CALLBACK] &&
 +        s->event_count && s->events[0].deadline_ns <= now_ns) {
 +        s->stage_delay_ns[STAGE_RX_CALLBACK] = 10000;
++        s->stage_enter_ns = now_ns;
 +        for (uint32_t index = 0; index < s->event_count; index++) s->events[index].deadline_ns += 10000;
 +        timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
 +        return;
 +    }
++    if (s->event_count && s->events[0].deadline_ns <= now_ns)
++        record_stage(STAGE_RX_CALLBACK,
++                     s->stage_delay_ns[STAGE_RX_CALLBACK] ? s->stage_enter_ns : now_ns, now_ns);
 +    while (s->event_count && s->events[0].deadline_ns <= now_ns) {
 +        if (s->irq_status & IRQ_RX) {
 +            break;
@@ -317,8 +326,14 @@ index 0000000000..abeab164c0
 +{
 +    DomesLinkState *s = opaque;
 +    DomesLinkEvent event = { 0 };
-+    if (s->fault_id == FAULT_LATENCY_COMPLETION) s->stage_delay_ns[STAGE_COMPLETION] = 10000;
-+    if (s->fault_id == FAULT_LATENCY_CHANNEL) s->stage_delay_ns[STAGE_CHANNEL] = 10000;
++    int64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++    record_stage(s->tx_stage, s->stage_enter_ns, now_ns);
++    if (s->tx_stage < STAGE_COMPLETION) {
++        s->tx_stage = s->tx_stage == STAGE_TX_QUEUE ? STAGE_CHANNEL : STAGE_COMPLETION;
++        s->stage_enter_ns = now_ns;
++        timer_mod_ns(s->completion_timer, now_ns + s->stage_delay_ns[s->tx_stage]);
++        return;
++    }
 +    if (s->tx_status != TX_PENDING || !s->tx_correlation || !s->tx_length ||
 +        s->tx_length > DOMES_LINK_MAX_PAYLOAD) {
 +        s->sticky |= ST_MODEL_FAILURE;
@@ -390,6 +405,11 @@ index 0000000000..abeab164c0
 +            s->stage_delay_ns[STAGE_AIRTIME] = 10000;
 +            event.deadline_ns += s->stage_delay_ns[STAGE_AIRTIME];
 +        }
++        record_stage(STAGE_PEER, now_ns,
++                     now_ns + s->peer_delay_ns + s->stage_delay_ns[STAGE_PEER]);
++        record_stage(STAGE_AIRTIME,
++                     now_ns + s->peer_delay_ns + s->stage_delay_ns[STAGE_PEER],
++                     event.deadline_ns);
 +        if (s->fault_id == FAULT_SATURATION || s->fault_id == FAULT_BACKPRESSURE_RECOVERY) event.deadline_ns += 100000;
 +        for (uint32_t copy = 0; copy < copies; copy++) {
 +            DomesLinkEvent candidate = event;
@@ -489,9 +509,11 @@ index 0000000000..abeab164c0
 +            if (s->fault_id == FAULT_LATENCY_COMPLETION) s->stage_delay_ns[STAGE_COMPLETION] = 10000;
 +            if (s->fault_id == FAULT_LATENCY_TX_QUEUE || s->fault_id == FAULT_LATENCY_CHANNEL || s->fault_id == FAULT_LATENCY_COMPLETION) record_fault(s, fault_stage(s->fault_id), "delay_enter");
 +            s->tx_status = TX_PENDING;
-+            timer_mod_ns(s->completion_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000 +
-+                         s->stage_delay_ns[STAGE_TX_QUEUE] + s->stage_delay_ns[STAGE_CHANNEL] +
-+                         s->stage_delay_ns[STAGE_COMPLETION]);
++            s->stage_delay_ns[STAGE_CHANNEL] += 1000;
++            s->tx_stage = STAGE_TX_QUEUE;
++            s->stage_enter_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++            timer_mod_ns(s->completion_timer,
++                         s->stage_enter_ns + s->stage_delay_ns[STAGE_TX_QUEUE]);
 +        }
 +        break;
 +    case RX_CONSUME:
@@ -544,6 +566,7 @@ index 0000000000..abeab164c0
 +    s->rx_source_low = s->rx_source_high = s->rx_rssi = s->rx_length = 0;
 +    s->rx_correlation = s->irq_status = s->irq_mask = s->sticky = 0;
 +    s->readmission_pending = s->scenario_consumed = false; s->event_count = s->next_sequence = s->fault_sequence = 0;
++    s->tx_stage = 0; s->stage_enter_ns = 0; memset(s->stage_delay_ns, 0, sizeof(s->stage_delay_ns));
 +    memset(s->tx_payload, 0, sizeof(s->tx_payload));
 +    memset(s->rx_payload, 0, sizeof(s->rx_payload));
 +    memset(s->events, 0, sizeof(s->events));
@@ -657,7 +680,7 @@ new file mode 100644
 index 0000000000..89c86d6f15
 --- /dev/null
 +++ b/include/hw/misc/domes_link.h
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,36 @@
 +#pragma once
 +#include "hw/sysbus.h"
 +#include "qemu/main-loop.h"
@@ -692,4 +715,5 @@ index 0000000000..89c86d6f15
 +    uint32_t scenario_model, scenario_seed, dut_role, fault_id, fault_sequence;
 +    uint64_t peer_delay_ns;
 +    uint64_t stage_delay_ns[6];
++    uint32_t tx_stage; int64_t stage_enter_ns;
 +};

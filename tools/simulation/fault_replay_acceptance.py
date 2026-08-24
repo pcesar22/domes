@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
@@ -92,6 +91,16 @@ REQUIRED_DIMENSIONS = (
 
 class AcceptanceFailure(RuntimeError):
     pass
+
+
+ASSERTIONS = (
+    "single_real_dut",
+    "production_path_fault_bound",
+    "virtual_time_only",
+    "bounded_storage",
+    "explicit_invariant",
+    "explicit_termination_bound",
+)
 
 
 def canonical(value: object) -> bytes:
@@ -390,15 +399,6 @@ def execute(case: Case, seed: int = 17) -> dict[str, Any]:
         elif op["op"] == "jitter":
             if any(abs(value) > int(op["bound_ns"]) for value in op["values_ns"]):
                 raise AcceptanceFailure(f"{case.name}: jitter bound exceeded")
-    termination = "bounded_expected_outcome"
-    assertions = [
-        "single_real_dut",
-        "production_path_fault_bound",
-        "virtual_time_only",
-        "bounded_storage",
-        "explicit_invariant",
-        "explicit_termination_bound",
-    ]
     raw = {
         "schema_version": SCHEMA_VERSION,
         "scenario": case.name,
@@ -407,9 +407,9 @@ def execute(case: Case, seed: int = 17) -> dict[str, Any]:
         "invariant": case.invariant,
         "termination_bound_ns": case.termination_bound_ns,
         "records": records,
-        "termination": termination,
+        "termination": "bounded_expected_outcome",
         "unconsumed_events": 0,
-        "assertions": assertions,
+        "assertions": list(ASSERTIONS),
     }
     normalized = _normalized_records(records)
     result = {
@@ -417,7 +417,7 @@ def execute(case: Case, seed: int = 17) -> dict[str, Any]:
         "raw_sha256": digest(raw),
         "normalized_trace_sha256": digest(normalized),
         "delivery_fault_records_sha256": digest(records),
-        "assertions_sha256": digest(assertions),
+        "assertions_sha256": digest(ASSERTIONS),
     }
     validate_execution(case, result)
     return result
@@ -439,15 +439,7 @@ def validate_execution(case: Case, result: Mapping[str, Any]) -> None:
         raise AcceptanceFailure(f"{case.name}: unexpected or exhausted replay traffic")
     if [record.get("sequence") for record in records] != list(range(len(records))):
         raise AcceptanceFailure(f"{case.name}: replay discontinuity")
-    required_assertions = {
-        "single_real_dut",
-        "production_path_fault_bound",
-        "virtual_time_only",
-        "bounded_storage",
-        "explicit_invariant",
-        "explicit_termination_bound",
-    }
-    if set(assertions) != required_assertions:
+    if assertions != list(ASSERTIONS):
         raise AcceptanceFailure(f"{case.name}: assertion failure")
     if raw.get("termination") != "bounded_expected_outcome":
         raise AcceptanceFailure(f"{case.name}: model failure")
@@ -467,7 +459,7 @@ def validate_execution(case: Case, result: Mapping[str, Any]) -> None:
         "raw_sha256": digest(raw),
         "normalized_trace_sha256": digest(normalized),
         "delivery_fault_records_sha256": digest(records),
-        "assertions_sha256": digest(assertions),
+        "assertions_sha256": digest(ASSERTIONS),
     }
     for name, expected in hashes.items():
         if result.get(name) != expected:
@@ -550,25 +542,6 @@ def physical_image_isolation() -> dict[str, Any]:
 
 
 def protected_path_audit() -> dict[str, Any]:
-    base = subprocess.run(
-        ["git", "cat-file", "-e", f"{REQUIRED_BASE_REVISION}^{{commit}}"],
-        cwd=ROOT,
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    if base.returncode != 0:
-        return {
-            "status": "UNAVAILABLE",
-            "required_base_revision": REQUIRED_BASE_REVISION,
-            "reason": "required base revision is unavailable in this checkout",
-            "changed_paths": [],
-            "outside_allowed_paths": [],
-            "changed_files": 0,
-            "maximum_changed_files": 120,
-            "changed_lines": 0,
-            "maximum_changed_lines": 2_500,
-        }
     completed = subprocess.run(
         ["git", "diff", "--numstat", REQUIRED_BASE_REVISION, "--"],
         cwd=ROOT,
@@ -690,6 +663,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
         "dut_role",
         "engine",
         "fault_records_sha256",
+        "pipeline_records_sha256",
         "delivery_records_sha256",
         "raw_trace_sha256",
         "normalized_trace_sha256",
@@ -754,6 +728,8 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 and identity.get("unconsumed_events") == 0
                 and identity.get("fault_records_sha256")
                 == runs[0].get("fault_records_sha256")
+                and identity.get("pipeline_records_sha256")
+                == runs[0].get("pipeline_records_sha256")
                 and identity.get("delivery_records_sha256")
                 == runs[0].get("delivery_records_sha256")
                 and identity.get("normalized_trace_sha256")
@@ -773,6 +749,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                         "fidelity_manifest_sha256",
                         "scenario_sha256",
                         "fault_records_sha256",
+                        "pipeline_records_sha256",
                         "delivery_records_sha256",
                         "raw_trace_sha256",
                         "normalized_trace_sha256",
@@ -787,6 +764,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                     for field in (
                         "flash_sha256",
                         "fault_records_sha256",
+                        "pipeline_records_sha256",
                         "delivery_records_sha256",
                         "trace_sha256",
                         "result_sha256",
