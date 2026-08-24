@@ -443,8 +443,55 @@ def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str
         finally:
             queued.close()
 
+    def run_completion_order() -> bool:
+        ordered = QtestClient(
+            binary,
+            [
+                "-global",
+                "domes-link.scenario-model=1",
+                "-global",
+                "domes-link.dut-role=1",
+                "-global",
+                "domes-link.fault-id=11",
+            ],
+        )
+        try:
+            payload = bytes((2,)) + mac + (6).to_bytes(4, "little")
+            for offset in range(0, len(payload), 4):
+                ordered.write(
+                    registers["tx_payload"] + offset,
+                    int.from_bytes(payload[offset : offset + 4], "little"),
+                )
+            ordered.write(registers["tx_destination_low"], 2)
+            ordered.write(registers["tx_destination_high"], 0x200)
+            ordered.write(registers["tx_length"], len(payload))
+            ordered.write(registers["tx_correlation"], 1)
+            ordered.write(registers["tx_submit"], 1)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                if ordered.read(registers["tx_status"]) == 2:
+                    break
+                ordered.command("clock_step 1000000")
+            else:
+                return False
+            tokens = []
+            for _ in range(3):
+                if not (
+                    ordered.read(registers["interrupt_status"])
+                    & abi["interrupt_bits"]["tx_complete"]
+                ):
+                    return False
+                tokens.append(ordered.read(registers["tx_correlation"]))
+                ordered.write(
+                    registers["interrupt_ack"], abi["interrupt_bits"]["tx_complete"]
+                )
+            return tokens == [3, 1, 2] and ordered.read(registers["tx_status"]) == 0
+        finally:
+            ordered.close()
+
     cases["slave_role_ping_to_pong"] = run_slave_role()
     cases["distinct_event_queue_overflow_fails_closed"] = run_distinct_queue_overflow()
+    cases["completion_order_crosses_irq_boundary"] = run_completion_order()
     return cases
 
 

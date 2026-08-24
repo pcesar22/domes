@@ -1,9 +1,9 @@
 diff --git a/hw/misc/domes_link.c b/hw/misc/domes_link.c
 new file mode 100644
-index 0000000000..abeab164c0
+index 0000000000..309957cce1
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,623 @@
+@@ -0,0 +1,642 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
@@ -453,7 +453,14 @@ index 0000000000..abeab164c0
 +            deliver_due(s);
 +        }
 +    }
-+    if (s->fault_id == FAULT_COMPLETION_ORDER) { s->tx_correlation = 3; record_fault(s, "completion_delay", "completion_token_1"); record_fault(s, "completion_delay", "completion_token_2"); }
++    if (s->fault_id == FAULT_COMPLETION_ORDER) {
++        const uint32_t tokens[] = { 3, 1, 2 };
++        memcpy(s->completion_tokens, tokens, sizeof(tokens));
++        s->completion_count = ARRAY_SIZE(tokens);
++        s->completion_index = 0;
++        s->tx_correlation = s->completion_tokens[0];
++        record_fault(s, "completion_delay", "completion_token_3");
++    }
 +    update_irq(s);
 +}
 +static void link_write(void *opaque, hwaddr addr, uint64_t value, unsigned size)
@@ -550,10 +557,20 @@ index 0000000000..abeab164c0
 +        if (value & ~(IRQ_TX | IRQ_RX)) s->sticky |= ST_INVALID;
 +        s->irq_status &= ~(value & (IRQ_TX | IRQ_RX));
 +        update_irq(s);
-+        if ((value & IRQ_TX) != 0 && (s->irq_status & IRQ_TX) == 0) {
++        if ((value & IRQ_TX) != 0 && s->completion_index + 1 < s->completion_count) {
++            const char *outcomes[] = { "completion_token_3", "completion_token_1",
++                                       "completion_token_2" };
++            s->completion_index++;
++            s->tx_correlation = s->completion_tokens[s->completion_index];
++            s->irq_status |= IRQ_TX;
++            record_fault(s, "completion_delay", outcomes[s->completion_index]);
++            update_irq(s);
++        } else if ((value & IRQ_TX) != 0 && (s->irq_status & IRQ_TX) == 0) {
 +            s->tx_destination_low = s->tx_destination_high = s->tx_length = 0;
 +            s->tx_correlation = 0;
 +            s->tx_status = TX_IDLE;
++            s->completion_count = s->completion_index = 0;
++            memset(s->completion_tokens, 0, sizeof(s->completion_tokens));
 +            memset(s->tx_payload, 0, sizeof(s->tx_payload));
 +        }
 +        if ((value & IRQ_RX) && s->event_count)
@@ -576,6 +593,8 @@ index 0000000000..abeab164c0
 +    s->rx_source_low = s->rx_source_high = s->rx_rssi = s->rx_length = 0;
 +    s->rx_correlation = s->irq_status = s->irq_mask = s->sticky = 0;
 +    s->readmission_pending = s->scenario_consumed = false; s->event_count = s->next_sequence = s->fault_sequence = 0;
++    s->completion_count = s->completion_index = 0;
++    memset(s->completion_tokens, 0, sizeof(s->completion_tokens));
 +    s->peer_present = s->fault_id != FAULT_PEER_JOIN; s->peer_epoch = 1;
 +    s->tx_stage = 0; s->stage_enter_ns = 0; memset(s->stage_delay_ns, 0, sizeof(s->stage_delay_ns));
 +    memset(s->tx_payload, 0, sizeof(s->tx_payload));
@@ -688,10 +707,10 @@ index 091657e842..c21cf04bb5 100644
 -
 diff --git a/include/hw/misc/domes_link.h b/include/hw/misc/domes_link.h
 new file mode 100644
-index 0000000000..89c86d6f15
+index 0000000000..372feed80f
 --- /dev/null
 +++ b/include/hw/misc/domes_link.h
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,38 @@
 +#pragma once
 +#include "hw/sysbus.h"
 +#include "qemu/main-loop.h"
@@ -721,6 +740,7 @@ index 0000000000..89c86d6f15
 +    uint8_t tx_payload[256], rx_payload[256];
 +    DomesLinkEvent events[DOMES_LINK_EVENT_CAPACITY], readmission_event;
 +    uint32_t event_count, next_sequence;
++    uint32_t completion_tokens[3], completion_count, completion_index;
 +    bool readmission_pending, scenario_consumed;
 +    int64_t last_observation_ns;
 +    uint32_t scenario_model, scenario_seed, dut_role, fault_id, fault_sequence, peer_epoch;

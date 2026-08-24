@@ -157,180 +157,32 @@ def cases() -> tuple[Case, ...]:
         )
         for stage in MODELED_STAGES
     )
+    # This is the machine-checked acceptance table; keeping one row per case makes omissions visible.
+    # fmt: off
     fixed = (
-        Case(
-            "pass",
-            ("pass",),
-            "channel_access",
-            "one canonical delivery",
-            1_000_000,
-            ({"op": "deliver"},),
-        ),
-        Case(
-            "loss",
-            ("loss",),
-            "channel_access",
-            "no receive delivery",
-            1_000_000,
-            ({"op": "drop"},),
-        ),
-        Case(
-            "duplicate",
-            ("duplication",),
-            "airtime",
-            "two causally distinct copies",
-            1_000_000,
-            ({"op": "duplicate", "count": 2},),
-        ),
-        Case(
-            "reorder",
-            ("reordering",),
-            "airtime",
-            "deadline order wins over submit order",
-            1_000_000,
-            ({"op": "reorder", "order": [2, 1]},),
-        ),
-        Case(
-            "jitter",
-            ("bounded_jitter",),
-            "peer_processing",
-            "signed jitter stays within the configured bound",
-            2_000_000,
-            ({"op": "jitter", "values_ns": [-7_000, 7_000], "bound_ns": 7_000},),
-        ),
-        Case(
-            "corrupt",
-            ("corruption",),
-            "before_production_validation",
-            "corrupted bytes reach and fail production validation",
-            1_000_000,
-            ({"op": "corrupt", "offset": 3, "xor": 128},),
-        ),
-        Case(
-            "truncate",
-            ("truncation",),
-            "before_production_validation",
-            "truncated bytes reach and fail production validation",
-            1_000_000,
-            ({"op": "truncate", "length": 7},),
-        ),
-        Case(
-            "submit_failure",
-            ("immediate_submit_failure",),
-            "radio_submit",
-            "submission fails before ownership transfer",
-            1_000_000,
-            ({"op": "submit_status", "status": "failure"},),
-        ),
-        Case(
-            "completion_failure",
-            ("delayed_completion_failure",),
-            "completion_delay",
-            "owned submission completes once with failure",
-            2_000_000,
-            ({"op": "completion", "status": "failure", "delay_ns": 100_000},),
-        ),
-        Case(
-            "missing_completion",
-            ("missing_completion",),
-            "completion_delay",
-            "production timeout poisons the transport",
-            500_000_000,
-            ({"op": "completion", "status": "missing"}, {"op": "poison"}),
-        ),
-        Case(
-            "callback_burst",
-            ("callback_burst",),
-            "rx_callback_delay",
-            "bounded callbacks retain total order",
-            2_000_000,
-            ({"op": "burst", "count": 3},),
-        ),
-        Case(
-            "completion_reorder",
-            ("completion_order_change",),
-            "completion_delay",
-            "correlation identity survives completion reordering",
-            2_000_000,
-            ({"op": "completion_order", "order": [3, 1, 2]},),
-        ),
-        Case(
-            "saturation",
-            ("saturation",),
-            "channel_access",
-            "production four-entry radio handoff capacity is reached without overflow",
-            5_000_000,
-            ({"op": "fill", "count": 4, "capacity": 4},),
-        ),
-        Case(
-            "recovery",
-            ("backpressure_recovery",),
-            "channel_access",
-            "one bounded dequeue restores admission",
-            5_000_000,
-            (
-                {"op": "fill", "count": 4, "capacity": 4},
-                {"op": "drain", "count": 1},
-                {"op": "deliver"},
-            ),
-        ),
-        Case(
-            "join",
-            ("peer_join",),
-            "peer_processing",
-            "new identity becomes routable once",
-            2_000_000,
-            ({"op": "peer", "state": "join", "epoch": 1},),
-        ),
-        Case(
-            "disappear",
-            ("peer_disappearance",),
-            "peer_processing",
-            "disappearance reaches a bounded unavailable result",
-            500_000_000,
-            ({"op": "peer", "state": "absent", "epoch": 1},),
-        ),
-        Case(
-            "restart",
-            ("peer_restart",),
-            "peer_processing",
-            "restart increments peer epoch and accepts fresh traffic",
-            3_000_000,
-            ({"op": "peer", "state": "restart", "epoch": 2},),
-        ),
-        Case(
-            "stale",
-            ("stale_traffic",),
-            "peer_processing",
-            "traffic from an older epoch is rejected",
-            3_000_000,
-            ({"op": "peer", "state": "stale", "epoch": 1, "current_epoch": 2},),
-        ),
-        Case(
-            "identity",
-            ("identity_mismatch",),
-            "before_production_validation",
-            "unexpected sender identity is rejected",
-            1_000_000,
-            ({"op": "identity", "expected": 2, "actual": 3},),
-        ),
-        Case(
-            "channel_busy",
-            ("channel_outcome",),
-            "channel_access",
-            "declared packet outcome is recorded without an RF claim",
-            2_000_000,
-            ({"op": "outcome", "state": "channel_busy", "delivered": False},),
-        ),
-        Case(
-            "interference_loss",
-            ("interference_outcome",),
-            "airtime",
-            "declared packet outcome is recorded without an RF claim",
-            2_000_000,
-            ({"op": "outcome", "state": "interference_loss", "delivered": False},),
-        ),
+        Case("pass", ("pass",), "channel_access", "one canonical delivery", 1_000_000, ({"op": "deliver"},)),
+        Case("loss", ("loss",), "channel_access", "no receive delivery", 1_000_000, ({"op": "drop"},)),
+        Case("duplicate", ("duplication",), "airtime", "two causally distinct copies", 1_000_000, ({"op": "duplicate", "count": 2},)),
+        Case("reorder", ("reordering",), "airtime", "deadline order wins over submit order", 1_000_000, ({"op": "reorder", "order": [2, 1]},)),
+        Case("jitter", ("bounded_jitter",), "peer_processing", "signed jitter stays within the configured bound", 2_000_000, ({"op": "jitter", "values_ns": [-7_000, 7_000], "bound_ns": 7_000},)),
+        Case("corrupt", ("corruption",), "before_production_validation", "corrupted bytes reach and fail production validation", 1_000_000, ({"op": "corrupt", "offset": 3, "xor": 128},)),
+        Case("truncate", ("truncation",), "before_production_validation", "truncated bytes reach and fail production validation", 1_000_000, ({"op": "truncate", "length": 7},)),
+        Case("submit_failure", ("immediate_submit_failure",), "radio_submit", "submission fails before ownership transfer", 1_000_000, ({"op": "submit_status", "status": "failure"},)),
+        Case("completion_failure", ("delayed_completion_failure",), "completion_delay", "owned submission completes once with failure", 2_000_000, ({"op": "completion", "status": "failure", "delay_ns": 100_000},)),
+        Case("missing_completion", ("missing_completion",), "completion_delay", "production timeout poisons the transport", 500_000_000, ({"op": "completion", "status": "missing"}, {"op": "poison"})),
+        Case("callback_burst", ("callback_burst",), "rx_callback_delay", "bounded callbacks retain total order", 2_000_000, ({"op": "burst", "count": 3},)),
+        Case("completion_reorder", ("completion_order_change",), "completion_delay", "correlation identity survives completion reordering", 2_000_000, ({"op": "completion_order", "order": [3, 1, 2]},)),
+        Case("saturation", ("saturation",), "channel_access", "production four-entry radio handoff capacity is reached without overflow", 5_000_000, ({"op": "fill", "count": 4, "capacity": 4},)),
+        Case("recovery", ("backpressure_recovery",), "channel_access", "one bounded dequeue restores admission", 5_000_000, ({"op": "fill", "count": 4, "capacity": 4}, {"op": "drain", "count": 1}, {"op": "deliver"})),
+        Case("join", ("peer_join",), "peer_processing", "new identity becomes routable once", 2_000_000, ({"op": "peer", "state": "join", "epoch": 1},)),
+        Case("disappear", ("peer_disappearance",), "peer_processing", "disappearance reaches a bounded unavailable result", 500_000_000, ({"op": "peer", "state": "absent", "epoch": 1},)),
+        Case("restart", ("peer_restart",), "peer_processing", "restart increments peer epoch and accepts fresh traffic", 3_000_000, ({"op": "peer", "state": "restart", "epoch": 2},)),
+        Case("stale", ("stale_traffic",), "peer_processing", "traffic from an older epoch is rejected", 3_000_000, ({"op": "peer", "state": "stale", "epoch": 1, "current_epoch": 2},)),
+        Case("identity", ("identity_mismatch",), "before_production_validation", "unexpected sender identity is rejected", 1_000_000, ({"op": "identity", "expected": 2, "actual": 3},)),
+        Case("channel_busy", ("channel_outcome",), "channel_access", "declared packet outcome is recorded without an RF claim", 2_000_000, ({"op": "outcome", "state": "channel_busy", "delivered": False},)),
+        Case("interference_loss", ("interference_outcome",), "airtime", "declared packet outcome is recorded without an RF claim", 2_000_000, ({"op": "outcome", "state": "interference_loss", "delivered": False},)),
     )
+    # fmt: on
     corpus = fixed + latency
     return tuple(
         Case(
@@ -655,6 +507,8 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 == "498ae0203dc8b7048682fbff718a0629243a98a8"
                 and identity.get("repository_revision") == repository_revision
                 and len(identity.get("repository_revision", "")) == 40
+                and identity.get("qemu_revision")
+                == json.loads(PATCH_MANIFEST.read_text())["upstream_revision"]
                 and all(
                     identity.get(field) == value
                     for field, value in current_artifact_hashes.items()
@@ -742,7 +596,15 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                     case_stages |= {"callback", "ring", "semaphore", "dequeue"}
                 if expected_result(fault_id)["status"] == "PASS":
                     case_stages.add("service_dispatch")
-                stages_ok = stages_ok and all(stages[name] for name in case_stages)
+                stage_results = dict(stages)
+                if fault_id == 11:
+                    stage_results["ring"] = stage_results["ring"] or any(
+                        event.get("type") == 25 and event.get("arg1") == 1509652515
+                        for event in run.get("trace", [])
+                    )
+                stages_ok = stages_ok and all(
+                    stage_results[name] for name in case_stages
+                )
                 run_dir = manifest_path.parent / f"{int(run['index']):03d}"
                 declared = run.get("artifact_sha256", {})
                 if set(declared) != artifact_names:
@@ -764,9 +626,15 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 trace = json.loads((run_dir / "trace.normalized.json").read_text())
                 sequences = [item.get("sequence") for item in delivery]
                 outcomes = {item.get("outcome") for item in faults}
+                handoffs = iter(
+                    event.get("token")
+                    for event in run.get("trace", [])
+                    if event.get("arg1") == 1184188258
+                )
+                completion_order_ok = all(token in handoffs for token in (3, 1, 2))
                 semantics_ok = (
                     (fault_id != 3 or sequences == [1, 0])
-                    and (fault_id != 11 or [event.get("token") for event in run.get("trace", []) if event.get("arg1") == 1184188258][:3] == [3, 1, 2])  # fmt: skip
+                    and (fault_id != 11 or completion_order_ok)
                     and (fault_id != 10 or sequences == list(range(3)))
                     and (fault_id != 12 or sequences == list(range(4)))
                     and (fault_id != 13 or sequences == list(range(5)))

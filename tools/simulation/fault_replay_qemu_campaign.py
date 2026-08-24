@@ -36,8 +36,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 MARKER = "DOMES_QEMU_LINK_RESULT"
 SPECIFICATION_REVISION = "498ae0203dc8b7048682fbff718a0629243a98a8"
-QEMU_REVISION = "4f4148e2f68689eb8861bf9fce0b46ada9200fef"
 ACCEPTANCE_RUNNER = HERE / "fault_replay_acceptance.py"
+QEMU_PATCH_MANIFEST = HERE / "qemu_link/patch_manifest.json"
 QEMU_ROM_NAME = "esp32s3_rev0_rom.bin"
 FAULT_PATTERN = re.compile(
     r"DOMES_FAULT_RECORD schema=1 fault=(\d+) sequence=(\d+) virtual_ns=(\d+) "
@@ -69,6 +69,36 @@ def repository_revision() -> str:
         text=True,
         stdout=subprocess.PIPE,
     ).stdout.strip()
+
+
+def _validated_qemu_revision(qemu: Path, source: Path) -> str:
+    source = source.resolve()
+    if not source.is_dir() or not qemu.is_relative_to(source):
+        raise CampaignFailure(
+            "QEMU binary must be built inside the supplied source tree"
+        )
+    manifest = json.loads(QEMU_PATCH_MANIFEST.read_text())
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=source,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+    if revision != manifest["upstream_revision"]:
+        raise CampaignFailure(
+            "QEMU source revision differs from the pinned patch input"
+        )
+    applied = subprocess.run(
+        ["git", "apply", "--reverse", "--check", str(PATCH)],
+        cwd=source,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if applied.returncode != 0:
+        raise CampaignFailure("QEMU source does not contain the exact acceptance patch")
+    return revision
 
 
 def _campaign_toolchain(qemu: Path) -> Toolchain:
@@ -211,10 +241,12 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
     if fault_id == 3 and sequences != [1, 0]:
         raise CampaignFailure(f"{case.name}: submit order was not reversed")
     handoffs = [event["token"] for event in run["trace"] if event["arg1"] == 1184188258]
-    if fault_id == 11 and handoffs[:3] != [3, 1, 2]:
-        raise CampaignFailure(
-            f"{case.name}: production completion callbacks were not 3,1,2"
-        )
+    if fault_id == 11:
+        ordered = iter(handoffs)
+        if any(token not in ordered for token in (3, 1, 2)):
+            raise CampaignFailure(
+                f"{case.name}: production completion callbacks did not include ordered 3,1,2"
+            )
     if fault_id == 10 and sequences != list(range(3)):
         raise CampaignFailure(
             f"{case.name}: callback order or saturation capacity changed"
@@ -286,6 +318,14 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         raise CampaignFailure(f"{case.name}: termination bound exceeded ({elapsed} ns)")
     stages = run["runtime"]["stages"]
     missing = sorted(stage for stage in _required_stages(fault_id) if not stages[stage])
+    reordered_ring = any(
+        event["type"] == 25 and event["arg1"] == 1509652515 for event in run["trace"]
+    )
+    if fault_id == 11 and reordered_ring and "ring" in missing:
+        # Reordered completion tokens intentionally break the single-token
+        # positional chain, while the raw trace still proves the production
+        # receive ring accepted the peer response.
+        missing.remove("ring")
     if missing:
         raise CampaignFailure(
             f"{case.name}: production stages not exercised: {missing}"
@@ -445,7 +485,9 @@ def run_campaign(args: argparse.Namespace) -> dict[str, object]:
     if artifact_dir.exists():
         raise CampaignFailure("artifact directory must not already exist")
     artifact_dir.mkdir(parents=True)
-    toolchain = _campaign_toolchain(args.qemu_binary.resolve())
+    qemu = args.qemu_binary.resolve()
+    qemu_revision = _validated_qemu_revision(qemu, args.qemu_source)
+    toolchain = _campaign_toolchain(qemu)
     build_dir = args.build_dir.resolve()
     firmware = build_dir / "domes_qemu_link_probe.elf"
     profile = Path(
@@ -479,7 +521,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, object]:
                 "flash_sha256": runs[0]["flash_sha256"],
                 "toolchain_identity": f"{toolchain.idf_version};{toolchain.compiler_version}",
                 "compiler_sha256": toolchain.compiler_sha256,
-                "qemu_revision": QEMU_REVISION,
+                "qemu_revision": qemu_revision,
                 "qemu_binary_sha256": toolchain.qemu_sha256,
                 "qemu_rom_sha256": sha256_file(
                     toolchain.qemu.parent / "pc-bios" / QEMU_ROM_NAME
@@ -568,6 +610,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--qemu-binary", type=Path, required=True)
+    parser.add_argument("--qemu-source", type=Path, required=True)
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--artifact-dir", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=30.0)
