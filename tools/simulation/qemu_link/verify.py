@@ -575,7 +575,10 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
         )
         and any(event["type"] == 12 for event in events if event["token"] == token),
         "dequeue": positions["EspNow.RxDispatch"] is not None,
-        "service_dispatch": any(event["name"] == "EspNow.RxBeacon" for event in events)
+        "service_dispatch": any(
+            event["name"] in {"EspNow.RxBeacon", "EspNow.RxJoinGame"}
+            for event in events
+        )
         and positions["QemuLink.ServiceDispatch"] is not None,
         "tx_complete": positions["EspNow.TxComplete"] is not None,
     }
@@ -594,6 +597,10 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
         "token": token,
         "stages": stages,
         "positions": positions,
+        "stage_counts": {
+            "isr": len(isr),
+            "callbacks": len(callbacks),
+        },
         "event_count": len(events),
     }
 

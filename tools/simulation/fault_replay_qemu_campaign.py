@@ -205,9 +205,20 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         raise CampaignFailure(f"{case.name}: submit order was not reversed")
     if fault_id == 11 and sequences != [2, 0, 1]:
         raise CampaignFailure(f"{case.name}: completion order did not change to 3,1,2")
-    if fault_id in {10, 12} and sequences != list(range(8)):
+    if fault_id in {10, 12} and sequences != list(range(3)):
         raise CampaignFailure(
             f"{case.name}: callback order or saturation capacity changed"
+        )
+    counts = run["runtime"]["stage_counts"]
+    if fault_id in {10, 12, 13} and counts["callbacks"] < 8:
+        raise CampaignFailure(
+            f"{case.name}: production callbacks did not carry the burst"
+        )
+    if fault_id == 0 and deliveries[-1]["payload_hex"][:2] != (
+        "01" if run["role"] == "master" else "10"
+    ):
+        raise CampaignFailure(
+            f"{case.name}: role-specific production message was not dispatched"
         )
     outcomes = [record["outcome"] for record in records]
     if fault_id == 13 and not {"dequeued", "readmitted"} <= set(outcomes):
@@ -220,7 +231,12 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         )
     if fault_id >= 21 and (
         run["absolute_delivery_deadlines"][0] - records[0]["absolute_virtual_ns"]
-        != 11_000
+        != (
+            12_000
+            if case.injection_stage
+            in {"tx_queue_delay", "channel_access", "completion_delay"}
+            else 11_000
+        )
     ):
         raise CampaignFailure(f"{case.name}: declared stage latency was not injected")
     if fault_id >= 21 and run["pipeline_records"] != [

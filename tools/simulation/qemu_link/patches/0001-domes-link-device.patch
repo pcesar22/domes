@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..abeab164c0
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,609 @@
+@@ -0,0 +1,612 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
@@ -128,7 +128,7 @@ index 0000000000..abeab164c0
 +                  "DOMES_FAULT_RECORD schema=1 fault=%u sequence=%u virtual_ns=%" PRIi64
 +                  " stage=%s outcome=%s queued=%u\n",
 +                  s->fault_id, s->fault_sequence++,
-+                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1000000 * 1000000, stage, outcome, s->event_count);
++                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), stage, outcome, s->event_count);
 +}
 +
 +static void observe_state(DomesLinkState *s)
@@ -192,17 +192,16 @@ index 0000000000..abeab164c0
 +        return false;
 +    }
 +    if (type == MSG_PING) response = MSG_PONG;
-+    else if (type == MSG_BEACON) response = MSG_BEACON;
++    else if (type == MSG_BEACON) response =
++        s->dut_role == DUT_ROLE_SLAVE ? MSG_JOIN_GAME : MSG_BEACON;
 +    else if (s->dut_role == DUT_ROLE_MASTER &&
 +             (type == MSG_ARM_TOUCH || type == MSG_SIMULATE_TOUCH)) response = MSG_TOUCH_EVENT;
 +    else if (type == MSG_JOIN_GAME || type == MSG_SET_COLOR || type == MSG_STOP_ALL) return true;
 +    else return false;
 +
 +    if (s->fault_id == FAULT_LATENCY_PEER) s->stage_delay_ns[STAGE_PEER] = 10000;
-+    event->deadline_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1000000 * 1000000 +
-+                         s->peer_delay_ns + s->stage_delay_ns[STAGE_TX_QUEUE] +
-+                         s->stage_delay_ns[STAGE_CHANNEL] + s->stage_delay_ns[STAGE_COMPLETION] +
-+                         s->stage_delay_ns[STAGE_PEER];
++    event->deadline_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
++                         s->peer_delay_ns + s->stage_delay_ns[STAGE_PEER];
 +    event->event_class_priority = 1;
 +    event->source_id = 2;
 +    event->destination_id = 1;
@@ -391,17 +390,17 @@ index 0000000000..abeab164c0
 +                   s->fault_id == FAULT_PEER_RESTART || s->fault_id == FAULT_STALE_TRAFFIC) {
 +            copies = 2;
 +        } else if (s->fault_id == FAULT_CALLBACK_BURST) {
-+            copies = 8;
++            copies = 3;
 +            spacing_ns = 1;
 +        } else if (s->fault_id == FAULT_COMPLETION_ORDER) {
 +            copies = 3;
 +        } else if (s->fault_id == FAULT_SATURATION ||
 +                   s->fault_id == FAULT_BACKPRESSURE_RECOVERY) {
-+            copies = DOMES_LINK_EVENT_CAPACITY;
++            copies = 3;
 +            spacing_ns = 1;
 +        }
 +        if (s->fault_id == FAULT_JITTER) {
-+            event.deadline_ns += (s->scenario_seed & 1) ? 7000 : 0;
++            event.deadline_ns += s->dut_role == DUT_ROLE_MASTER ? 7000 : -7000;
 +        }
 +        if (s->fault_id == FAULT_LATENCY_AIRTIME) {
 +            s->stage_delay_ns[STAGE_AIRTIME] = 10000;
@@ -409,6 +408,8 @@ index 0000000000..abeab164c0
 +        }
 +        for (uint32_t copy = 0; copy < copies; copy++) {
 +            DomesLinkEvent candidate = event;
++            if (s->fault_id >= FAULT_CALLBACK_BURST && s->fault_id <= FAULT_BACKPRESSURE_RECOVERY && copy + 1 < copies)
++                candidate.payload[0] = MSG_TOUCH_EVENT, candidate.length = wire_size(MSG_TOUCH_EVENT);
 +            if (s->fault_id == FAULT_COMPLETION_ORDER) {
 +                static const uint32_t order[] = { 1, 2, 0 };
 +                candidate.deadline_ns += order[copy] * spacing_ns;
@@ -425,7 +426,7 @@ index 0000000000..abeab164c0
 +            }
 +        }
 +        if (s->fault_id == FAULT_BACKPRESSURE_RECOVERY &&
-+            s->event_count == DOMES_LINK_EVENT_CAPACITY) {
++            s->event_count == copies) {
 +            DomesLinkEvent readmitted = s->events[0];
 +            memmove(&s->events[0], &s->events[1],
 +                    (--s->event_count) * sizeof(s->events[0]));
@@ -436,7 +437,7 @@ index 0000000000..abeab164c0
 +            }
 +            record_fault(s, "channel_access", "readmitted");
 +        }
-+        record_fault(s, fault_stage(s->fault_id),
++        if (s->fault_id != FAULT_LATENCY_TX_QUEUE && s->fault_id != FAULT_LATENCY_CHANNEL && s->fault_id != FAULT_LATENCY_COMPLETION) record_fault(s, fault_stage(s->fault_id),
 +                     s->fault_id == FAULT_PEER_RESTART ? "restart_epoch_2" :
 +                     s->fault_id == FAULT_STALE_TRAFFIC ? "stale_epoch_1_then_2" :
 +                     copies > 1 ? "scheduled_multiple" : "scheduled");
@@ -509,8 +510,13 @@ index 0000000000..abeab164c0
 +            record_fault(s, "completion_delay", "missing");
 +        } else {
 +            if (s->fault_id == FAULT_LATENCY_TX_QUEUE) s->stage_delay_ns[STAGE_TX_QUEUE] = 10000;
++            if (s->fault_id == FAULT_LATENCY_CHANNEL) s->stage_delay_ns[STAGE_CHANNEL] = 10000;
++            if (s->fault_id == FAULT_LATENCY_COMPLETION) s->stage_delay_ns[STAGE_COMPLETION] = 10000;
++            if (s->fault_id == FAULT_LATENCY_TX_QUEUE || s->fault_id == FAULT_LATENCY_CHANNEL || s->fault_id == FAULT_LATENCY_COMPLETION) record_fault(s, fault_stage(s->fault_id), "delay_enter");
 +            s->tx_status = TX_PENDING;
-+            timer_mod_ns(s->completion_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000);
++            timer_mod_ns(s->completion_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000 +
++                         s->stage_delay_ns[STAGE_TX_QUEUE] + s->stage_delay_ns[STAGE_CHANNEL] +
++                         s->stage_delay_ns[STAGE_COMPLETION]);
 +        }
 +        break;
 +    case RX_CONSUME:
@@ -518,13 +524,7 @@ index 0000000000..abeab164c0
 +        else {
 +            s->irq_status &= ~IRQ_RX;
 +            s->rx_length = s->rx_correlation = 0;
-+            if (s->event_count) {
-+                timer_mod_ns(s->delivery_timer,
-+                             MAX(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1000000,
-+                                 s->events[0].deadline_ns));
-+            } else {
-+                update_irq(s);
-+            }
++            update_irq(s);
 +        }
 +        break;
 +    case IRQ_MASK:
@@ -540,7 +540,10 @@ index 0000000000..abeab164c0
 +            s->tx_status = TX_IDLE;
 +            memset(s->tx_payload, 0, sizeof(s->tx_payload));
 +        }
-+        update_irq(s);
++        if ((value & IRQ_RX) && s->event_count)
++            timer_mod_ns(s->delivery_timer, MAX(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1,
++                                                 s->events[0].deadline_ns));
++        else update_irq(s);
 +        break;
 +    default: s->sticky |= ST_INVALID; break;
 +    }

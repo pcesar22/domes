@@ -126,11 +126,11 @@ def expected_result(fault_id: int) -> dict[str, Any]:
             3: 2,
             5: 2,
             6: 2,
-            10: 8,
+            10: 3,
             11: 3,
             18: 2,
-            12: 8,
-            13: 8,
+            12: 3,
+            13: 3,
             16: 2,
             17: 2,
         }.get(fault_id, 1)
@@ -250,7 +250,7 @@ def cases() -> tuple[Case, ...]:
             "rx_callback_delay",
             "bounded callbacks retain total order",
             2_000_000,
-            ({"op": "burst", "count": 8},),
+            ({"op": "burst", "count": 3},),
         ),
         Case(
             "completion_reorder",
@@ -264,9 +264,9 @@ def cases() -> tuple[Case, ...]:
             "saturation",
             ("saturation",),
             "channel_access",
-            "capacity is reached without overflow and terminates",
+            "production callback capacity is reached without overflow and terminates",
             5_000_000,
-            ({"op": "fill", "count": 8, "capacity": 8},),
+            ({"op": "fill", "count": 4, "capacity": 4},),
         ),
         Case(
             "recovery",
@@ -275,7 +275,7 @@ def cases() -> tuple[Case, ...]:
             "one bounded dequeue restores admission",
             5_000_000,
             (
-                {"op": "fill", "count": 8, "capacity": 8},
+                {"op": "fill", "count": 4, "capacity": 4},
                 {"op": "drain", "count": 1},
                 {"op": "deliver"},
             ),
@@ -857,7 +857,19 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 semantics_ok = (
                     (fault_id != 3 or sequences == [1, 0])
                     and (fault_id != 11 or sequences == [2, 0, 1])
-                    and (fault_id not in {10, 12} or sequences == list(range(8)))
+                    and (fault_id not in {10, 12} or sequences == list(range(3)))
+                    and (
+                        fault_id not in {10, 12, 13}
+                        or run.get("runtime", {})
+                        .get("stage_counts", {})
+                        .get("callbacks", 0)
+                        >= 8
+                    )
+                    and (
+                        fault_id != 0
+                        or delivery[-1].get("payload_hex", "")[:2]
+                        == ("01" if role == "master" else "10")
+                    )
                     and (fault_id != 13 or {"dequeued", "readmitted"} <= outcomes)
                     and (fault_id != 16 or "restart_epoch_2" in outcomes)
                     and (fault_id != 17 or "stale_epoch_1_then_2" in outcomes)
@@ -865,7 +877,12 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                         fault_id < 21
                         or run.get("absolute_delivery_deadlines", [0])[0]
                         - faults[0].get("absolute_virtual_ns", 0)
-                        == 11_000
+                        == (
+                            12_000
+                            if case.injection_stage
+                            in {"tx_queue_delay", "channel_access", "completion_delay"}
+                            else 11_000
+                        )
                     )
                 )
                 artifacts_ok = artifacts_ok and (

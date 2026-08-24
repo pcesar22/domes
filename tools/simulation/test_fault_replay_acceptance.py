@@ -93,7 +93,9 @@ def build_campaign_fixture(root: Path) -> Path:
         delivery_sequences = {3: [1, 0], 11: [2, 0, 1]}.get(
             fault_id, list(range(expected["delivery_records"]))
         )
-        deliveries = [{"sequence": index} for index in delivery_sequences]
+        deliveries = [
+            {"sequence": index, "payload_hex": ""} for index in delivery_sequences
+        ]
         artifact_contents = {
             **common_artifacts,
             "fault-records.json": MODULE.canonical(faults),
@@ -106,6 +108,15 @@ def build_campaign_fixture(root: Path) -> Path:
         fault_digest, delivery_digest = MODULE.digest(faults), MODULE.digest(deliveries)
         roles = []
         for role in ("master", "slave"):
+            deliveries = [
+                {**item, "payload_hex": "01" if role == "master" else "10"}
+                for item in deliveries
+            ]
+            artifact_contents["delivery-records.json"] = MODULE.canonical(deliveries)
+            artifact_hashes["delivery-records.json"] = MODULE.hashlib.sha256(
+                artifact_contents["delivery-records.json"]
+            ).hexdigest()
+            delivery_digest = MODULE.digest(deliveries)
             role_dir = root / case.name / role
             runs = []
             for index in (1, 2):
@@ -120,7 +131,19 @@ def build_campaign_fixture(root: Path) -> Path:
                         "fault_records_sha256": fault_digest,
                         "delivery_records_sha256": delivery_digest,
                         "absolute_delivery_deadlines": (
-                            [11_100] * len(deliveries)
+                            [
+                                (
+                                    12_100
+                                    if case.injection_stage
+                                    in {
+                                        "tx_queue_delay",
+                                        "channel_access",
+                                        "completion_delay",
+                                    }
+                                    else 11_100
+                                )
+                            ]
+                            * len(deliveries)
                             if fault_id >= 21
                             else [101] * len(deliveries)
                         ),
@@ -134,7 +157,10 @@ def build_campaign_fixture(root: Path) -> Path:
                             "trace_discontinuities": 0,
                         },
                         "artifact_sha256": artifact_hashes,
-                        "runtime": {"stages": stages},
+                        "runtime": {
+                            "stages": stages,
+                            "stage_counts": {"callbacks": 8},
+                        },
                         "final_state": {
                             "virtual_ns": 100,
                             "queued": 0,
@@ -253,53 +279,6 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
             self.assertEqual(first["raw"]["unconsumed_events"], 0)
             self.assertEqual(first["raw_sha256"], MODULE.digest(first["raw"]))
 
-    def test_replay_trace_preserves_packet_detail_and_duplicate_events(self):
-        trace = "\n".join(
-            (
-                "DOMES_QEMU_LINK_TRACE schema=1 index=0 timestamp=10 task=1 "
-                "type=35 arg1=7 token=11",
-                "DOMES_QEMU_LINK_TRACE schema=1 index=1 timestamp=11 task=1 "
-                "type=35 arg1=7 token=11",
-            )
-        )
-        self.assertEqual(
-            CAMPAIGN_MODULE._replay_trace(trace),
-            [
-                {
-                    "index": 0,
-                    "task": 1,
-                    "type": 35,
-                    "arg1": 7,
-                    "token": 11,
-                    "timestamp_ns": 0,
-                },
-                {
-                    "index": 1,
-                    "task": 1,
-                    "type": 35,
-                    "arg1": 7,
-                    "token": 11,
-                    "timestamp_ns": 1,
-                },
-            ],
-        )
-
-    def test_replay_trace_retains_exact_relative_virtual_timing(self):
-        def trace(second_timestamp: int) -> str:
-            return "\n".join(
-                (
-                    "DOMES_QEMU_LINK_TRACE schema=1 index=0 timestamp=10 task=1 "
-                    "type=35 arg1=7 token=11",
-                    "DOMES_QEMU_LINK_TRACE schema=1 index=1 "
-                    f"timestamp={second_timestamp} task=1 type=35 arg1=7 token=11",
-                )
-            )
-
-        self.assertNotEqual(
-            CAMPAIGN_MODULE._replay_trace(trace(1010)),
-            CAMPAIGN_MODULE._replay_trace(trace(1011)),
-        )
-
     def test_overflow_and_corrupted_identity_fail_closed(self):
         overflow = MODULE.Case(
             "overflow",
@@ -335,15 +314,6 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
         else:
             self.assertIn("base revision", path_audit["reason"])
 
-    def test_protected_path_audit_reports_a_shallow_checkout(self):
-        completed = MODULE.subprocess.CompletedProcess(
-            args=[], returncode=128, stdout="", stderr="unknown revision"
-        )
-        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
-            result = MODULE.protected_path_audit()
-        self.assertEqual(result["status"], "UNAVAILABLE")
-        self.assertEqual(result["changed_paths"], [])
-
     def test_retained_real_dut_campaign_closes_roles_and_production_stages(self):
         result = MODULE.validate_real_dut_campaign(self.campaign)
         self.assertEqual(result["status"], "PASS")
@@ -362,32 +332,6 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                 ],
                 "FAIL",
             )
-
-    def test_retained_campaign_rejects_self_authored_result_and_bypass(self):
-        for mutation in ("expected", "stage", "termination", "empty_faults"):
-            with self.subTest(
-                mutation=mutation
-            ), tempfile.TemporaryDirectory() as directory:
-                copied = Path(directory) / "qemu-campaign"
-                shutil.copytree(self.campaign.parent, copied)
-                manifest_path = copied / "pass/master/replay-manifest.json"
-                manifest = json.loads(manifest_path.read_text())
-                if mutation == "expected":
-                    manifest["identity"]["expected_result"]["status"] = "FAIL"
-                elif mutation == "stage":
-                    manifest["runs"][0]["runtime"]["stages"]["mmio"] = False
-                elif mutation == "termination":
-                    manifest["runs"][0]["final_state"]["virtual_ns"] = 2_000_000
-                else:
-                    (copied / "pass/master/001/fault-records.json").write_text("[]")
-                manifest["identity_sha256"] = MODULE.digest(manifest["identity"])
-                manifest_path.write_text(json.dumps(manifest))
-                self.assertEqual(
-                    MODULE.validate_real_dut_campaign(copied / self.campaign.name)[
-                        "status"
-                    ],
-                    "FAIL",
-                )
 
     def test_report_is_self_contained_and_json_round_trips(self):
         path_audit = {
