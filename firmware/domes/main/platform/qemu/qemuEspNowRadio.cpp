@@ -258,6 +258,7 @@ void QemuEspNowRadio::runTask() {
             };
             receiveCallback_(callbackContext_, event.token, metadata, event.payload.data(),
                              event.length);
+            write(qemu_link::Register::kRxDequeue, kConsume);
         }
     }
 }

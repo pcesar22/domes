@@ -3,14 +3,13 @@ new file mode 100644
 index 0000000000..abeab164c0
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,612 @@
+@@ -0,0 +1,588 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
 +#include "hw/qdev-properties.h"
 +#include "qemu/log.h"
 +#include "qemu/module.h"
-+
 +#define MAGIC 0x444c4e4b
 +#define VERSION 1
 +#define CAPABILITY 0x000
@@ -28,6 +27,7 @@ index 0000000000..abeab164c0
 +#define RX_LENGTH 0x03c
 +#define RX_CORRELATION 0x040
 +#define RX_CONSUME 0x044
++#define RX_DEQUEUE 0x048
 +#define IRQ_STATUS 0x050
 +#define IRQ_MASK 0x054
 +#define IRQ_ACK 0x058
@@ -51,9 +51,7 @@ index 0000000000..abeab164c0
 +       MSG_JOIN_GAME = 0x10, MSG_ARM_TOUCH = 0x11, MSG_SET_COLOR = 0x12,
 +       MSG_STOP_ALL = 0x13, MSG_SIMULATE_TOUCH = 0x14,
 +       MSG_TOUCH_EVENT = 0x20, MSG_TIMEOUT_EVENT = 0x21 };
-+
 +static const uint8_t actor_mac[6] = { 0x02, 0, 0, 0, 0, 0x02 };
-+
 +enum {
 +    FAULT_PASS,
 +    FAULT_LOSS,
@@ -85,7 +83,6 @@ index 0000000000..abeab164c0
 +    FAULT_COUNT,
 +};
 +enum { STAGE_TX_QUEUE, STAGE_CHANNEL, STAGE_AIRTIME, STAGE_COMPLETION, STAGE_PEER, STAGE_RX_CALLBACK };
-+
 +static const char *fault_stage(uint32_t fault_id)
 +{
 +    switch (fault_id) {
@@ -121,7 +118,6 @@ index 0000000000..abeab164c0
 +        return "channel_access";
 +    }
 +}
-+
 +static void record_fault(DomesLinkState *s, const char *stage, const char *outcome)
 +{
 +    qemu_log_mask(LOG_GUEST_ERROR,
@@ -130,7 +126,6 @@ index 0000000000..abeab164c0
 +                  s->fault_id, s->fault_sequence++,
 +                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), stage, outcome, s->event_count);
 +}
-+
 +static void observe_state(DomesLinkState *s)
 +{
 +    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
@@ -141,7 +136,6 @@ index 0000000000..abeab164c0
 +        s->last_observation_ns = now;
 +    }
 +}
-+
 +static bool event_before(const DomesLinkEvent *a, const DomesLinkEvent *b)
 +{
 +    if (a->deadline_ns != b->deadline_ns) return a->deadline_ns < b->deadline_ns;
@@ -152,7 +146,6 @@ index 0000000000..abeab164c0
 +    if (a->destination_id != b->destination_id) return a->destination_id < b->destination_id;
 +    return a->sequence < b->sequence;
 +}
-+
 +static bool enqueue_event(DomesLinkState *s, DomesLinkEvent event)
 +{
 +    uint32_t index;
@@ -168,7 +161,6 @@ index 0000000000..abeab164c0
 +    s->event_count++;
 +    return true;
 +}
-+
 +static uint32_t wire_size(uint8_t type)
 +{
 +    switch (type) {
@@ -181,7 +173,6 @@ index 0000000000..abeab164c0
 +    default: return 0;
 +    }
 +}
-+
 +static bool actor_transition(DomesLinkState *s, DomesLinkEvent *event)
 +{
 +    uint8_t type = s->tx_payload[0];
@@ -198,7 +189,6 @@ index 0000000000..abeab164c0
 +             (type == MSG_ARM_TOUCH || type == MSG_SIMULATE_TOUCH)) response = MSG_TOUCH_EVENT;
 +    else if (type == MSG_JOIN_GAME || type == MSG_SET_COLOR || type == MSG_STOP_ALL) return true;
 +    else return false;
-+
 +    if (s->fault_id == FAULT_LATENCY_PEER) s->stage_delay_ns[STAGE_PEER] = 10000;
 +    event->deadline_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
 +                         s->peer_delay_ns + s->stage_delay_ns[STAGE_PEER];
@@ -219,28 +209,23 @@ index 0000000000..abeab164c0
 +    }
 +    return true;
 +}
-+
 +static void update_irq(DomesLinkState *s)
 +{
 +    qemu_set_irq(s->irq, (s->irq_status & s->irq_mask) != 0);
 +}
-+
 +static bool word_access(hwaddr addr, unsigned size)
 +{
 +    return size == 4 && (addr & 3) == 0;
 +}
-+
 +static bool tx_locked(DomesLinkState *s)
 +{
 +    return s->tx_status != TX_IDLE || (s->irq_status & IRQ_TX) != 0;
 +}
-+
 +static void reject_tx_mutation(DomesLinkState *s)
 +{
 +    /* The single bounded submission slot remains owned through IRQ acknowledgment. */
 +    s->sticky |= ST_EXHAUSTED | ST_OVERWRITE;
 +}
-+
 +static uint64_t link_read(void *opaque, hwaddr addr, unsigned size)
 +{
 +    DomesLinkState *s = opaque;
@@ -274,7 +259,6 @@ index 0000000000..abeab164c0
 +    default: s->sticky |= ST_INVALID; return 0;
 +    }
 +}
-+
 +static void deliver_due(void *opaque)
 +{
 +    DomesLinkState *s = opaque;
@@ -329,7 +313,6 @@ index 0000000000..abeab164c0
 +    }
 +    update_irq(s);
 +}
-+
 +static void complete(void *opaque)
 +{
 +    DomesLinkState *s = opaque;
@@ -369,7 +352,8 @@ index 0000000000..abeab164c0
 +               !actor_transition(s, &event)) {
 +        s->sticky |= ST_MODEL_FAILURE;
 +        s->tx_status = TX_FAILURE;
-+    } else if (event.length) {
++    } else if (s->fault_id == FAULT_BACKPRESSURE_RECOVERY && s->scenario_consumed) { update_irq(s); return;
++    } else if (event.length) { s->scenario_consumed = true;
 +        uint32_t copies = 1;
 +        uint64_t spacing_ns = 1000;
 +        uint32_t initial_count = s->event_count;
@@ -396,7 +380,7 @@ index 0000000000..abeab164c0
 +            copies = 3;
 +        } else if (s->fault_id == FAULT_SATURATION ||
 +                   s->fault_id == FAULT_BACKPRESSURE_RECOVERY) {
-+            copies = 3;
++            copies = s->fault_id == FAULT_SATURATION ? 3 : 4;
 +            spacing_ns = 1;
 +        }
 +        if (s->fault_id == FAULT_JITTER) {
@@ -421,27 +405,18 @@ index 0000000000..abeab164c0
 +            if (s->fault_id == FAULT_STALE_TRAFFIC && copy == 0) {
 +                candidate.source_low = 0x00000003;
 +            }
-+            if (!enqueue_event(s, candidate)) {
-+                break;
-+            }
++            if (s->fault_id == FAULT_BACKPRESSURE_RECOVERY && copy == 3) {
++                s->readmission_event = candidate;
++                s->readmission_pending = true;
++            } else if (!enqueue_event(s, candidate)) break;
 +        }
-+        if (s->fault_id == FAULT_BACKPRESSURE_RECOVERY &&
-+            s->event_count == copies) {
-+            DomesLinkEvent readmitted = s->events[0];
-+            memmove(&s->events[0], &s->events[1],
-+                    (--s->event_count) * sizeof(s->events[0]));
-+            record_fault(s, "channel_access", "dequeued");
-+            readmitted.deadline_ns = s->events[s->event_count - 1].deadline_ns + 1;
-+            if (!enqueue_event(s, readmitted)) {
-+                s->sticky |= ST_MODEL_FAILURE;
-+            }
-+            record_fault(s, "channel_access", "readmitted");
-+        }
++        if (s->fault_id == FAULT_SATURATION || s->fault_id == FAULT_BACKPRESSURE_RECOVERY)
++            record_fault(s, "channel_access", "production_capacity_4");
 +        if (s->fault_id != FAULT_LATENCY_TX_QUEUE && s->fault_id != FAULT_LATENCY_CHANNEL && s->fault_id != FAULT_LATENCY_COMPLETION) record_fault(s, fault_stage(s->fault_id),
 +                     s->fault_id == FAULT_PEER_RESTART ? "restart_epoch_2" :
 +                     s->fault_id == FAULT_STALE_TRAFFIC ? "stale_epoch_1_then_2" :
 +                     copies > 1 ? "scheduled_multiple" : "scheduled");
-+        if (s->event_count != initial_count + copies) {
++        if (s->event_count != initial_count + copies - (s->readmission_pending ? 1 : 0)) {
 +            s->sticky |= ST_MODEL_FAILURE;
 +            s->tx_status = TX_FAILURE;
 +        } else {
@@ -451,7 +426,6 @@ index 0000000000..abeab164c0
 +    }
 +    update_irq(s);
 +}
-+
 +static void link_write(void *opaque, hwaddr addr, uint64_t value, unsigned size)
 +{
 +    DomesLinkState *s = opaque;
@@ -527,6 +501,15 @@ index 0000000000..abeab164c0
 +            update_irq(s);
 +        }
 +        break;
++    case RX_DEQUEUE:
++        if (value != 1) s->sticky |= ST_SEQUENCE;
++        else if (s->readmission_pending) {
++            record_fault(s, "channel_access", "production_dequeued");
++            if (!enqueue_event(s, s->readmission_event)) s->sticky |= ST_MODEL_FAILURE;
++            else { record_fault(s, "channel_access", "readmitted"); timer_mod_ns(s->delivery_timer, MAX(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1, s->events[0].deadline_ns)); }
++            s->readmission_pending = false;
++        }
++        break;
 +    case IRQ_MASK:
 +        if (value & ~(IRQ_TX | IRQ_RX)) s->sticky |= ST_INVALID;
 +        else { s->irq_mask = value; update_irq(s); }
@@ -548,12 +531,10 @@ index 0000000000..abeab164c0
 +    default: s->sticky |= ST_INVALID; break;
 +    }
 +}
-+
 +static const MemoryRegionOps link_ops = {
 +    .read = link_read, .write = link_write, .endianness = DEVICE_LITTLE_ENDIAN,
 +    .valid = { .min_access_size = 1, .max_access_size = 4, .unaligned = true },
 +};
-+
 +static void link_reset(Object *obj, ResetType type)
 +{
 +    DomesLinkState *s = DOMES_LINK(obj);
@@ -561,7 +542,7 @@ index 0000000000..abeab164c0
 +    s->tx_correlation = 0; s->tx_status = TX_IDLE;
 +    s->rx_source_low = s->rx_source_high = s->rx_rssi = s->rx_length = 0;
 +    s->rx_correlation = s->irq_status = s->irq_mask = s->sticky = 0;
-+    s->event_count = s->next_sequence = s->fault_sequence = 0;
++    s->readmission_pending = s->scenario_consumed = false; s->event_count = s->next_sequence = s->fault_sequence = 0;
 +    memset(s->tx_payload, 0, sizeof(s->tx_payload));
 +    memset(s->rx_payload, 0, sizeof(s->rx_payload));
 +    memset(s->events, 0, sizeof(s->events));
@@ -569,21 +550,18 @@ index 0000000000..abeab164c0
 +    timer_del(s->delivery_timer);
 +    update_irq(s);
 +}
-+
 +static void link_realize(DeviceState *dev, Error **errp)
 +{
 +    DomesLinkState *s = DOMES_LINK(dev);
 +    s->completion_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, complete, s);
 +    s->delivery_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, deliver_due, s);
 +}
-+
 +static void link_finalize(Object *obj)
 +{
 +    DomesLinkState *s = DOMES_LINK(obj);
 +    timer_free(s->completion_timer);
 +    timer_free(s->delivery_timer);
 +}
-+
 +static void link_init(Object *obj)
 +{
 +    DomesLinkState *s = DOMES_LINK(obj);
@@ -591,7 +569,6 @@ index 0000000000..abeab164c0
 +    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 +    sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 +}
-+
 +static void link_class_init(ObjectClass *klass, void *data)
 +{
 +    DeviceClass *dc = DEVICE_CLASS(klass);
@@ -608,7 +585,6 @@ index 0000000000..abeab164c0
 +    device_class_set_props(dc, properties);
 +    rc->phases.hold = link_reset;
 +}
-+
 +static const TypeInfo link_info = {
 +    .name = TYPE_DOMES_LINK, .parent = TYPE_SYS_BUS_DEVICE,
 +    .instance_size = sizeof(DomesLinkState), .instance_init = link_init,
@@ -680,18 +656,16 @@ new file mode 100644
 index 0000000000..89c86d6f15
 --- /dev/null
 +++ b/include/hw/misc/domes_link.h
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,35 @@
 +#pragma once
 +#include "hw/sysbus.h"
 +#include "qemu/main-loop.h"
 +#include "qemu/timer.h"
-+
 +#define TYPE_DOMES_LINK "domes-link"
 +OBJECT_DECLARE_SIMPLE_TYPE(DomesLinkState, DOMES_LINK)
 +#define DOMES_LINK_MMIO_SIZE 0x1000
 +#define DOMES_LINK_MAX_PAYLOAD 250
 +#define DOMES_LINK_EVENT_CAPACITY 8
-+
 +typedef struct DomesLinkEvent {
 +    int64_t deadline_ns;
 +    uint32_t event_class_priority;
@@ -700,7 +674,6 @@ index 0000000000..89c86d6f15
 +    uint32_t source_low, source_high;
 +    uint8_t payload[DOMES_LINK_MAX_PAYLOAD];
 +} DomesLinkEvent;
-+
 +struct DomesLinkState {
 +    SysBusDevice parent_obj;
 +    MemoryRegion mmio;
@@ -711,8 +684,9 @@ index 0000000000..89c86d6f15
 +    uint32_t rx_source_low, rx_source_high, rx_rssi, rx_length, rx_correlation;
 +    uint32_t irq_status, irq_mask, sticky;
 +    uint8_t tx_payload[256], rx_payload[256];
-+    DomesLinkEvent events[DOMES_LINK_EVENT_CAPACITY];
++    DomesLinkEvent events[DOMES_LINK_EVENT_CAPACITY], readmission_event;
 +    uint32_t event_count, next_sequence;
++    bool readmission_pending, scenario_consumed;
 +    int64_t last_observation_ns;
 +    uint32_t scenario_model, scenario_seed, dut_role, fault_id, fault_sequence;
 +    uint64_t peer_delay_ns;

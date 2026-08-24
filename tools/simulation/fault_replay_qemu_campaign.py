@@ -221,7 +221,9 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
             f"{case.name}: role-specific production message was not dispatched"
         )
     outcomes = [record["outcome"] for record in records]
-    if fault_id == 13 and not {"dequeued", "readmitted"} <= set(outcomes):
+    if fault_id == 13 and sequences != list(range(4)):
+        raise CampaignFailure(f"{case.name}: recovered frame was not delivered")
+    if fault_id == 13 and not {"production_dequeued", "readmitted"} <= set(outcomes):
         raise CampaignFailure(f"{case.name}: no dequeue and readmission recovery")
     if fault_id == 16 and "restart_epoch_2" not in outcomes:
         raise CampaignFailure(f"{case.name}: peer epoch did not restart")

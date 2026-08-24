@@ -45,6 +45,7 @@ REGISTER_NAMES = {
     "rx_length": ("kRxLength", "RX_LENGTH"),
     "rx_correlation": ("kRxCorrelation", "RX_CORRELATION"),
     "rx_consume": ("kRxConsume", "RX_CONSUME"),
+    "rx_dequeue": ("kRxDequeue", "RX_DEQUEUE"),
     "interrupt_status": ("kInterruptStatus", "IRQ_STATUS"),
     "interrupt_mask": ("kInterruptMask", "IRQ_MASK"),
     "interrupt_ack": ("kInterruptAck", "IRQ_ACK"),

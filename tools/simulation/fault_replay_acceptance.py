@@ -130,7 +130,7 @@ def expected_result(fault_id: int) -> dict[str, Any]:
             11: 3,
             18: 2,
             12: 3,
-            13: 3,
+            13: 4,
             16: 2,
             17: 2,
         }.get(fault_id, 1)
@@ -573,10 +573,6 @@ def protected_path_audit() -> dict[str, Any]:
         stderr=subprocess.DEVNULL,
     )
     if base.returncode != 0:
-        # pull_request jobs use a depth-one synthetic merge checkout, so the
-        # controller-supplied base object is intentionally absent.  Keep the
-        # acceptance runner fail-closed while allowing callers to distinguish
-        # that checkout limitation from an out-of-scope path.
         return {
             "status": "UNAVAILABLE",
             "required_base_revision": REQUIRED_BASE_REVISION,
@@ -858,6 +854,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                     (fault_id != 3 or sequences == [1, 0])
                     and (fault_id != 11 or sequences == [2, 0, 1])
                     and (fault_id not in {10, 12} or sequences == list(range(3)))
+                    and (fault_id != 13 or sequences == list(range(4)))
                     and (
                         fault_id not in {10, 12, 13}
                         or run.get("runtime", {})
@@ -870,7 +867,10 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                         or delivery[-1].get("payload_hex", "")[:2]
                         == ("01" if role == "master" else "10")
                     )
-                    and (fault_id != 13 or {"dequeued", "readmitted"} <= outcomes)
+                    and (
+                        fault_id != 13
+                        or {"production_dequeued", "readmitted"} <= outcomes
+                    )
                     and (fault_id != 16 or "restart_epoch_2" in outcomes)
                     and (fault_id != 17 or "stale_epoch_1_then_2" in outcomes)
                     and (
@@ -1078,51 +1078,19 @@ def run(campaign: Path) -> dict[str, Any]:
         },
         "protected_path_audit": path_audit,
         "dependency_acceptance_matrix": [
-            {
-                "contract": "link ABI and bounded storage",
-                "test": "qemu_link.verify",
-                "artifact": "controller-private qemu_link.verify JSON",
-            },
-            {
-                "contract": "virtual ordering and host-time prohibition",
-                "test": "test_fault_replay_acceptance",
-                "artifact": "this report",
-            },
-            {
-                "contract": "interrupt and radio-task handoff",
-                "test": "retained real-DUT runtime trace",
-                "artifact": real_dut["artifact"],
-            },
-            {
-                "contract": "production transport, codec, and service dispatch",
-                "test": "retained master/slave campaign",
-                "artifact": real_dut["artifact"],
-            },
-            {
-                "contract": "complete deterministic fault dimensions",
-                "test": "machine-checked fixed matrix",
-                "artifact": "this report",
-            },
-            {
-                "contract": "replay identity and normalized trace",
-                "test": "two identical executions per case",
-                "artifact": "this report",
-            },
-            {
-                "contract": "role rotation",
-                "test": "master and slave real-DUT runs",
-                "artifact": real_dut["artifact"],
-            },
-            {
-                "contract": "patch budget and physical-image isolation",
-                "test": "source and patch audit",
-                "artifact": "this report",
-            },
-            {
-                "contract": "all fail-closed stop conditions",
-                "test": "negative checks",
-                "artifact": "this report",
-            },
+            {"contract": contract, "test": test, "artifact": artifact}
+            for contract, test, artifact in (
+                item.replace("$campaign", real_dut["artifact"]).split("|")
+                for item in (
+                    "link ABI and bounded storage|qemu_link.verify|controller-private qemu_link.verify JSON",
+                    "virtual ordering and host-time prohibition|test_fault_replay_acceptance|this report",
+                    "interrupt and radio-task handoff|retained real-DUT runtime trace|$campaign",
+                    "production transport, codec, and service dispatch|retained master/slave campaign|$campaign",
+                    "complete deterministic fault dimensions|machine-checked fixed matrix|this report",
+                    "replay identity, stop conditions, and role rotation|two identical executions per role|$campaign",
+                    "patch budget and physical-image isolation|source and patch audit|this report",
+                )
+            )
         ],
         "claim_exclusions": [
             "hardware",

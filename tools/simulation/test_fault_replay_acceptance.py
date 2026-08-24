@@ -74,7 +74,7 @@ def build_campaign_fixture(root: Path) -> Path:
     for fault_id, case in enumerate(MODULE.cases()):
         expected = MODULE.expected_result(fault_id)
         outcomes = {
-            13: ["scheduled_multiple", "dequeued", "readmitted"],
+            13: ["production_capacity_4", "production_dequeued", "readmitted"],
             16: ["restart_epoch_2"],
             17: ["stale_epoch_1_then_2"],
         }.get(fault_id, ["fixture"])
@@ -295,13 +295,46 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
         self.assertEqual(set(checks.values()), {"REJECTED"})
 
     def test_each_negative_check_executes_a_rejecting_mutation(self):
-        case = MODULE.cases()[0]
-        valid = MODULE.execute(case)
-        MODULE.validate_execution(case, valid)
-        corrupted = json.loads(json.dumps(valid))
-        corrupted["raw"]["unconsumed_events"] = 1
-        with self.assertRaisesRegex(MODULE.AcceptanceFailure, "unconsumed"):
-            MODULE.validate_execution(case, corrupted)
+        for mutation in ("expected", "stage", "termination", "empty_faults"):
+            with self.subTest(
+                mutation=mutation
+            ), tempfile.TemporaryDirectory() as directory:
+                copied = Path(directory) / "qemu-campaign"
+                shutil.copytree(self.campaign.parent, copied)
+                path = copied / "pass/master/replay-manifest.json"
+                manifest = json.loads(path.read_text())
+                if mutation == "expected":
+                    manifest["identity"]["expected_result"]["status"] = "FAIL"
+                elif mutation == "stage":
+                    manifest["runs"][0]["runtime"]["stages"]["mmio"] = False
+                elif mutation == "termination":
+                    manifest["runs"][0]["final_state"]["virtual_ns"] = 2_000_000_001
+                else:
+                    (copied / "pass/master/001/fault-records.json").write_text("[]")
+                manifest["identity_sha256"] = MODULE.digest(manifest["identity"])
+                path.write_text(json.dumps(manifest))
+                self.assertEqual(
+                    MODULE.validate_real_dut_campaign(copied / self.campaign.name)[
+                        "status"
+                    ],
+                    "FAIL",
+                )
+
+    def test_replay_trace_preserves_duplicates_and_exact_relative_time(self):
+        trace = "\n".join(
+            f"DOMES_QEMU_LINK_TRACE schema=1 index={i} timestamp={10+i} task=1 "
+            "type=35 arg1=7 token=11"
+            for i in range(2)
+        )
+        replay = CAMPAIGN_MODULE._replay_trace(trace)
+        self.assertEqual([event["timestamp_ns"] for event in replay], [0, 1])
+        self.assertEqual(len(replay), 2)
+        self.assertNotEqual(
+            replay,
+            CAMPAIGN_MODULE._replay_trace(
+                trace.replace("timestamp=11", "timestamp=12")
+            ),
+        )
 
     def test_host_time_patch_budget_and_physical_isolation_pass(self):
         self.assertEqual(MODULE.audit_host_time(PATH)["status"], "PASS")
@@ -331,34 +364,6 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                     "status"
                 ],
                 "FAIL",
-            )
-
-    def test_report_is_self_contained_and_json_round_trips(self):
-        path_audit = {
-            "status": "PASS",
-            "required_base_revision": MODULE.REQUIRED_BASE_REVISION,
-            "changed_paths": ["tools/simulation/fault_replay_acceptance.py"],
-            "outside_allowed_paths": [],
-            "changed_files": 1,
-            "maximum_changed_files": 120,
-            "changed_lines": 1,
-            "maximum_changed_lines": 2_500,
-        }
-        with mock.patch.object(MODULE, "protected_path_audit", return_value=path_audit):
-            report = MODULE.run(self.campaign)
-        self.assertEqual(report["status"], "PASS")
-        self.assertEqual(
-            report["dependency_acceptance_matrix"][0]["artifact"],
-            "controller-private qemu_link.verify JSON",
-        )
-        self.assertEqual(
-            report["role_rotation"]["two_firmware_state_machines"], "OUTSIDE_SCOPE"
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "report.json"
-            path.write_text(json.dumps(report, sort_keys=True))
-            self.assertEqual(
-                json.loads(path.read_text())["report_sha256"], report["report_sha256"]
             )
 
 

@@ -16,7 +16,7 @@
     "tx_length": "0x018", "tx_correlation": "0x01c", "tx_submit": "0x020",
     "tx_status": "0x024", "rx_source_low": "0x030", "rx_source_high": "0x034",
     "rx_rssi": "0x038", "rx_length": "0x03c", "rx_correlation": "0x040",
-    "rx_consume": "0x044", "interrupt_status": "0x050", "interrupt_mask": "0x054",
+    "rx_consume": "0x044", "rx_dequeue": "0x048", "interrupt_status": "0x050", "interrupt_mask": "0x054",
     "interrupt_ack": "0x058", "sticky_status": "0x05c",
     "tx_payload": "0x100", "rx_payload": "0x200"
   },
