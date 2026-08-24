@@ -95,7 +95,7 @@ def build_campaign_fixture(root: Path) -> Path:
         deliveries = [
             {"sequence": index, "payload_hex": ""} for index in delivery_sequences
         ]
-        trace = ([{"arg1": 1184188258, "token": token} for token in (1, 1, 1, 1, 2, 2)] + [{"arg1": 3517568895, "token": token} for token in (1, 2)] + [{"arg1": 4059320606, "token": token, "type": 30} for token in (1, 2)]) if fault_id == 11 else []  # fmt: skip
+        trace = ([{"arg1": 1184188258, "token": token} for token in (1, 1, 1, 2, 1, 1)] + [{"arg1": 3517568895, "token": token} for token in (1, 2)] + [{"arg1": 4059320606, "token": token, "type": 30} for token in (1, 2)]) if fault_id == 11 else []  # fmt: skip
         artifact_contents = {
             **common_artifacts,
             "fault-records.json": MODULE.canonical(faults),
@@ -309,13 +309,14 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
             "empty_faults",
             "pipeline",
             "raw_identity",
+            "completion_order",
         ):
             with self.subTest(
                 mutation=mutation
             ), tempfile.TemporaryDirectory() as directory:
                 copied = Path(directory) / "qemu-campaign"
                 shutil.copytree(self.campaign.parent, copied)
-                path = copied / "pass/master/replay-manifest.json"
+                path = copied / f"{'completion_reorder' if mutation == 'completion_order' else 'pass'}/master/replay-manifest.json"  # fmt: skip
                 manifest = json.loads(path.read_text())
                 if mutation == "expected":
                     manifest["identity"]["expected_result"]["status"] = "FAIL"
@@ -327,8 +328,9 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                     (copied / "pass/master/001/fault-records.json").write_text("[]")
                 elif mutation == "pipeline":
                     manifest["runs"][0]["pipeline_records"].append({"stage": "changed"})
-                else:
+                elif mutation == "raw_identity":
                     manifest["identity"]["raw_trace_sha256"] = "0" * 64
+                else: manifest["runs"][0]["trace"][3:6] = [{"arg1": 1184188258, "token": token} for token in (1, 2, 2)]  # fmt: skip
                 manifest["identity_sha256"] = MODULE.digest(manifest["identity"])
                 path.write_text(json.dumps(manifest))
                 self.assertEqual(
@@ -368,7 +370,7 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
             MODULE.HERE / "qemu_link/patches/0001-domes-link-device.patch"
         ).read_text()
         self.assertNotIn("completionTokens", firmware)
-        self.assertIn("tokens[] = { s->completion_tokens[0], s->tx_correlation", patch)
+        self.assertIn("tokens[] = { s->tx_correlation, s->completion_tokens[0]", patch)
         self.assertIn(
             "completion_order_crosses_irq_boundary",
             (Path(__file__).parent / "qemu_link/verify.py").read_text(),

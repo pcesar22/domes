@@ -463,12 +463,12 @@ index 0000000000..aed3d39622
 +        s->completion_count = 1;
 +        record_fault(s, "completion_delay", "first_owned_submission");
 +    } else if (s->fault_id == FAULT_COMPLETION_ORDER && s->completion_count == 1) {
-+        const uint32_t tokens[] = { s->completion_tokens[0], s->tx_correlation,
-+                                    s->tx_correlation };
++        const uint32_t tokens[] = { s->tx_correlation, s->completion_tokens[0],
++                                    s->completion_tokens[0] };
 +        memcpy(s->completion_tokens, tokens, sizeof(tokens));
 +        s->completion_count = ARRAY_SIZE(tokens); s->completion_index = 0;
 +        s->tx_correlation = s->completion_tokens[0];
-+        record_fault(s, "completion_delay", "stale_owned_before_current");
++        record_fault(s, "completion_delay", "current_before_stale_owned");
 +    }
 +    update_irq(s);
 +}
@@ -567,8 +567,8 @@ index 0000000000..aed3d39622
 +        s->irq_status &= ~(value & (IRQ_TX | IRQ_RX));
 +        update_irq(s);
 +        if ((value & IRQ_TX) != 0 && s->completion_index + 1 < s->completion_count) {
-+            const char *outcomes[] = { "stale_owned_before_current", "current_owned_completion",
-+                                       "duplicate_current_completion" };
++            const char *outcomes[] = { "current_owned_completion", "stale_owned_after_current",
++                                       "duplicate_stale_completion" };
 +            s->completion_index++;
 +            s->tx_correlation = s->completion_tokens[s->completion_index];
 +            s->irq_status |= IRQ_TX;
