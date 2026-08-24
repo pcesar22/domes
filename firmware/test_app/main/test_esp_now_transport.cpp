@@ -122,11 +122,17 @@ public:
         if (sendBehavior == SendBehavior::kSynchronousFailure) {
             return EspNowRadioResult::kError;
         }
+        if (emitUnownedCompletions) {
+            sendCallback_(context_, token + 1, destination, EspNowRadioSendStatus::kSuccess);
+        }
         if (sendBehavior != SendBehavior::kTimeout) {
             sendCallback_(context_, token, destination,
                           sendBehavior == SendBehavior::kCompleteSuccess
                               ? EspNowRadioSendStatus::kSuccess
                               : EspNowRadioSendStatus::kFailure);
+        }
+        if (emitUnownedCompletions) {
+            sendCallback_(context_, token, destination, EspNowRadioSendStatus::kSuccess);
         }
         return EspNowRadioResult::kOk;
     }
@@ -142,6 +148,7 @@ public:
     int initCalls = 0;
     int deinitCalls = 0;
     bool active = false;
+    bool emitUnownedCompletions = false;
     size_t sentLength = 0;
     EspNowAddress sentDestination{};
     std::vector<EspNowCorrelationToken> sentTokens;
@@ -202,6 +209,16 @@ TEST(EspNowTransportTest, SeparatesSynchronousFailureAndAsynchronousCompletion) 
     radio.sendBehavior = FakeEspNowRadio::SendBehavior::kCompleteFailure;
     EXPECT_EQ(transport.sendTo(peer.data(), payload.data(), payload.size()),
               TransportError::kIoError);
+}
+
+TEST(EspNowTransportTest, UnknownAndDuplicateCompletionsDoNotReleaseOwnership) {
+    FakeEspNowRadio radio;
+    EspNowTransport transport(radio);
+    ASSERT_EQ(transport.init(), TransportError::kOk);
+    radio.emitUnownedCompletions = true;
+    const uint8_t payload = 1;
+    EXPECT_EQ(transport.send(&payload, 1), TransportError::kOk);
+    EXPECT_EQ(transport.getTxCount(), 1u);
 }
 
 TEST(EspNowTransportTest, CopiesReceiveMetadataPayloadAndCorrelationToken) {

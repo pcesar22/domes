@@ -125,7 +125,7 @@ def cases() -> tuple[Case, ...]:
         Case("completion_failure", ("delayed_completion_failure",), "completion_delay", "owned submission completes once with failure", 2_000_000, ({"op": "completion", "status": "failure", "delay_ns": 100_000},)),
         Case("missing_completion", ("missing_completion",), "completion_delay", "production timeout poisons the transport", 500_000_000, ({"op": "completion", "status": "missing"}, {"op": "poison"})),
         Case("callback_burst", ("callback_burst",), "rx_callback_delay", "bounded callbacks retain total order", 2_000_000, ({"op": "burst", "count": 3},)),
-        Case("completion_reorder", ("completion_order_change",), "completion_delay", "correlation identity survives completion reordering", 2_000_000, ({"op": "completion_order", "order": [3, 1, 2]},)),
+        Case("completion_reorder", ("completion_order_change",), "completion_delay", "unknown and duplicate completions cannot release an owned submission", 2_000_000, ({"op": "completion_order", "order": [2, 1, 1]},)),
         Case("saturation", ("saturation",), "channel_access", "production four-entry radio handoff capacity is reached without overflow", 5_000_000, ({"op": "fill", "count": 4, "capacity": 4},)),
         Case("recovery", ("backpressure_recovery",), "channel_access", "one bounded dequeue restores admission", 5_000_000, ({"op": "fill", "count": 4, "capacity": 4}, {"op": "drain", "count": 1}, {"op": "deliver"})),
         Case("join", ("peer_join",), "peer_processing", "new identity becomes routable once", 2_000_000, ({"op": "peer", "state": "join", "epoch": 1},)),
@@ -579,12 +579,12 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 trace = json.loads((run_dir / "trace.normalized.json").read_text())
                 sequences = [item.get("sequence") for item in delivery]
                 outcomes = {item.get("outcome") for item in faults}
-                handoffs = iter(
+                handoffs = [
                     event.get("token")
                     for event in run.get("trace", [])
                     if event.get("arg1") == 1184188258
-                )
-                completion_order_ok = all(token in handoffs for token in (3, 1, 2))
+                ]
+                completion_order_ok = handoffs[:3] == [2, 1, 1]
                 semantics_ok = (
                     (fault_id != 3 or sequences == [1, 0])
                     and (fault_id != 11 or completion_order_ok)

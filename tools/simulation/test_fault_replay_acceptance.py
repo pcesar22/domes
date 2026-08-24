@@ -96,7 +96,7 @@ def build_campaign_fixture(root: Path) -> Path:
         deliveries = [
             {"sequence": index, "payload_hex": ""} for index in delivery_sequences
         ]
-        trace = [{"arg1": 1184188258, "token": token} for token in (3, 1, 2)] if fault_id == 11 else []  # fmt: skip
+        trace = ([{"arg1": 1184188258, "token": token} for token in (2, 1, 1)] + [{"arg1": 3765542678, "token": 1, "type": 28}]) if fault_id == 11 else []  # fmt: skip
         artifact_contents = {
             **common_artifacts,
             "fault-records.json": MODULE.canonical(faults),
@@ -369,7 +369,7 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
             MODULE.HERE / "qemu_link/patches/0001-domes-link-device.patch"
         ).read_text()
         self.assertNotIn("completionTokens", firmware)
-        self.assertIn("tokens[] = { 3, 1, 2 }", patch)
+        self.assertIn("tokens[] = { 2, s->tx_correlation, s->tx_correlation }", patch)
         self.assertIn(
             "completion_order_crosses_irq_boundary",
             (Path(__file__).parent / "qemu_link/verify.py").read_text(),

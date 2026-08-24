@@ -242,10 +242,18 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         raise CampaignFailure(f"{case.name}: submit order was not reversed")
     handoffs = [event["token"] for event in run["trace"] if event["arg1"] == 1184188258]
     if fault_id == 11:
-        ordered = iter(handoffs)
-        if any(token not in ordered for token in (3, 1, 2)):
+        callback_tokens = [
+            event["token"]
+            for event in run["trace"]
+            if event["arg1"] == 3765542678 and event["type"] == 28
+        ]
+        if (
+            handoffs[:3] != [2, 1, 1]
+            or callback_tokens.count(1) != 1
+            or 2 in callback_tokens
+        ):
             raise CampaignFailure(
-                f"{case.name}: production completion callbacks did not include ordered 3,1,2"
+                f"{case.name}: unknown or duplicate completion released production ownership"
             )
     if fault_id == 10 and sequences != list(range(3)):
         raise CampaignFailure(

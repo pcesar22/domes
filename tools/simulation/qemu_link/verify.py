@@ -485,7 +485,7 @@ def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str
                 ordered.write(
                     registers["interrupt_ack"], abi["interrupt_bits"]["tx_complete"]
                 )
-            return tokens == [3, 1, 2] and ordered.read(registers["tx_status"]) == 0
+            return tokens == [2, 1, 1] and ordered.read(registers["tx_status"]) == 0
         finally:
             ordered.close()
 
