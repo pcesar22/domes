@@ -245,11 +245,11 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         callback_tokens = [
             event["token"]
             for event in run["trace"]
-            if event["arg1"] == 3765542678 and event["type"] == 28
+            if event["arg1"] == 897584546 and event["type"] == 28
         ]
         if (
             handoffs[:3] != [2, 1, 1]
-            or callback_tokens.count(1) != 1
+            or callback_tokens.count(1) != 2
             or 2 in callback_tokens
         ):
             raise CampaignFailure(
