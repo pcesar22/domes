@@ -386,6 +386,11 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
         else:
             self.assertIn("base revision", path_audit["reason"])
 
+    def test_protected_path_audit_reports_a_shallow_checkout(self):
+        completed = MODULE.subprocess.CompletedProcess([], 128, "", "unknown revision")
+        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+            self.assertEqual(MODULE.protected_path_audit()["status"], "UNAVAILABLE")
+
     def test_retained_real_dut_campaign_closes_roles_and_production_stages(self):
         result = MODULE.validate_real_dut_campaign(self.campaign)
         self.assertEqual(result["status"], "PASS")

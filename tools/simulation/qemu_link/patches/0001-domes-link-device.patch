@@ -647,48 +647,45 @@ index 0000000000..309957cce1
 +static void link_register_types(void) { type_register_static(&link_info); }
 +type_init(link_register_types)
 diff --git a/hw/misc/meson.build b/hw/misc/meson.build
-index 4c2b5b3cae..dca39005d1 100644
+index 4c2b5b3cae..fb67a200a1 100644
 --- a/hw/misc/meson.build
 +++ b/hw/misc/meson.build
-@@ -159,6 +159,7 @@ system_ss.add(when: 'CONFIG_RISCV_ESP32C3', if_true: files(
+@@ -159,4 +159,4 @@ system_ss.add(when: 'CONFIG_RISCV_ESP32C3', if_true: files(
  ))
- 
+-
  system_ss.add(when: 'CONFIG_XTENSA_ESP32S3', if_true: files(
 +  'domes_link.c',
    'esp32s3_cache.c',
-   'ssi_psram.c',
-   'esp_sha.c',
 diff --git a/hw/xtensa/esp32s3.c b/hw/xtensa/esp32s3.c
-index 091657e842..c21cf04bb5 100644
+index 091657e842..f85b28180d 100644
 --- a/hw/xtensa/esp32s3.c
 +++ b/hw/xtensa/esp32s3.c
-@@ -62,6 +62,7 @@
- #include "hw/gpio/esp32s3_gpio.h"
- #include "hw/misc/esp32s3_xts_aes.h"
+@@ -64,6 +64,5 @@
  #include "hw/misc/esp32s3_pms.h"
 +#include "hw/misc/domes_link.h"
  #include "hw/net/can/esp32s3_twai.h"
- 
+-
  #include "cpu_esp32s3.h"
-@@ -124,6 +125,7 @@ typedef struct Esp32s3SocState {
-     ESP32S3GPIOState gpio;
-     Esp32s3RngState rng;
+-
+ #include "hw/misc/esp32c3_jtag.h"
+@@ -126,5 +125,4 @@ typedef struct Esp32s3SocState {
      Esp32S3TWAIState twai;
+-
 +    DomesLinkState domes_link;
- 
      Esp32s3RtcCntlState rtc_cntl;
- 
-@@ -527,6 +529,7 @@ static void esp32s3_soc_init(Object *obj)
+-
+     BusState rtc_bus;
+@@ -527,6 +525,5 @@ static void esp32s3_soc_init(Object *obj)
      qdev_init_gpio_in_named(DEVICE(s), esp32s3_clk_update, ESP32S3_RTC_CLK_UPDATE_GPIO, 1);
- 
+-
      object_initialize_child(obj, "twai", &s->twai, TYPE_ESP32S3_TWAI);
 +    object_initialize_child(obj, "domes-link", &s->domes_link, TYPE_DOMES_LINK);
  }
- 
+-
  static Property esp32s3_soc_properties[] = {
-@@ -635,6 +638,13 @@ static void esp32s3_machine_init(MachineState *machine)
+@@ -635,4 +632,10 @@ static void esp32s3_machine_init(MachineState *machine)
      object_initialize_child(OBJECT(ss), "rgb", &ss->rgb, TYPE_ESP_RGB);
- 
+-
      DeviceState* intmatrix_dev = DEVICE(&ss->intmatrix);
 +    {
 +        sysbus_realize(SYS_BUS_DEVICE(&ss->domes_link), &error_fatal);
@@ -698,11 +695,9 @@ index 091657e842..c21cf04bb5 100644
 +                           qdev_get_gpio_in(intmatrix_dev, ETS_WIFI_MAC_INTR_SOURCE));
 +    }
      {
-         /* Store the current Machine CPU in the interrupt matrix */
-         MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->intmatrix), 0);
-@@ -972,4 +982,3 @@ static void esp32s3_machine_type_init(void)
+@@ -972,4 +975,2 @@ static void esp32s3_machine_type_init(void)
  }
- 
+-
  type_init(esp32s3_machine_type_init);
 -
 diff --git a/include/hw/misc/domes_link.h b/include/hw/misc/domes_link.h

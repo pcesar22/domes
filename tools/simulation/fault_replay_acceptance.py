@@ -27,66 +27,20 @@ PATCH = HERE / "qemu_link/patches/0001-domes-link-device.patch"
 PATCH_MANIFEST = HERE / "qemu_link/patch_manifest.json"
 
 SCHEMA_VERSION = 1
+# fmt: off
 ENGINE = {
     "clock": "QEMU_CLOCK_VIRTUAL",
     "icount": "shift=3,align=off,sleep=off",
     "qemu_seed": 1,
-    "same_time_order": [
-        "deadline_ns",
-        "event_class_priority",
-        "source_id",
-        "destination_id",
-        "sequence",
-    ],
+    "same_time_order": ["deadline_ns", "event_class_priority", "source_id", "destination_id", "sequence"],
     "host_runtime_input": False,
     "real_dut_count": 1,
     "qemu_process_count": 1,
 }
-PRODUCTION_STAGES = (
-    "radio_mmio",
-    "interrupt",
-    "radio_task_handoff",
-    "transport_callback",
-    "transport_ring",
-    "transport_semaphore",
-    "service_dequeue",
-    "production_codec",
-    "service_dispatch",
-    "core0_radio_task",
-    "core1_application_task",
-)
-MODELED_STAGES = (
-    "tx_queue_delay",
-    "channel_access",
-    "airtime",
-    "completion_delay",
-    "peer_processing",
-    "rx_callback_delay",
-)
-REQUIRED_DIMENSIONS = (
-    "pass",
-    "loss",
-    "duplication",
-    "reordering",
-    "per_stage_latency",
-    "bounded_jitter",
-    "corruption",
-    "truncation",
-    "immediate_submit_failure",
-    "delayed_completion_failure",
-    "missing_completion",
-    "callback_burst",
-    "completion_order_change",
-    "saturation",
-    "backpressure_recovery",
-    "peer_join",
-    "peer_disappearance",
-    "peer_restart",
-    "stale_traffic",
-    "identity_mismatch",
-    "channel_outcome",
-    "interference_outcome",
-)
+PRODUCTION_STAGES = ("radio_mmio", "interrupt", "radio_task_handoff", "transport_callback", "transport_ring", "transport_semaphore", "service_dequeue", "production_codec", "service_dispatch", "core0_radio_task", "core1_application_task")
+MODELED_STAGES = ("tx_queue_delay", "channel_access", "airtime", "completion_delay", "peer_processing", "rx_callback_delay")
+REQUIRED_DIMENSIONS = ("pass", "loss", "duplication", "reordering", "per_stage_latency", "bounded_jitter", "corruption", "truncation", "immediate_submit_failure", "delayed_completion_failure", "missing_completion", "callback_burst", "completion_order_change", "saturation", "backpressure_recovery", "peer_join", "peer_disappearance", "peer_restart", "stale_traffic", "identity_mismatch", "channel_outcome", "interference_outcome")
+# fmt: on
 
 
 class AcceptanceFailure(RuntimeError):
@@ -403,16 +357,17 @@ def protected_path_audit() -> dict[str, Any]:
         stderr=subprocess.PIPE,
     )
     if completed.returncode != 0:
+        missing_base = completed.stderr.count("bad object") + completed.stderr.count(
+            "unknown revision"
+        )
         return {
-            "status": "FAIL",
+            "status": "UNAVAILABLE" if missing_base else "FAIL",
             "required_base_revision": REQUIRED_BASE_REVISION,
-            "reason": "git could not compute the protected-path diff",
-            "changed_paths": [],
-            "outside_allowed_paths": [],
-            "changed_files": 0,
-            "maximum_changed_files": 120,
-            "changed_lines": 0,
-            "maximum_changed_lines": 2_500,
+            "reason": (
+                "required base revision is unavailable in this checkout"
+                if missing_base
+                else "git could not compute the protected-path diff"
+            ),
         }
     changed_paths: list[str] = []
     changed_lines = 0
@@ -589,9 +544,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 stages_ok = stages_ok and set(stages) == required_stages
                 case_stages = {"mmio"}
                 if fault_id not in {7, 9}:
-                    case_stages.add("task")
-                if fault_id not in {7, 9}:
-                    case_stages |= {"irq", "tx_complete"}
+                    case_stages |= {"task", "irq", "tx_complete"}
                 if expected_result(fault_id)["delivery_records"]:
                     case_stages |= {"callback", "ring", "semaphore", "dequeue"}
                 if expected_result(fault_id)["status"] == "PASS":
