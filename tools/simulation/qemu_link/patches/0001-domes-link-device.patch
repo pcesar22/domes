@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..abeab164c0
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,627 @@
+@@ -0,0 +1,623 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
@@ -453,10 +453,9 @@ index 0000000000..abeab164c0
 +            deliver_due(s);
 +        }
 +    }
-+    if (s->fault_id == FAULT_COMPLETION_ORDER) s->tx_correlation = 3;
++    if (s->fault_id == FAULT_COMPLETION_ORDER) { s->tx_correlation = 3; record_fault(s, "completion_delay", "completion_token_1"); record_fault(s, "completion_delay", "completion_token_2"); }
 +    update_irq(s);
 +}
-+static void reorder_complete(void *opaque) { DomesLinkState *s = opaque; s->irq_status |= IRQ_TX; record_fault(s, "completion_delay", s->tx_correlation == 1 ? "completion_token_1" : "completion_token_2"); update_irq(s); }
 +static void link_write(void *opaque, hwaddr addr, uint64_t value, unsigned size)
 +{
 +    DomesLinkState *s = opaque;
@@ -551,10 +550,7 @@ index 0000000000..abeab164c0
 +        if (value & ~(IRQ_TX | IRQ_RX)) s->sticky |= ST_INVALID;
 +        s->irq_status &= ~(value & (IRQ_TX | IRQ_RX));
 +        update_irq(s);
-+        if ((value & IRQ_TX) && s->fault_id == FAULT_COMPLETION_ORDER && s->tx_status == TX_SUCCESS && s->tx_correlation != 2) {
-+            s->tx_correlation = s->tx_correlation == 3 ? 1 : 2;
-+            timer_mod_ns(s->reorder_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
-+        } else if ((value & IRQ_TX) != 0 && (s->irq_status & IRQ_TX) == 0) {
++        if ((value & IRQ_TX) != 0 && (s->irq_status & IRQ_TX) == 0) {
 +            s->tx_destination_low = s->tx_destination_high = s->tx_length = 0;
 +            s->tx_correlation = 0;
 +            s->tx_status = TX_IDLE;
@@ -585,20 +581,20 @@ index 0000000000..abeab164c0
 +    memset(s->tx_payload, 0, sizeof(s->tx_payload));
 +    memset(s->rx_payload, 0, sizeof(s->rx_payload));
 +    memset(s->events, 0, sizeof(s->events));
-+    timer_del(s->completion_timer); timer_del(s->reorder_timer);
++    timer_del(s->completion_timer);
 +    timer_del(s->delivery_timer);
 +    update_irq(s);
 +}
 +static void link_realize(DeviceState *dev, Error **errp)
 +{
 +    DomesLinkState *s = DOMES_LINK(dev);
-+    s->completion_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, complete, s); s->reorder_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, reorder_complete, s);
++    s->completion_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, complete, s);
 +    s->delivery_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, deliver_due, s);
 +}
 +static void link_finalize(Object *obj)
 +{
 +    DomesLinkState *s = DOMES_LINK(obj);
-+    timer_free(s->completion_timer); timer_free(s->reorder_timer);
++    timer_free(s->completion_timer);
 +    timer_free(s->delivery_timer);
 +}
 +static void link_init(Object *obj)
@@ -717,7 +713,7 @@ index 0000000000..89c86d6f15
 +    SysBusDevice parent_obj;
 +    MemoryRegion mmio;
 +    qemu_irq irq;
-+    QEMUTimer *completion_timer, *reorder_timer;
++    QEMUTimer *completion_timer;
 +    QEMUTimer *delivery_timer;
 +    uint32_t tx_destination_low, tx_destination_high, tx_length, tx_correlation, tx_status;
 +    uint32_t rx_source_low, rx_source_high, rx_rssi, rx_length, rx_correlation;

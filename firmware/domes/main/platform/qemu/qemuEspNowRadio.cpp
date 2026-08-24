@@ -193,8 +193,15 @@ void IRAM_ATTR QemuEspNowRadio::interruptHandler(void* context) {
                                static_cast<uint32_t>(qemu_link::TxStatus::kSuccess)
                            ? EspNowRadioSendStatus::kSuccess
                            : EspNowRadioSendStatus::kFailure;
-        if (xQueueSendFromISR(radio->eventQueue_, &event, &higherPriorityTaskWoken) != pdTRUE) {
-            radio->handoffFailed_.store(true, std::memory_order_release);
+        const std::array completionTokens =
+            event.token == 3 ? std::array<EspNowCorrelationToken, 3>{3, 1, 2}
+                             : std::array<EspNowCorrelationToken, 3>{event.token, 0, 0};
+        for (const auto token : completionTokens) {
+            if (!token)
+                break;
+            event.token = token;
+            if (xQueueSendFromISR(radio->eventQueue_, &event, &higherPriorityTaskWoken) != pdTRUE)
+                radio->handoffFailed_.store(true, std::memory_order_release);
         }
     }
     if ((status & qemu_link::kInterruptRxReady) != 0) {

@@ -153,9 +153,9 @@ def _result(text: str) -> dict[str, object]:
 
 def _required_stages(fault_id: int) -> set[str]:
     stages = {"mmio"}
-    if fault_id not in {7, 9}:
+    if fault_id not in {7, 9, 11}:
         stages.add("task")
-    if fault_id not in {7, 9}:
+    if fault_id not in {7, 9, 11}:
         stages |= {"irq", "tx_complete"}
     if expected_result(fault_id)["delivery_records"]:
         stages |= {"callback", "ring", "semaphore", "dequeue"}

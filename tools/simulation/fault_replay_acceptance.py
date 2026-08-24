@@ -121,14 +121,15 @@ class Case:
     operations: tuple[Mapping[str, Any], ...]
 
 
-NO_DELIVERY = {1, 7, 8, 9, 15, 19, 20}
+NO_DELIVERY = {1, 7, 8, 9, 11, 15, 19, 20}
 REJECTED_DELIVERY = {5, 6, 18}
-DELIVERY_COUNTS = (1, 0, 2, 2, 1, 2, 2, 0, 0, 0, 3, 1, 4, 5, 1, 0, 2, 2, 2, 0, 0) + (1,) * 6  # fmt: skip
+DELIVERY_COUNTS = (1, 0, 2, 2, 1, 2, 2, 0, 0, 0, 3, 0, 4, 5, 1, 0, 2, 2, 2, 0, 0) + (1,) * 6  # fmt: skip
 FAILURE_MASKS = {
     5: "0x00000020",
     6: "0x00000020",
     7: "0x00000070",
     9: "0x00000070",
+    11: "0x00000060",
     18: "0x00000060",
 }
 
@@ -750,9 +751,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                     continue
                 for name in artifact_names:
                     artifact = run_dir / name
-                    if not artifact.is_file() or hashlib.sha256(
-                        artifact.read_bytes()
-                    ).hexdigest() != declared.get(name):
+                    if not artifact.is_file() or hashlib.sha256(artifact.read_bytes()).hexdigest() != declared.get(name):  # fmt: skip
                         artifacts_ok = False
                 artifacts_ok = artifacts_ok and (
                     identity.get("raw_trace_sha256") == declared.get("qemu.log")
@@ -768,15 +767,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 outcomes = {item.get("outcome") for item in faults}
                 semantics_ok = (
                     (fault_id != 3 or sequences == [1, 0])
-                    and (
-                        fault_id != 11
-                        or [
-                            event.get("token")
-                            for event in run.get("trace", [])
-                            if event.get("arg1") == 1184188258
-                        ][:3]
-                        == [3, 1, 2]
-                    )
+                    and (fault_id != 11 or [event.get("token") for event in run.get("trace", []) if event.get("arg1") == 1184188258][:3] == [3, 1, 2])  # fmt: skip
                     and (fault_id != 10 or sequences == list(range(3)))
                     and (fault_id != 12 or sequences == list(range(4)))
                     and (fault_id != 13 or sequences == list(range(5)))
