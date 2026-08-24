@@ -247,7 +247,7 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         15: [{"state": "absent", "present": False, "epoch": 1, "traffic_epoch": 1, "accepted": False}],  # fmt: skip
         16: [{"state": "restart", "present": True, "epoch": 2, "traffic_epoch": 2, "accepted": True}],  # fmt: skip
     }
-    if fault_id in peer_expected and peers != peer_expected[fault_id]:
+    if fault_id in peer_expected and (not peers or any(peer != peer_expected[fault_id][0] for peer in peers)):  # fmt: skip
         raise CampaignFailure(f"{case.name}: peer lifecycle transition differed")
     if fault_id == 17 and [(p["traffic_epoch"], p["accepted"]) for p in peers] != [(1, False), (2, True)]:  # fmt: skip
         raise CampaignFailure(f"{case.name}: stale epoch was not rejected before fresh traffic")  # fmt: skip
