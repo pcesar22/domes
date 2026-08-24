@@ -603,6 +603,9 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
     ]
     stages = {
         "mmio": positions["QemuLink.MmioSubmit"] is not None,
+        "core0_radio_task": "DOMES_QEMU_CORE_PATH schema=1 radio_core=0" in text,
+        "core1_application_task": "DOMES_QEMU_CORE_PATH schema=1 application_core=1"
+        in text,
         "irq": any(event["type"] == 22 for event in isr)
         and any(event["type"] == 23 for event in isr),
         "task": positions["QemuLink.TaskHandoff"] is not None,

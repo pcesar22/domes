@@ -35,9 +35,7 @@ def build_campaign_fixture(root: Path) -> Path:
     ).stdout.strip()
     current_hashes = {
         "qemu_patch_sha256": MODULE.hashlib.sha256(
-            (
-                MODULE.HERE / "qemu_link/patches/0001-domes-link-device.patch"
-            ).read_bytes()
+            MODULE.PATCH.read_bytes()
         ).hexdigest(),
         "campaign_runner_sha256": MODULE.hashlib.sha256(
             (MODULE.HERE / "fault_replay_qemu_campaign.py").read_bytes()
@@ -55,20 +53,7 @@ def build_campaign_fixture(root: Path) -> Path:
         "qemu.log": b"fixture\n",
         "trace.normalized.json": b"[]",
     }
-    stages = {
-        name: True
-        for name in (
-            "mmio",
-            "irq",
-            "task",
-            "callback",
-            "ring",
-            "semaphore",
-            "dequeue",
-            "service_dispatch",
-            "tx_complete",
-        )
-    }
+    stages = dict.fromkeys("mmio core0_radio_task core1_application_task irq task callback ring semaphore dequeue service_dispatch tx_complete".split(), True)  # fmt: skip
     matrix = []
     for fault_id, case in enumerate(MODULE.cases()):
         expected = MODULE.expected_result(fault_id)
@@ -321,7 +306,9 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                 if mutation == "expected":
                     manifest["identity"]["expected_result"]["status"] = "FAIL"
                 elif mutation == "stage":
-                    manifest["runs"][0]["runtime"]["stages"]["mmio"] = False
+                    manifest["runs"][0]["runtime"]["stages"][
+                        "core1_application_task"
+                    ] = False
                 elif mutation == "termination":
                     manifest["runs"][0]["final_state"]["virtual_ns"] = 2_000_000_001
                 elif mutation == "empty_faults":

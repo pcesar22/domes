@@ -402,7 +402,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
     report = json.loads(path.read_text())
     corpus = cases()
     matrix = report.get("matrix", [])
-    required_stages = set("mmio irq task callback ring semaphore dequeue service_dispatch tx_complete".split())  # fmt: skip
+    required_stages = set("mmio irq task callback ring semaphore dequeue service_dispatch tx_complete core0_radio_task core1_application_task".split())  # fmt: skip
     artifact_names = set("delivery-records.json efuse-generation.log fault-records.json flash-generation.log qemu-device.log qemu.log trace.normalized.json".split())  # fmt: skip
     artifacts_ok = True
     identities_ok = True
@@ -541,7 +541,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 identities_ok = identities_ok and expected_ok
                 stages = run["runtime"]["stages"]
                 stages_ok = stages_ok and set(stages) == required_stages
-                case_stages = {"mmio"}
+                case_stages = {"mmio", "core0_radio_task", "core1_application_task"}
                 if fault_id not in {7, 9}:
                     case_stages |= {"task", "irq", "tx_complete"}
                 if expected_result(fault_id)["delivery_records"]:

@@ -182,7 +182,7 @@ def _result(text: str) -> dict[str, object]:
 
 
 def _required_stages(fault_id: int) -> set[str]:
-    stages = {"mmio"}
+    stages = {"mmio", "core0_radio_task", "core1_application_task"}
     if fault_id not in {7, 9}:
         stages.add("task")
     if fault_id not in {7, 9}:
