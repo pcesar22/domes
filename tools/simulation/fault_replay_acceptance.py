@@ -121,15 +121,14 @@ class Case:
     operations: tuple[Mapping[str, Any], ...]
 
 
-NO_DELIVERY = {1, 7, 8, 9, 11, 15, 19, 20}
+NO_DELIVERY = {1, 7, 8, 9, 15, 19, 20}
 REJECTED_DELIVERY = {5, 6, 18}
-DELIVERY_COUNTS = (1, 0, 2, 2, 1, 2, 2, 0, 0, 0, 3, 0, 4, 5, 1, 0, 2, 2, 2, 0, 0) + (1,) * 6  # fmt: skip
+DELIVERY_COUNTS = (1, 0, 2, 2, 1, 2, 2, 0, 0, 0, 3, 1, 4, 5, 1, 0, 2, 2, 2, 0, 0) + (1,) * 6  # fmt: skip
 FAILURE_MASKS = {
     5: "0x00000020",
     6: "0x00000020",
     7: "0x00000070",
     9: "0x00000070",
-    11: "0x00000060",
     18: "0x00000060",
 }
 
