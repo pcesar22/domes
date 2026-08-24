@@ -51,6 +51,10 @@ STATE_PATTERN = re.compile(r"DOMES_FAULT_STATE schema=1 virtual_ns=(\d+) queued=
 PIPELINE_PATTERN = re.compile(
     r"DOMES_PIPELINE_BOUNDARY schema=1 stage=(\S+) enter_ns=(\d+) exit_ns=(\d+)"
 )
+PEER_PATTERN = re.compile(
+    r"DOMES_PEER_STATE schema=1 state=(\S+) present=(\d+) epoch=(\d+) "
+    r"traffic_epoch=(\d+) accepted=(\d+)"
+)
 
 
 class CampaignFailure(RuntimeError):
@@ -167,6 +171,19 @@ def _pipeline_records(text: str) -> list[dict[str, object]]:
     ]
 
 
+def _peer_records(text: str) -> list[dict[str, object]]:
+    return [
+        {
+            "state": state,
+            "present": bool(int(present)),
+            "epoch": int(epoch),
+            "traffic_epoch": int(traffic_epoch),
+            "accepted": bool(int(accepted)),
+        }
+        for state, present, epoch, traffic_epoch, accepted in PEER_PATTERN.findall(text)
+    ]
+
+
 def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
     records = run["fault_records"]
     if not records or any(record["fault_id"] != fault_id for record in records):
@@ -193,8 +210,11 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
     sequences = [item["sequence"] for item in deliveries]
     if fault_id == 3 and sequences != [1, 0]:
         raise CampaignFailure(f"{case.name}: submit order was not reversed")
-    if fault_id == 11 and sequences != [2, 0, 1]:
-        raise CampaignFailure(f"{case.name}: completion order did not change to 3,1,2")
+    handoffs = [event["token"] for event in run["trace"] if event["arg1"] == 1184188258]
+    if fault_id == 11 and handoffs[:3] != [3, 1, 2]:
+        raise CampaignFailure(
+            f"{case.name}: production completion callbacks were not 3,1,2"
+        )
     if fault_id == 10 and sequences != list(range(3)):
         raise CampaignFailure(
             f"{case.name}: callback order or saturation capacity changed"
@@ -221,12 +241,16 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         raise CampaignFailure(f"{case.name}: recovered frame was not delivered")
     if fault_id == 13 and not {"production_dequeued", "readmitted"} <= set(outcomes):
         raise CampaignFailure(f"{case.name}: no dequeue and readmission recovery")
-    if fault_id == 16 and "restart_epoch_2" not in outcomes:
-        raise CampaignFailure(f"{case.name}: peer epoch did not restart")
-    if fault_id == 17 and "stale_epoch_1_then_2" not in outcomes:
-        raise CampaignFailure(
-            f"{case.name}: stale and fresh epochs were not distinguished"
-        )
+    peers = run["peer_records"]
+    peer_expected = {
+        14: [{"state": "join", "present": True, "epoch": 1, "traffic_epoch": 1, "accepted": True}],  # fmt: skip
+        15: [{"state": "absent", "present": False, "epoch": 1, "traffic_epoch": 1, "accepted": False}],  # fmt: skip
+        16: [{"state": "restart", "present": True, "epoch": 2, "traffic_epoch": 2, "accepted": True}],  # fmt: skip
+    }
+    if fault_id in peer_expected and peers != peer_expected[fault_id]:
+        raise CampaignFailure(f"{case.name}: peer lifecycle transition differed")
+    if fault_id == 17 and [(p["traffic_epoch"], p["accepted"]) for p in peers] != [(1, False), (2, True)]:  # fmt: skip
+        raise CampaignFailure(f"{case.name}: stale epoch was not rejected before fresh traffic")  # fmt: skip
     if fault_id >= 21 and (
         run["absolute_delivery_deadlines"][0] - records[0]["absolute_virtual_ns"]
         != (
@@ -318,6 +342,7 @@ def _run_once(
     device_text = device_log.read_text().replace("\r", "")
     faults = _fault_records(device_text)
     pipeline_records = _pipeline_records(device_text)
+    peer_records = _peer_records(device_text)
     deliveries = (
         parse_delivery_records(device_text)
         if "DOMES_PEER_DELIVERY" in device_text
@@ -365,6 +390,7 @@ def _run_once(
         "efuse_sha256": images["efuse_sha256"],
         "fault_records": faults,
         "pipeline_records": pipeline_records,
+        "peer_records": peer_records,
         "delivery_records": deliveries,
         "absolute_delivery_deadlines": absolute_delivery_deadlines,
         "final_state": final_state,
@@ -372,8 +398,10 @@ def _run_once(
         "pipeline_records_sha256": digest(pipeline_records),
         "delivery_records_sha256": digest(deliveries),
         "trace_sha256": digest(trace),
+        "peer_records_sha256": digest(peer_records),
         "result_sha256": digest(result),
         "result": result,
+        "trace": trace,
         "runtime": runtime,
         "execution": execution,
         "image_integrity": image_integrity,
@@ -403,6 +431,7 @@ def _require_replay(case: Case, runs: list[dict[str, object]]) -> None:
         "flash_sha256",
         "fault_records_sha256",
         "pipeline_records_sha256",
+        "peer_records_sha256",
         "delivery_records_sha256",
         "trace_sha256",
         "result_sha256",

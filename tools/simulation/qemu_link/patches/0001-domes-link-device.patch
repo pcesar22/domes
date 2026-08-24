@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..abeab164c0
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,612 @@
+@@ -0,0 +1,627 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
@@ -142,6 +142,11 @@ index 0000000000..abeab164c0
 +        s->last_observation_ns = now;
 +    }
 +}
++static void record_peer(DomesLinkState *s, const char *state, uint32_t traffic_epoch, bool accepted)
++{
++    qemu_log_mask(LOG_GUEST_ERROR, "DOMES_PEER_STATE schema=1 state=%s present=%u epoch=%u traffic_epoch=%u accepted=%u\n",
++                  state, s->peer_present, s->peer_epoch, traffic_epoch, accepted);
++}
 +static bool event_before(const DomesLinkEvent *a, const DomesLinkEvent *b)
 +{
 +    if (a->deadline_ns != b->deadline_ns) return a->deadline_ns < b->deadline_ns;
@@ -188,6 +193,10 @@ index 0000000000..abeab164c0
 +                                                  s->dut_role != DUT_ROLE_SLAVE)) {
 +        return false;
 +    }
++    if (s->fault_id == FAULT_PEER_JOIN) s->peer_present = true;
++    if (s->fault_id == FAULT_PEER_DISAPPEARANCE) s->peer_present = false;
++    if (s->fault_id == FAULT_PEER_RESTART) s->peer_epoch++;
++    if (s->fault_id == FAULT_STALE_TRAFFIC) s->peer_epoch = 2;
 +    if (type == MSG_PING) response = MSG_PONG;
 +    else if (type == MSG_BEACON) response =
 +        s->dut_role == DUT_ROLE_SLAVE ? MSG_JOIN_GAME : MSG_BEACON;
@@ -369,6 +378,8 @@ index 0000000000..abeab164c0
 +        s->tx_status = TX_FAILURE;
 +    } else if (s->fault_id == FAULT_BACKPRESSURE_RECOVERY && s->scenario_consumed) { update_irq(s); return;
 +    } else if (event.length) { s->scenario_consumed = true;
++        if (s->fault_id >= FAULT_PEER_JOIN && s->fault_id <= FAULT_STALE_TRAFFIC)
++            record_peer(s, s->fault_id == FAULT_PEER_JOIN ? "join" : s->fault_id == FAULT_PEER_DISAPPEARANCE ? "absent" : s->fault_id == FAULT_PEER_RESTART ? "restart" : "stale", s->fault_id == FAULT_STALE_TRAFFIC ? 1 : s->peer_epoch, s->fault_id != FAULT_PEER_DISAPPEARANCE && s->fault_id != FAULT_STALE_TRAFFIC);
 +        uint32_t copies = 1;
 +        uint64_t spacing_ns = 1000;
 +        uint32_t initial_count = s->event_count;
@@ -391,8 +402,6 @@ index 0000000000..abeab164c0
 +        } else if (s->fault_id == FAULT_CALLBACK_BURST) {
 +            copies = 3;
 +            spacing_ns = 1;
-+        } else if (s->fault_id == FAULT_COMPLETION_ORDER) {
-+            copies = 3;
 +        } else if (s->fault_id == FAULT_SATURATION ||
 +                   s->fault_id == FAULT_BACKPRESSURE_RECOVERY) {
 +            copies = s->fault_id == FAULT_SATURATION ? 4 : 5;
@@ -415,16 +424,15 @@ index 0000000000..abeab164c0
 +            DomesLinkEvent candidate = event;
 +            if ((s->fault_id >= FAULT_CALLBACK_BURST && s->fault_id < FAULT_SATURATION && copy > 0) || (s->fault_id >= FAULT_SATURATION && s->fault_id <= FAULT_BACKPRESSURE_RECOVERY && copy != 3))
 +                candidate.payload[0] = MSG_TOUCH_EVENT, candidate.length = wire_size(MSG_TOUCH_EVENT);
-+            if (s->fault_id == FAULT_COMPLETION_ORDER) {
-+                static const uint32_t order[] = { 1, 2, 0 };
-+                candidate.deadline_ns += order[copy] * spacing_ns;
-+            } else if (s->fault_id == FAULT_REORDERING) {
++            if (s->fault_id == FAULT_REORDERING) {
 +                candidate.deadline_ns += (copies - copy) * spacing_ns;
 +            } else {
 +                candidate.deadline_ns += copy * spacing_ns;
 +            }
 +            if (s->fault_id == FAULT_STALE_TRAFFIC && copy == 0) {
 +                candidate.source_low = 0x00000003;
++            } else if (s->fault_id == FAULT_STALE_TRAFFIC) {
++                record_peer(s, "fresh", 2, true);
 +            }
 +            if (s->fault_id == FAULT_BACKPRESSURE_RECOVERY && copy == 4) {
 +                s->readmission_event = candidate;
@@ -445,6 +453,7 @@ index 0000000000..abeab164c0
 +            deliver_due(s);
 +        }
 +    }
++    if (s->fault_id == FAULT_COMPLETION_ORDER) s->tx_correlation = 3;
 +    update_irq(s);
 +}
 +static void link_write(void *opaque, hwaddr addr, uint64_t value, unsigned size)
@@ -540,7 +549,12 @@ index 0000000000..abeab164c0
 +    case IRQ_ACK:
 +        if (value & ~(IRQ_TX | IRQ_RX)) s->sticky |= ST_INVALID;
 +        s->irq_status &= ~(value & (IRQ_TX | IRQ_RX));
-+        if ((value & IRQ_TX) != 0 && (s->irq_status & IRQ_TX) == 0) {
++        update_irq(s);
++        if ((value & IRQ_TX) && s->fault_id == FAULT_COMPLETION_ORDER && s->tx_status == TX_SUCCESS && s->tx_correlation != 2) {
++            s->tx_correlation = s->tx_correlation == 3 ? 1 : 2;
++            s->irq_status |= IRQ_TX;
++            record_fault(s, "completion_delay", s->tx_correlation == 1 ? "completion_token_1" : "completion_token_2");
++        } else if ((value & IRQ_TX) != 0 && (s->irq_status & IRQ_TX) == 0) {
 +            s->tx_destination_low = s->tx_destination_high = s->tx_length = 0;
 +            s->tx_correlation = 0;
 +            s->tx_status = TX_IDLE;
@@ -566,6 +580,7 @@ index 0000000000..abeab164c0
 +    s->rx_source_low = s->rx_source_high = s->rx_rssi = s->rx_length = 0;
 +    s->rx_correlation = s->irq_status = s->irq_mask = s->sticky = 0;
 +    s->readmission_pending = s->scenario_consumed = false; s->event_count = s->next_sequence = s->fault_sequence = 0;
++    s->peer_present = s->fault_id != FAULT_PEER_JOIN; s->peer_epoch = 1;
 +    s->tx_stage = 0; s->stage_enter_ns = 0; memset(s->stage_delay_ns, 0, sizeof(s->stage_delay_ns));
 +    memset(s->tx_payload, 0, sizeof(s->tx_payload));
 +    memset(s->rx_payload, 0, sizeof(s->rx_payload));
@@ -680,7 +695,7 @@ new file mode 100644
 index 0000000000..89c86d6f15
 --- /dev/null
 +++ b/include/hw/misc/domes_link.h
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,37 @@
 +#pragma once
 +#include "hw/sysbus.h"
 +#include "qemu/main-loop.h"
@@ -712,7 +727,8 @@ index 0000000000..89c86d6f15
 +    uint32_t event_count, next_sequence;
 +    bool readmission_pending, scenario_consumed;
 +    int64_t last_observation_ns;
-+    uint32_t scenario_model, scenario_seed, dut_role, fault_id, fault_sequence;
++    uint32_t scenario_model, scenario_seed, dut_role, fault_id, fault_sequence, peer_epoch;
++    bool peer_present;
 +    uint64_t peer_delay_ns;
 +    uint64_t stage_delay_ns[6];
 +    uint32_t tx_stage; int64_t stage_enter_ns;

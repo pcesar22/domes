@@ -90,16 +90,18 @@ def build_campaign_fixture(root: Path) -> Path:
             }
             for index, outcome in enumerate(outcomes)
         ]
-        delivery_sequences = {3: [1, 0], 11: [2, 0, 1]}.get(
+        delivery_sequences = {3: [1, 0]}.get(
             fault_id, list(range(expected["delivery_records"]))
         )
         deliveries = [
             {"sequence": index, "payload_hex": ""} for index in delivery_sequences
         ]
+        trace = [{"arg1": 1184188258, "token": token} for token in (3, 1, 2)] if fault_id == 11 else []  # fmt: skip
         artifact_contents = {
             **common_artifacts,
             "fault-records.json": MODULE.canonical(faults),
             "delivery-records.json": MODULE.canonical(deliveries),
+            "trace.normalized.json": MODULE.canonical(trace),
         }
         artifact_hashes = {
             name: MODULE.hashlib.sha256(content).hexdigest()
@@ -130,6 +132,9 @@ def build_campaign_fixture(root: Path) -> Path:
                         "flash_sha256": "1" * 64,
                         "fault_records_sha256": fault_digest,
                         "pipeline_records_sha256": MODULE.digest([]),
+                        "pipeline_records": [],
+                        "peer_records_sha256": MODULE.digest([]),
+                        "peer_records": [],
                         "delivery_records_sha256": delivery_digest,
                         "absolute_delivery_deadlines": (
                             [
@@ -148,7 +153,8 @@ def build_campaign_fixture(root: Path) -> Path:
                             if fault_id >= 21
                             else [101] * len(deliveries)
                         ),
-                        "trace_sha256": MODULE.digest([]),
+                        "trace_sha256": MODULE.digest(trace),
+                        "trace": trace,
                         "result_sha256": "2" * 64,
                         "result": {
                             "status": expected["status"],
@@ -200,8 +206,8 @@ def build_campaign_fixture(root: Path) -> Path:
                 "fault_records_sha256": fault_digest,
                 "pipeline_records_sha256": MODULE.digest([]),
                 "delivery_records_sha256": delivery_digest,
-                "raw_trace_sha256": "a" * 64,
-                "normalized_trace_sha256": MODULE.digest([]),
+                "raw_trace_sha256": artifact_hashes["qemu.log"],
+                "normalized_trace_sha256": MODULE.digest(trace),
                 "assertions": ["production_qemu_radio_submission"],
                 "termination": "firmware_bounded_result",
                 "expected_result": expected,
@@ -297,7 +303,14 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
         self.assertEqual(set(checks.values()), {"REJECTED"})
 
     def test_each_negative_check_executes_a_rejecting_mutation(self):
-        for mutation in ("expected", "stage", "termination", "empty_faults"):
+        for mutation in (
+            "expected",
+            "stage",
+            "termination",
+            "empty_faults",
+            "pipeline",
+            "raw_identity",
+        ):
             with self.subTest(
                 mutation=mutation
             ), tempfile.TemporaryDirectory() as directory:
@@ -311,8 +324,12 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                     manifest["runs"][0]["runtime"]["stages"]["mmio"] = False
                 elif mutation == "termination":
                     manifest["runs"][0]["final_state"]["virtual_ns"] = 2_000_000_001
-                else:
+                elif mutation == "empty_faults":
                     (copied / "pass/master/001/fault-records.json").write_text("[]")
+                elif mutation == "pipeline":
+                    manifest["runs"][0]["pipeline_records"].append({"stage": "changed"})
+                else:
+                    manifest["identity"]["raw_trace_sha256"] = "0" * 64
                 manifest["identity_sha256"] = MODULE.digest(manifest["identity"])
                 path.write_text(json.dumps(manifest))
                 self.assertEqual(

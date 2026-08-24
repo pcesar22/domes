@@ -123,7 +123,7 @@ class Case:
 
 NO_DELIVERY = {1, 7, 8, 9, 15, 19, 20}
 REJECTED_DELIVERY = {5, 6, 18}
-DELIVERY_COUNTS = (1, 0, 2, 2, 1, 2, 2, 0, 0, 0, 3, 3, 4, 5, 1, 0, 2, 2, 2, 0, 0) + (1,) * 6  # fmt: skip
+DELIVERY_COUNTS = (1, 0, 2, 2, 1, 2, 2, 0, 0, 0, 3, 1, 4, 5, 1, 0, 2, 2, 2, 0, 0) + (1,) * 6  # fmt: skip
 FAILURE_MASKS = {
     5: "0x00000020",
     6: "0x00000020",
@@ -596,26 +596,8 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
     report = json.loads(path.read_text())
     corpus = cases()
     matrix = report.get("matrix", [])
-    required_stages = {
-        "mmio",
-        "irq",
-        "task",
-        "callback",
-        "ring",
-        "semaphore",
-        "dequeue",
-        "service_dispatch",
-        "tx_complete",
-    }
-    artifact_names = {
-        "delivery-records.json",
-        "efuse-generation.log",
-        "fault-records.json",
-        "flash-generation.log",
-        "qemu-device.log",
-        "qemu.log",
-        "trace.normalized.json",
-    }
+    required_stages = set("mmio irq task callback ring semaphore dequeue service_dispatch tx_complete".split())  # fmt: skip
+    artifact_names = set("delivery-records.json efuse-generation.log fault-records.json flash-generation.log qemu-device.log qemu.log trace.normalized.json".split())  # fmt: skip
     artifacts_ok = True
     identities_ok = True
     replay_ok = True
@@ -631,47 +613,11 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
         stdout=subprocess.PIPE,
     ).stdout.strip()
     current_artifact_hashes = {
-        "qemu_patch_sha256": hashlib.sha256(
-            (HERE / "qemu_link/patches/0001-domes-link-device.patch").read_bytes()
-        ).hexdigest(),
-        "campaign_runner_sha256": hashlib.sha256(
-            (HERE / "fault_replay_qemu_campaign.py").read_bytes()
-        ).hexdigest(),
-        "acceptance_runner_sha256": hashlib.sha256(
-            Path(__file__).read_bytes()
-        ).hexdigest(),
+        "qemu_patch_sha256": hashlib.sha256((HERE / "qemu_link/patches/0001-domes-link-device.patch").read_bytes()).hexdigest(),  # fmt: skip
+        "campaign_runner_sha256": hashlib.sha256((HERE / "fault_replay_qemu_campaign.py").read_bytes()).hexdigest(),  # fmt: skip
+        "acceptance_runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),  # fmt: skip
     }
-    required_identity_fields = {
-        "specification_revision",
-        "repository_revision",
-        "firmware_sha256",
-        "flash_sha256",
-        "toolchain_identity",
-        "compiler_sha256",
-        "qemu_revision",
-        "qemu_binary_sha256",
-        "qemu_rom_sha256",
-        "qemu_patch_sha256",
-        "campaign_runner_sha256",
-        "acceptance_runner_sha256",
-        "profile_sha256",
-        "fidelity_manifest_sha256",
-        "scenario",
-        "scenario_sha256",
-        "seed",
-        "fault_id",
-        "dut_role",
-        "engine",
-        "fault_records_sha256",
-        "pipeline_records_sha256",
-        "delivery_records_sha256",
-        "raw_trace_sha256",
-        "normalized_trace_sha256",
-        "assertions",
-        "termination",
-        "expected_result",
-        "unconsumed_events",
-    }
+    required_identity_fields = set("specification_revision repository_revision firmware_sha256 flash_sha256 toolchain_identity compiler_sha256 qemu_revision qemu_binary_sha256 qemu_rom_sha256 qemu_patch_sha256 campaign_runner_sha256 acceptance_runner_sha256 profile_sha256 fidelity_manifest_sha256 scenario scenario_sha256 seed fault_id dut_role engine fault_records_sha256 pipeline_records_sha256 delivery_records_sha256 raw_trace_sha256 normalized_trace_sha256 assertions termination expected_result unconsumed_events".split())  # fmt: skip
     for fault_id, case in enumerate(corpus):
         if fault_id >= len(matrix):
             matrix_ok = False
@@ -808,6 +754,13 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                         artifact.read_bytes()
                     ).hexdigest() != declared.get(name):
                         artifacts_ok = False
+                artifacts_ok = artifacts_ok and (
+                    identity.get("raw_trace_sha256") == declared.get("qemu.log")
+                    and digest(run.get("pipeline_records", []))
+                    == run.get("pipeline_records_sha256")
+                    and digest(run.get("peer_records", []))
+                    == run.get("peer_records_sha256")
+                )
                 delivery = json.loads((run_dir / "delivery-records.json").read_text())
                 faults = json.loads((run_dir / "fault-records.json").read_text())
                 trace = json.loads((run_dir / "trace.normalized.json").read_text())
@@ -815,7 +768,15 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 outcomes = {item.get("outcome") for item in faults}
                 semantics_ok = (
                     (fault_id != 3 or sequences == [1, 0])
-                    and (fault_id != 11 or sequences == [2, 0, 1])
+                    and (
+                        fault_id != 11
+                        or [
+                            event.get("token")
+                            for event in run.get("trace", [])
+                            if event.get("arg1") == 1184188258
+                        ][:3]
+                        == [3, 1, 2]
+                    )
                     and (fault_id != 10 or sequences == list(range(3)))
                     and (fault_id != 12 or sequences == list(range(4)))
                     and (fault_id != 13 or sequences == list(range(5)))
@@ -911,43 +872,19 @@ def _expect_rejected(case: Case, mutation) -> str:
 
 
 def negative_checks(case: Case) -> dict[str, str]:
+    # fmt: off
     checks = {
-        "corrupted_identity": _expect_rejected(
-            case, lambda value: value.__setitem__("raw_sha256", "0" * 64)
-        ),
-        "unexpected_traffic": _expect_rejected(
-            case,
-            lambda value: value["raw"]["records"].append(
-                {"sequence": 99, "operation": {"op": "unexpected"}}
-            ),
-        ),
-        "exhausted_replay": _expect_rejected(
-            case, lambda value: value["raw"]["records"].clear()
-        ),
-        "discontinuity": _expect_rejected(
-            case,
-            lambda value: value["raw"]["records"][0].__setitem__("sequence", 2),
-        ),
-        "assertion_failure": _expect_rejected(
-            case, lambda value: value["raw"]["assertions"].pop()
-        ),
-        "model_failure": _expect_rejected(
-            case,
-            lambda value: value["raw"].__setitem__("termination", "model_failure"),
-        ),
-        "unconsumed_events": _expect_rejected(
-            case, lambda value: value["raw"].__setitem__("unconsumed_events", 1)
-        ),
-        "invalid_identity": _expect_rejected(
-            case, lambda value: value["raw"].__setitem__("scenario", "changed")
-        ),
-        "production_path_bypass": _expect_rejected(
-            case,
-            lambda value: value["raw"]["assertions"].remove(
-                "production_path_fault_bound"
-            ),
-        ),
+        "corrupted_identity": _expect_rejected(case, lambda value: value.__setitem__("raw_sha256", "0" * 64)),
+        "unexpected_traffic": _expect_rejected(case, lambda value: value["raw"]["records"].append({"sequence": 99, "operation": {"op": "unexpected"}})),
+        "exhausted_replay": _expect_rejected(case, lambda value: value["raw"]["records"].clear()),
+        "discontinuity": _expect_rejected(case, lambda value: value["raw"]["records"][0].__setitem__("sequence", 2)),
+        "assertion_failure": _expect_rejected(case, lambda value: value["raw"]["assertions"].pop()),
+        "model_failure": _expect_rejected(case, lambda value: value["raw"].__setitem__("termination", "model_failure")),
+        "unconsumed_events": _expect_rejected(case, lambda value: value["raw"].__setitem__("unconsumed_events", 1)),
+        "invalid_identity": _expect_rejected(case, lambda value: value["raw"].__setitem__("scenario", "changed")),
+        "production_path_bypass": _expect_rejected(case, lambda value: value["raw"]["assertions"].remove("production_path_fault_bound")),
     }
+    # fmt: on
     try:
         execute(
             Case(
