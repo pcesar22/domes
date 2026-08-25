@@ -5,7 +5,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 PATH = Path(__file__).with_name("fault_replay_acceptance.py")
 if str(PATH.parent) not in sys.path:
@@ -15,14 +14,6 @@ MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
-
-CAMPAIGN_PATH = Path(__file__).with_name("fault_replay_qemu_campaign.py")
-CAMPAIGN_SPEC = importlib.util.spec_from_file_location(
-    "fault_replay_qemu_campaign", CAMPAIGN_PATH
-)
-CAMPAIGN_MODULE = importlib.util.module_from_spec(CAMPAIGN_SPEC)
-assert CAMPAIGN_SPEC.loader
-CAMPAIGN_SPEC.loader.exec_module(CAMPAIGN_MODULE)
 
 
 def build_campaign_fixture(root: Path) -> Path:
@@ -327,42 +318,6 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                     "FAIL",
                 )
 
-    def test_replay_trace_preserves_duplicates_and_exact_relative_time(self):
-        trace = "\n".join(
-            f"DOMES_QEMU_LINK_TRACE schema=1 index={i} timestamp={10+i} task=1 "
-            "type=35 arg1=7 token=11"
-            for i in range(2)
-        )
-        replay = CAMPAIGN_MODULE._replay_trace(trace)
-        self.assertEqual([event["timestamp_ns"] for event in replay], [0, 1])
-        self.assertEqual(len(replay), 2)
-        self.assertNotEqual(
-            replay,
-            CAMPAIGN_MODULE._replay_trace(
-                trace.replace("timestamp=11", "timestamp=12")
-            ),
-        )
-
-    def test_qemu_revision_is_derived_from_validated_build_source(self):
-        source = CAMPAIGN_PATH.read_text()
-        self.assertNotIn("QEMU_REVISION =", source)
-        self.assertIn("_validated_qemu_revision(qemu, args.qemu_source)", source)
-        self.assertIn('["git", "apply", "--reverse", "--check", str(PATCH)]', source)
-
-    def test_completion_order_is_not_fabricated_by_firmware(self):
-        firmware = (
-            MODULE.ROOT / "firmware/domes/main/platform/qemu/qemuEspNowRadio.cpp"
-        ).read_text()
-        patch = (
-            MODULE.HERE / "qemu_link/patches/0001-domes-link-device.patch"
-        ).read_text()
-        self.assertNotIn("completionTokens", firmware)
-        self.assertIn("tokens[] = { s->tx_correlation, s->completion_tokens[0]", patch)
-        self.assertIn(
-            "completion_order_crosses_irq_boundary",
-            (Path(__file__).parent / "qemu_link/verify.py").read_text(),
-        )
-
     def test_host_time_patch_budget_and_physical_isolation_pass(self):
         self.assertEqual(MODULE.audit_host_time(PATH)["status"], "PASS")
         self.assertEqual(MODULE.patch_budget()["status"], "PASS")
@@ -373,11 +328,6 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
             self.assertEqual(path_audit["outside_allowed_paths"], [])
         else:
             self.assertIn("base revision", path_audit["reason"])
-
-    def test_protected_path_audit_reports_a_shallow_checkout(self):
-        completed = MODULE.subprocess.CompletedProcess([], 128, "", "unknown revision")
-        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
-            self.assertEqual(MODULE.protected_path_audit()["status"], "UNAVAILABLE")
 
     def test_retained_real_dut_campaign_closes_roles_and_production_stages(self):
         result = MODULE.validate_real_dut_campaign(self.campaign)

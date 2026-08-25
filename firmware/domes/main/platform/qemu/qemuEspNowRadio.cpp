@@ -5,6 +5,7 @@
 #include "trace/traceApi.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace domes::platform {
@@ -14,6 +15,8 @@ constexpr uint32_t kSubmit = 1U;
 constexpr uint32_t kConsume = 1U;
 constexpr UBaseType_t kRadioTaskPriority = 23;
 constexpr BaseType_t kRadioTaskCore = 0;
+constexpr UBaseType_t kCallbackTaskPriority = 5;
+constexpr BaseType_t kCallbackTaskCore = 1;
 
 volatile uint32_t* IRAM_ATTR mmio(qemu_link::Register reg) {
     return reinterpret_cast<volatile uint32_t*>(qemu_link::address(reg));
@@ -56,7 +59,9 @@ EspNowRadioResult QemuEspNowRadio::init(void* context, ReceiveCallback receiveCa
     sendCallback_ = sendCallback;
     eventQueue_ =
         xQueueCreateStatic(4, sizeof(DeferredEvent), eventQueueBytes_.data(), &eventQueueStorage_);
-    if (!eventQueue_) {
+    callbackQueue_ = xQueueCreateStatic(4, sizeof(DeferredEvent), callbackQueueBytes_.data(),
+                                        &callbackQueueStorage_);
+    if (!eventQueue_ || !callbackQueue_) {
         return EspNowRadioResult::kError;
     }
     task_ = xTaskCreateStaticPinnedToCore(taskEntry, "qemu_radio", taskStack_.size(), this,
@@ -64,13 +69,27 @@ EspNowRadioResult QemuEspNowRadio::init(void* context, ReceiveCallback receiveCa
                                           kRadioTaskCore);
     if (!task_) {
         eventQueue_ = nullptr;
+        callbackQueue_ = nullptr;
+        return EspNowRadioResult::kError;
+    }
+    callbackTask_ = xTaskCreateStaticPinnedToCore(
+        callbackTaskEntry, "qemu_application", callbackTaskStack_.size(), this,
+        kCallbackTaskPriority, callbackTaskStack_.data(), &callbackTaskStorage_, kCallbackTaskCore);
+    if (!callbackTask_) {
+        vTaskDelete(task_);
+        task_ = nullptr;
+        eventQueue_ = nullptr;
+        callbackQueue_ = nullptr;
         return EspNowRadioResult::kError;
     }
     if (esp_intr_alloc(qemu_link::kInterruptSource, ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_IRAM,
                        interruptHandler, this, &interrupt_) != ESP_OK) {
         vTaskDelete(task_);
+        vTaskDelete(callbackTask_);
         task_ = nullptr;
+        callbackTask_ = nullptr;
         eventQueue_ = nullptr;
+        callbackQueue_ = nullptr;
         return EspNowRadioResult::kError;
     }
     initialized_.store(true, std::memory_order_release);
@@ -93,7 +112,12 @@ void QemuEspNowRadio::deinit() {
         vTaskDelete(task_);
         task_ = nullptr;
     }
+    if (callbackTask_) {
+        vTaskDelete(callbackTask_);
+        callbackTask_ = nullptr;
+    }
     eventQueue_ = nullptr;
+    callbackQueue_ = nullptr;
     peerCount_ = 0;
     callbackContext_ = nullptr;
     receiveCallback_ = nullptr;
@@ -237,6 +261,7 @@ void QemuEspNowRadio::taskEntry(void* context) {
 }
 
 void QemuEspNowRadio::runTask() {
+    std::printf("DOMES_QEMU_CORE_PATH schema=1 radio_core=%d\n", xPortGetCoreID());
     DeferredEvent event{};
     while (xQueueReceive(eventQueue_, &event, portMAX_DELAY) == pdTRUE) {
         if (!initialized_.load(std::memory_order_acquire) || event.token == 0) {
@@ -246,6 +271,24 @@ void QemuEspNowRadio::runTask() {
             trace::Recorder::record(
                 trace::makeEvent(trace::EventType::kSchedQueueReceive, trace::Category::kEspNow,
                                  TRACE_ID("QemuLink.TaskHandoff"), event.token));
+        }
+        if (xQueueSend(callbackQueue_, &event, 0) != pdTRUE) {
+            handoffFailed_.store(true, std::memory_order_release);
+            write(qemu_link::Register::kInterruptMask, 0);
+        }
+    }
+}
+
+void QemuEspNowRadio::callbackTaskEntry(void* context) {
+    static_cast<QemuEspNowRadio*>(context)->runCallbackTask();
+}
+
+void QemuEspNowRadio::runCallbackTask() {
+    std::printf("DOMES_QEMU_CORE_PATH schema=1 application_core=%d\n", xPortGetCoreID());
+    DeferredEvent event{};
+    while (xQueueReceive(callbackQueue_, &event, portMAX_DELAY) == pdTRUE) {
+        if (!initialized_.load(std::memory_order_acquire) || event.token == 0) {
+            continue;
         }
         if (event.kind == EventKind::kTxComplete) {
             sendCallback_(callbackContext_, event.token, event.address, event.status);
