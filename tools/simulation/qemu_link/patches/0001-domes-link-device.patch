@@ -422,7 +422,7 @@ index 0000000000..aed3d39622
 +        record_stage(STAGE_AIRTIME,
 +                     now_ns + s->peer_delay_ns + s->stage_delay_ns[STAGE_PEER],
 +                     event.deadline_ns);
-+        if (s->fault_id == FAULT_SATURATION || s->fault_id == FAULT_BACKPRESSURE_RECOVERY) event.deadline_ns += 100000;
++        if (s->fault_id == FAULT_SATURATION || s->fault_id == FAULT_BACKPRESSURE_RECOVERY) event.deadline_ns += 1000000;
 +        for (uint32_t copy = 0; copy < copies; copy++) {
 +            DomesLinkEvent candidate = event;
 +            if (s->fault_id == FAULT_COMPLETION_ORDER && copy == 1)
@@ -554,7 +554,7 @@ index 0000000000..aed3d39622
 +        else if (s->readmission_pending) {
 +            record_fault(s, "channel_access", "production_dequeued");
 +            if (!enqueue_event(s, s->readmission_event)) s->sticky |= ST_MODEL_FAILURE;
-+            else { record_fault(s, "channel_access", "readmitted"); deliver_due(s); }
++            else { record_fault(s, "channel_access", "readmitted"); timer_mod_ns(s->delivery_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 100000); }
 +            s->readmission_pending = false;
 +        }
 +        break;
