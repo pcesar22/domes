@@ -240,7 +240,8 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
     sequences = [item["sequence"] for item in deliveries]
     if fault_id == 3 and sequences != [1, 0]:
         raise CampaignFailure(f"{case.name}: submit order was not reversed")
-    handoffs = [event["token"] for event in run["trace"] if event["arg1"] == 1184188258]
+    handoffs = [event["token"] for event in run["trace"] if event["arg1"] == 1184188258 and event["type"] == 26]  # fmt: skip
+    dequeue_depths = [event["token"] for event in run["trace"] if event["arg1"] == 1184188258 and event["type"] == 35]  # fmt: skip
     if fault_id == 11:
         submissions = [event["token"] for event in run["trace"] if event["arg1"] == 3517568895]  # fmt: skip
         second_submit = max(event["index"] for event in run["trace"] if event["arg1"] == 3517568895 and event["token"] == 2)  # fmt: skip
@@ -273,9 +274,9 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
     ):
         raise CampaignFailure(f"{case.name}: wrong production role interaction")
     outcomes = [record["outcome"] for record in records]
-    if fault_id == 12 and (sequences != list(range(4)) or handoffs[-4:] != [1] * 4):
+    if fault_id == 12 and (sequences != list(range(4)) or handoffs[-4:] != [1] * 4 or 4 not in dequeue_depths):  # fmt: skip
         raise CampaignFailure(f"{case.name}: production receive capacity was not saturated")  # fmt: skip
-    if fault_id == 13 and (sequences != list(range(5)) or handoffs[-5:] != [1] * 5):
+    if fault_id == 13 and (sequences != list(range(5)) or handoffs[-5:] != [1] * 5 or 4 not in dequeue_depths):  # fmt: skip
         raise CampaignFailure(f"{case.name}: recovered frame was not delivered")
     if fault_id == 13 and not {"production_dequeued", "readmitted"} <= set(outcomes):
         raise CampaignFailure(f"{case.name}: no dequeue and readmission recovery")

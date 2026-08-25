@@ -89,11 +89,10 @@ FAILURE_MASKS = {
 
 def expected_result(fault_id: int) -> dict[str, Any]:
     rejected = fault_id in NO_DELIVERY or fault_id in REJECTED_DELIVERY
+    default_mask = "0x00000060" if rejected else "0x00000000"
     return {
         "status": "FAIL" if rejected else "PASS",
-        "failure_mask": FAILURE_MASKS.get(
-            fault_id, "0x00000060" if rejected else "0x00000000"
-        ),
+        "failure_mask": FAILURE_MASKS.get(fault_id, default_mask),
         "service_dispatches": 0 if rejected else 1,
         "delivery_records": DELIVERY_COUNTS[fault_id],
     }
@@ -136,7 +135,6 @@ def cases() -> tuple[Case, ...]:
         Case("interference_loss", ("interference_outcome",), "airtime", "declared packet outcome is recorded without an RF claim", 2_000_000, ({"op": "outcome", "state": "interference_loss", "delivered": False},)),
     )
     # fmt: on
-    corpus = fixed + latency
     return tuple(
         Case(
             case.name,
@@ -150,7 +148,7 @@ def cases() -> tuple[Case, ...]:
             ),
             case.operations,
         )
-        for index, case in enumerate(corpus)
+        for index, case in enumerate(fixed + latency)
     )
 
 
@@ -581,8 +579,9 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 handoffs = [
                     event.get("token")
                     for event in run.get("trace", [])
-                    if event.get("arg1") == 1184188258
+                    if event.get("arg1") == 1184188258 and event.get("type") == 26
                 ]
+                dequeue_depths = [event.get("token") for event in run.get("trace", []) if event.get("arg1") == 1184188258 and event.get("type") == 35]  # fmt: skip
                 submissions = [event.get("token") for event in run.get("trace", []) if event.get("arg1") == 3517568895]  # fmt: skip
                 second_submit = max((event.get("index", -1) for event in run.get("trace", []) if event.get("arg1") == 3517568895 and event.get("token") == 2), default=-1)  # fmt: skip
                 completions = [event.get("token") for event in run.get("trace", []) if event.get("arg1") == 4059320606 and event.get("type") == 30 and event.get("index", -1) > second_submit]  # fmt: skip
@@ -591,8 +590,8 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                     (fault_id != 3 or sequences == [1, 0])
                     and (fault_id != 11 or completion_order_ok)
                     and (fault_id != 10 or sequences == list(range(3)))
-                    and (fault_id != 12 or sequences == list(range(4)))
-                    and (fault_id != 13 or sequences == list(range(5)))
+                    and (fault_id != 12 or (sequences == list(range(4)) and handoffs[-4:] == [1] * 4 and 4 in dequeue_depths))  # fmt: skip
+                    and (fault_id != 13 or (sequences == list(range(5)) and handoffs[-5:] == [1] * 5 and 4 in dequeue_depths))  # fmt: skip
                     and (
                         fault_id not in {10, 12, 13}
                         or run.get("runtime", {})

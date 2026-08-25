@@ -427,7 +427,7 @@ index 0000000000..aed3d39622
 +            DomesLinkEvent candidate = event;
 +            if (s->fault_id == FAULT_COMPLETION_ORDER && copy == 1)
 +                candidate.payload[0] = MSG_PING;
-+            if ((s->fault_id == FAULT_CALLBACK_BURST && copy > 0) || (s->fault_id >= FAULT_SATURATION && s->fault_id <= FAULT_BACKPRESSURE_RECOVERY && copy != 0))
++            if ((s->fault_id == FAULT_CALLBACK_BURST && copy > 0) || (s->fault_id == FAULT_SATURATION && copy != 0) || (s->fault_id == FAULT_BACKPRESSURE_RECOVERY && copy != 4))
 +                candidate.payload[0] = MSG_TOUCH_EVENT, candidate.length = wire_size(MSG_TOUCH_EVENT);
 +            if (s->fault_id == FAULT_REORDERING || s->fault_id == FAULT_COMPLETION_ORDER) {
 +                candidate.deadline_ns += (copies - copy) * spacing_ns;
@@ -554,7 +554,7 @@ index 0000000000..aed3d39622
 +        else if (s->readmission_pending) {
 +            record_fault(s, "channel_access", "production_dequeued");
 +            if (!enqueue_event(s, s->readmission_event)) s->sticky |= ST_MODEL_FAILURE;
-+            else { record_fault(s, "channel_access", "readmitted"); timer_mod_ns(s->delivery_timer, MAX(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1, s->events[0].deadline_ns)); }
++            else { record_fault(s, "channel_access", "readmitted"); deliver_due(s); }
 +            s->readmission_pending = false;
 +        }
 +        break;

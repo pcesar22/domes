@@ -267,14 +267,13 @@ void QemuEspNowRadio::runTask() {
         if (!initialized_.load(std::memory_order_acquire) || event.token == 0) {
             continue;
         }
-        if (trace::Recorder::isEnabled()) {
-            trace::Recorder::record(
-                trace::makeEvent(trace::EventType::kSchedQueueReceive, trace::Category::kEspNow,
-                                 TRACE_ID("QemuLink.TaskHandoff"), event.token));
-        }
         if (xQueueSend(callbackQueue_, &event, 0) != pdTRUE) {
             handoffFailed_.store(true, std::memory_order_release);
             write(qemu_link::Register::kInterruptMask, 0);
+        } else if (trace::Recorder::isEnabled()) {
+            trace::Recorder::record(
+                trace::makeEvent(trace::EventType::kSchedQueueReceive, trace::Category::kEspNow,
+                                 TRACE_ID("QemuLink.TaskHandoff"), event.token));
         }
     }
 }
@@ -287,6 +286,11 @@ void QemuEspNowRadio::runCallbackTask() {
     std::printf("DOMES_QEMU_CORE_PATH schema=1 application_core=%d\n", xPortGetCoreID());
     DeferredEvent event{};
     while (xQueueReceive(callbackQueue_, &event, portMAX_DELAY) == pdTRUE) {
+        if (trace::Recorder::isEnabled()) {
+            trace::Recorder::record(trace::makeEvent(
+                trace::EventType::kCounter, trace::Category::kEspNow,
+                TRACE_ID("QemuLink.TaskHandoff"), uxQueueMessagesWaiting(callbackQueue_) + 1U));
+        }
         if (!initialized_.load(std::memory_order_acquire) || event.token == 0) {
             continue;
         }
@@ -299,9 +303,9 @@ void QemuEspNowRadio::runCallbackTask() {
                 .sourceValid = true,
                 .rssiValid = true,
             };
+            write(qemu_link::Register::kRxDequeue, kConsume);
             receiveCallback_(callbackContext_, event.token, metadata, event.payload.data(),
                              event.length);
-            write(qemu_link::Register::kRxDequeue, kConsume);
         }
     }
 }

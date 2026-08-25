@@ -71,7 +71,7 @@ def build_campaign_fixture(root: Path) -> Path:
         deliveries = [
             {"sequence": index, "payload_hex": ""} for index in delivery_sequences
         ]
-        trace = ([{"arg1": 1184188258, "token": 1}] * 3 + [{"arg1": 3517568895, "token": 1}] + [{"arg1": 4059320606, "token": 1, "type": 30}] * 2 + [{"arg1": 3517568895, "token": 2}] + [{"arg1": 1184188258, "token": token} for token in (2, 1, 1)] + [{"arg1": 4059320606, "token": 2, "type": 30}]) if fault_id == 11 else ([{"arg1": 1184188258, "token": 1}] * (fault_id - 8) if fault_id in {12, 13} else [])  # fmt: skip
+        trace = ([{"arg1": 1184188258, "token": 1, "type": 26}] * 3 + [{"arg1": 3517568895, "token": 1}] + [{"arg1": 4059320606, "token": 1, "type": 30}] * 2 + [{"arg1": 3517568895, "token": 2}] + [{"arg1": 1184188258, "token": token, "type": 26} for token in (2, 1, 1)] + [{"arg1": 4059320606, "token": 2, "type": 30}]) if fault_id == 11 else (([{"arg1": 1184188258, "token": 1, "type": 26}] * (fault_id - 8) + [{"arg1": 1184188258, "token": 4, "type": 35}]) if fault_id in {12, 13} else [])  # fmt: skip
         trace = [{**event, "index": index} for index, event in enumerate(trace)]
         artifact_contents = {
             **common_artifacts,
@@ -132,25 +132,13 @@ def build_campaign_fixture(root: Path) -> Path:
                         "trace_sha256": MODULE.digest(trace),
                         "trace": trace,
                         "result_sha256": "2" * 64,
-                        "result": {
-                            "status": expected["status"],
-                            "failure_mask": expected["failure_mask"],
-                            "service_dispatches": expected["service_dispatches"],
-                            "trace_drops": 0,
-                            "trace_discontinuities": 0,
-                        },
+                        "result": {"status": expected["status"], "failure_mask": expected["failure_mask"], "service_dispatches": expected["service_dispatches"], "trace_drops": 0, "trace_discontinuities": 0},  # fmt: skip
                         "artifact_sha256": artifact_hashes,
                         "runtime": {
                             "stages": stages,
                             "stage_counts": {"callbacks": 12 if fault_id == 13 else 10 if fault_id == 12 else 8, "rx_queue": 5 if fault_id == 13 else 4 if fault_id == 12 else len(deliveries), "service_messages": (["EspNow.RxPing"] if fault_id == 11 else ["EspNow.RxBeacon" if role == "master" else "EspNow.RxJoinGame"]) if expected["status"] == "PASS" else []},  # fmt: skip
                         },
-                        "final_state": {
-                            "virtual_ns": 100,
-                            "queued": 0,
-                            "tx_status": 0,
-                            "irq_status": 0,
-                            "sticky": 0,
-                        },
+                        "final_state": {"virtual_ns": 100, "queued": 0, "tx_status": 0, "irq_status": 0, "sticky": 0},  # fmt: skip
                     }
                 )
             identity = {
@@ -287,13 +275,15 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
             "pipeline",
             "raw_identity",
             "completion_order",
+            "sequential_saturation", "failed_fourth_insertion",  # fmt: skip
         ):
             with self.subTest(
                 mutation=mutation
             ), tempfile.TemporaryDirectory() as directory:
                 copied = Path(directory) / "qemu-campaign"
                 shutil.copytree(self.campaign.parent, copied)
-                path = copied / f"{'completion_reorder' if mutation == 'completion_order' else 'pass'}/master/replay-manifest.json"  # fmt: skip
+                case_name = "completion_reorder" if mutation == "completion_order" else "saturation" if mutation in {"sequential_saturation", "failed_fourth_insertion"} else "pass"  # fmt: skip
+                path = copied / f"{case_name}/master/replay-manifest.json"
                 manifest = json.loads(path.read_text())
                 if mutation == "expected":
                     manifest["identity"]["expected_result"]["status"] = "FAIL"
@@ -309,10 +299,15 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                     manifest["runs"][0]["pipeline_records"].append({"stage": "changed"})
                 elif mutation == "raw_identity":
                     manifest["identity"]["raw_trace_sha256"] = "0" * 64
-                else:
-                    handoffs = [event for event in manifest["runs"][0]["trace"] if event["arg1"] == 1184188258]  # fmt: skip
+                elif mutation == "completion_order":
+                    handoffs = [event for event in manifest["runs"][0]["trace"] if event["arg1"] == 1184188258 and event.get("type") == 26]  # fmt: skip
                     for event, token in zip(handoffs[-3:], (1, 2, 2), strict=True):  # fmt: skip
                         event["token"] = token
+                elif mutation == "sequential_saturation":
+                    next(event for event in manifest["runs"][0]["trace"] if event.get("type") == 35)["token"] = 1  # fmt: skip
+                else:
+                    handoffs = [event for event in manifest["runs"][0]["trace"] if event.get("type") == 26]  # fmt: skip
+                    manifest["runs"][0]["trace"].remove(handoffs[-1])
                 manifest["identity_sha256"] = MODULE.digest(manifest["identity"])
                 path.write_text(json.dumps(manifest))
                 self.assertEqual(
