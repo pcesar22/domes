@@ -71,7 +71,7 @@ def build_campaign_fixture(root: Path) -> Path:
         deliveries = [
             {"sequence": index, "payload_hex": ""} for index in delivery_sequences
         ]
-        trace = ([{"arg1": 1184188258, "token": 1}] * 3 + [{"arg1": 3517568895, "token": 1}] + [{"arg1": 4059320606, "token": 1, "type": 30}] * 2 + [{"arg1": 3517568895, "token": 2}] + [{"arg1": 1184188258, "token": token} for token in (2, 1, 1)] + [{"arg1": 4059320606, "token": 2, "type": 30}]) if fault_id == 11 else []  # fmt: skip
+        trace = ([{"arg1": 1184188258, "token": 1}] * 3 + [{"arg1": 3517568895, "token": 1}] + [{"arg1": 4059320606, "token": 1, "type": 30}] * 2 + [{"arg1": 3517568895, "token": 2}] + [{"arg1": 1184188258, "token": token} for token in (2, 1, 1)] + [{"arg1": 4059320606, "token": 2, "type": 30}]) if fault_id == 11 else ([{"arg1": 1184188258, "token": 1}] * (fault_id - 8) if fault_id in {12, 13} else [])  # fmt: skip
         trace = [{**event, "index": index} for index, event in enumerate(trace)]
         artifact_contents = {
             **common_artifacts,

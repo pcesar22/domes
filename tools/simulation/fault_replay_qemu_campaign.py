@@ -273,9 +273,9 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
     ):
         raise CampaignFailure(f"{case.name}: wrong production role interaction")
     outcomes = [record["outcome"] for record in records]
-    if fault_id == 12 and (sequences != list(range(4)) or counts["rx_queue"] != 4):
+    if fault_id == 12 and (sequences != list(range(4)) or handoffs[-4:] != [1] * 4):
         raise CampaignFailure(f"{case.name}: production receive capacity was not saturated")  # fmt: skip
-    if fault_id == 13 and (sequences != list(range(5)) or counts["rx_queue"] != 5):
+    if fault_id == 13 and (sequences != list(range(5)) or handoffs[-5:] != [1] * 5):
         raise CampaignFailure(f"{case.name}: recovered frame was not delivered")
     if fault_id == 13 and not {"production_dequeued", "readmitted"} <= set(outcomes):
         raise CampaignFailure(f"{case.name}: no dequeue and readmission recovery")
