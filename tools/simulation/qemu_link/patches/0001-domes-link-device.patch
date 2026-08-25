@@ -3,12 +3,13 @@ new file mode 100644
 index 0000000000..aed3d39622
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,653 @@
+@@ -0,0 +1,662 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
 +#include "hw/qdev-properties.h"
 +#include "qemu/log.h"
++#include "qapi/visitor.h"
 +#include "qemu/module.h"
 +#define MAGIC 0x444c4e4b
 +#define VERSION 1
@@ -627,12 +628,20 @@ index 0000000000..aed3d39622
 +    timer_free(s->completion_timer);
 +    timer_free(s->delivery_timer);
 +}
++static void get_virtual_clock(Object *obj, Visitor *v, const char *name,
++                              void *opaque, Error **errp)
++{
++    uint64_t value = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++    visit_type_uint64(v, name, &value, errp);
++}
 +static void link_init(Object *obj)
 +{
 +    DomesLinkState *s = DOMES_LINK(obj);
 +    memory_region_init_io(&s->mmio, obj, &link_ops, s, TYPE_DOMES_LINK, DOMES_LINK_MMIO_SIZE);
 +    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 +    sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
++    object_property_add(obj, "virtual-clock-ns", "uint64", get_virtual_clock,
++                        NULL, NULL, NULL);
 +}
 +static void link_class_init(ObjectClass *klass, void *data)
 +{

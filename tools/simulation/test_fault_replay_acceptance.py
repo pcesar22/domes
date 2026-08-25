@@ -24,50 +24,15 @@ def build_campaign_fixture(root: Path) -> Path:
         text=True,
         stdout=MODULE.subprocess.PIPE,
     ).stdout.strip()
-    current_hashes = {
-        "qemu_patch_sha256": MODULE.hashlib.sha256(
-            MODULE.PATCH.read_bytes()
-        ).hexdigest(),
-        "campaign_runner_sha256": MODULE.hashlib.sha256(
-            (MODULE.HERE / "fault_replay_qemu_campaign.py").read_bytes()
-        ).hexdigest(),
-        "acceptance_runner_sha256": MODULE.hashlib.sha256(
-            (MODULE.HERE / "fault_replay_acceptance.py").read_bytes()
-        ).hexdigest(),
-    }
-    common_artifacts = {
-        "delivery-records.json": b"[]",
-        "efuse-generation.log": b"",
-        "fault-records.json": b"[]",
-        "flash-generation.log": b"fixture\n",
-        "qemu-device.log": b"fixture\n",
-        "qemu.log": b"fixture\n",
-        "trace.normalized.json": b"[]",
-    }
+    current_hashes = {"qemu_patch_sha256": MODULE.hashlib.sha256(MODULE.PATCH.read_bytes()).hexdigest(), "campaign_runner_sha256": MODULE.hashlib.sha256((MODULE.HERE / "fault_replay_qemu_campaign.py").read_bytes()).hexdigest(), "acceptance_runner_sha256": MODULE.hashlib.sha256((MODULE.HERE / "fault_replay_acceptance.py").read_bytes()).hexdigest()}  # fmt: skip
+    common_artifacts = {"delivery-records.json": b"[]", "efuse-generation.log": b"", "fault-records.json": b"[]", "flash-generation.log": b"fixture\n", "qemu-device.log": b"fixture\n", "qemu.log": b"fixture\n", "trace.normalized.json": b"[]"}  # fmt: skip
     stages = dict.fromkeys("mmio core0_radio_task core1_application_task irq task callback ring semaphore dequeue service_dispatch tx_complete".split(), True)  # fmt: skip
     matrix = []
     for fault_id, case in enumerate(MODULE.cases()):
         expected = MODULE.expected_result(fault_id)
-        outcomes = {
-            13: ["production_capacity_4", "production_dequeued", "readmitted"],
-            16: ["restart_epoch_2"],
-            17: ["stale_epoch_1_then_2"],
-        }.get(fault_id, ["fixture"])
-        faults = [
-            {
-                "fault_id": fault_id,
-                "sequence": index,
-                "virtual_ns": 0,
-                "absolute_virtual_ns": 100,
-                "stage": case.injection_stage,
-                "outcome": outcome,
-                "queued": 0,
-            }
-            for index, outcome in enumerate(outcomes)
-        ]
-        delivery_sequences = {3: [1, 0]}.get(
-            fault_id, list(range(expected["delivery_records"]))
-        )
+        outcomes = {13: ["production_capacity_4", "production_dequeued", "readmitted"], 16: ["restart_epoch_2"], 17: ["stale_epoch_1_then_2"]}.get(fault_id, ["fixture"])  # fmt: skip
+        faults = [{"fault_id": fault_id, "sequence": index, "virtual_ns": 0, "absolute_virtual_ns": 100, "stage": case.injection_stage, "outcome": outcome, "queued": 0} for index, outcome in enumerate(outcomes)]  # fmt: skip
+        delivery_sequences = {3: [1, 0]}.get(fault_id, list(range(expected["delivery_records"])))  # fmt: skip
         deliveries = [
             {"sequence": index, "payload_hex": ""} for index in delivery_sequences
         ]
@@ -79,10 +44,7 @@ def build_campaign_fixture(root: Path) -> Path:
             "delivery-records.json": MODULE.canonical(deliveries),
             "trace.normalized.json": MODULE.canonical(trace),
         }
-        artifact_hashes = {
-            name: MODULE.hashlib.sha256(content).hexdigest()
-            for name, content in artifact_contents.items()
-        }
+        artifact_hashes = {name: MODULE.hashlib.sha256(content).hexdigest() for name, content in artifact_contents.items()}  # fmt: skip
         fault_digest, delivery_digest = MODULE.digest(faults), MODULE.digest(deliveries)
         roles = []
         for role in ("master", "slave"):
@@ -95,6 +57,7 @@ def build_campaign_fixture(root: Path) -> Path:
                 artifact_contents["delivery-records.json"]
             ).hexdigest()
             delivery_digest = MODULE.digest(deliveries)
+            deadlines = [12_100 if case.injection_stage in {"tx_queue_delay", "channel_access", "completion_delay"} else 11_100] * len(deliveries) if fault_id >= 21 else [101] * len(deliveries)  # fmt: skip
             role_dir = root / case.name / role
             runs = []
             for index in (1, 2):
@@ -112,23 +75,7 @@ def build_campaign_fixture(root: Path) -> Path:
                         "peer_records_sha256": MODULE.digest([]),
                         "peer_records": [],
                         "delivery_records_sha256": delivery_digest,
-                        "absolute_delivery_deadlines": (
-                            [
-                                (
-                                    12_100
-                                    if case.injection_stage
-                                    in {
-                                        "tx_queue_delay",
-                                        "channel_access",
-                                        "completion_delay",
-                                    }
-                                    else 11_100
-                                )
-                            ]
-                            * len(deliveries)
-                            if fault_id >= 21
-                            else [101] * len(deliveries)
-                        ),
+                        "absolute_delivery_deadlines": deadlines,
                         "trace_sha256": MODULE.digest(trace),
                         "trace": trace,
                         "result_sha256": "2" * 64,
@@ -138,7 +85,7 @@ def build_campaign_fixture(root: Path) -> Path:
                             "stages": stages,
                             "stage_counts": {"callbacks": 12 if fault_id == 13 else 10 if fault_id == 12 else 8, "rx_queue": 5 if fault_id == 13 else 4 if fault_id == 12 else len(deliveries), "service_messages": (["EspNow.RxPing"] if fault_id == 11 else ["EspNow.RxBeacon" if role == "master" else "EspNow.RxJoinGame"]) if expected["status"] == "PASS" else []},  # fmt: skip
                         },
-                        "final_state": {"virtual_ns": 100, "queued": 0, "tx_status": 0, "irq_status": 0, "sticky": 0},  # fmt: skip
+                        "final_state": {"virtual_ns": 100, "result_marker_virtual_ns": 100, "queued": 0, "tx_status": 0, "irq_status": 0, "sticky": 0},  # fmt: skip
                     }
                 )
             identity = {
@@ -292,7 +239,10 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                         "core1_application_task"
                     ] = False
                 elif mutation == "termination":
-                    manifest["runs"][0]["final_state"]["virtual_ns"] = 2_000_000_001
+                    manifest["runs"][0]["final_state"]["virtual_ns"] = 4_000_000_001
+                    manifest["runs"][0]["final_state"][
+                        "result_marker_virtual_ns"
+                    ] = 4_000_000_001
                 elif mutation == "empty_faults":
                     (copied / "pass/master/001/fault-records.json").write_text("[]")
                 elif mutation == "pipeline":

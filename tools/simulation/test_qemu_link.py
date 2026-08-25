@@ -15,7 +15,7 @@ class QemuLinkVerificationTest(unittest.TestCase):
     def test_patch_hunk_counts_include_type_registration(self):
         patch = MODULE.PATCH.read_text()
         self.assertTrue(MODULE.unified_diff_hunks_are_well_formed(patch))
-        malformed = patch.replace("@@ -0,0 +1,653 @@", "@@ -0,0 +1,652 @@", 1)
+        malformed = patch.replace("@@ -0,0 +1,662 @@", "@@ -0,0 +1,661 @@", 1)
         self.assertFalse(MODULE.unified_diff_hunks_are_well_formed(malformed))
 
     def test_complete_manifest_cross_check_and_patch_audit(self):

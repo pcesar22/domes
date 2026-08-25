@@ -48,6 +48,7 @@ RESULT_PATTERN = re.compile(
     r"token=(\d+) service_dispatches=(\d+) trace_drops=(\d+) trace_discontinuities=(\d+)"
 )
 STATE_PATTERN = re.compile(r"DOMES_FAULT_STATE schema=1 virtual_ns=(\d+) queued=(\d+)")
+MARKER_TIME_PATTERN = re.compile(r"(?:^|\r?\n)(\d+)\r?\n\(qemu\)")
 PIPELINE_PATTERN = re.compile(
     r"DOMES_PIPELINE_BOUNDARY schema=1 stage=(\S+) enter_ns=(\d+) exit_ns=(\d+)"
 )
@@ -378,8 +379,19 @@ def _run_once(
     )
     log = run_dir / "qemu.log"
     device_log = run_dir / "qemu-device.log"
+    monitor_socket = (
+        Path("/tmp") / f"d143-{os.getpid()}-{fault_id}-{role_number}-{index}.sock"
+    )
+    command.extend(["-monitor", f"unix:{monitor_socket},server=on,wait=off"])
     command.extend(["-D", str(device_log)])
-    execution = execute_until_marker(command, log, timeout, MARKER)
+    try:
+        execution = execute_until_marker(command, log, timeout, MARKER, monitor_socket)
+    finally:
+        monitor_socket.unlink(missing_ok=True)
+    marker_monitor = str(execution.pop("marker_monitor"))
+    marker_time = MARKER_TIME_PATTERN.search(marker_monitor)
+    if marker_time is None:
+        raise CampaignFailure(f"{case.name}: no virtual time at DUT result marker")
     raw_text = str(execution.pop("text")).replace("\r", "")
     text = "\n".join(line.rstrip() for line in raw_text.splitlines()) + "\n"
     log.write_text(text, newline="\n")
@@ -407,11 +419,8 @@ def _run_once(
     if not observations:
         raise CampaignFailure(f"{case.name}: QEMU emitted no observed queue state")
     final_state = {
-        "virtual_ns": max(
-            [record["absolute_virtual_ns"] for record in faults]
-            + absolute_delivery_deadlines
-            + [item[0] for item in observations]
-        ),
+        "virtual_ns": int(marker_time.group(1)),
+        "result_marker_virtual_ns": int(marker_time.group(1)),
         "queued": observations[-1][1],
         "observations": len(observations),
     }

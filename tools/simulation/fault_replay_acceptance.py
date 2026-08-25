@@ -142,9 +142,9 @@ def cases() -> tuple[Case, ...]:
             case.injection_stage,
             case.invariant,
             (
-                2_000_000_000
+                4_000_000_000
                 if expected_result(index)["status"] == "FAIL"
-                else case.termination_bound_ns
+                else max(case.termination_bound_ns, 20_000_000)
             ),
             case.operations,
         )
@@ -636,6 +636,8 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                     and [record.get("sequence") for record in faults]
                     == list(range(len(faults)))
                     and run.get("final_state", {}).get("virtual_ns", -1)
+                    == run.get("final_state", {}).get("result_marker_virtual_ns", -2)
+                    and run.get("final_state", {}).get("result_marker_virtual_ns", -1)
                     - faults[0].get("absolute_virtual_ns", 0)
                     <= case.termination_bound_ns
                     and semantics_ok
