@@ -104,6 +104,10 @@ EspNowRadioResult QemuEspNowRadio::init(void* context, ReceiveCallback receiveCa
 void QemuEspNowRadio::deinit() {
     initialized_.store(false, std::memory_order_release);
     write(qemu_link::Register::kInterruptMask, 0);
+    if (read(qemu_link::Register::kTxStatus) ==
+        static_cast<uint32_t>(qemu_link::TxStatus::kPending)) {
+        write(qemu_link::Register::kRecover, 1U);
+    }
     if (interrupt_) {
         esp_intr_free(interrupt_);
         interrupt_ = nullptr;

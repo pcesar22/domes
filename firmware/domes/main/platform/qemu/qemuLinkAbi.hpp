@@ -35,6 +35,7 @@ enum class Register : uintptr_t {
     kInterruptMask = 0x054,
     kInterruptAck = 0x058,
     kStickyStatus = 0x05c,
+    kRecover = 0x060,
     kTxPayload = 0x100,
     kRxPayload = 0x200,
 };

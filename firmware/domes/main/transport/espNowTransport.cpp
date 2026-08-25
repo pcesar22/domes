@@ -479,14 +479,18 @@ void EspNowTransport::onSendComplete(EspNowCorrelationToken token, const EspNowA
 bool EspNowTransport::registerTraceObjects() {
     using trace::KernelTrace;
     using trace::ObjectKind;
-    return KernelTrace::registerObject(&gEspNowQueueIdentity, kEspNowQueueTraceId,
-                                       ObjectKind::kQueue, "espnow_queue") &&
-           KernelTrace::registerObject(&gEspNowReadyIdentity, kEspNowReadyTraceId,
-                                       ObjectKind::kSemaphore, "espnow_ready") &&
-           KernelTrace::registerObject(&gEspNowCallbackIdentity, kEspNowCallbackTraceId,
-                                       ObjectKind::kCallback, "espnow_cb") &&
-           KernelTrace::registerObject(&gEspNowCompleteIdentity, kEspNowCompleteTraceId,
-                                       ObjectKind::kAction, "espnow_done");
+    return (KernelTrace::objectId(&gEspNowQueueIdentity) == kEspNowQueueTraceId &&
+            KernelTrace::objectId(&gEspNowReadyIdentity) == kEspNowReadyTraceId &&
+            KernelTrace::objectId(&gEspNowCallbackIdentity) == kEspNowCallbackTraceId &&
+            KernelTrace::objectId(&gEspNowCompleteIdentity) == kEspNowCompleteTraceId) ||
+           (KernelTrace::registerObject(&gEspNowQueueIdentity, kEspNowQueueTraceId,
+                                        ObjectKind::kQueue, "espnow_queue") &&
+            KernelTrace::registerObject(&gEspNowReadyIdentity, kEspNowReadyTraceId,
+                                        ObjectKind::kSemaphore, "espnow_ready") &&
+            KernelTrace::registerObject(&gEspNowCallbackIdentity, kEspNowCallbackTraceId,
+                                        ObjectKind::kCallback, "espnow_cb") &&
+            KernelTrace::registerObject(&gEspNowCompleteIdentity, kEspNowCompleteTraceId,
+                                        ObjectKind::kAction, "espnow_done"));
 }
 
 EspNowCorrelationToken EspNowTransport::nextToken(std::atomic<EspNowCorrelationToken>& counter) {

@@ -32,8 +32,7 @@ from qemu_feasibility import (
 )
 from qemu_link.verify import PATCH, validate_runtime_log
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[1]
+HERE, ROOT = Path(__file__).resolve().parent, Path(__file__).resolve().parents[2]
 MARKER = "DOMES_QEMU_LINK_RESULT"
 SPECIFICATION_REVISION = "498ae0203dc8b7048682fbff718a0629243a98a8"
 ACCEPTANCE_RUNNER = HERE / "fault_replay_acceptance.py"
@@ -184,13 +183,11 @@ def _result(text: str) -> dict[str, object]:
 
 def _required_stages(fault_id: int) -> set[str]:
     stages = {"mmio", "core0_radio_task", "core1_application_task"}
-    if fault_id not in {7, 9}:
-        stages.add("task")
-    if fault_id not in {7, 9}:
-        stages |= {"irq", "tx_complete"}
+    if fault_id != 7:
+        stages |= {"task", "irq", "tx_complete"}
     if expected_result(fault_id)["delivery_records"]:
         stages |= {"callback", "ring", "semaphore", "dequeue"}
-    if expected_result(fault_id)["status"] == "PASS":
+    if expected_result(fault_id)["service_dispatches"]:
         stages.add("service_dispatch")
     return stages
 
@@ -281,6 +278,13 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         raise CampaignFailure(f"{case.name}: recovered frame was not delivered")
     if fault_id == 13 and not {"production_dequeued", "readmitted"} <= set(outcomes):
         raise CampaignFailure(f"{case.name}: no dequeue and readmission recovery")
+    if fault_id == 9 and (
+        {"missing", "production_recovery"} - set(outcomes)
+        or not any(event["arg1"] == 3309301395 for event in run["trace"])
+    ):
+        raise CampaignFailure(
+            f"{case.name}: production timeout recovery was not completed"
+        )
     peers = run["peer_records"]
     peer_expected = {
         14: [{"state": "join", "present": True, "epoch": 1, "traffic_epoch": 1, "accepted": True}],  # fmt: skip
@@ -533,6 +537,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, object]:
                 "firmware_sha256": sha256_file(firmware),
                 "flash_sha256": runs[0]["flash_sha256"],
                 "toolchain_identity": f"{toolchain.idf_version};{toolchain.compiler_version}",
+                "idf_revision": toolchain.idf_revision,
                 "compiler_sha256": toolchain.compiler_sha256,
                 "qemu_revision": qemu_revision,
                 "qemu_binary_sha256": toolchain.qemu_sha256,

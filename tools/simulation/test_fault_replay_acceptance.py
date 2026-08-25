@@ -17,33 +17,22 @@ SPEC.loader.exec_module(MODULE)
 
 
 def build_campaign_fixture(root: Path) -> Path:
-    repository_revision = MODULE.subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=MODULE.ROOT,
-        check=True,
-        text=True,
-        stdout=MODULE.subprocess.PIPE,
-    ).stdout.strip()
+    repository_revision = MODULE.subprocess.run(["git", "rev-parse", "HEAD"], cwd=MODULE.ROOT, check=True, text=True, stdout=MODULE.subprocess.PIPE).stdout.strip()  # fmt: skip
     current_hashes = {"qemu_patch_sha256": MODULE.hashlib.sha256(MODULE.PATCH.read_bytes()).hexdigest(), "campaign_runner_sha256": MODULE.hashlib.sha256((MODULE.HERE / "fault_replay_qemu_campaign.py").read_bytes()).hexdigest(), "acceptance_runner_sha256": MODULE.hashlib.sha256((MODULE.HERE / "fault_replay_acceptance.py").read_bytes()).hexdigest()}  # fmt: skip
     common_artifacts = {"delivery-records.json": b"[]", "efuse-generation.log": b"", "fault-records.json": b"[]", "flash-generation.log": b"fixture\n", "qemu-device.log": b"fixture\n", "qemu.log": b"fixture\n", "trace.normalized.json": b"[]"}  # fmt: skip
     stages = dict.fromkeys("mmio core0_radio_task core1_application_task irq task callback ring semaphore dequeue service_dispatch tx_complete".split(), True)  # fmt: skip
     matrix = []
     for fault_id, case in enumerate(MODULE.cases()):
         expected = MODULE.expected_result(fault_id)
-        outcomes = {13: ["production_capacity_4", "production_dequeued", "readmitted"], 16: ["restart_epoch_2"], 17: ["stale_epoch_1_then_2"]}.get(fault_id, ["fixture"])  # fmt: skip
+        outcomes = {9: ["missing", "production_recovery"], 13: ["production_capacity_4", "production_dequeued", "readmitted"], 16: ["restart_epoch_2"], 17: ["stale_epoch_1_then_2"]}.get(fault_id, ["fixture"])  # fmt: skip
         faults = [{"fault_id": fault_id, "sequence": index, "virtual_ns": 0, "absolute_virtual_ns": 100, "stage": case.injection_stage, "outcome": outcome, "queued": 0} for index, outcome in enumerate(outcomes)]  # fmt: skip
         delivery_sequences = {3: [1, 0]}.get(fault_id, list(range(expected["delivery_records"])))  # fmt: skip
-        deliveries = [
-            {"sequence": index, "payload_hex": ""} for index in delivery_sequences
-        ]
+        deliveries = [{"sequence": index, "payload_hex": ""} for index in delivery_sequences]  # fmt: skip
         trace = ([{"arg1": 1184188258, "token": 1, "type": 26}] * 3 + [{"arg1": 3517568895, "token": 1}] + [{"arg1": 4059320606, "token": 1, "type": 30}] * 2 + [{"arg1": 3517568895, "token": 2}] + [{"arg1": 1184188258, "token": token, "type": 26} for token in (2, 1, 1)] + [{"arg1": 4059320606, "token": 2, "type": 30}]) if fault_id == 11 else (([{"arg1": 1184188258, "token": 1, "type": 26}] * (fault_id - 8) + [{"arg1": 1184188258, "token": 4, "type": 35}]) if fault_id in {12, 13} else [])  # fmt: skip
+        if fault_id == 9:
+            trace.append({"arg1": 3309301395})
         trace = [{**event, "index": index} for index, event in enumerate(trace)]
-        artifact_contents = {
-            **common_artifacts,
-            "fault-records.json": MODULE.canonical(faults),
-            "delivery-records.json": MODULE.canonical(deliveries),
-            "trace.normalized.json": MODULE.canonical(trace),
-        }
+        artifact_contents = {**common_artifacts, "fault-records.json": MODULE.canonical(faults), "delivery-records.json": MODULE.canonical(deliveries), "trace.normalized.json": MODULE.canonical(trace)}  # fmt: skip
         artifact_hashes = {name: MODULE.hashlib.sha256(content).hexdigest() for name, content in artifact_contents.items()}  # fmt: skip
         fault_digest, delivery_digest = MODULE.digest(faults), MODULE.digest(deliveries)
         roles = []
@@ -94,6 +83,7 @@ def build_campaign_fixture(root: Path) -> Path:
                 "firmware_sha256": "3" * 64,
                 "flash_sha256": "1" * 64,
                 "toolchain_identity": "ESP-IDF v5.4.4;fixture compiler",
+                "idf_revision": "296b6eab9445fd720e71aecab961e2d3fbca9944",
                 "compiler_sha256": "4" * 64,
                 "qemu_revision": "4f4148e2f68689eb8861bf9fce0b46ada9200fef",
                 "qemu_binary_sha256": "5" * 64,
@@ -220,7 +210,7 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
             "termination",
             "empty_faults",
             "pipeline",
-            "raw_identity",
+            "idf_revision",
             "completion_order",
             "sequential_saturation", "failed_fourth_insertion",  # fmt: skip
         ):
@@ -247,8 +237,8 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                     (copied / "pass/master/001/fault-records.json").write_text("[]")
                 elif mutation == "pipeline":
                     manifest["runs"][0]["pipeline_records"].append({"stage": "changed"})
-                elif mutation == "raw_identity":
-                    manifest["identity"]["raw_trace_sha256"] = "0" * 64
+                elif mutation == "idf_revision":
+                    manifest["identity"]["idf_revision"] = "0" * 40
                 elif mutation == "completion_order":
                     handoffs = [event for event in manifest["runs"][0]["trace"] if event["arg1"] == 1184188258 and event.get("type") == 26]  # fmt: skip
                     for event, token in zip(handoffs[-3:], (1, 2, 2), strict=True):  # fmt: skip

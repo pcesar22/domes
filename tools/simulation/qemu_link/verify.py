@@ -50,6 +50,7 @@ REGISTER_NAMES = {
     "interrupt_mask": ("kInterruptMask", "IRQ_MASK"),
     "interrupt_ack": ("kInterruptAck", "IRQ_ACK"),
     "sticky_status": ("kStickyStatus", "STICKY_STATUS"),
+    "recover": ("kRecover", "RECOVER"),
     "tx_payload": ("kTxPayload", "TX_PAYLOAD"),
     "rx_payload": ("kRxPayload", "RX_PAYLOAD"),
 }
@@ -230,7 +231,7 @@ def run_qtest_rejections(binary: Path, abi: dict[str, object]) -> dict[str, bool
         )[1],
     )
     cases["invalid_access"] = qtest_case(
-        binary, lambda c: (c.read(0x60), bit(c, "invalid_access"))[1]
+        binary, lambda c: (c.read(0x64), bit(c, "invalid_access"))[1]
     )
     cases["over_length"] = qtest_case(
         binary,

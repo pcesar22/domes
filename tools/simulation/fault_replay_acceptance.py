@@ -75,16 +75,9 @@ class Case:
     operations: tuple[Mapping[str, Any], ...]
 
 
-NO_DELIVERY = {1, 7, 8, 9, 15, 19, 20}
-REJECTED_DELIVERY = {5, 6, 18}
-DELIVERY_COUNTS = (1, 0, 2, 2, 1, 2, 2, 0, 0, 0, 3, 2, 4, 5, 1, 0, 2, 2, 2, 0, 0) + (1,) * 6  # fmt: skip
-FAILURE_MASKS = {
-    5: "0x00000020",
-    6: "0x00000020",
-    7: "0x00000070",
-    9: "0x00000070",
-    18: "0x00000060",
-}
+NO_DELIVERY, REJECTED_DELIVERY = {1, 7, 8, 15, 19, 20}, {5, 6, 9, 18}
+DELIVERY_COUNTS = (1, 0, 2, 2, 1, 2, 2, 0, 0, 1, 3, 2, 4, 5, 1, 0, 2, 2, 2, 0, 0) + (1,) * 6  # fmt: skip
+FAILURE_MASKS = {5: "0x00000020", 6: "0x00000020", 7: "0x00000070", 9: "0x00000010", 18: "0x00000060"}  # fmt: skip
 
 
 def expected_result(fault_id: int) -> dict[str, Any]:
@@ -93,7 +86,7 @@ def expected_result(fault_id: int) -> dict[str, Any]:
     return {
         "status": "FAIL" if rejected else "PASS",
         "failure_mask": FAILURE_MASKS.get(fault_id, default_mask),
-        "service_dispatches": 0 if rejected else 1,
+        "service_dispatches": 0 if rejected and fault_id != 9 else 1,
         "delivery_records": DELIVERY_COUNTS[fault_id],
     }
 
@@ -318,40 +311,15 @@ def patch_budget() -> dict[str, Any]:
 
 
 def physical_image_isolation() -> dict[str, Any]:
-    paths = subprocess.run(
-        [
-            "git",
-            "grep",
-            "-l",
-            "QemuEspNowRadio",
-            "--",
-            "firmware/domes/main/main.cpp",
-            "firmware/domes/main/platform/physical",
-            "firmware/domes/main/transport/physicalEspNowRadio.hpp",
-        ],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        check=False,
-    ).stdout.splitlines()
-    header = ROOT / "firmware/domes/main/platform/qemu/qemuEspNowRadio.hpp"
-    denial = '#error "QemuEspNowRadio is available only in the isolated QEMU image"'
+    paths = subprocess.run(["git", "grep", "-l", "QemuEspNowRadio", "--", "firmware/domes/main/main.cpp", "firmware/domes/main/platform/physical", "firmware/domes/main/transport/physicalEspNowRadio.hpp"], cwd=ROOT, text=True, stdout=subprocess.PIPE, check=False).stdout.splitlines()  # fmt: skip
+    header, denial = ROOT / "firmware/domes/main/platform/qemu/qemuEspNowRadio.hpp", '#error "QemuEspNowRadio is available only in the isolated QEMU image"'  # fmt: skip
     passed = not paths and denial in header.read_text()
-    return {
-        "status": "PASS" if passed else "FAIL",
-        "reachable_sources": paths,
-        "compile_time_denial": denial in header.read_text(),
-    }
+    return {"status": "PASS" if passed else "FAIL", "reachable_sources": paths, "compile_time_denial": denial in header.read_text()}  # fmt: skip
 
 
 def protected_path_audit() -> dict[str, Any]:
     completed = subprocess.run(
-        ["git", "diff", "--numstat", REQUIRED_BASE_REVISION, "--"],
-        cwd=ROOT,
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        ["git", "diff", "--numstat", REQUIRED_BASE_REVISION, "--"], cwd=ROOT, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,  # fmt: skip
     )
     if completed.returncode != 0:
         missing_base = completed.stderr.count("bad object") + completed.stderr.count(
@@ -421,7 +389,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
         "campaign_runner_sha256": hashlib.sha256((HERE / "fault_replay_qemu_campaign.py").read_bytes()).hexdigest(),  # fmt: skip
         "acceptance_runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),  # fmt: skip
     }
-    required_identity_fields = set("specification_revision repository_revision firmware_sha256 flash_sha256 toolchain_identity compiler_sha256 qemu_revision qemu_binary_sha256 qemu_rom_sha256 qemu_patch_sha256 campaign_runner_sha256 acceptance_runner_sha256 profile_sha256 fidelity_manifest_sha256 scenario scenario_sha256 seed fault_id dut_role engine fault_records_sha256 pipeline_records_sha256 delivery_records_sha256 raw_trace_sha256 normalized_trace_sha256 assertions termination expected_result unconsumed_events".split())  # fmt: skip
+    required_identity_fields = set("specification_revision repository_revision firmware_sha256 flash_sha256 toolchain_identity idf_revision compiler_sha256 qemu_revision qemu_binary_sha256 qemu_rom_sha256 qemu_patch_sha256 campaign_runner_sha256 acceptance_runner_sha256 profile_sha256 fidelity_manifest_sha256 scenario scenario_sha256 seed fault_id dut_role engine fault_records_sha256 pipeline_records_sha256 delivery_records_sha256 raw_trace_sha256 normalized_trace_sha256 assertions termination expected_result unconsumed_events".split())  # fmt: skip
     for fault_id, case in enumerate(corpus):
         if fault_id >= len(matrix):
             matrix_ok = False
@@ -459,6 +427,8 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 == "498ae0203dc8b7048682fbff718a0629243a98a8"
                 and identity.get("repository_revision") == repository_revision
                 and len(identity.get("repository_revision", "")) == 40
+                and identity.get("idf_revision")
+                == "296b6eab9445fd720e71aecab961e2d3fbca9944"
                 and identity.get("qemu_revision")
                 == json.loads(PATCH_MANIFEST.read_text())["upstream_revision"]
                 and all(
@@ -540,7 +510,7 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 stages = run["runtime"]["stages"]
                 stages_ok = stages_ok and set(stages) == required_stages
                 case_stages = {"mmio", "core0_radio_task", "core1_application_task"}
-                if fault_id not in {7, 9}:
+                if fault_id != 7:
                     case_stages |= {"task", "irq", "tx_complete"}
                 if expected_result(fault_id)["delivery_records"]:
                     case_stages |= {"callback", "ring", "semaphore", "dequeue"}
@@ -587,7 +557,8 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                 completions = [event.get("token") for event in run.get("trace", []) if event.get("arg1") == 4059320606 and event.get("type") == 30 and event.get("index", -1) > second_submit]  # fmt: skip
                 completion_order_ok = submissions == [1, 2] and completions == [2] and handoffs[-3:] == [2, 1, 1]  # fmt: skip
                 semantics_ok = (
-                    (fault_id != 3 or sequences == [1, 0])
+                    (fault_id != 9 or ({"missing", "production_recovery"} <= outcomes and any(event.get("arg1") == 3309301395 for event in run["trace"])))  # fmt: skip
+                    and (fault_id != 3 or sequences == [1, 0])
                     and (fault_id != 11 or completion_order_ok)
                     and (fault_id != 10 or sequences == list(range(3)))
                     and (fault_id != 12 or (sequences == list(range(4)) and handoffs[-4:] == [1] * 4 and 4 in dequeue_depths))  # fmt: skip

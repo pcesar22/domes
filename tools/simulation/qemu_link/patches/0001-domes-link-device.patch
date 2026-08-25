@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..aed3d39622
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,662 @@
+@@ -0,0 +1,671 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
@@ -33,6 +33,7 @@ index 0000000000..aed3d39622
 +#define IRQ_MASK 0x054
 +#define IRQ_ACK 0x058
 +#define STICKY_STATUS 0x05c
++#define RECOVER 0x060
 +#define TX_PAYLOAD 0x100
 +#define RX_PAYLOAD 0x200
 +#define IRQ_TX BIT(0)
@@ -526,8 +527,9 @@ index 0000000000..aed3d39622
 +        } else if (s->fault_id == FAULT_SUBMIT_FAILURE) {
 +            s->tx_status = TX_FAILURE;
 +            record_fault(s, "radio_submit", "failure");
-+        } else if (s->fault_id == FAULT_MISSING_COMPLETION) {
++        } else if (s->fault_id == FAULT_MISSING_COMPLETION && !s->scenario_consumed) {
 +            s->tx_status = TX_PENDING;
++            s->scenario_consumed = true;
 +            record_fault(s, "completion_delay", "missing");
 +        } else {
 +            if (s->fault_id == FAULT_LATENCY_TX_QUEUE) s->stage_delay_ns[STAGE_TX_QUEUE] = 10000;
@@ -541,6 +543,13 @@ index 0000000000..aed3d39622
 +            timer_mod_ns(s->completion_timer,
 +                         s->stage_enter_ns + s->stage_delay_ns[STAGE_TX_QUEUE]);
 +        }
++        break;
++    case RECOVER:
++        if (value != 1 || s->fault_id != FAULT_MISSING_COMPLETION || s->tx_status != TX_PENDING || !s->scenario_consumed) { s->sticky |= ST_INVALID; break; }
++        timer_del(s->completion_timer);
++        s->tx_destination_low = s->tx_destination_high = s->tx_length = 0;
++        s->tx_correlation = 0; s->tx_status = TX_IDLE;
++        s->irq_status &= ~IRQ_TX; memset(s->tx_payload, 0, sizeof(s->tx_payload)); record_fault(s, "completion_delay", "production_recovery"); update_irq(s);
 +        break;
 +    case RX_CONSUME:
 +        if (value != 1 || !(s->irq_status & IRQ_RX)) s->sticky |= ST_SEQUENCE;
