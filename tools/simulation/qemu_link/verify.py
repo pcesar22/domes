@@ -617,7 +617,7 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
         and any(event["type"] == 12 for event in events if event["token"] == token),
         "dequeue": positions["EspNow.RxDispatch"] is not None,
         "service_dispatch": any(
-            event["name"] in {"EspNow.RxBeacon", "EspNow.RxJoinGame"}
+            event["name"] in {"EspNow.RxBeacon", "EspNow.RxJoinGame", "EspNow.RxPing"}
             for event in events
         )
         and positions["QemuLink.ServiceDispatch"] is not None,

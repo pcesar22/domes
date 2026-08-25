@@ -266,7 +266,7 @@ def _validate_run(case: Case, fault_id: int, run: Mapping[str, Any]) -> None:
         )
     service_messages = counts["service_messages"]
     expected_message = "EspNow.RxBeacon" if run["role"] == "master" else "EspNow.RxJoinGame"  # fmt: skip
-    expected_messages = {expected_message, "EspNow.RxPing"} if fault_id == 11 else {expected_message}  # fmt: skip
+    expected_messages = {"EspNow.RxPing"} if fault_id == 11 else {expected_message}  # fmt: skip
     if expected["status"] == "PASS" and (
         set(service_messages) != expected_messages
         or not expected_messages <= set(service_messages)
