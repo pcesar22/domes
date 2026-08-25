@@ -584,8 +584,9 @@ def validate_real_dut_campaign(path: Path) -> dict[str, Any]:
                     if event.get("arg1") == 1184188258
                 ]
                 submissions = [event.get("token") for event in run.get("trace", []) if event.get("arg1") == 3517568895]  # fmt: skip
-                completions = [event.get("token") for event in run.get("trace", []) if event.get("arg1") == 4059320606 and event.get("type") == 30]  # fmt: skip
-                completion_order_ok = submissions == [1, 2] and {1, 2} <= set(completions) and max(i for i, token in enumerate(completions) if token == 2) < max(i for i, token in enumerate(completions) if token == 1) and handoffs[-3:] == [2, 1, 1]  # fmt: skip
+                second_submit = max((event.get("index", -1) for event in run.get("trace", []) if event.get("arg1") == 3517568895 and event.get("token") == 2), default=-1)  # fmt: skip
+                completions = [event.get("token") for event in run.get("trace", []) if event.get("arg1") == 4059320606 and event.get("type") == 30 and event.get("index", -1) > second_submit]  # fmt: skip
+                completion_order_ok = submissions == [1, 2] and completions == [2] and handoffs[-3:] == [2, 1, 1]  # fmt: skip
                 semantics_ok = (
                     (fault_id != 3 or sequences == [1, 0])
                     and (fault_id != 11 or completion_order_ok)

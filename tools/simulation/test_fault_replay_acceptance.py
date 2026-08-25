@@ -71,7 +71,8 @@ def build_campaign_fixture(root: Path) -> Path:
         deliveries = [
             {"sequence": index, "payload_hex": ""} for index in delivery_sequences
         ]
-        trace = ([{"arg1": 1184188258, "token": token} for token in (1, 1, 1, 2, 1, 1)] + [{"arg1": 3517568895, "token": token} for token in (1, 2)] + [{"arg1": 4059320606, "token": token, "type": 30} for token in (1, 2, 1)]) if fault_id == 11 else []  # fmt: skip
+        trace = ([{"arg1": 1184188258, "token": 1}] * 3 + [{"arg1": 3517568895, "token": 1}] + [{"arg1": 4059320606, "token": 1, "type": 30}] * 2 + [{"arg1": 3517568895, "token": 2}] + [{"arg1": 1184188258, "token": token} for token in (2, 1, 1)] + [{"arg1": 4059320606, "token": 2, "type": 30}]) if fault_id == 11 else []  # fmt: skip
+        trace = [{**event, "index": index} for index, event in enumerate(trace)]
         artifact_contents = {
             **common_artifacts,
             "fault-records.json": MODULE.canonical(faults),
@@ -308,7 +309,10 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
                     manifest["runs"][0]["pipeline_records"].append({"stage": "changed"})
                 elif mutation == "raw_identity":
                     manifest["identity"]["raw_trace_sha256"] = "0" * 64
-                else: manifest["runs"][0]["trace"][3:6] = [{"arg1": 1184188258, "token": token} for token in (1, 2, 2)]  # fmt: skip
+                else:
+                    handoffs = [event for event in manifest["runs"][0]["trace"] if event["arg1"] == 1184188258]  # fmt: skip
+                    for event, token in zip(handoffs[-3:], (1, 2, 2), strict=True):  # fmt: skip
+                        event["token"] = token
                 manifest["identity_sha256"] = MODULE.digest(manifest["identity"])
                 path.write_text(json.dumps(manifest))
                 self.assertEqual(
