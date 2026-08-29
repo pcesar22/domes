@@ -46,7 +46,9 @@ private:
 
     static void IRAM_ATTR interruptHandler(void* context);
     static void taskEntry(void* context);
+    static void callbackTaskEntry(void* context);
     void runTask();
+    void runCallbackTask();
     static uint32_t IRAM_ATTR read(qemu_link::Register reg);
     static void IRAM_ATTR write(qemu_link::Register reg, uint32_t value);
     static void IRAM_ATTR unpackAddress(uint32_t low, uint32_t high, EspNowAddress& address);
@@ -58,9 +60,15 @@ private:
     QueueHandle_t eventQueue_ = nullptr;
     StaticQueue_t eventQueueStorage_{};
     std::array<uint8_t, sizeof(DeferredEvent) * 4> eventQueueBytes_{};
+    QueueHandle_t callbackQueue_ = nullptr;
+    StaticQueue_t callbackQueueStorage_{};
+    std::array<uint8_t, sizeof(DeferredEvent) * 4> callbackQueueBytes_{};
     TaskHandle_t task_ = nullptr;
     StaticTask_t taskStorage_{};
     std::array<StackType_t, 4096> taskStack_{};
+    TaskHandle_t callbackTask_ = nullptr;
+    StaticTask_t callbackTaskStorage_{};
+    std::array<StackType_t, 4096> callbackTaskStack_{};
     intr_handle_t interrupt_ = nullptr;
     std::array<EspNowAddress, 9> peers_{};
     size_t peerCount_ = 0;

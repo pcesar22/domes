@@ -30,10 +30,12 @@ enum class Register : uintptr_t {
     kRxLength = 0x03c,
     kRxCorrelation = 0x040,
     kRxConsume = 0x044,
+    kRxDequeue = 0x048,
     kInterruptStatus = 0x050,
     kInterruptMask = 0x054,
     kInterruptAck = 0x058,
     kStickyStatus = 0x05c,
+    kRecover = 0x060,
     kTxPayload = 0x100,
     kRxPayload = 0x200,
 };

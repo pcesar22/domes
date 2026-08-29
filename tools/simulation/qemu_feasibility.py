@@ -1001,9 +1001,7 @@ def _terminate_process(process: subprocess.Popen[bytes]) -> tuple[int, str]:
     return int(process.returncode if process.returncode is not None else -1), action
 
 
-def execute_until_marker(
-    command: Sequence[str], log_path: Path, timeout: float, marker: str
-) -> Mapping[str, Any]:
+def execute_until_marker(command: Sequence[str], log_path: Path, timeout: float, marker: str, monitor_socket: Path | None = None) -> Mapping[str, Any]:  # fmt: skip
     if not marker or not marker.isascii():
         raise ValueError("marker must be non-empty ASCII")
     started = time.monotonic()
@@ -1029,6 +1027,7 @@ def execute_until_marker(
     output = bytearray()
     deadline = started + timeout
     marker_deadline: float | None = None
+    marker_monitor: str | None = None
     timed_out = False
     exited_early = False
     try:
@@ -1048,6 +1047,13 @@ def execute_until_marker(
                 if chunk:
                     output.extend(chunk)
                     if marker.encode("ascii") in output and marker_deadline is None:
+                        if monitor_socket is not None:
+                            marker_monitor = _read_hmp(
+                                monitor_socket,
+                                process,
+                                "qom-get /machine/soc/domes-link virtual-clock-ns\n",
+                                "(qemu)",
+                            )
                         marker_deadline = time.monotonic() + MARKER_GRACE_SECONDS
                 else:
                     selector.unregister(key.fileobj)
@@ -1090,6 +1096,7 @@ def execute_until_marker(
         "qemu_returncode": returncode,
         "log": str(log_path),
         "log_sha256": sha256_file(log_path),
+        "marker_monitor": marker_monitor,
         "text": text,
     }
 
@@ -1125,7 +1132,11 @@ def _free_tcp_port() -> int:
 
 
 def _read_hmp(
-    socket_path: Path, process: subprocess.Popen[bytes], timeout: float = 10.0
+    socket_path: Path,
+    process: subprocess.Popen[bytes],
+    command: str = "info cpus\n",
+    expected: str = "CPU #",
+    timeout: float = 10.0,
 ) -> str:
     deadline = time.monotonic() + timeout
     last_error: OSError | None = None
@@ -1155,7 +1166,7 @@ def _read_hmp(
         monitor.settimeout(1.0)
         try:
             initial = monitor.recv(65536)
-            monitor.sendall(b"info cpus\n")
+            monitor.sendall(command.encode("ascii"))
             chunks = [initial]
             response_deadline = time.monotonic() + 5.0
             while time.monotonic() < response_deadline:
@@ -1166,7 +1177,9 @@ def _read_hmp(
                 if not chunk:
                     break
                 chunks.append(chunk)
-                if b"(qemu)" in chunk and b"CPU #" in b"".join(chunks):
+                if b"".join(chunks).count(b"(qemu)") >= 2 and expected.encode(
+                    "ascii"
+                ) in b"".join(chunks):
                     break
         except OSError as error:
             raise DebugEndpointError(f"QEMU HMP exchange failed: {error}") from error
