@@ -21,6 +21,13 @@ PATCH = HERE / "patches/0001-domes-link-device.patch"
 HEADER = ROOT / "firmware/domes/main/platform/qemu/qemuLinkAbi.hpp"
 ADAPTER_HEADER = ROOT / "firmware/domes/main/platform/qemu/qemuEspNowRadio.hpp"
 TRACE_NAMES = ROOT / "tools/trace/trace_names.json"
+LEGACY_CAUSAL_NAMES = {
+    814375161: "EspNow.RxDispatch",
+    1457209874: "EspNow.TxComplete",
+    1917337756: "EspNow.RxCallback",
+    2454392546: "EspNow.RxQueue",
+    3765542678: "EspNow.TxCallback",
+}
 
 REGISTER_NAMES = {
     "capability": ("kCapability", "CAPABILITY"),
@@ -38,10 +45,12 @@ REGISTER_NAMES = {
     "rx_length": ("kRxLength", "RX_LENGTH"),
     "rx_correlation": ("kRxCorrelation", "RX_CORRELATION"),
     "rx_consume": ("kRxConsume", "RX_CONSUME"),
+    "rx_dequeue": ("kRxDequeue", "RX_DEQUEUE"),
     "interrupt_status": ("kInterruptStatus", "IRQ_STATUS"),
     "interrupt_mask": ("kInterruptMask", "IRQ_MASK"),
     "interrupt_ack": ("kInterruptAck", "IRQ_ACK"),
     "sticky_status": ("kStickyStatus", "STICKY_STATUS"),
+    "recover": ("kRecover", "RECOVER"),
     "tx_payload": ("kTxPayload", "TX_PAYLOAD"),
     "rx_payload": ("kRxPayload", "RX_PAYLOAD"),
 }
@@ -67,6 +76,40 @@ def sha256(path: Path) -> str:
 
 def changed_patch_paths(text: str) -> list[str]:
     return re.findall(r"^diff --git a/(\S+) b/\S+$", text, re.MULTILINE)
+
+
+def unified_diff_hunks_are_well_formed(text: str) -> bool:
+    """Return whether every unified-diff hunk contains its declared line counts."""
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        match = re.match(
+            r"^@@ -(?:\d+)(?:,(\d+))? \+(?:\d+)(?:,(\d+))? @@", lines[index]
+        )
+        if not match:
+            index += 1
+            continue
+        old_expected = int(match.group(1) or 1)
+        new_expected = int(match.group(2) or 1)
+        old_count = new_count = 0
+        index += 1
+        while index < len(lines) and not lines[index].startswith(
+            ("@@ ", "diff --git ")
+        ):
+            prefix = lines[index][:1]
+            if prefix == " ":
+                old_count += 1
+                new_count += 1
+            elif prefix == "-" and not lines[index].startswith("--- "):
+                old_count += 1
+            elif prefix == "+" and not lines[index].startswith("+++ "):
+                new_count += 1
+            elif prefix != "\\":
+                return False
+            index += 1
+        if old_count != old_expected or new_count != new_expected:
+            return False
+    return True
 
 
 def parse_int(value: str) -> int:
@@ -96,9 +139,10 @@ class QtestClient:
                 str(binary),
                 "-M",
                 "esp32s3",
+                "-accel",
+                "qtest",
                 "-display",
                 "none",
-                "-S",
                 *(extra_args or []),
                 "-qtest",
                 f"unix:{self.socket_path},server=on,wait=off",
@@ -175,7 +219,7 @@ def run_qtest_rejections(binary: Path, abi: dict[str, object]) -> dict[str, bool
         while time.monotonic() < deadline:
             if client.read(registers["tx_status"]) == 2:
                 return True
-            time.sleep(0.005)
+            client.command("clock_step 1000000")
         return False
 
     cases: dict[str, bool] = {}
@@ -187,7 +231,7 @@ def run_qtest_rejections(binary: Path, abi: dict[str, object]) -> dict[str, bool
         )[1],
     )
     cases["invalid_access"] = qtest_case(
-        binary, lambda c: (c.read(0x60), bit(c, "invalid_access"))[1]
+        binary, lambda c: (c.read(0x64), bit(c, "invalid_access"))[1]
     )
     cases["over_length"] = qtest_case(
         binary,
@@ -276,7 +320,7 @@ def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str
         while time.monotonic() < deadline:
             if client.read(registers["tx_status"]) == expected_status:
                 return True
-            time.sleep(0.005)
+            client.command("clock_step 1000000")
         return False
 
     cases: dict[str, bool] = {}
@@ -349,7 +393,7 @@ def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str
                         slave.read(registers["rx_length"]) == 11
                         and (slave.read(registers["rx_payload"]) & 0xFF) == 3
                     )
-                time.sleep(0.005)
+                slave.command("clock_step 1000000")
             return False
         finally:
             slave.close()
@@ -384,7 +428,7 @@ def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str
                 while time.monotonic() < deadline:
                     if queued.read(registers["tx_status"]) == expected:
                         break
-                    time.sleep(0.005)
+                    queued.command("clock_step 1000000")
                 else:
                     return False
                 if token < 9:
@@ -400,8 +444,45 @@ def run_qtest_functional_actor(binary: Path, abi: dict[str, object]) -> dict[str
         finally:
             queued.close()
 
+    def run_completion_order() -> bool:
+        ordered = QtestClient(
+            binary,
+            [
+                "-global",
+                "domes-link.scenario-model=1",
+                "-global",
+                "domes-link.dut-role=1",
+                "-global",
+                "domes-link.fault-id=11",
+            ],
+        )
+        try:
+            payload = bytes((2,)) + mac + (6).to_bytes(4, "little")
+            tokens = []
+            for correlation, callbacks in ((1, 1), (2, 3)):
+                for offset in range(0, len(payload), 4):
+                    ordered.write(registers["tx_payload"] + offset, int.from_bytes(payload[offset : offset + 4], "little"))  # fmt: skip
+                for register, value in (("tx_destination_low", 2), ("tx_destination_high", 0x200), ("tx_length", len(payload)), ("tx_correlation", correlation), ("tx_submit", 1)):  # fmt: skip
+                    ordered.write(registers[register], value)
+                deadline = time.monotonic() + 2
+                while ordered.read(registers["tx_status"]) != 2:
+                    if time.monotonic() >= deadline:
+                        return False
+                    ordered.command("clock_step 1000000")
+                for _ in range(callbacks):
+                    if not ordered.read(registers["interrupt_status"]) & abi["interrupt_bits"]["tx_complete"]:  # fmt: skip
+                        return False
+                    tokens.append(ordered.read(registers["tx_correlation"]))
+                    ordered.write(
+                        registers["interrupt_ack"], abi["interrupt_bits"]["tx_complete"]
+                    )
+            return tokens == [1, 2, 1, 1] and ordered.read(registers["tx_status"]) == 0
+        finally:
+            ordered.close()
+
     cases["slave_role_ping_to_pong"] = run_slave_role()
     cases["distinct_event_queue_overflow_fails_closed"] = run_distinct_queue_overflow()
+    cases["completion_order_crosses_irq_boundary"] = run_completion_order()
     return cases
 
 
@@ -419,11 +500,22 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
             "index": int(i),
             "task": int(task),
             "type": int(kind),
-            "name": names.get(int(arg1)),
+            "name": names.get(int(arg1), LEGACY_CAUSAL_NAMES.get(int(arg1))),
             "token": int(token),
         }
         for i, _timestamp, task, kind, arg1, token in event_pattern.findall(text)
     ]
+
+    def first_index(predicate, after: int = -1):
+        return next(
+            (
+                event["index"]
+                for event in events
+                if event["index"] > after and predicate(event)
+            ),
+            None,
+        )
+
     result = re.search(
         r"DOMES_QEMU_LINK_RESULT schema=2 status=(PASS|FAIL) failure_mask=(0x[0-9a-f]+) "
         r"token=(\d+) service_dispatches=(\d+) trace_drops=(\d+) trace_discontinuities=(\d+)",
@@ -432,6 +524,48 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
     if not result:
         raise ValueError("missing schema-2 QEMU link result")
     token = int(result.group(3))
+    if token == 0:
+        token = next(
+            (
+                event["token"]
+                for event in events
+                if event["name"] == "QemuLink.MmioSubmit"
+            ),
+            0,
+        )
+    token_events = [event for event in events if event["token"] == token]
+    mmio = first_index(
+        lambda event: event["token"] == token and event["name"] == "QemuLink.MmioSubmit"
+    )
+    task_handoff = first_index(
+        lambda event: event["token"] == token
+        and event["name"] == "QemuLink.TaskHandoff",
+        mmio if mmio is not None else -1,
+    )
+    callback_entries = [event["index"] for event in token_events if event["type"] == 28]
+    callback_exits = [event["index"] for event in token_events if event["type"] == 29]
+    tx_callback = callback_entries[0] if callback_entries else None
+    tx_complete = callback_exits[0] if callback_exits else None
+    rx_callback = callback_entries[1] if len(callback_entries) > 1 else None
+    rx_queue = first_index(
+        lambda event: event["token"] == token
+        and event["type"] == 25
+        and event["name"] in {"EspNow.RxQueue", "EspNow.CausalQueue"},
+        rx_callback if rx_callback is not None else -1,
+    )
+    rx_dispatch = first_index(
+        lambda event: event["token"] == token
+        and (
+            event["name"] == "EspNow.RxDispatch"
+            or (event["name"] == "EspNow.Complete" and event["type"] == 30)
+        ),
+        rx_queue if rx_queue is not None else -1,
+    )
+    service_dispatch = first_index(
+        lambda event: event["token"] == token
+        and event["name"] == "QemuLink.ServiceDispatch",
+        rx_dispatch if rx_dispatch is not None else -1,
+    )
     causal_names = [
         "QemuLink.MmioSubmit",
         "QemuLink.TaskHandoff",
@@ -442,17 +576,22 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
         "EspNow.RxDispatch",
         "QemuLink.ServiceDispatch",
     ]
-    positions = {
-        name: next(
+    positions = dict(
+        zip(
+            causal_names,
             (
-                event["index"]
-                for event in events
-                if event["name"] == name and event["token"] == token
+                mmio,
+                task_handoff,
+                tx_callback,
+                tx_complete,
+                rx_callback,
+                rx_queue,
+                rx_dispatch,
+                service_dispatch,
             ),
-            None,
+            strict=True,
         )
-        for name in causal_names
-    }
+    )
     isr = [
         event
         for event in events
@@ -465,6 +604,9 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
     ]
     stages = {
         "mmio": positions["QemuLink.MmioSubmit"] is not None,
+        "core0_radio_task": "DOMES_QEMU_CORE_PATH schema=1 radio_core=0" in text,
+        "core1_application_task": "DOMES_QEMU_CORE_PATH schema=1 application_core=1"
+        in text,
         "irq": any(event["type"] == 22 for event in isr)
         and any(event["type"] == 23 for event in isr),
         "task": positions["QemuLink.TaskHandoff"] is not None,
@@ -475,7 +617,10 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
         )
         and any(event["type"] == 12 for event in events if event["token"] == token),
         "dequeue": positions["EspNow.RxDispatch"] is not None,
-        "service_dispatch": any(event["name"] == "EspNow.RxBeacon" for event in events)
+        "service_dispatch": any(
+            event["name"] in {"EspNow.RxBeacon", "EspNow.RxJoinGame", "EspNow.RxPing"}
+            for event in events
+        )
         and positions["QemuLink.ServiceDispatch"] is not None,
         "tx_complete": positions["EspNow.TxComplete"] is not None,
     }
@@ -494,6 +639,12 @@ def validate_runtime_log(path: Path) -> dict[str, object]:
         "token": token,
         "stages": stages,
         "positions": positions,
+        "stage_counts": {
+            "isr": len(isr),
+            "callbacks": len(callbacks),
+            "rx_queue": sum(event["index"] > (rx_callback or -1) and event["name"] in {"EspNow.RxQueue", "EspNow.CausalQueue"} and event["type"] == 25 for event in events),  # fmt: skip
+            "service_messages": [event["name"] for event in events if event["name"] in {"EspNow.RxBeacon", "EspNow.RxJoinGame", "EspNow.RxPing"}],  # fmt: skip
+        },
         "event_count": len(events),
     }
 
@@ -584,6 +735,8 @@ def verify(
         failures.append(f"prohibited QEMU paths: {prohibited}")
     if sha256(PATCH) != manifest["patch_sha256"]:
         failures.append("QEMU patch digest mismatch")
+    if not unified_diff_hunks_are_well_formed(patch):
+        failures.append("QEMU patch hunk counts are malformed")
 
     physical_sources = subprocess.run(
         [

@@ -1,16 +1,16 @@
 diff --git a/hw/misc/domes_link.c b/hw/misc/domes_link.c
 new file mode 100644
-index 0000000000..fe642931fd
+index 0000000000..aed3d39622
 --- /dev/null
 +++ b/hw/misc/domes_link.c
-@@ -0,0 +1,405 @@
+@@ -0,0 +1,671 @@
 +#include "qemu/osdep.h"
 +#include "hw/misc/domes_link.h"
 +#include "hw/irq.h"
 +#include "hw/qdev-properties.h"
 +#include "qemu/log.h"
++#include "qapi/visitor.h"
 +#include "qemu/module.h"
-+
 +#define MAGIC 0x444c4e4b
 +#define VERSION 1
 +#define CAPABILITY 0x000
@@ -28,10 +28,12 @@ index 0000000000..fe642931fd
 +#define RX_LENGTH 0x03c
 +#define RX_CORRELATION 0x040
 +#define RX_CONSUME 0x044
++#define RX_DEQUEUE 0x048
 +#define IRQ_STATUS 0x050
 +#define IRQ_MASK 0x054
 +#define IRQ_ACK 0x058
 +#define STICKY_STATUS 0x05c
++#define RECOVER 0x060
 +#define TX_PAYLOAD 0x100
 +#define RX_PAYLOAD 0x200
 +#define IRQ_TX BIT(0)
@@ -51,9 +53,102 @@ index 0000000000..fe642931fd
 +       MSG_JOIN_GAME = 0x10, MSG_ARM_TOUCH = 0x11, MSG_SET_COLOR = 0x12,
 +       MSG_STOP_ALL = 0x13, MSG_SIMULATE_TOUCH = 0x14,
 +       MSG_TOUCH_EVENT = 0x20, MSG_TIMEOUT_EVENT = 0x21 };
-+
 +static const uint8_t actor_mac[6] = { 0x02, 0, 0, 0, 0, 0x02 };
-+
++enum {
++    FAULT_PASS,
++    FAULT_LOSS,
++    FAULT_DUPLICATION,
++    FAULT_REORDERING,
++    FAULT_JITTER,
++    FAULT_CORRUPTION,
++    FAULT_TRUNCATION,
++    FAULT_SUBMIT_FAILURE,
++    FAULT_COMPLETION_FAILURE,
++    FAULT_MISSING_COMPLETION,
++    FAULT_CALLBACK_BURST,
++    FAULT_COMPLETION_ORDER,
++    FAULT_SATURATION,
++    FAULT_BACKPRESSURE_RECOVERY,
++    FAULT_PEER_JOIN,
++    FAULT_PEER_DISAPPEARANCE,
++    FAULT_PEER_RESTART,
++    FAULT_STALE_TRAFFIC,
++    FAULT_IDENTITY_MISMATCH,
++    FAULT_CHANNEL_OUTCOME,
++    FAULT_INTERFERENCE_OUTCOME,
++    FAULT_LATENCY_TX_QUEUE,
++    FAULT_LATENCY_CHANNEL,
++    FAULT_LATENCY_AIRTIME,
++    FAULT_LATENCY_COMPLETION,
++    FAULT_LATENCY_PEER,
++    FAULT_LATENCY_RX_CALLBACK,
++    FAULT_COUNT,
++};
++enum { STAGE_TX_QUEUE, STAGE_CHANNEL, STAGE_AIRTIME, STAGE_COMPLETION, STAGE_PEER, STAGE_RX_CALLBACK };
++static const char *stage_name[] = { "tx_queue_delay", "channel_access", "airtime", "completion_delay", "peer_processing", "rx_callback_delay" };
++static void record_stage(uint32_t stage, int64_t enter_ns, int64_t exit_ns)
++{
++    qemu_log_mask(LOG_GUEST_ERROR, "DOMES_PIPELINE_BOUNDARY schema=1 stage=%s enter_ns=%" PRIi64
++                  " exit_ns=%" PRIi64 "\n", stage_name[stage], enter_ns, exit_ns);
++}
++static const char *fault_stage(uint32_t fault_id)
++{
++    switch (fault_id) {
++    case FAULT_CORRUPTION:
++    case FAULT_TRUNCATION:
++    case FAULT_IDENTITY_MISMATCH:
++        return "before_production_validation";
++    case FAULT_SUBMIT_FAILURE:
++        return "radio_submit";
++    case FAULT_COMPLETION_FAILURE:
++    case FAULT_MISSING_COMPLETION:
++    case FAULT_COMPLETION_ORDER:
++    case FAULT_LATENCY_COMPLETION:
++        return "completion_delay";
++    case FAULT_DUPLICATION:
++    case FAULT_REORDERING:
++    case FAULT_INTERFERENCE_OUTCOME:
++    case FAULT_LATENCY_AIRTIME:
++        return "airtime";
++    case FAULT_JITTER:
++    case FAULT_PEER_JOIN:
++    case FAULT_PEER_DISAPPEARANCE:
++    case FAULT_PEER_RESTART:
++    case FAULT_STALE_TRAFFIC:
++    case FAULT_LATENCY_PEER:
++        return "peer_processing";
++    case FAULT_CALLBACK_BURST:
++    case FAULT_LATENCY_RX_CALLBACK:
++        return "rx_callback_delay";
++    case FAULT_LATENCY_TX_QUEUE:
++        return "tx_queue_delay";
++    default:
++        return "channel_access";
++    }
++}
++static void record_fault(DomesLinkState *s, const char *stage, const char *outcome)
++{
++    qemu_log_mask(LOG_GUEST_ERROR,
++                  "DOMES_FAULT_RECORD schema=1 fault=%u sequence=%u virtual_ns=%" PRIi64
++                  " stage=%s outcome=%s queued=%u\n",
++                  s->fault_id, s->fault_sequence++,
++                  qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), stage, outcome, s->event_count);
++}
++static void observe_state(DomesLinkState *s)
++{
++    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++    if (now - s->last_observation_ns >= 100000000) {
++        qemu_log_mask(LOG_GUEST_ERROR,
++                      "DOMES_FAULT_STATE schema=1 virtual_ns=%" PRIi64 " queued=%u\n",
++                      now, s->event_count);
++        s->last_observation_ns = now;
++    }
++}
++static void record_peer(DomesLinkState *s, const char *state, uint32_t traffic_epoch, bool accepted)
++{
++    qemu_log_mask(LOG_GUEST_ERROR, "DOMES_PEER_STATE schema=1 state=%s present=%u epoch=%u traffic_epoch=%u accepted=%u\n",
++                  state, s->peer_present, s->peer_epoch, traffic_epoch, accepted);
++}
 +static bool event_before(const DomesLinkEvent *a, const DomesLinkEvent *b)
 +{
 +    if (a->deadline_ns != b->deadline_ns) return a->deadline_ns < b->deadline_ns;
@@ -64,7 +159,6 @@ index 0000000000..fe642931fd
 +    if (a->destination_id != b->destination_id) return a->destination_id < b->destination_id;
 +    return a->sequence < b->sequence;
 +}
-+
 +static bool enqueue_event(DomesLinkState *s, DomesLinkEvent event)
 +{
 +    uint32_t index;
@@ -80,7 +174,6 @@ index 0000000000..fe642931fd
 +    s->event_count++;
 +    return true;
 +}
-+
 +static uint32_t wire_size(uint8_t type)
 +{
 +    switch (type) {
@@ -93,7 +186,6 @@ index 0000000000..fe642931fd
 +    default: return 0;
 +    }
 +}
-+
 +static bool actor_transition(DomesLinkState *s, DomesLinkEvent *event)
 +{
 +    uint8_t type = s->tx_payload[0];
@@ -103,18 +195,27 @@ index 0000000000..fe642931fd
 +                                                  s->dut_role != DUT_ROLE_SLAVE)) {
 +        return false;
 +    }
++    if (s->fault_id == FAULT_PEER_JOIN) s->peer_present = true;
++    if (s->fault_id == FAULT_PEER_DISAPPEARANCE) s->peer_present = false;
++    if (s->fault_id == FAULT_PEER_RESTART) s->peer_epoch++;
++    if (s->fault_id == FAULT_STALE_TRAFFIC) s->peer_epoch = 2;
 +    if (type == MSG_PING) response = MSG_PONG;
-+    else if (type == MSG_BEACON) response = MSG_BEACON;
++    else if (type == MSG_BEACON) response =
++        s->dut_role == DUT_ROLE_SLAVE ? MSG_JOIN_GAME : MSG_BEACON;
 +    else if (s->dut_role == DUT_ROLE_MASTER &&
 +             (type == MSG_ARM_TOUCH || type == MSG_SIMULATE_TOUCH)) response = MSG_TOUCH_EVENT;
-+    else if (type == MSG_JOIN_GAME || type == MSG_SET_COLOR || type == MSG_STOP_ALL) return true;
++    else if (type == MSG_JOIN_GAME || type == MSG_SET_COLOR || type == MSG_STOP_ALL ||
++             (type == MSG_PONG && s->fault_id == FAULT_COMPLETION_ORDER)) return true;
 +    else return false;
-+
-+    event->deadline_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->peer_delay_ns;
++    if (s->fault_id == FAULT_LATENCY_PEER) s->stage_delay_ns[STAGE_PEER] = 10000;
++    event->deadline_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
++                         s->peer_delay_ns + s->stage_delay_ns[STAGE_PEER];
 +    event->event_class_priority = 1;
 +    event->source_id = 2;
 +    event->destination_id = 1;
 +    event->correlation = s->tx_correlation;
++    event->source_low = 0x00000002;
++    event->source_high = 0x00000200;
 +    event->length = wire_size(response);
 +    event->payload[0] = response;
 +    memcpy(&event->payload[1], actor_mac, sizeof(actor_mac));
@@ -126,28 +227,22 @@ index 0000000000..fe642931fd
 +    }
 +    return true;
 +}
-+
 +static void update_irq(DomesLinkState *s)
 +{
 +    qemu_set_irq(s->irq, (s->irq_status & s->irq_mask) != 0);
 +}
-+
 +static bool word_access(hwaddr addr, unsigned size)
 +{
 +    return size == 4 && (addr & 3) == 0;
 +}
-+
 +static bool tx_locked(DomesLinkState *s)
 +{
 +    return s->tx_status != TX_IDLE || (s->irq_status & IRQ_TX) != 0;
 +}
-+
 +static void reject_tx_mutation(DomesLinkState *s)
 +{
-+    /* The single bounded submission slot remains owned through IRQ acknowledgment. */
 +    s->sticky |= ST_EXHAUSTED | ST_OVERWRITE;
 +}
-+
 +static uint64_t link_read(void *opaque, hwaddr addr, unsigned size)
 +{
 +    DomesLinkState *s = opaque;
@@ -169,7 +264,7 @@ index 0000000000..fe642931fd
 +    case TX_DEST_HIGH: return s->tx_destination_high;
 +    case TX_LENGTH: return s->tx_length;
 +    case TX_CORRELATION: return s->tx_correlation;
-+    case TX_STATUS: return s->tx_status;
++    case TX_STATUS: observe_state(s); return s->tx_status;
 +    case RX_SOURCE_LOW: return s->rx_source_low;
 +    case RX_SOURCE_HIGH: return s->rx_source_high;
 +    case RX_RSSI: return s->rx_rssi;
@@ -181,22 +276,40 @@ index 0000000000..fe642931fd
 +    default: s->sticky |= ST_INVALID; return 0;
 +    }
 +}
-+
 +static void deliver_due(void *opaque)
 +{
 +    DomesLinkState *s = opaque;
 +    int64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++    if (s->fault_id == FAULT_LATENCY_RX_CALLBACK && !s->stage_delay_ns[STAGE_RX_CALLBACK] &&
++        s->event_count && s->events[0].deadline_ns <= now_ns) {
++        s->stage_delay_ns[STAGE_RX_CALLBACK] = 10000;
++        s->stage_enter_ns = now_ns;
++        for (uint32_t index = 0; index < s->event_count; index++) s->events[index].deadline_ns += 10000;
++        timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
++        return;
++    }
++    if (s->event_count && s->events[0].deadline_ns <= now_ns)
++        record_stage(STAGE_RX_CALLBACK,
++                     s->stage_delay_ns[STAGE_RX_CALLBACK] ? s->stage_enter_ns : now_ns, now_ns);
 +    while (s->event_count && s->events[0].deadline_ns <= now_ns) {
++        if (s->irq_status & IRQ_RX) {
++            break;
++        }
 +        DomesLinkEvent event = s->events[0];
 +        memmove(&s->events[0], &s->events[1],
 +                (s->event_count - 1) * sizeof(s->events[0]));
 +        s->event_count--;
-+        if (s->irq_status & IRQ_RX) {
-+            s->sticky |= ST_OVERFLOW | ST_OVERWRITE;
-+            break;
++        if (s->fault_id >= FAULT_LATENCY_TX_QUEUE && s->fault_id <= FAULT_LATENCY_RX_CALLBACK) {
++            qemu_log_mask(LOG_GUEST_ERROR,
++                          "DOMES_PIPELINE_DELAY schema=1 tx_queue=%" PRIu64 " channel=%" PRIu64
++                          " airtime=%" PRIu64 " completion=%" PRIu64 " peer=%" PRIu64
++                          " rx_callback=%" PRIu64 "\n", s->stage_delay_ns[STAGE_TX_QUEUE],
++                          s->stage_delay_ns[STAGE_CHANNEL], s->stage_delay_ns[STAGE_AIRTIME],
++                          s->stage_delay_ns[STAGE_COMPLETION], s->stage_delay_ns[STAGE_PEER],
++                          s->stage_delay_ns[STAGE_RX_CALLBACK]);
 +        }
-+        s->rx_source_low = 0x00000002;
-+        s->rx_source_high = 0x00000200;
++        s->rx_source_low = event.source_low;
++        s->rx_source_high = event.source_high;
 +        s->rx_rssi = (uint8_t)-42;
 +        s->rx_length = event.length;
 +        s->rx_correlation = event.correlation;
@@ -216,19 +329,35 @@ index 0000000000..fe642931fd
 +                          event.destination_id, event.sequence, event.correlation, payload);
 +        }
 +    }
-+    if (s->event_count) timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
++    if (s->event_count && !(s->irq_status & IRQ_RX)) {
++        timer_mod_ns(s->delivery_timer, s->events[0].deadline_ns);
++    }
 +    update_irq(s);
 +}
-+
 +static void complete(void *opaque)
 +{
 +    DomesLinkState *s = opaque;
 +    DomesLinkEvent event = { 0 };
++    int64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++    record_stage(s->tx_stage, s->stage_enter_ns, now_ns);
++    if (s->tx_stage < STAGE_COMPLETION) {
++        s->tx_stage = s->tx_stage == STAGE_TX_QUEUE ? STAGE_CHANNEL : STAGE_COMPLETION;
++        s->stage_enter_ns = now_ns;
++        timer_mod_ns(s->completion_timer, now_ns + s->stage_delay_ns[s->tx_stage]);
++        return;
++    }
 +    if (s->tx_status != TX_PENDING || !s->tx_correlation || !s->tx_length ||
 +        s->tx_length > DOMES_LINK_MAX_PAYLOAD) {
 +        s->sticky |= ST_MODEL_FAILURE;
 +        s->tx_status = TX_FAILURE;
 +        s->irq_status |= IRQ_TX;
++        update_irq(s);
++        return;
++    }
++    if (s->fault_id == FAULT_COMPLETION_FAILURE) {
++        s->tx_status = TX_FAILURE;
++        s->irq_status |= IRQ_TX;
++        record_fault(s, "completion_delay", "failure");
 +        update_irq(s);
 +        return;
 +    }
@@ -250,8 +379,80 @@ index 0000000000..fe642931fd
 +               !actor_transition(s, &event)) {
 +        s->sticky |= ST_MODEL_FAILURE;
 +        s->tx_status = TX_FAILURE;
-+    } else if (event.length) {
-+        if (!enqueue_event(s, event)) {
++    } else if (s->fault_id == FAULT_BACKPRESSURE_RECOVERY && s->scenario_consumed) { update_irq(s); return;
++    } else if (event.length) { s->scenario_consumed = true;
++        if (s->fault_id >= FAULT_PEER_JOIN && s->fault_id <= FAULT_STALE_TRAFFIC)
++            record_peer(s, s->fault_id == FAULT_PEER_JOIN ? "join" : s->fault_id == FAULT_PEER_DISAPPEARANCE ? "absent" : s->fault_id == FAULT_PEER_RESTART ? "restart" : "stale", s->fault_id == FAULT_STALE_TRAFFIC ? 1 : s->peer_epoch, s->fault_id != FAULT_PEER_DISAPPEARANCE && s->fault_id != FAULT_STALE_TRAFFIC);
++        uint32_t copies = 1;
++        uint64_t spacing_ns = 1000;
++        uint32_t initial_count = s->event_count;
++        if (s->fault_id == FAULT_LOSS || s->fault_id == FAULT_PEER_DISAPPEARANCE ||
++            s->fault_id == FAULT_CHANNEL_OUTCOME ||
++            s->fault_id == FAULT_INTERFERENCE_OUTCOME) {
++            record_fault(s, fault_stage(s->fault_id), "unavailable");
++            update_irq(s);
++            return;
++        }
++        if (s->fault_id == FAULT_CORRUPTION) {
++            event.payload[0] ^= 0x80;
++        } else if (s->fault_id == FAULT_TRUNCATION) {
++            event.length = 7;
++        } else if (s->fault_id == FAULT_IDENTITY_MISMATCH) {
++            event.source_low = 0x00000003;
++        } else if (s->fault_id == FAULT_DUPLICATION || s->fault_id == FAULT_REORDERING ||
++                   s->fault_id == FAULT_PEER_RESTART || s->fault_id == FAULT_STALE_TRAFFIC) {
++            copies = 2;
++        } else if (s->fault_id == FAULT_COMPLETION_ORDER) {
++            copies = 2;
++        } else if (s->fault_id == FAULT_CALLBACK_BURST) {
++            copies = 3;
++            spacing_ns = 1;
++        } else if (s->fault_id == FAULT_SATURATION ||
++                   s->fault_id == FAULT_BACKPRESSURE_RECOVERY) {
++            copies = s->fault_id == FAULT_SATURATION ? 4 : 5;
++            spacing_ns = 1;
++        }
++        if (s->fault_id == FAULT_JITTER) {
++            event.deadline_ns += s->dut_role == DUT_ROLE_MASTER ? 7000 : -7000;
++        }
++        if (s->fault_id == FAULT_LATENCY_AIRTIME) {
++            s->stage_delay_ns[STAGE_AIRTIME] = 10000;
++            event.deadline_ns += s->stage_delay_ns[STAGE_AIRTIME];
++        }
++        record_stage(STAGE_PEER, now_ns,
++                     now_ns + s->peer_delay_ns + s->stage_delay_ns[STAGE_PEER]);
++        record_stage(STAGE_AIRTIME,
++                     now_ns + s->peer_delay_ns + s->stage_delay_ns[STAGE_PEER],
++                     event.deadline_ns);
++        if (s->fault_id == FAULT_SATURATION || s->fault_id == FAULT_BACKPRESSURE_RECOVERY) event.deadline_ns += 1000000;
++        for (uint32_t copy = 0; copy < copies; copy++) {
++            DomesLinkEvent candidate = event;
++            if (s->fault_id == FAULT_COMPLETION_ORDER && copy == 1)
++                candidate.payload[0] = MSG_PING;
++            if ((s->fault_id == FAULT_CALLBACK_BURST && copy > 0) || (s->fault_id == FAULT_SATURATION && copy != 0) || (s->fault_id == FAULT_BACKPRESSURE_RECOVERY && copy != 4))
++                candidate.payload[0] = MSG_TOUCH_EVENT, candidate.length = wire_size(MSG_TOUCH_EVENT);
++            if (s->fault_id == FAULT_REORDERING || s->fault_id == FAULT_COMPLETION_ORDER) {
++                candidate.deadline_ns += (copies - copy) * spacing_ns;
++            } else {
++                candidate.deadline_ns += copy * spacing_ns;
++            }
++            if (s->fault_id == FAULT_STALE_TRAFFIC && copy == 0) {
++                candidate.source_low = 0x00000003;
++            } else if (s->fault_id == FAULT_STALE_TRAFFIC) {
++                record_peer(s, "fresh", 2, true);
++            }
++            if (s->fault_id == FAULT_BACKPRESSURE_RECOVERY && copy == 4) {
++                s->readmission_event = candidate;
++                s->readmission_pending = true;
++            } else if (!enqueue_event(s, candidate)) break;
++        }
++        if (s->fault_id == FAULT_SATURATION || s->fault_id == FAULT_BACKPRESSURE_RECOVERY)
++            record_fault(s, "channel_access", "production_capacity_4");
++        if (s->fault_id != FAULT_LATENCY_TX_QUEUE && s->fault_id != FAULT_LATENCY_CHANNEL && s->fault_id != FAULT_LATENCY_COMPLETION) record_fault(s, fault_stage(s->fault_id),
++                     s->fault_id == FAULT_PEER_RESTART ? "restart_epoch_2" :
++                     s->fault_id == FAULT_STALE_TRAFFIC ? "stale_epoch_1_then_2" :
++                     copies > 1 ? "scheduled_multiple" : "scheduled");
++        if (s->event_count != initial_count + copies - (s->readmission_pending ? 1 : 0)) {
 +            s->sticky |= ST_MODEL_FAILURE;
 +            s->tx_status = TX_FAILURE;
 +        } else {
@@ -259,9 +460,20 @@ index 0000000000..fe642931fd
 +            deliver_due(s);
 +        }
 +    }
++    if (s->fault_id == FAULT_COMPLETION_ORDER && s->completion_count == 0) {
++        s->completion_tokens[0] = s->tx_correlation;
++        s->completion_count = 1;
++        record_fault(s, "completion_delay", "first_owned_submission");
++    } else if (s->fault_id == FAULT_COMPLETION_ORDER && s->completion_count == 1) {
++        const uint32_t tokens[] = { s->tx_correlation, s->completion_tokens[0],
++                                    s->completion_tokens[0] };
++        memcpy(s->completion_tokens, tokens, sizeof(tokens));
++        s->completion_count = ARRAY_SIZE(tokens); s->completion_index = 0;
++        s->tx_correlation = s->completion_tokens[0];
++        record_fault(s, "completion_delay", "current_before_stale_owned");
++    }
 +    update_irq(s);
 +}
-+
 +static void link_write(void *opaque, hwaddr addr, uint64_t value, unsigned size)
 +{
 +    DomesLinkState *s = opaque;
@@ -312,10 +524,32 @@ index 0000000000..fe642931fd
 +                s->sticky |= ST_SEQUENCE;
 +                s->tx_status = TX_FAILURE;
 +            }
-+        } else {
++        } else if (s->fault_id == FAULT_SUBMIT_FAILURE) {
++            s->tx_status = TX_FAILURE;
++            record_fault(s, "radio_submit", "failure");
++        } else if (s->fault_id == FAULT_MISSING_COMPLETION && !s->scenario_consumed) {
 +            s->tx_status = TX_PENDING;
-+            qemu_bh_schedule(s->completion_bh);
++            s->scenario_consumed = true;
++            record_fault(s, "completion_delay", "missing");
++        } else {
++            if (s->fault_id == FAULT_LATENCY_TX_QUEUE) s->stage_delay_ns[STAGE_TX_QUEUE] = 10000;
++            if (s->fault_id == FAULT_LATENCY_CHANNEL) s->stage_delay_ns[STAGE_CHANNEL] = 10000;
++            if (s->fault_id == FAULT_LATENCY_COMPLETION) s->stage_delay_ns[STAGE_COMPLETION] = 10000;
++            if (s->fault_id == FAULT_LATENCY_TX_QUEUE || s->fault_id == FAULT_LATENCY_CHANNEL || s->fault_id == FAULT_LATENCY_COMPLETION) record_fault(s, fault_stage(s->fault_id), "delay_enter");
++            s->tx_status = TX_PENDING;
++            s->stage_delay_ns[STAGE_CHANNEL] += 1000;
++            s->tx_stage = STAGE_TX_QUEUE;
++            s->stage_enter_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++            timer_mod_ns(s->completion_timer,
++                         s->stage_enter_ns + s->stage_delay_ns[STAGE_TX_QUEUE]);
 +        }
++        break;
++    case RECOVER:
++        if (value != 1 || s->fault_id != FAULT_MISSING_COMPLETION || s->tx_status != TX_PENDING || !s->scenario_consumed) { s->sticky |= ST_INVALID; break; }
++        timer_del(s->completion_timer);
++        s->tx_destination_low = s->tx_destination_high = s->tx_length = 0;
++        s->tx_correlation = 0; s->tx_status = TX_IDLE;
++        s->irq_status &= ~IRQ_TX; memset(s->tx_payload, 0, sizeof(s->tx_payload)); record_fault(s, "completion_delay", "production_recovery"); update_irq(s);
 +        break;
 +    case RX_CONSUME:
 +        if (value != 1 || !(s->irq_status & IRQ_RX)) s->sticky |= ST_SEQUENCE;
@@ -325,6 +559,15 @@ index 0000000000..fe642931fd
 +            update_irq(s);
 +        }
 +        break;
++    case RX_DEQUEUE:
++        if (value != 1) s->sticky |= ST_SEQUENCE;
++        else if (s->readmission_pending) {
++            record_fault(s, "channel_access", "production_dequeued");
++            if (!enqueue_event(s, s->readmission_event)) s->sticky |= ST_MODEL_FAILURE;
++            else { record_fault(s, "channel_access", "readmitted"); timer_mod_ns(s->delivery_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 100000); }
++            s->readmission_pending = false;
++        }
++        break;
 +    case IRQ_MASK:
 +        if (value & ~(IRQ_TX | IRQ_RX)) s->sticky |= ST_INVALID;
 +        else { s->irq_mask = value; update_irq(s); }
@@ -332,23 +575,37 @@ index 0000000000..fe642931fd
 +    case IRQ_ACK:
 +        if (value & ~(IRQ_TX | IRQ_RX)) s->sticky |= ST_INVALID;
 +        s->irq_status &= ~(value & (IRQ_TX | IRQ_RX));
-+        if ((value & IRQ_TX) != 0 && (s->irq_status & IRQ_TX) == 0) {
++        update_irq(s);
++        if ((value & IRQ_TX) != 0 && s->completion_index + 1 < s->completion_count) {
++            const char *outcomes[] = { "current_owned_completion", "stale_owned_after_current",
++                                       "duplicate_stale_completion" };
++            s->completion_index++;
++            s->tx_correlation = s->completion_tokens[s->completion_index];
++            s->irq_status |= IRQ_TX;
++            record_fault(s, "completion_delay", outcomes[s->completion_index]);
++            update_irq(s);
++        } else if ((value & IRQ_TX) != 0 && (s->irq_status & IRQ_TX) == 0) {
 +            s->tx_destination_low = s->tx_destination_high = s->tx_length = 0;
 +            s->tx_correlation = 0;
 +            s->tx_status = TX_IDLE;
++            if (s->fault_id != FAULT_COMPLETION_ORDER || s->completion_count != 1) {
++                s->completion_count = s->completion_index = 0;
++                memset(s->completion_tokens, 0, sizeof(s->completion_tokens));
++            }
 +            memset(s->tx_payload, 0, sizeof(s->tx_payload));
 +        }
-+        update_irq(s);
++        if ((value & IRQ_RX) && s->event_count)
++            timer_mod_ns(s->delivery_timer, MAX(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1,
++                                                 s->events[0].deadline_ns));
++        else update_irq(s);
 +        break;
 +    default: s->sticky |= ST_INVALID; break;
 +    }
 +}
-+
 +static const MemoryRegionOps link_ops = {
 +    .read = link_read, .write = link_write, .endianness = DEVICE_LITTLE_ENDIAN,
 +    .valid = { .min_access_size = 1, .max_access_size = 4, .unaligned = true },
 +};
-+
 +static void link_reset(Object *obj, ResetType type)
 +{
 +    DomesLinkState *s = DOMES_LINK(obj);
@@ -356,36 +613,45 @@ index 0000000000..fe642931fd
 +    s->tx_correlation = 0; s->tx_status = TX_IDLE;
 +    s->rx_source_low = s->rx_source_high = s->rx_rssi = s->rx_length = 0;
 +    s->rx_correlation = s->irq_status = s->irq_mask = s->sticky = 0;
-+    s->event_count = s->next_sequence = 0;
++    s->readmission_pending = s->scenario_consumed = false; s->event_count = s->next_sequence = s->fault_sequence = 0;
++    s->completion_count = s->completion_index = 0;
++    memset(s->completion_tokens, 0, sizeof(s->completion_tokens));
++    s->peer_present = s->fault_id != FAULT_PEER_JOIN; s->peer_epoch = 1;
++    s->tx_stage = 0; s->stage_enter_ns = 0; memset(s->stage_delay_ns, 0, sizeof(s->stage_delay_ns));
 +    memset(s->tx_payload, 0, sizeof(s->tx_payload));
 +    memset(s->rx_payload, 0, sizeof(s->rx_payload));
 +    memset(s->events, 0, sizeof(s->events));
++    timer_del(s->completion_timer);
 +    timer_del(s->delivery_timer);
 +    update_irq(s);
 +}
-+
 +static void link_realize(DeviceState *dev, Error **errp)
 +{
 +    DomesLinkState *s = DOMES_LINK(dev);
-+    s->completion_bh = qemu_bh_new(complete, s);
++    s->completion_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, complete, s);
 +    s->delivery_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, deliver_due, s);
 +}
-+
 +static void link_finalize(Object *obj)
 +{
 +    DomesLinkState *s = DOMES_LINK(obj);
-+    qemu_bh_delete(s->completion_bh);
++    timer_free(s->completion_timer);
 +    timer_free(s->delivery_timer);
 +}
-+
++static void get_virtual_clock(Object *obj, Visitor *v, const char *name,
++                              void *opaque, Error **errp)
++{
++    uint64_t value = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++    visit_type_uint64(v, name, &value, errp);
++}
 +static void link_init(Object *obj)
 +{
 +    DomesLinkState *s = DOMES_LINK(obj);
 +    memory_region_init_io(&s->mmio, obj, &link_ops, s, TYPE_DOMES_LINK, DOMES_LINK_MMIO_SIZE);
 +    sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 +    sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
++    object_property_add(obj, "virtual-clock-ns", "uint64", get_virtual_clock,
++                        NULL, NULL, NULL);
 +}
-+
 +static void link_class_init(ObjectClass *klass, void *data)
 +{
 +    DeviceClass *dc = DEVICE_CLASS(klass);
@@ -396,12 +662,12 @@ index 0000000000..fe642931fd
 +        DEFINE_PROP_UINT32("scenario-seed", DomesLinkState, scenario_seed, 0),
 +        DEFINE_PROP_UINT32("dut-role", DomesLinkState, dut_role, DUT_ROLE_MASTER),
 +        DEFINE_PROP_UINT64("peer-delay-ns", DomesLinkState, peer_delay_ns, 0),
++        DEFINE_PROP_UINT32("fault-id", DomesLinkState, fault_id, FAULT_PASS),
 +        DEFINE_PROP_END_OF_LIST(),
 +    };
 +    device_class_set_props(dc, properties);
 +    rc->phases.hold = link_reset;
 +}
-+
 +static const TypeInfo link_info = {
 +    .name = TYPE_DOMES_LINK, .parent = TYPE_SYS_BUS_DEVICE,
 +    .instance_size = sizeof(DomesLinkState), .instance_init = link_init,
@@ -410,48 +676,61 @@ index 0000000000..fe642931fd
 +static void link_register_types(void) { type_register_static(&link_info); }
 +type_init(link_register_types)
 diff --git a/hw/misc/meson.build b/hw/misc/meson.build
-index 4c2b5b3cae..dca39005d1 100644
+index 4c2b5b3cae..fb67a200a1 100644
 --- a/hw/misc/meson.build
 +++ b/hw/misc/meson.build
-@@ -159,6 +159,7 @@ system_ss.add(when: 'CONFIG_RISCV_ESP32C3', if_true: files(
+@@ -157,8 +157,8 @@ system_ss.add(when: 'CONFIG_RISCV_ESP32C3', if_true: files(
+   'esp_hmac.c',
+   'esp32c3_hmac.c'
  ))
-
+-
  system_ss.add(when: 'CONFIG_XTENSA_ESP32S3', if_true: files(
 +  'domes_link.c',
    'esp32s3_cache.c',
    'ssi_psram.c',
    'esp_sha.c',
 diff --git a/hw/xtensa/esp32s3.c b/hw/xtensa/esp32s3.c
-index 091657e842..c21cf04bb5 100644
+index 091657e842..f85b28180d 100644
 --- a/hw/xtensa/esp32s3.c
 +++ b/hw/xtensa/esp32s3.c
-@@ -62,6 +62,7 @@
+@@ -62,9 +62,8 @@
  #include "hw/gpio/esp32s3_gpio.h"
  #include "hw/misc/esp32s3_xts_aes.h"
  #include "hw/misc/esp32s3_pms.h"
 +#include "hw/misc/domes_link.h"
  #include "hw/net/can/esp32s3_twai.h"
-
+-
  #include "cpu_esp32s3.h"
-@@ -124,6 +125,7 @@ typedef struct Esp32s3SocState {
+-
+ #include "hw/misc/esp32c3_jtag.h"
+ #include "hw/display/esp_rgb.h"
+@@ -124,8 +123,7 @@ typedef struct Esp32s3SocState {
      ESP32S3GPIOState gpio;
      Esp32s3RngState rng;
      Esp32S3TWAIState twai;
+-
 +    DomesLinkState domes_link;
-
      Esp32s3RtcCntlState rtc_cntl;
-
-@@ -527,6 +529,7 @@ static void esp32s3_soc_init(Object *obj)
+-
+     BusState rtc_bus;
+     BusState periph_bus;
+@@ -525,10 +523,9 @@ static void esp32s3_soc_init(Object *obj)
+     qdev_init_gpio_in_named(DEVICE(s), esp32s3_cpu_reset,  ESP32S3_RTC_CPU_RESET_GPIO, ESP32S3_CPU_COUNT);
+     qdev_init_gpio_in_named(DEVICE(s), esp32s3_cpu_stall,  ESP32S3_RTC_CPU_STALL_GPIO, ESP32S3_CPU_COUNT);
      qdev_init_gpio_in_named(DEVICE(s), esp32s3_clk_update, ESP32S3_RTC_CLK_UPDATE_GPIO, 1);
-
+-
      object_initialize_child(obj, "twai", &s->twai, TYPE_ESP32S3_TWAI);
 +    object_initialize_child(obj, "domes-link", &s->domes_link, TYPE_DOMES_LINK);
  }
-
+-
  static Property esp32s3_soc_properties[] = {
-@@ -635,6 +638,13 @@ static void esp32s3_machine_init(MachineState *machine)
+     DEFINE_PROP_END_OF_LIST(),
+ };
+@@ -633,8 +630,14 @@ static void esp32s3_machine_init(MachineState *machine)
+     object_initialize_child(OBJECT(ss), "timg1", &ss->timg[1], TYPE_ESP32S3_TIMG);
+     object_initialize_child(OBJECT(ss), "systimer", &ss->systimer, TYPE_ESP32S3_SYSTIMER);
      object_initialize_child(OBJECT(ss), "rgb", &ss->rgb, TYPE_ESP_RGB);
-
+-
      DeviceState* intmatrix_dev = DEVICE(&ss->intmatrix);
 +    {
 +        sysbus_realize(SYS_BUS_DEVICE(&ss->domes_link), &error_fatal);
@@ -463,48 +742,54 @@ index 091657e842..c21cf04bb5 100644
      {
          /* Store the current Machine CPU in the interrupt matrix */
          MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ss->intmatrix), 0);
-@@ -972,4 +982,3 @@ static void esp32s3_machine_type_init(void)
+@@ -970,6 +973,4 @@ static void esp32s3_machine_type_init(void)
+ {
+     type_register_static(&esp32s3_info);
  }
-
+-
  type_init(esp32s3_machine_type_init);
 -
 diff --git a/include/hw/misc/domes_link.h b/include/hw/misc/domes_link.h
 new file mode 100644
-index 0000000000..61b520bd68
+index 0000000000..372feed80f
 --- /dev/null
 +++ b/include/hw/misc/domes_link.h
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,38 @@
 +#pragma once
 +#include "hw/sysbus.h"
 +#include "qemu/main-loop.h"
 +#include "qemu/timer.h"
-+
 +#define TYPE_DOMES_LINK "domes-link"
 +OBJECT_DECLARE_SIMPLE_TYPE(DomesLinkState, DOMES_LINK)
 +#define DOMES_LINK_MMIO_SIZE 0x1000
 +#define DOMES_LINK_MAX_PAYLOAD 250
 +#define DOMES_LINK_EVENT_CAPACITY 8
-+
 +typedef struct DomesLinkEvent {
 +    int64_t deadline_ns;
 +    uint32_t event_class_priority;
 +    uint32_t source_id, destination_id, sequence;
 +    uint32_t correlation, length;
++    uint32_t source_low, source_high;
 +    uint8_t payload[DOMES_LINK_MAX_PAYLOAD];
 +} DomesLinkEvent;
-+
 +struct DomesLinkState {
 +    SysBusDevice parent_obj;
 +    MemoryRegion mmio;
 +    qemu_irq irq;
-+    QEMUBH *completion_bh;
++    QEMUTimer *completion_timer;
 +    QEMUTimer *delivery_timer;
 +    uint32_t tx_destination_low, tx_destination_high, tx_length, tx_correlation, tx_status;
 +    uint32_t rx_source_low, rx_source_high, rx_rssi, rx_length, rx_correlation;
 +    uint32_t irq_status, irq_mask, sticky;
 +    uint8_t tx_payload[256], rx_payload[256];
-+    DomesLinkEvent events[DOMES_LINK_EVENT_CAPACITY];
++    DomesLinkEvent events[DOMES_LINK_EVENT_CAPACITY], readmission_event;
 +    uint32_t event_count, next_sequence;
-+    uint32_t scenario_model, scenario_seed, dut_role;
++    uint32_t completion_tokens[3], completion_count, completion_index;
++    bool readmission_pending, scenario_consumed;
++    int64_t last_observation_ns;
++    uint32_t scenario_model, scenario_seed, dut_role, fault_id, fault_sequence, peer_epoch;
++    bool peer_present;
 +    uint64_t peer_delay_ns;
++    uint64_t stage_delay_ns[6];
++    uint32_t tx_stage; int64_t stage_enter_ns;
 +};
