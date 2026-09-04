@@ -274,8 +274,8 @@ Use the purpose-built rollback image and assertions in
 [`../../.github/workflows/firmware-hw-test.yml`](../../.github/workflows/firmware-hw-test.yml) for
 the destructive rollback gate. Do not improvise a failing release image.
 
-Use the complete
-[`$domes-esp32-firmware` ESP-NOW integration runbook](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#esp-now-integration-test)
+Use the
+[ESP-NOW verification requirements](../../docs/TESTING.md#hardware-verification)
 for the two-pod gate. `stopping` is not a ready state; wait for exact `disabled` before every new
 lifecycle.
 

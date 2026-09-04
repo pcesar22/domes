@@ -6,4 +6,4 @@ allowed-tools: Bash, Read, Glob
 
 # Compatibility Redirect
 
-Use the [Full Readiness Evaluation](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#full-readiness-evaluation).
+Use the [Verification Matrix](../../docs/TESTING.md#verification-matrix) and [Hardware Verification](../../docs/TESTING.md#hardware-verification).

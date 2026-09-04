@@ -6,4 +6,4 @@ allowed-tools: Bash, Read, Glob
 
 # Compatibility Redirect
 
-Use [Size Analysis](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#size-analysis).
+Use [Firmware Build](../../docs/TESTING.md#firmware-build) and the [firmware guide](../../firmware/README.md).

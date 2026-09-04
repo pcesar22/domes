@@ -133,14 +133,13 @@
         "docs/PROGRAM_GATE_TEMPLATE.md",
         "docs/TESTING.md",
         "PLANS.md",
-        ".codex/skills/domes-milestone-manager/SKILL.md",
-        ".codex/skills/domes-github-workflow/SKILL.md",
+        ".github/pull_request_template.md",
         ".codex/README.md"
       ],
       "criteria": [
         { "id": "current-truth", "description": "Reconcile the control panel with available work, plans, and evidence before trusting its next-action pointer, and identify unavailable live PR or CI state." },
         { "id": "execution-delivery-filter", "description": "Exclude requirements, discovery, architecture/part studies, planning matrices, FMEA/compliance plans, program administration, and documentation-only work while allowing only supporting artifacts needed for implementation or executed validation." },
-        { "id": "single-priority-selection", "description": "Select exactly one eligible programming or executed-validation delivery using the ordered priority and tie-break rules." },
+        { "id": "single-priority-selection", "description": "Select exactly one eligible programming or executed-validation delivery using the priority order in AGENTS.md." },
         { "id": "dependency-unlock", "description": "Explain which next-gate dependencies and material risks the selected package unlocks relative to alternatives." },
         { "id": "authorization-boundary", "description": "Reconcile root and repository GitHub workflow authority, then separate authorized execution and publication from CEO, external, destructive, merge, fabrication, and claim boundaries." },
         { "id": "agent-routing", "description": "Choose only the specialist routing justified by the selected work while preserving primary ownership." },

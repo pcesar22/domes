@@ -11,6 +11,6 @@ also read its local guidance:
 - [`hardware/AGENTS.md`](hardware/AGENTS.md)
 - [`tools/domes-cli/AGENTS.md`](tools/domes-cli/AGENTS.md)
 
-Claude-specific commands and skills under `.claude/` are compatibility entry points only. They must
+Claude-specific commands under `.claude/` are compatibility entry points only. They must
 defer technical facts, workflow requirements, and platform constraints to the shared sources above
 and [`.claude/PLATFORM.md`](.claude/PLATFORM.md).

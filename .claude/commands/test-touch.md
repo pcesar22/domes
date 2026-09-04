@@ -6,4 +6,4 @@ allowed-tools: Bash, Read, Glob
 
 # Compatibility Redirect
 
-Use [Touch Test](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#touch-test).
+Use [Hardware Verification](../../docs/TESTING.md#hardware-verification); touch needs a physical stimulus.

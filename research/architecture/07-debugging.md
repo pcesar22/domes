@@ -3,14 +3,13 @@
 > **Document status: Retired decision record.** The original GDB line breakpoints, OpenOCD examples,
 > coredump settings, direct device paths, permission workarounds, and copied diagnostic output were
 > removed because operational details had diverged from the firmware and ESP-IDF v5.4.4. Git history
-> retains that material. Use the maintained runbooks and the exact candidate artifacts instead.
+> retains that material. Use current firmware documentation and the exact candidate artifacts instead.
 
 ## Current Authorities
 
 | Subject | Current authority |
 | --- | --- |
-| ESP32-S3 GDB and OpenOCD workflow | [`../../.codex/skills/domes-debug-esp32/SKILL.md`](../../.codex/skills/domes-debug-esp32/SKILL.md) |
-| Build, flash, monitor, and hardware validation | [`../../.codex/skills/domes-esp32-firmware/SKILL.md`](../../.codex/skills/domes-esp32-firmware/SKILL.md) |
+| Build, flash, monitor, and hardware validation | [`../../docs/TESTING.md`](../../docs/TESTING.md) and [`../../tools/firmware/`](../../tools/firmware/) |
 | Current verification requirements | [`../../docs/TESTING.md`](../../docs/TESTING.md) |
 | Firmware programming and diagnostic boundaries | [`../../firmware/README.md`](../../firmware/README.md) |
 | Trace implementation and workflow | [`trace-overhaul-architecture.md`](trace-overhaul-architecture.md) |

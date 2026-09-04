@@ -6,5 +6,5 @@ allowed-tools: Bash, Read, Glob
 
 # Compatibility Redirect
 
-Use [Monitor Serial](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#monitor-serial).
+Use the [firmware guide](../../firmware/README.md) and the [platform guide](../../.codex/PLATFORM.md).
 The canonical helper is `tools/firmware/monitor_serial.py`.

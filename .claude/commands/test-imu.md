@@ -6,4 +6,4 @@ allowed-tools: Bash, Read, Glob
 
 # Compatibility Redirect
 
-Use [IMU Test](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#imu-test).
+Use [Hardware Verification](../../docs/TESTING.md#hardware-verification); IMU behavior needs a physical stimulus.

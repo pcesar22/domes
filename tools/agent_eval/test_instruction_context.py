@@ -56,14 +56,21 @@ class InstructionContextTest(unittest.TestCase):
             "docs/TESTING.md",
             ".codex/PLATFORM.md",
             ".codex/README.md",
-            ".codex/skills/domes-esp32-firmware/SKILL.md",
-            ".codex/skills/domes-esp32-firmware/references/runbooks.md",
-            ".codex/skills/domes-debug-esp32/SKILL.md",
-            ".codex/skills/domes-github-workflow/SKILL.md",
-            ".codex/skills/domes-milestone-manager/SKILL.md",
+            "firmware/README.md",
+            "tools/firmware/flash_and_verify.sh",
+            "tools/firmware/monitor_serial.py",
+            ".github/pull_request_template.md",
+            "PROGRAM_STATUS.md",
+            "docs/PRODUCT_REALIZATION_FRAMEWORK.md",
         )
         missing = [relative for relative in targets if not (ROOT / relative).exists()]
         self.assertEqual([], missing)
+
+    def test_instructions_do_not_depend_on_removed_skills(self) -> None:
+        for relative in ("AGENTS.md", "firmware/AGENTS.md", "CLAUDE.md"):
+            content = (ROOT / relative).read_text(encoding="utf-8")
+            for reference in (".codex/skills/", ".claude/skills/", "$domes-"):
+                self.assertNotIn(reference, content, relative)
 
     def test_operational_runbooks_are_not_duplicated_in_instruction_files(self) -> None:
         root = (ROOT / "AGENTS.md").read_text(encoding="utf-8")

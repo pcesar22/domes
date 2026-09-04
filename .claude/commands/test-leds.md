@@ -6,4 +6,4 @@ allowed-tools: Bash, Read, Glob
 
 # Compatibility Redirect
 
-Use [LED Test](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#led-test).
+Use [Hardware Verification](../../docs/TESTING.md#hardware-verification); LED output requires visual confirmation.

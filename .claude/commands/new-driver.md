@@ -6,4 +6,4 @@ allowed-tools: Read, Write, Glob, Grep
 
 # Compatibility Redirect
 
-Use [New Driver Scaffold](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#new-driver-scaffold).
+Use the [firmware development guidelines](../../firmware/AGENTS.md) and [Host Firmware Tests](../../docs/TESTING.md#host-firmware-tests).

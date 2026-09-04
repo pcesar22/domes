@@ -1,8 +1,8 @@
 # Autonomous requirements steward
 
 Start fresh. Select exactly one highest-priority bounded execution delivery from the current
-versioned project brain and live GitHub state. Apply the selection rules in the repository's
-`domes-milestone-manager` skill: repair urgent executable failures first, resume existing eligible
+versioned project brain and live GitHub state. Apply the selection rules in `AGENTS.md`:
+repair urgent executable failures first, resume existing eligible
 implementation or validation work before opening competing work, then follow the current
 `Next autonomous execution delivery` in `PROGRAM_STATUS.md`.
 

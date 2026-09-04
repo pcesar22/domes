@@ -6,4 +6,4 @@ allowed-tools: Bash, Read, Glob
 
 # Compatibility Redirect
 
-Use [BLE Transport Test](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#ble-transport-test).
+Use [Hardware Verification](../../docs/TESTING.md#hardware-verification) and the [platform guide](../../.codex/PLATFORM.md).

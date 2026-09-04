@@ -7,10 +7,10 @@ when documents disagree; do not resolve conflicts by copying the same fact into 
 
 | Concern | Authoritative source | Supporting documentation |
 | --- | --- | --- |
-| Product-realization lifecycle and phase transitions | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) and `$domes-milestone-manager` |
+| Product-realization lifecycle and phase transitions | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) |
 | Product vision, customer, and launch hypotheses | [`research/PRODUCT_DEFINITION.md`](../research/PRODUCT_DEFINITION.md) | Accepted requirements and research evidence linked from it |
 | CEO status, phases, gates, workstreams, hardware releases, and decisions | [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) | Pull requests and verification results |
-| Program and gate contract structure | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) | `$domes-milestone-manager` semantic review workflow |
+| Program and gate contract structure | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) | [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) and reviewed evidence |
 | Firmware behavior | Code under [`firmware/domes/main/`](../firmware/domes/main/) | [`firmware/README.md`](../firmware/README.md) |
 | Active compiled board profile and GPIO values | [`firmware/domes/main/config.hpp`](../firmware/domes/main/config.hpp) | [`PIN_REFERENCE.md`](PIN_REFERENCE.md) and board schematic |
 | Config and trace messages | [`firmware/common/proto/`](../firmware/common/proto/) | [`tools/domes-cli/README.md`](../tools/domes-cli/README.md) |

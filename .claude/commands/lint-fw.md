@@ -6,4 +6,4 @@ allowed-tools: Read, Glob, Grep
 
 # Compatibility Redirect
 
-Use [Firmware Lint Pass](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#firmware-lint-pass).
+Use [Aggregate Local Check](../../docs/TESTING.md#aggregate-local-check).

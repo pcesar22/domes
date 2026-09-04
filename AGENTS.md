@@ -9,27 +9,25 @@ Use progressive disclosure:
 
 | Work area | Scoped instructions or workflow |
 | --- | --- |
-| `firmware/` | `firmware/AGENTS.md`; use `$domes-esp32-firmware` for build, flash, monitor, runtime, or hardware work |
-| ESP32 crashes or stepping | `$domes-debug-esp32` |
+| `firmware/` | `firmware/AGENTS.md` and `docs/TESTING.md` |
+| ESP32 crashes or stepping | `firmware/README.md` |
 | `tools/domes-cli/` | `tools/domes-cli/AGENTS.md` |
 | `ios/domes_app/` | `ios/domes_app/AGENTS.md` |
 | `hardware/` | `hardware/AGENTS.md` |
-| GitHub, commits, reviews, or releases | `$domes-github-workflow` |
-| Program phases, gates, hardware authorization, or project status | `$domes-milestone-manager` |
+| GitHub, commits, reviews, or releases | Git And GitHub Boundaries below |
+| Program phases, gates, hardware authorization, or project status | `PROGRAM_STATUS.md` and `docs/PRODUCT_REALIZATION_FRAMEWORK.md` |
 | Platform, BLE, USB, or multi-device setup | `.codex/PLATFORM.md` |
 | Host capability discovery | `scripts/doctor.sh` (use `--json` for automation) |
 | Codex defaults and specialist agents | `.codex/README.md` |
 | Substantial cross-component or long-running work | `PLANS.md` |
 | Detailed verification commands | `docs/TESTING.md` |
 
-Reusable procedures live in `.codex/skills/`; do not copy their runbooks into always-loaded
-instructions.
-
 ## Autonomous Continuation
 
 `Continue DOMES.` and clear technical-continuation variants authorize autonomous delivery when
-no task is active. Use `$domes-milestone-manager` to select one bounded, unblocked programming or
-executed-validation package; do not ask the user to rank work.
+no task is active. Use current status, plans, and implementation evidence to select one bounded,
+unblocked programming or executed-validation package. Prioritize urgent failures, then eligible
+work already underway, then `PROGRAM_STATUS.md`'s next delivery; do not ask the user to rank work.
 
 The result must implement, repair, or exercise software, simulation, CI/tooling, tests, or device
 behavior and leave reproducible evidence. Supporting artifacts are allowed. Requirements,
@@ -40,8 +38,8 @@ The continuation request authorizes one issue and eligible package through imple
 verification, status, commit/push, one review-ready PR, and CI repair. Only the exact
 `Continue DOMES.` directive also authorizes required `hw-test` after its registered-board preflight.
 It never authorizes merge, release, other labels, purchases, vendor/fabrication commitments, other
-destructive device actions, gate-prohibited work, or unsupported claims. The milestone-manager
-skill defines selection and stop rules.
+destructive device actions, gate-prohibited work, or unsupported claims. Follow
+`docs/PRODUCT_REALIZATION_FRAMEWORK.md` for phase boundaries and stop when new authority is needed.
 
 ## Truth And Authority
 
@@ -138,4 +136,3 @@ paths.
 | `research/architecture/README.md` | Historical/proposed record lifecycle |
 | `.codex/PLATFORM.md` | Host, BLE, USB, udev, and multi-device setup |
 | `.codex/README.md` | Project model defaults, trust boundary, and specialist agents |
-| `.codex/skills/domes-esp32-firmware/references/runbooks.md` | Firmware operational runbooks |

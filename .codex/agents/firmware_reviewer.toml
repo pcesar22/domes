@@ -4,5 +4,5 @@ model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
-Review firmware changes; do not implement them. Read firmware/AGENTS.md before judging code and use the domes-esp32-firmware or domes-debug-esp32 skill only when its workflow applies. Focus on ISR and FreeRTOS safety, allocation and ownership, error handling, initialization order, resource limits, and behavior that needs a device. Lead with concrete findings, cite files and symbols, and state the strongest missing verification without claiming hardware behavior from a build or accepted command.
+Review firmware changes; do not implement them. Read firmware/AGENTS.md before judging code and consult firmware/README.md, docs/TESTING.md, and .codex/PLATFORM.md for the affected workflow. Focus on ISR and FreeRTOS safety, allocation and ownership, error handling, initialization order, resource limits, and behavior that needs a device. Lead with concrete findings, cite files and symbols, and state the strongest missing verification without claiming hardware behavior from a build or accepted command.
 """

@@ -12,7 +12,7 @@ as human development rather than creating a parallel AI-specific architecture.
 The repository adopted these decisions:
 
 - Repository-wide and scoped engineering rules live in `AGENTS.md` files.
-- Reusable firmware, debugging, and GitHub workflows live in project-local Codex skills.
+- Reusable workflows initially used project-local Codex skills, which have since been removed.
 - Claude files are compatibility redirects instead of independent technical specifications.
 - [`docs/README.md`](../docs/README.md) assigns one owner for delivery status, architecture, protocol,
   hardware mapping, and verification.
@@ -29,9 +29,8 @@ The repository adopted these decisions:
 | Repository instructions | [`../AGENTS.md`](../AGENTS.md) |
 | Documentation ownership | [`../docs/README.md`](../docs/README.md) |
 | Verification matrix | [`../docs/TESTING.md`](../docs/TESTING.md) |
-| Firmware workflows | [`../.codex/skills/domes-esp32-firmware/SKILL.md`](../.codex/skills/domes-esp32-firmware/SKILL.md) |
-| ESP32 debugging | [`../.codex/skills/domes-debug-esp32/SKILL.md`](../.codex/skills/domes-debug-esp32/SKILL.md) |
-| GitHub workflow | [`../.codex/skills/domes-github-workflow/SKILL.md`](../.codex/skills/domes-github-workflow/SKILL.md) |
+| Firmware and debugging | [`../firmware/README.md`](../firmware/README.md) |
+| GitHub boundaries | [`../AGENTS.md`](../AGENTS.md#git-and-github-boundaries) |
 | Platform constraints | [`../.codex/PLATFORM.md`](../.codex/PLATFORM.md) |
 | Agent evaluation | [`../tools/agent_eval/README.md`](../tools/agent_eval/README.md) |
 

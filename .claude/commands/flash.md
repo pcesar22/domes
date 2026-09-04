@@ -6,5 +6,5 @@ allowed-tools: Bash, Read, Glob
 
 # Compatibility Redirect
 
-Use [Flash Firmware](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#flash-firmware).
+Use [Hardware Verification](../../docs/TESTING.md#hardware-verification).
 The canonical helper is `tools/firmware/flash_and_verify.sh`.

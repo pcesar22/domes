@@ -6,4 +6,4 @@ allowed-tools: Bash, Read, Glob
 
 # Compatibility Redirect
 
-Use [ESP-NOW Integration Test](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#esp-now-integration-test).
+Use the ESP-NOW requirements in [Hardware Verification](../../docs/TESTING.md#hardware-verification).

@@ -1,7 +1,7 @@
 # Firmware Development Guidelines
 
 These rules supplement the repository root `AGENTS.md`. For commands and hardware procedures, use
-`$domes-esp32-firmware`, `docs/TESTING.md`, and `.codex/PLATFORM.md`.
+`firmware/README.md`, `docs/TESTING.md`, and `.codex/PLATFORM.md`.
 
 ## Project Context
 
@@ -112,8 +112,8 @@ native USB connection before depending on boot logs.
 
 ## Firmware Verification
 
-Use the `$domes-esp32-firmware` skill for clean builds, flashing, monitoring, hardware tests, OTA,
-BLE, ESP-NOW, or multi-device workflows. The required software and physical evidence is defined in
+Use `firmware/README.md` and the canonical helpers under `tools/firmware/` for build and device
+operations. The required software and physical evidence for OTA, BLE, and multi-device work is defined in
 `docs/TESTING.md`; platform prerequisites and stable device paths are in `.codex/PLATFORM.md`.
 
 Before handoff, check the changed code for bounded allocation, ISR-safe APIs, error propagation,
