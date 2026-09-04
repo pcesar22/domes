@@ -42,6 +42,13 @@ protection/safety, runtime, thermal, supply, and compliance evidence.
 
 ## Resource Assumptions
 
+The 2026-09-04 operating review adds [HW-WP-002 Development Validation Setup Definition](DEVELOPMENT_SETUP.md)
+as a bounded input package. It specifies the instrumented dual-NFF bench, host-only phone simulation,
+real-phone acceptance and separately costed six-node expansion. Definition is ready now; equipment
+possession, budget and qualified design ownership remain unverified or unassigned. The old Sep 15
+date below is a historical baseline, not a reaffirmed forecast; current forecast is unset in
+PROGRAM_STATUS.md.
+
 - one qualified hardware design owner with schematic, PCB, power, RF, and design-review authority;
 - AI systems, firmware, verification, sourcing, documentation, and program support;
 - access to the two NFF boards, bench power/current instrumentation, oscilloscope or logic analyzer,

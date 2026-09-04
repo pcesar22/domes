@@ -1,0 +1,1156 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-09-04T23:10:00Z",
+  "review": "docs/program/review-2026-09-04.md",
+  "sourceCommit": "0f1659c6a32288fa3478969586e54a81599c4453",
+  "program": {
+    "phase": "P1",
+    "name": "Definition & feasibility",
+    "health": "Amber",
+    "hardware": "Two NFF development boards",
+    "stage": "Pre-EVT",
+    "nextGate": "G1",
+    "verdict": "Hold",
+    "baseline": "2026-09-15",
+    "forecast": null,
+    "confidence": "Low",
+    "summary": "Build the phone experience, close the measured NFF reference, and define the next development setup in parallel.",
+    "nextExecution": "FS-WP-004A",
+    "nextProgram": "HW-WP-002"
+  },
+  "streams": [
+    {
+      "id": "app",
+      "name": "Phone app & simulation",
+      "discipline": "FS / VC",
+      "color": "blue",
+      "now": "Build a protocol-backed virtual pod lab",
+      "next": "Complete offline drills and failure scenarios",
+      "owner": "AI app/software lead",
+      "resource": "Host-only; no boards required"
+    },
+    {
+      "id": "nff",
+      "name": "Dual-NFF validation",
+      "discipline": "FS1 / HW0 / VC",
+      "color": "green",
+      "now": "Re-establish the current two-board baseline",
+      "next": "Observe peripherals, then measure power and timing",
+      "owner": "AI verification lead + lab operator",
+      "resource": "Two registered NFFs; one exclusive lab session"
+    },
+    {
+      "id": "hardware",
+      "name": "Next development setup",
+      "discipline": "HW / PS / VC",
+      "color": "orange",
+      "now": "Define the instrumented setup and its evidence budget",
+      "next": "Close requirements, architecture and component trades",
+      "owner": "AI systems lead; HW design owner unassigned",
+      "resource": "Definition now; spending requires approval"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "APP0",
+      "stream": "app",
+      "title": "Controller foundation",
+      "state": "Complete",
+      "depends": [],
+      "summary": "BLE controls, discovery, OTA, drill setup and results are implemented.",
+      "acceptance": "Historical software CI; provider and protocol coverage. Physical phone behavior remains separately open.",
+      "gap": "Existing local touch simulation does not model a pod.",
+      "source": "ios/domes_app/README.md",
+      "refs": [
+        "FS0"
+      ],
+      "owner": "AI software lead",
+      "evidence": "Historical accepted scope; not re-executed this review",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-004A",
+      "stream": "app",
+      "title": "Virtual pod lab",
+      "state": "Ready",
+      "depends": [
+        "APP0"
+      ],
+      "summary": "Inject a virtual PodRepository/transport into the real app; use generated messages and deterministic virtual time.",
+      "acceptance": "One launch path discovers 2 and 6 virtual identities; real app providers exercise current generated commands, notifications, connection and clock control. Same seed reproduces results. Explicit app virtual model; production drill/timing semantic parity is deferred to FS-WP-004C.",
+      "gap": "Must replace direct-touch shortcuts without pretending to emulate RF.",
+      "source": "ios/domes_app/lib/application/providers/drill_provider.dart",
+      "refs": [
+        "FS3",
+        "FS4"
+      ],
+      "owner": "AI software lead",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-004B",
+      "stream": "app",
+      "title": "Complete simulated phone journey",
+      "state": "Not due",
+      "depends": [
+        "FS-WP-004A"
+      ],
+      "summary": "Build discovery → setup → drill → results → reconnect as an offline user journey.",
+      "acceptance": "Script happy path, inactive touches, timeout, loss, duplicates, disconnect, restart and OTA failure; reproducible fixtures and CI. Label every modeled behavior. Fixtures declare app virtual model fidelity, not production simulator parity.",
+      "gap": "No new physical claims from six virtual pods.",
+      "source": "docs/TESTING.md",
+      "refs": [
+        "FS4"
+      ],
+      "owner": "AI software lead",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-003A",
+      "stream": "support",
+      "title": "Shared drill and timing contract",
+      "state": "Acceptance pending",
+      "depends": [],
+      "summary": "Reconcile the existing portable peer codec with phone authority, timing, result and recovery semantics.",
+      "acceptance": "Generated schema-owned semantics agree across firmware, host and app; exact-head software and required two-board regression retained.",
+      "gap": "Portable code exists; phone local scoring and fixed firmware drill still diverge.",
+      "source": "docs/plans/fs3-contract-compatibility-gate.md",
+      "refs": [
+        "FS3"
+      ],
+      "owner": "AI software lead",
+      "evidence": "Implementation or candidate artifacts exist; terminal acceptance unverified",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-004C",
+      "stream": "app",
+      "title": "App ↔ production simulator parity",
+      "state": "Not due",
+      "depends": [
+        "FS-WP-004B",
+        "FS-WP-003A",
+        "FS-WP-002F"
+      ],
+      "summary": "Run the same app scenarios against the production-backed simulator adapter.",
+      "acceptance": "Observed command/notification/result traces match the declared shared contract; causality and all modeled exceptions are recorded.",
+      "gap": "Depends on qualified target backplane; A and B can proceed before this.",
+      "source": "research/architecture/13-deterministic-virtual-platform.md",
+      "refs": [
+        "FS3",
+        "FS4"
+      ],
+      "owner": "AI software lead",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-004D",
+      "stream": "app",
+      "title": "Six-node physical app alpha",
+      "state": "Not due",
+      "depends": [
+        "FS-WP-004B",
+        "FS-WP-003A",
+        "NFF4",
+        "LAB6"
+      ],
+      "summary": "Carry the tested app journey onto a real phone and six nodes.",
+      "acceptance": "Retain six-node scan/control/touch, disconnect/recovery, timing and soak evidence on supported phones, with explicit peripheral capability inventory.",
+      "gap": "Four additional physical nodes and a real-phone campaign required. Direct physical acceptance can proceed without predictive-model qualification.",
+      "source": "docs/TESTING.md",
+      "refs": [
+        "FS4",
+        "VC2"
+      ],
+      "owner": "AI software lead",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "NFF0",
+      "stream": "nff",
+      "title": "Automated bench foundation",
+      "state": "Complete",
+      "depends": [],
+      "summary": "Two serialized boards have retained control, radio, update and recovery evidence.",
+      "acceptance": "Historical Aug 2 campaign plus later recorded automated regressions.",
+      "gap": "This is a historical baseline, not current physical closure.",
+      "source": "docs/program/archive/status-2026-08-15.md",
+      "refs": [
+        "FS0",
+        "VC0"
+      ],
+      "owner": "AI verification lead + lab operator",
+      "evidence": "Historical accepted scope; not re-executed this review",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "NFF1",
+      "stream": "nff",
+      "title": "Current identity & recovery baseline",
+      "state": "Not due",
+      "depends": [
+        "NFF0",
+        "LAB0"
+      ],
+      "summary": "Bind both boards, exact software images, configuration and restoration state to one campaign.",
+      "acceptance": "Before powered load tests, inspect actual populated parts/orientation and safe rails/idle current. Bind exact versions/hashes, diagnostics, all currently discovered self-tests (record the count) and two normal boots; reconcile serial/BLE update recovery separately. Forced rollback requires its own authorization.",
+      "gap": "Current exact-build closure and guarded-OTA repair evidence need reconciliation.",
+      "source": "docs/TESTING.md",
+      "refs": [
+        "FS1",
+        "HW0"
+      ],
+      "owner": "AI verification lead + lab operator",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "NFF2",
+      "stream": "nff",
+      "title": "Observe every peripheral",
+      "state": "Not due",
+      "depends": [
+        "NFF1"
+      ],
+      "summary": "Validate physical output and stimulus on each board.",
+      "acceptance": "Observer/instrument record for LED colors/brightness, touch/inactive touches, IMU motion, haptic effect and audio/volume; tie each to command and board.",
+      "gap": "Accepted commands and initialization do not prove actuation.",
+      "source": "docs/TESTING.md",
+      "refs": [
+        "FS1",
+        "HR0"
+      ],
+      "owner": "AI verification lead + lab operator",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "NFF3",
+      "stream": "nff",
+      "title": "Measure the operating envelope",
+      "state": "Not due",
+      "depends": [
+        "NFF1",
+        "LAB1"
+      ],
+      "summary": "Measure idle, radio and combined peripheral load; correlate physical timing. Preparation and safe measurements can run alongside peripheral tests after NFF1.",
+      "acceptance": "Exact parts and instruments; voltage/current/transients/thermal/RF observations; calibrated clock uncertainty for timing. Bound supply and firmware resources.",
+      "gap": "NFF USB power cannot prove final battery, charger, RGBW or enclosure behavior.",
+      "source": "hardware/NEXT_ITERATION_REQUEST.md",
+      "refs": [
+        "HW0",
+        "HR0"
+      ],
+      "owner": "AI verification lead + lab operator",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "NFF4",
+      "stream": "nff",
+      "title": "Phone + two-pod fault campaign",
+      "state": "Not due",
+      "depends": [
+        "NFF2"
+      ],
+      "summary": "Exercise the real phone workflow, bidirectional radio and recovery under combined load.",
+      "acceptance": "Fresh disabled lifecycles, complementary roles/one peer, simulation-off benchmarks both ways; separate traced drill; physical touch, inactive target, timeout, disconnect and stop assertions. Retain serial/BLE/mobile update checks, bounded soak and combined-load fault recovery, with stale-result rejection.",
+      "gap": "Round-trip timings are not synchronized one-way latency; two pods do not prove six.",
+      "source": "docs/TESTING.md",
+      "refs": [
+        "FS1",
+        "FS4"
+      ],
+      "owner": "AI verification lead + lab operator",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "HR0",
+      "stream": "nff",
+      "title": "HR0 · Measured NFF reference",
+      "state": "Not due",
+      "depends": [
+        "NFF2",
+        "NFF3"
+      ],
+      "summary": "Release measured NFF architecture inputs without waiting for the phone alpha campaign.",
+      "acceptance": "Publish HR0 dataset, limitations, failures and reproduction recipe, mapped to each hardware requirement; zero unowned critical gap.",
+      "gap": "Only the measured NFF envelope is qualified.",
+      "source": "hardware/NEXT_ITERATION_REQUEST.md",
+      "refs": [
+        "FS1",
+        "HW0",
+        "HR0"
+      ],
+      "owner": "AI verification lead + lab operator",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "HW-WP-002",
+      "stream": "hardware",
+      "title": "Specify the next development setup",
+      "state": "Ready",
+      "depends": [],
+      "summary": "Define exactly what to retain, instrument, add and isolate for app, NFF and hardware learning.",
+      "acceptance": "Setup capability matrix, actual inventory versus unknowns, signal/current capture needs, loan/buy alternatives, six-node expansion and owner/budget proposal.",
+      "gap": "No inventory discovery or purchasing was performed in this review.",
+      "source": "hardware/DEVELOPMENT_SETUP.md",
+      "refs": [
+        "HW-WP-001",
+        "HR0"
+      ],
+      "owner": "AI systems lead / HW owner",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "HW-WP-001A",
+      "stream": "hardware",
+      "title": "Hardware requirements & desk trades",
+      "state": "Ready",
+      "depends": [],
+      "summary": "Prepare parallel desk trades for compute, power, charging, optics, touch, RF and mechanics.",
+      "acceptance": "Inputs each have a measurable range, rationale, owner, fallback and discriminating measurement. Qualified design owner before controlled design responsibility.",
+      "gap": "Final topology choices wait for measured inputs and product envelope.",
+      "source": "hardware/NEXT_ITERATION_REQUEST.md",
+      "refs": [
+        "HW1",
+        "HW-WP-001"
+      ],
+      "owner": "AI systems lead / HW owner",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "HR1",
+      "stream": "hardware",
+      "title": "HR1 · Architecture downselect",
+      "state": "Not due",
+      "depends": [
+        "HW-WP-001A",
+        "NFF3",
+        "PS1",
+        "VC1"
+      ],
+      "summary": "Release the measured architecture recommendation; retain parts as candidates until HR2.",
+      "acceptance": "Product/interface allocation, power/thermal/RF/mechanical budgets, selection-critical coupons and qualified design accountability close architecture-changing unknowns.",
+      "gap": "Critical parts and product architecture remain unfrozen.",
+      "source": "hardware/NEXT_ITERATION_REQUEST.md",
+      "refs": [
+        "HW1",
+        "HR1"
+      ],
+      "owner": "AI systems lead / HW owner",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "HR3",
+      "stream": "hardware",
+      "title": "HR3 · Controlled schematic release",
+      "state": "Not due",
+      "depends": [
+        "G1"
+      ],
+      "summary": "Create and independently review the schematic after G1.",
+      "acceptance": "Controlled schematic/netlist, calculations, pin/power/test/service interfaces and zero unwaived ERC; release HR3 before any PCB routing.",
+      "gap": "G1 allows schematic capture; HR3 is the separate routing boundary.",
+      "source": "docs/PRODUCT_REALIZATION_FRAMEWORK.md",
+      "refs": [
+        "HW2",
+        "HR3"
+      ],
+      "owner": "AI systems lead / HW owner",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "HR4",
+      "stream": "hardware",
+      "title": "HR4 · PCB & EVT build package",
+      "state": "Not due",
+      "depends": [
+        "HR3"
+      ],
+      "summary": "Route only from released HR3; assemble the controlled fabrication, assembly and test package.",
+      "acceptance": "Controlled layout, zero unwaived DRC, reviewed stack-up/clearances, DFM/DFA/DFT, native EDA, Gerbers/drill, BOM/AVL, placement, drawings and fixture/traceability plan with hashes.",
+      "gap": "No fab order before G2 technical release and CEO budget approval.",
+      "source": "docs/PRODUCT_REALIZATION_FRAMEWORK.md",
+      "refs": [
+        "HR4",
+        "G2"
+      ],
+      "owner": "AI systems lead / HW owner",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "HR5",
+      "stream": "hardware",
+      "title": "HR5 · EVT exit",
+      "state": "Not due",
+      "depends": [
+        "G2"
+      ],
+      "summary": "After G2 and an approved order, qualify traceable product boards and close design defects.",
+      "acceptance": "HR5 electrical, RF, power, peripherals, recovery and six-node acceptance; no architecture-changing defect before G3.",
+      "gap": "NFF acceptance does not transfer automatically to the product board.",
+      "source": "docs/PRODUCT_REALIZATION_FRAMEWORK.md",
+      "refs": [
+        "HW3",
+        "HW4",
+        "HR5",
+        "G3"
+      ],
+      "owner": "AI systems lead / HW owner",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "PS1",
+      "stream": "support",
+      "title": "Product and interface baseline",
+      "state": "Ready",
+      "depends": [],
+      "summary": "Bound the first customer job, phone platforms, launch market and hardware-driving requirements.",
+      "acceptance": "Stable IDs, measurable limits, interfaces, assumptions, verification methods and accountable owners.",
+      "gap": "Six-pod indoor local-first scope is still a hypothesis.",
+      "source": "research/PRODUCT_DEFINITION.md",
+      "refs": [
+        "PS1"
+      ],
+      "owner": "AI software lead",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "VC1",
+      "stream": "support",
+      "title": "Verification and risk plan",
+      "state": "Ready",
+      "depends": [],
+      "summary": "Map requirements to tests; identify electrical, battery, RF, mechanical and service risks.",
+      "acceptance": "Each critical requirement has a method, environment, owner and criterion; safety/compliance route belongs to qualified owners.",
+      "gap": "No regulatory certification or risk closure claimed.",
+      "source": "docs/PRODUCT_REALIZATION_FRAMEWORK.md",
+      "refs": [
+        "VC1"
+      ],
+      "owner": "AI software lead",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "LAB6",
+      "stream": "support",
+      "title": "Six physical development nodes",
+      "state": "Blocked",
+      "depends": [
+        "HW-WP-002"
+      ],
+      "summary": "Expand from two NFFs only after a defined, approved capability and cost proposal.",
+      "acceptance": "Six traceable radio nodes on supported profiles; inventory states which nodes lack touch/LED/audio/haptic capability.",
+      "gap": "Four more nodes and budget approval are not recorded.",
+      "source": "hardware/DEVELOPMENT_SETUP.md",
+      "refs": [
+        "VC2"
+      ],
+      "owner": "AI software lead",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-002A",
+      "stream": "simulation",
+      "title": "Deterministic host replay",
+      "state": "Complete",
+      "depends": [],
+      "summary": "Explicit host time, identity, deterministic faults and exact delivery replay.",
+      "acceptance": "Meet the exact package exit in architecture record 13, with immutable artifacts, declared fidelity, invalidation rules and independent evidence review.",
+      "gap": "Bounded host model only.",
+      "source": "research/architecture/13-deterministic-virtual-platform.md",
+      "refs": [
+        "FS2"
+      ],
+      "owner": "AI software lead",
+      "evidence": "Historical accepted scope; not re-executed this review",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-002B",
+      "stream": "simulation",
+      "title": "QEMU feasibility",
+      "state": "Complete",
+      "depends": [
+        "FS-WP-002A"
+      ],
+      "summary": "Pinned QEMU engine adopted with measured limits.",
+      "acceptance": "Meet the exact package exit in architecture record 13, with immutable artifacts, declared fidelity, invalidation rules and independent evidence review.",
+      "gap": "Not RF or peripheral equivalence.",
+      "source": "research/architecture/13-deterministic-virtual-platform.md",
+      "refs": [
+        "FS2"
+      ],
+      "owner": "AI software lead",
+      "evidence": "Historical accepted scope; not re-executed this review",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-002D",
+      "stream": "simulation",
+      "title": "Production runtime composition",
+      "state": "Complete",
+      "depends": [
+        "FS-WP-002B"
+      ],
+      "summary": "Physical/QEMU roots and deterministic inputs; 100 identical runtime processes recorded.",
+      "acceptance": "Meet the exact package exit in architecture record 13, with immutable artifacts, declared fidelity, invalidation rules and independent evidence review.",
+      "gap": "Production/adapted/modeled/disabled fidelity is explicit.",
+      "source": "research/architecture/13-deterministic-virtual-platform.md",
+      "refs": [
+        "FS2"
+      ],
+      "owner": "AI software lead",
+      "evidence": "Historical accepted scope; not re-executed this review",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-002C",
+      "stream": "simulation",
+      "title": "Scheduler trace acceptance",
+      "state": "Acceptance pending",
+      "depends": [
+        "FS-WP-002D"
+      ],
+      "summary": "Reconcile candidate, final source and retained physical default-restoration evidence.",
+      "acceptance": "Meet the exact package exit in architecture record 13, with immutable artifacts, declared fidelity, invalidation rules and independent evidence review.",
+      "gap": "PR merged; source ledger and exact-head acceptance still conflict.",
+      "source": "research/architecture/13-deterministic-virtual-platform.md",
+      "refs": [
+        "FS2"
+      ],
+      "owner": "AI software lead",
+      "evidence": "Implementation or candidate artifacts exist; terminal acceptance unverified",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-002E",
+      "stream": "simulation",
+      "title": "Production radio seam",
+      "state": "Not due",
+      "depends": [
+        "FS-WP-002C"
+      ],
+      "summary": "Reconcile production transport callback/ring/dequeue evidence and physical regression.",
+      "acceptance": "Meet the exact package exit in architecture record 13, with immutable artifacts, declared fidelity, invalidation rules and independent evidence review.",
+      "gap": "Implemented paths are ahead of the old Not due ledger; no terminal acceptance inferred.",
+      "source": "docs/plans/esp-now-radio-seam.md",
+      "refs": [
+        "FS2"
+      ],
+      "owner": "AI software lead",
+      "evidence": "Prototype/candidate artifacts exist; entry dependencies and terminal acceptance remain unverified.",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-002F",
+      "stream": "simulation",
+      "title": "One DUT + virtual peer backplane",
+      "state": "Not due",
+      "depends": [
+        "FS-WP-002E",
+        "FS-WP-003A"
+      ],
+      "summary": "Retained issue-142 replay demonstrates candidate backplane work.",
+      "acceptance": "Meet the exact package exit in architecture record 13, with immutable artifacts, declared fidelity, invalidation rules and independent evidence review.",
+      "gap": "Package exit needs the complete declared matrix and exact source/configuration review.",
+      "source": "research/architecture/13-deterministic-virtual-platform.md",
+      "refs": [
+        "FS2"
+      ],
+      "owner": "AI software lead",
+      "evidence": "Prototype/candidate artifacts exist; entry dependencies and terminal acceptance remain unverified.",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-002G",
+      "stream": "simulation",
+      "title": "Concurrency and fault qualification",
+      "state": "Not due",
+      "depends": [
+        "FS-WP-002F"
+      ],
+      "summary": "Complete mutation, deterministic replay, stress and CI shadow campaigns.",
+      "acceptance": "Meet the exact package exit in architecture record 13, with immutable artifacts, declared fidelity, invalidation rules and independent evidence review.",
+      "gap": "Terminal campaign lineage missing; upstream repair needs reconciliation.",
+      "source": "research/architecture/13-deterministic-virtual-platform.md",
+      "refs": [
+        "FS2"
+      ],
+      "owner": "AI software lead",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-002H",
+      "stream": "simulation",
+      "title": "Calibrated prediction candidate",
+      "state": "Not due",
+      "depends": [
+        "FS-WP-002G",
+        "HR0",
+        "FS-WP-003A"
+      ],
+      "summary": "Calibrate with measured hardware, freeze the model and its prediction envelope.",
+      "acceptance": "Meet the exact package exit in architecture record 13, with immutable artifacts, declared fidelity, invalidation rules and independent evidence review.",
+      "gap": "Calibration is not independent validation.",
+      "source": "research/architecture/13-deterministic-virtual-platform.md",
+      "refs": [
+        "FS2"
+      ],
+      "owner": "AI software lead",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "VC-WP-002A",
+      "stream": "simulation",
+      "title": "Independent held-out qualification",
+      "state": "Not due",
+      "depends": [
+        "FS-WP-002H"
+      ],
+      "summary": "Qualify only against independent frozen held-out data.",
+      "acceptance": "Meet the exact package exit in architecture record 13, with immutable artifacts, declared fidelity, invalidation rules and independent evidence review.",
+      "gap": "Operational entry rejected; no predictive validity claim.",
+      "source": "tools/simulation/qualification/operational-entry-report.json",
+      "refs": [
+        "FS2"
+      ],
+      "owner": "AI software lead",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "HR2",
+      "stream": "hardware",
+      "title": "HR2 · Component baseline",
+      "state": "Not due",
+      "depends": [
+        "HR1",
+        "HR0"
+      ],
+      "summary": "Release exact selected and alternate parts with engineering and supply evidence.",
+      "acceptance": "Exact MPN/package/footprint, current lifecycle/supply/price evidence, derating, driver and license support, sample tests where critical, credible alternates and measured budget closure.",
+      "gap": "No critical selection is frozen until evidence and qualified ownership are recorded.",
+      "source": "hardware/NEXT_ITERATION_REQUEST.md",
+      "refs": [
+        "HW1",
+        "HR2"
+      ],
+      "owner": "Qualified HW design owner (unassigned)",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Configuration, source, evidence identity, requirements or equipment changes reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "LAB0",
+      "stream": "support",
+      "title": "Confirm the safe two-NFF bench",
+      "state": "Ready",
+      "depends": [],
+      "summary": "Verify current board/operator access and a reviewed safe-power fixture before any powered campaign.",
+      "acceptance": "Stable board/port inventory and exclusive operator slot; approved power-domain/cabling plan defines supply injection, current limit, USB backfeed prevention, common ground and connected USB/debug interfaces.",
+      "gap": "Physical access and safe bench readiness were not checked in this repository-only review.",
+      "source": "hardware/DEVELOPMENT_SETUP.md",
+      "refs": [
+        "HW0",
+        "VC0"
+      ],
+      "owner": "AI verification lead + designated operator",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Configuration, source, evidence identity, requirements or equipment changes reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "LAB1",
+      "stream": "support",
+      "title": "Commission measurement capability",
+      "state": "Not due",
+      "depends": [
+        "HW-WP-002",
+        "LAB0"
+      ],
+      "summary": "Verify or acquire approved measurement access and commission the fixture.",
+      "acceptance": "Traceable instrument range/bandwidth/calibration, timing trigger/clock uncertainty and safe cabling; a dry-run proves each NFF3 measurement is possible.",
+      "gap": "Purchases and host changes need separate authorization; existing or borrowed access may suffice.",
+      "source": "hardware/DEVELOPMENT_SETUP.md",
+      "refs": [
+        "HW0",
+        "VC1"
+      ],
+      "owner": "AI verification lead + designated operator",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Configuration, source, evidence identity, requirements or equipment changes reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "FS-WP-005A",
+      "stream": "support",
+      "title": "Build the EVT firmware profile",
+      "state": "Not due",
+      "depends": [
+        "G1",
+        "HR2"
+      ],
+      "summary": "Create the separate production board profile before G2.",
+      "acceptance": "Exact selected components/pins, partitions, OTA/rollback/resource limits, generated protocol compatibility and clean physical-profile build; no NFF configuration leakage.",
+      "gap": "An 8 MB NFF build is not proof of the target 16 MB product profile.",
+      "source": "docs/PRODUCT_REALIZATION_FRAMEWORK.md",
+      "refs": [
+        "FS5"
+      ],
+      "owner": "AI verification lead + designated operator",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Configuration, source, evidence identity, requirements or equipment changes reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "VC-WP-002B",
+      "stream": "support",
+      "title": "Six-node alpha evidence release",
+      "state": "Not due",
+      "depends": [
+        "FS-WP-004D"
+      ],
+      "summary": "Independently audit direct six-node timing, faults, recovery and soak.",
+      "acceptance": "Current six-node physical evidence closes every critical risk with uncertainty, exact artifacts and retained raw data. Investigate unexplained simulator/hardware divergence.",
+      "gap": "Simulation predictions are optional only when direct physical evidence closes the same risk.",
+      "source": "docs/PRODUCT_REALIZATION_FRAMEWORK.md",
+      "refs": [
+        "VC2"
+      ],
+      "owner": "AI verification lead + designated operator",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Configuration, source, evidence identity, requirements or equipment changes reopen acceptance.",
+      "forecast": null
+    },
+    {
+      "id": "PS2",
+      "stream": "support",
+      "title": "Accept the alpha product workflow",
+      "state": "Not due",
+      "depends": [
+        "PS1",
+        "G1",
+        "FS-WP-004D"
+      ],
+      "summary": "Accept the critical six-node user workflow and controlled requirement feedback.",
+      "acceptance": "Physical alpha behavior meets accepted requirements; tradeoffs, deviations and design impacts recorded.",
+      "gap": "Customer intent and laboratory software success are not interchangeable.",
+      "source": "docs/PRODUCT_REALIZATION_FRAMEWORK.md",
+      "refs": [
+        "PS2"
+      ],
+      "owner": "AI verification lead + designated operator",
+      "evidence": "No completion evidence yet",
+      "invalidates": "Configuration, source, evidence identity, requirements or equipment changes reopen acceptance.",
+      "forecast": null
+    }
+  ],
+  "gates": [
+    {
+      "id": "G1",
+      "title": "Authorize schematic work",
+      "state": "Hold",
+      "requires": [
+        "HR0",
+        "HR1",
+        "HR2",
+        "PS1",
+        "VC1"
+      ],
+      "permits": "Controlled schematic capture after a passing technical package and recorded authority.",
+      "prohibits": "PCB routing, fabrication or product-hardware purchase.",
+      "criteria": [
+        {
+          "id": "G1-01",
+          "title": "Qualified HW owner, capacity and bounded budget",
+          "state": "Open"
+        },
+        {
+          "id": "G1-02",
+          "title": "Hardware-driving requirements and interfaces",
+          "state": "Not run"
+        },
+        {
+          "id": "G1-03",
+          "title": "Measured NFF reference and exact populated parts",
+          "state": "Unverified"
+        },
+        {
+          "id": "G1-04",
+          "title": "Architecture, mechanical envelope and interface record",
+          "state": "Not run"
+        },
+        {
+          "id": "G1-05",
+          "title": "Selected parts, alternates and preliminary BOM",
+          "state": "Not run"
+        },
+        {
+          "id": "G1-06",
+          "title": "Power, thermal, runtime and memory budgets",
+          "state": "Not run"
+        },
+        {
+          "id": "G1-07",
+          "title": "FMEA, RF/compliance route and risk coupons",
+          "state": "Not run"
+        },
+        {
+          "id": "G1-08",
+          "title": "Firmware board profile and service interface plan",
+          "state": "Not run"
+        },
+        {
+          "id": "G1-09",
+          "title": "Manufacturing, test and traceability concept",
+          "state": "Not run"
+        }
+      ]
+    },
+    {
+      "id": "G2",
+      "title": "Authorize the first EVT build",
+      "state": "Not due",
+      "requires": [
+        "HR4",
+        "FS-WP-005A",
+        "VC-WP-002B",
+        "PS2"
+      ],
+      "permits": "One controlled, traceable EVT fabrication and assembly order after technical release and separate budget approval.",
+      "prohibits": "Automatic production, certification or shipment authority.",
+      "criteria": [
+        {
+          "id": "G2-01",
+          "title": "Controlled HR3 schematic and HR4 layout release",
+          "state": "Not due"
+        },
+        {
+          "id": "G2-02",
+          "title": "Exact production firmware profile builds and resource budgets close",
+          "state": "Not due"
+        },
+        {
+          "id": "G2-03",
+          "title": "Direct six-node physical timing, fault, recovery and soak evidence",
+          "state": "Not due"
+        },
+        {
+          "id": "G2-04",
+          "title": "Accepted alpha product workflow and requirements feedback",
+          "state": "Not due"
+        },
+        {
+          "id": "G2-05",
+          "title": "Manufacturing, test, fixture and traceability package",
+          "state": "Not due"
+        },
+        {
+          "id": "G2-06",
+          "title": "No unresolved critical architecture or simulator/hardware divergence",
+          "state": "Not due"
+        },
+        {
+          "id": "G2-07",
+          "title": "Immutable release package plus separately recorded CEO spend decision",
+          "state": "Not due"
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "id": "DEC-HW",
+      "title": "Assign the hardware design owner",
+      "owner": "Paulo",
+      "when": "Before HW design accountability or paid work",
+      "recommendation": "Name a qualified electrical design owner and set a bounded definition / instrumentation budget.",
+      "alternative": "Keep AI desk definition moving; defer paid work and freeze decisions.",
+      "consequence": "G1 has no credible delivery forecast until ownership, access and capacity are recorded.",
+      "blocks": [
+        "HR1",
+        "HR2",
+        "HR3"
+      ],
+      "state": "Needs steer"
+    },
+    {
+      "id": "DEC-SCOPE",
+      "title": "Confirm the first product envelope",
+      "owner": "Paulo",
+      "when": "Before hardware-driving requirements freeze",
+      "recommendation": "Use the existing six-pod, indoor, offline-first phone-controlled kit as the planning hypothesis; confirm launch phone platforms and first market.",
+      "alternative": "Reduce kit or launch-platform scope explicitly; reallocate requirements before part selection.",
+      "consequence": "Battery, charging, enclosure, validation and app-release scope remain assumptions.",
+      "blocks": [
+        "PS1"
+      ],
+      "state": "Needs steer"
+    },
+    {
+      "id": "DEC-LAB",
+      "title": "Choose the next lab budget after the setup spec",
+      "owner": "Paulo",
+      "when": "After HW-WP-002 produces a costed proposal",
+      "recommendation": "Retain both NFFs; add shared measurement access and four economical radio nodes for six-node scale, with explicit peripheral limitations.",
+      "alternative": "Borrow instruments or use a shared lab; buy additional nodes only for the scale campaign.",
+      "consequence": "Two boards can retire current integration risks, but cannot establish six-node behavior.",
+      "blocks": [
+        "LAB6"
+      ],
+      "state": "Proposal first"
+    }
+  ],
+  "gaps": [
+    {
+      "id": "GAP-APP",
+      "title": "App simulation bypasses the device contract",
+      "detail": "sim-pod-* and simulateTouch() exercise local drill logic. A virtual repository/transport, virtual clock and repeatable fault scenarios are still missing.",
+      "owner": "AI app/software lead",
+      "closesWith": [
+        "FS-WP-004A",
+        "FS-WP-004B"
+      ],
+      "source": "ios/domes_app/lib/application/providers/drill_provider.dart"
+    },
+    {
+      "id": "GAP-PHYSICAL",
+      "title": "Command success is ahead of physical proof",
+      "detail": "Historical serial/BLE/radio/OTA campaigns passed, but light, touch, motion, vibration, sound and measured electrical behavior are not closed for both boards.",
+      "owner": "Lab operator + verification lead",
+      "closesWith": [
+        "NFF2",
+        "NFF3",
+        "HR0"
+      ],
+      "source": "docs/TESTING.md"
+    },
+    {
+      "id": "GAP-TRACE",
+      "title": "Merged trace work lacks reconciled acceptance",
+      "detail": "PR 105 merged Aug 17. The ledger names candidate 2772f633; the PR describes reviewed 2d136ac4 but reports final head c9ba6ee8. Merge activity alone cannot close the exact-artifact acceptance gap.",
+      "owner": "AI evidence auditor",
+      "closesWith": [
+        "FS-WP-002C"
+      ],
+      "source": "docs/plans/scheduler-trace-observability.md"
+    },
+    {
+      "id": "GAP-SIM",
+      "title": "Simulation code has outrun its status ledger",
+      "detail": "Retained issue-142 backplane traces exist while the prior ledger calls F Not due. Operational predictive entry is explicitly rejected because terminal G/H evidence is absent. Reconcile acceptance; predictive claims remain prohibited.",
+      "owner": "AI simulation + independent verification leads",
+      "closesWith": [
+        "FS-WP-002F",
+        "FS-WP-002G",
+        "FS-WP-002H",
+        "VC-WP-002A"
+      ],
+      "source": "tools/simulation/qualification/operational-entry-report.json"
+    },
+    {
+      "id": "GAP-REV",
+      "title": "This checkout trails remote main",
+      "detail": "Reviewed local source is 0f1659c. Remote main CI passed 3b62a6c on Aug 29. That newer simulation repair was not imported into this dirty checkout; its current behavior requires source reconciliation.",
+      "owner": "AI delivery lead",
+      "closesWith": [
+        "FS-WP-002G"
+      ],
+      "source": "docs/program/review-2026-09-04.md"
+    },
+    {
+      "id": "GAP-DATES",
+      "title": "Old forecasts are no longer credible commitments",
+      "detail": "Aug 24 characterization and Aug 31 downselect targets elapsed without accepted closure. G1 retains its Sep 15 baseline; current forecast is unset until measurements, owner, resources and scope are known.",
+      "owner": "AI program lead + Paulo",
+      "closesWith": [
+        "HW-WP-002",
+        "PS1",
+        "NFF3"
+      ],
+      "source": "PROGRAM_STATUS.md"
+    }
+  ],
+  "history": [
+    {
+      "date": "2026-08-02",
+      "title": "Two-board automated campaign",
+      "detail": "Serial/BLE control, OTA/recovery/forced rollback, two-way ESP-NOW, traced drill and 620-second soak; historical configuration only.",
+      "source": "docs/program/archive/status-2026-08-15.md"
+    },
+    {
+      "date": "2026-08-04",
+      "title": "Deterministic replay and QEMU feasibility",
+      "detail": "Host replay accepted; target QEMU viable. These prove bounded test infrastructure.",
+      "source": "docs/program/archive/status-2026-08-15.md"
+    },
+    {
+      "date": "2026-08-05",
+      "title": "Production runtime composition",
+      "detail": "100 identical QEMU processes and source-equivalent two-board regression recorded for FS-WP-002D.",
+      "source": "docs/program/archive/status-2026-08-15.md"
+    },
+    {
+      "date": "2026-08-23",
+      "title": "Software CI passed the local baseline",
+      "detail": "Run 32621664440 passed 0f1659c. This is software CI, not a fresh physical campaign.",
+      "url": "https://github.com/pcesar22/domes/actions/runs/32621664440"
+    },
+    {
+      "date": "2026-09-04",
+      "title": "Three delivery tracks established",
+      "detail": "Current gaps audited, setup-definition package created, stale forecasts exposed, and app simulation made independently executable.",
+      "source": "docs/program/review-2026-09-04.md"
+    }
+  ],
+  "phases": [
+    {
+      "id": "P0",
+      "title": "Development foundation",
+      "state": "Closed",
+      "gate": "G0"
+    },
+    {
+      "id": "P1",
+      "title": "Definition & feasibility",
+      "state": "Active",
+      "gate": "G1"
+    },
+    {
+      "id": "P2",
+      "title": "Integrated alpha & EVT design",
+      "state": "Not entered",
+      "gate": "G2"
+    },
+    {
+      "id": "P3",
+      "title": "EVT build & qualification",
+      "state": "Not entered",
+      "gate": "G3"
+    },
+    {
+      "id": "P4",
+      "title": "DVT product validation",
+      "state": "Not entered",
+      "gate": "G4"
+    },
+    {
+      "id": "P5",
+      "title": "PVT & launch readiness",
+      "state": "Not entered",
+      "gate": "G5"
+    },
+    {
+      "id": "P6",
+      "title": "Open product release",
+      "state": "Not entered",
+      "gate": "G6"
+    },
+    {
+      "id": "P7",
+      "title": "Sustainment",
+      "state": "Not entered",
+      "gate": "G7"
+    }
+  ],
+  "sources": [
+    "PROGRAM_STATUS.md",
+    "docs/PRODUCT_REALIZATION_FRAMEWORK.md",
+    "docs/TESTING.md",
+    "research/PRODUCT_DEFINITION.md",
+    "research/SYSTEM_ARCHITECTURE.md",
+    "research/SOFTWARE_ARCHITECTURE.md",
+    "research/architecture/13-deterministic-virtual-platform.md",
+    "hardware/NEXT_ITERATION_REQUEST.md",
+    "hardware/DEVELOPMENT_SETUP.md",
+    "hardware/nff-devboard/README.md",
+    "firmware/domes/main/config.hpp",
+    "ios/domes_app/README.md",
+    "ios/domes_app/lib/application/providers/drill_provider.dart",
+    "ios/domes_app/test/application/providers/drill_provider_test.dart",
+    "docs/plans/scheduler-trace-observability.md",
+    "tools/simulation/evidence/issue-142/master/replay-manifest.json",
+    "tools/simulation/qualification/operational-entry-report.json",
+    "docs/program/review-2026-09-04.md",
+    "docs/program/archive/status-2026-08-15.md",
+    "docs/plans/esp-now-radio-seam.md",
+    "docs/plans/fs3-contract-compatibility-gate.md"
+  ],
+  "freshness": {
+    "reviewDays": 7,
+    "refreshHours": 2
+  },
+  "sourceHashes": {
+    "PROGRAM_STATUS.md": "58fa646e863b9a16f05f3240cd717f608449c29ee2843981bfa992cd1e368c83",
+    "docs/PRODUCT_REALIZATION_FRAMEWORK.md": "257e6b8047177598bce87b61b754b05e356c9c36336162acda6245564eccada1",
+    "docs/TESTING.md": "0b70d01d37d53d782f4f9fede62be9f370ef02c0521ab3d6141075d2b3590e7f",
+    "research/PRODUCT_DEFINITION.md": "3b9ef21365cee9443e6d6e229f61a6ed9bfed3d0a9d21f5d8794bbc148142184",
+    "research/SYSTEM_ARCHITECTURE.md": "78b95dc0d2a5f389fa9482765ef278d5e0d90715aefebd9963dd1f8a43837e95",
+    "research/SOFTWARE_ARCHITECTURE.md": "aa06de67f22975b442c1a0bb6c5933f1135428875b739ea4cd8371701a05f6ec",
+    "research/architecture/13-deterministic-virtual-platform.md": "60dd74e1f8f7c251fea9db99af6fc7706516a322673bedecbd8fb945348e4e6f",
+    "hardware/NEXT_ITERATION_REQUEST.md": "4f38012a5c3bddfed7f2fe86a056d35841a6606b28b7ca83d34b4d2b451c8391",
+    "hardware/DEVELOPMENT_SETUP.md": "a59d07482cca2440933e48fd1239d6e5ba8d88319c0af5e492800386f0fcfc4a",
+    "hardware/nff-devboard/README.md": "c98a58ddf47ca920f3d84d2aebbbd43e18c83898ef003e844ba68426e5e3be57",
+    "firmware/domes/main/config.hpp": "33b882f3024aeeae0f9df40a65187f9a1eb0a6df482982caa1bc5705142a4e91",
+    "ios/domes_app/README.md": "b45ebb045b13be0ee054e56a5ce1b6d89921ded00184e80ad625756cc1a7f0f2",
+    "ios/domes_app/lib/application/providers/drill_provider.dart": "953f6f49a5146b3a5c5cbb8b44a12d65905022a08b2d67f6ac02fac4d67b6fc5",
+    "ios/domes_app/test/application/providers/drill_provider_test.dart": "cda983a4649b0c0f387ac36a286e238e322a19e9688ea44b21f1e29ef99d9eb9",
+    "docs/plans/scheduler-trace-observability.md": "f973a33a192b2f97ef625bd3ada58d181c141ec29eb86f82d26c9cda3e38b329",
+    "tools/simulation/evidence/issue-142/master/replay-manifest.json": "3952bc336e1f47052d56e75d7eb61c893bf28b81714822b9ab9411d606f7a3fa",
+    "tools/simulation/qualification/operational-entry-report.json": "f577bffcf11602e5d0c6ea87e243cfd37d0890e816f429bca2958367ebabd289",
+    "docs/program/review-2026-09-04.md": "5de5b45072dab694973bf29e23a9495b521bf25e4637241fca2aa8d83c95fcea",
+    "docs/program/archive/status-2026-08-15.md": "b86f976af1c55cab21299a367aef190fd75e5c23f872cdc3bc6c7160ee830886",
+    "docs/plans/esp-now-radio-seam.md": "b8b23a1aead25221fec1f1a46c0d1c0f96632b141d887a371760c1cbc6d91fdd",
+    "docs/plans/fs3-contract-compatibility-gate.md": "64f7f3b93aa0530f11dc598570cfae372998358f8fbc3fb1ffa72583644aa930"
+  },
+  "modelSha256": "71be63e2890b82896fd73cf40b2474036e5ca1cb29a72c8c1271df6810009063"
+}
