@@ -1,7 +1,9 @@
 # HW-WP-002: Development Validation Setup Definition
 
-State: Ready. Parent: HW-WP-001. Delivery owner: AI systems lead. Qualified electrical design
-owner: unassigned. Definition reviewed 2026-09-04; inventory access and equipment possession unverified.
+State: Active. Parent: HW-WP-001. Delivery owner: AI systems lead. Qualified electrical design
+owner: unassigned. Initial desk inventory/coverage delivered 2026-09-05 in
+[the setup record](SETUP_INVENTORY_2026-09-05.md), tracked as GitHub #199. Two-NFF UART access is
+directly evidenced; instrument possession/calibration, safe bench and full readiness remain open.
 
 ## Outcome and scope
 
@@ -9,6 +11,10 @@ Produce a reviewable, costed setup specification enabling three concurrent paths
 development without devices, reproducible dual-NFF measurements, and product-hardware risk coupons.
 This document defines the package and verifies requirement coverage against repository authorities;
 it does not claim the equipment is owned, calibrated, installed or purchased.
+
+The initial record identifies an unresolved naming mismatch: this exit mentions NFF5, while the
+reviewed graph defines NFF1–NFF4 then HR0. Keep it explicit pending specification clarification;
+do not invent a new milestone or treat this first desk delivery as the full package exit.
 
 ## Capability-to-equipment matrix
 

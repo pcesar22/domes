@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-09-04T23:10:00Z",
-  "review": "docs/program/review-2026-09-04.md",
-  "sourceCommit": "0f1659c6a32288fa3478969586e54a81599c4453",
+  "reviewedAt": "2026-09-05T00:50:00Z",
+  "review": "docs/program/review-2026-09-05-activation.md",
+  "sourceCommit": "8d7b5dbee0c061152d87381ab563c41ae349d00f",
   "program": {
     "phase": "P1",
     "name": "Definition & feasibility",
@@ -34,7 +34,7 @@
       "name": "Dual-NFF validation",
       "discipline": "FS1 / HW0 / VC",
       "color": "green",
-      "now": "Re-establish the current two-board baseline",
+      "now": "Repair the memory-readiness blocker before baseline acceptance",
       "next": "Observe peripherals, then measure power and timing",
       "owner": "AI verification lead + lab operator",
       "resource": "Two registered NFFs; one exclusive lab session"
@@ -73,7 +73,7 @@
       "id": "FS-WP-004A",
       "stream": "app",
       "title": "Virtual pod lab",
-      "state": "Ready",
+      "state": "Active",
       "depends": [
         "APP0"
       ],
@@ -86,7 +86,7 @@
         "FS4"
       ],
       "owner": "AI software lead",
-      "evidence": "No completion evidence yet",
+      "evidence": "Issue #197 worker directly observed starting on main 3b62a6c at 00:45 UTC; no acceptance evidence yet",
       "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
       "forecast": null
     },
@@ -195,17 +195,37 @@
       "forecast": null
     },
     {
+      "id": "NFF-MEM-001",
+      "stream": "nff",
+      "title": "Prepare a runtime-memory repair candidate",
+      "state": "Active",
+      "depends": [],
+      "summary": "Both boards communicate but fail Heap. Attribute internal allocations and prepare a bounded software repair without weakening thresholds.",
+      "acceptance": "Exact-source allocation rationale, regression tests, fresh ESP-IDF 5.4.4 NFF build and independently reviewed candidate. This software exit does not pass physical readiness; NFF1 must revalidate both boards under an authorized lab contract.",
+      "gap": "Both full readiness checks failed 9/10 self-tests (0/2 ready). Stable memory samples: 23,331 B free, 18,259 B minimum and 7,680 B largest block; the self-test display rounds free memory to 22 KiB versus the unchanged 30 KiB floor. Actual runtime recovery is unverified.",
+      "source": "docs/plans/nff-serial-readiness-2026-09-05.md",
+      "refs": [
+        "NFF1",
+        "FS1"
+      ],
+      "owner": "AI firmware worker; independent firmware review",
+      "evidence": "Retained two-board failure and allocation audit; issue #198 software worker observed at 00:45 UTC. No repair accepted yet.",
+      "invalidates": "Source, profile, allocation or readiness-threshold changes invalidate candidate evidence; physical readiness needs its own current test.",
+      "forecast": null
+    },
+    {
       "id": "NFF1",
       "stream": "nff",
       "title": "Current identity & recovery baseline",
       "state": "Not due",
       "depends": [
         "NFF0",
-        "LAB0"
+        "LAB0",
+        "NFF-MEM-001"
       ],
       "summary": "Bind both boards, exact software images, configuration and restoration state to one campaign.",
       "acceptance": "Before powered load tests, inspect actual populated parts/orientation and safe rails/idle current. Bind exact versions/hashes, diagnostics, all currently discovered self-tests (record the count) and two normal boots; reconcile serial/BLE update recovery separately. Forced rollback requires its own authorization.",
-      "gap": "Current exact-build closure and guarded-OTA repair evidence need reconciliation.",
+      "gap": "Programming and UART access passed; both full readiness checks fail Heap. Safe bench and current physical recovery evidence remain open.",
       "source": "docs/TESTING.md",
       "refs": [
         "FS1",
@@ -307,18 +327,18 @@
       "id": "HW-WP-002",
       "stream": "hardware",
       "title": "Specify the next development setup",
-      "state": "Ready",
+      "state": "Active",
       "depends": [],
       "summary": "Define exactly what to retain, instrument, add and isolate for app, NFF and hardware learning.",
       "acceptance": "Setup capability matrix, actual inventory versus unknowns, signal/current capture needs, loan/buy alternatives, six-node expansion and owner/budget proposal.",
-      "gap": "No inventory discovery or purchasing was performed in this review.",
-      "source": "hardware/DEVELOPMENT_SETUP.md",
+      "gap": "Calibrated instruments, safe bench, phones, qualified owner and current quotes remain unconfirmed. NFF5 naming conflict is explicit.",
+      "source": "hardware/SETUP_INVENTORY_2026-09-05.md",
       "refs": [
         "HW-WP-001",
         "HR0"
       ],
       "owner": "AI systems lead / HW owner",
-      "evidence": "No completion evidence yet",
+      "evidence": "Issue #199 initial desk inventory/coverage delivered; full package acceptance remains open",
       "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
       "forecast": null
     },
@@ -952,6 +972,29 @@
   ],
   "gaps": [
     {
+      "id": "GAP-HEAP",
+      "title": "Both NFFs fail the internal-memory readiness check",
+      "detail": "Current main was freshly built and programmed on both boards; UART passed, but readiness is 0/2. Heap alone fails 9/10 self-tests. The software repair cannot establish physical recovery without a later authorized two-board rerun.",
+      "owner": "AI firmware lead + exclusive lab owner",
+      "closesWith": [
+        "NFF-MEM-001",
+        "NFF1"
+      ],
+      "source": "docs/plans/nff-serial-readiness-2026-09-05.md"
+    },
+    {
+      "id": "GAP-SETUP",
+      "title": "Instrument inventory and one campaign name need clarification",
+      "detail": "UART access is observed, but instruments, calibration, safe power/probes, phones and qualified owner are not confirmed. The setup exit names NFF5 while the reviewed graph defines NFF1–NFF4 then HR0; no new milestone is inferred.",
+      "owner": "AI systems coordinator + Paulo",
+      "closesWith": [
+        "HW-WP-002",
+        "LAB0",
+        "LAB1"
+      ],
+      "source": "hardware/SETUP_INVENTORY_2026-09-05.md"
+    },
+    {
       "id": "GAP-APP",
       "title": "App simulation bypasses the device contract",
       "detail": "sim-pod-* and simulateTouch() exercise local drill logic. A virtual repository/transport, virtual clock and repeatable fault scenarios are still missing.",
@@ -999,8 +1042,8 @@
     },
     {
       "id": "GAP-REV",
-      "title": "This checkout trails remote main",
-      "detail": "Reviewed local source is 0f1659c. Remote main CI passed 3b62a6c on Aug 29. That newer simulation repair was not imported into this dirty checkout; its current behavior requires source reconciliation.",
+      "title": "Management and runtime baselines remain distinct",
+      "detail": "The dashboard/operating branch is based on 8d7b5db; new workers and the retained NFF build pin main 3b62a6c. Newer simulation work is not imported into this checkout or accepted by activation. Review exact artifacts before combining their claims.",
       "owner": "AI delivery lead",
       "closesWith": [
         "FS-WP-002G"
@@ -1021,6 +1064,18 @@
     }
   ],
   "history": [
+    {
+      "date": "2026-09-05",
+      "title": "Parallel delivery activated",
+      "detail": "App and software-only NFF workers started in isolated workspaces; initial hardware inventory/coverage delivered. Scheduled coordination is active. No delivery or product gate passed by dispatch.",
+      "source": "docs/program/review-2026-09-05-activation.md"
+    },
+    {
+      "date": "2026-09-05",
+      "title": "Both NFFs freshly programmed and contacted",
+      "detail": "Pinned main build and repeated UART identities passed; complete readiness failed on both due Heap. Established communications access is distinct from the open physical/readiness campaign.",
+      "source": "docs/plans/nff-serial-readiness-2026-09-05.md"
+    },
     {
       "date": "2026-08-02",
       "title": "Two-board automated campaign",
@@ -1103,6 +1158,10 @@
     }
   ],
   "sources": [
+    "docs/agent-system/OPERATING_MODEL.md",
+    "docs/program/review-2026-09-05-activation.md",
+    "docs/plans/nff-serial-readiness-2026-09-05.md",
+    "hardware/SETUP_INVENTORY_2026-09-05.md",
     "PROGRAM_STATUS.md",
     "docs/PRODUCT_REALIZATION_FRAMEWORK.md",
     "docs/TESTING.md",
@@ -1128,5 +1187,37 @@
   "freshness": {
     "reviewDays": 7,
     "refreshHours": 2
+  },
+  "operations": {
+    "state": "Active",
+    "observedAt": "2026-09-05T00:45:00Z",
+    "source": "docs/program/review-2026-09-05-activation.md",
+    "coordination": "Every 30 minutes while the host/app is available",
+    "publishing": "Owner-only reviewed snapshot every 2 hours",
+    "execution": "Two isolated software workers observed; hardware desk definition advancing separately",
+    "allowance": "96% remaining at activation; shared account, not project tokens",
+    "reserve": "Protect 20% remaining; check before every new cycle",
+    "hardware": "No active device session; full readiness failed on both NFFs",
+    "slack": "Outbound DM verified; inbound steering not yet tested",
+    "packages": [
+      {
+        "stream": "app",
+        "issue": 197,
+        "url": "https://github.com/pcesar22/domes/issues/197",
+        "activity": "Virtual-pod implementation worker started"
+      },
+      {
+        "stream": "nff",
+        "issue": 198,
+        "url": "https://github.com/pcesar22/domes/issues/198",
+        "activity": "Software memory-repair worker started; no device access"
+      },
+      {
+        "stream": "hardware",
+        "issue": 199,
+        "url": "https://github.com/pcesar22/domes/issues/199",
+        "activity": "Initial inventory and coverage delivered; package remains open"
+      }
+    ]
   }
 }

@@ -24,6 +24,10 @@ test('uncited implementation changes require review',()=>{const receipt=structur
 test('cycles fail closed',()=>{const m=clone();m.nodes.find(n=>n.id==='HW-WP-002').state='Not due';m.nodes.find(n=>n.id==='HW-WP-002').depends=['HR1'];m.nodes.find(n=>n.id==='HW-WP-001A').state='Not due';m.nodes.find(n=>n.id==='HW-WP-001A').depends=['HW-WP-002'];assert.throws(()=>validate(m,align(m)),/Dependency cycle/);});
 test('unknown dependencies fail',()=>{const m=clone();m.nodes[0].depends=['missing'];assert.throws(()=>validate(m,align(m)),/Unknown dependency/);});
 test('premature completion cannot cross an unmet dependency',()=>{const m=clone();m.nodes.find(n=>n.id==='FS-WP-004B').state='Complete';assert.throws(()=>validate(m,align(m)),/Unsatisfied prerequisite/);});
+test('active execution cannot bypass an unmet prerequisite',()=>{const m=clone();m.nodes.find(n=>n.id==='FS-WP-004B').state='Active';assert.throws(()=>validate(m,align(m)),/Unsatisfied prerequisite/);});
+test('operations require an evidence timestamp',()=>{const m=clone();m.operations.observedAt='unknown';assert.throws(()=>validate(m,align(m)),/dated reviewed evidence/);});
+test('operations cannot claim observations newer than their review',()=>{const m=clone();m.operations.observedAt='2099-01-01T00:00:00Z';assert.throws(()=>validate(m,align(m)),/postdates/);});
+test('operating issue links cannot point elsewhere',()=>{const m=clone();m.operations.packages[0].url='https://example.com';assert.throws(()=>validate(m,align(m)),/package link/);});
 test('executive and graph status conflicts fail',()=>{const m=clone();m.program.verdict='Go';assert.throws(()=>validate(m,current.sources),/Executive conflict/);});
 test('gate go needs binary evidence',()=>{const m=clone();m.gates[0].state='Go';assert.throws(()=>validate(m,current.sources),/lacks passing/);});
 test('percentage fields are rejected',()=>{const m=clone();m.program.percentComplete=90;assert.throws(()=>validate(m,current.sources),/Percentage/);});

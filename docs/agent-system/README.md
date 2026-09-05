@@ -3,6 +3,10 @@
 This index is the repository-native project brain for disposable agent sessions. It points to the
 owning source for each kind of truth instead of copying facts into a giant instruction file.
 
+The user-approved [operating agreement](OPERATING_MODEL.md) activates three delivery lanes, bounded
+controller cycles, usage protection, private status and human steering without broadening gate,
+hardware, spending or merge authority.
+
 ## Authority map
 
 | Question | Read this authority |

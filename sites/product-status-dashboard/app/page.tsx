@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [showDone, setShowDone] = useState(true);
   const [paths, setPaths] = useState<string[]>([]);
   const [ageDays, setAgeDays] = useState(0);
+  const [operationAge, setOperationAge] = useState(0);
   const [connection, setConnection] = useState('Last published review');
   const graph = useRef<HTMLDivElement>(null);
   const task = data.nodes.find(n => n.id === selected)!;
@@ -20,7 +21,10 @@ export default function Dashboard() {
   const next = data.nodes.filter(n => n.depends.includes(selected));
 
   useEffect(() => {
-    const update = () => setAgeDays(Math.max(0, Math.floor((Date.now() - Date.parse(data.reviewedAt)) / 86400000)));
+    const update = () => {
+      setAgeDays(Math.max(0, Math.floor((Date.now() - Date.parse(data.reviewedAt)) / 86400000)));
+      setOperationAge(Math.max(0, Math.floor((Date.now() - Date.parse(data.operations.observedAt)) / 60000)));
+    };
     update();
     const timer = setInterval(update, 60000);
     return () => clearInterval(timer);
@@ -86,6 +90,7 @@ export default function Dashboard() {
     <main>
       <section className="overview" aria-label="Current program position"><div><div className="eyebrow">{data.program.phase} / {data.program.stage}</div><h1>Three tracks. One product.</h1><p>{data.program.summary}</p></div><div className="gate-now"><span className="eyebrow">NEXT COMMITMENT</span><strong>{data.program.nextGate} · {data.gates.find(g => g.id === data.program.nextGate)?.title}</strong><span><i className="dot amber" /> {data.program.verdict} · {data.program.confidence} confidence</span><small>{data.program.baseline} baseline · {data.program.forecast || 'forecast needs replan'}</small></div></section>
       <div className={`freshness ${ageDays > data.freshness.reviewDays ? 'stale' : ''}`}><span><span className="dot" /> {ageDays > data.freshness.reviewDays ? `Review stale · ${ageDays} days old` : 'Reviewed repository evidence'} · {connection}</span><a href="#gaps">{data.gaps.length} open evidence gaps ↗</a></div>
+      <section className="operations" aria-label="Execution and coordination"><div className="section-heading"><div><span className="eyebrow">COORDINATION ACTIVE</span><h2>Work underway</h2></div><span className={operationAge > 120 ? 'warning-label' : 'operation-age'}>{operationAge > 120 ? 'Execution snapshot needs refresh' : 'Last observed'} · {data.operations.observedAt.slice(0,16).replace('T',' ')} UTC</span></div><div className="operation-grid">{data.operations.packages.map(p => <a key={p.stream} href={p.url} target="_blank" rel="noreferrer"><span>{data.streams.find(s=>s.id===p.stream)?.name} · #{p.issue}</span><strong>{p.activity}</strong><small>Open work package ↗</small></a>)}</div><div className="operation-meta"><p>{data.operations.coordination}. {data.operations.publishing}.</p><p>{data.operations.allowance}. {data.operations.reserve}.</p><p>{data.operations.hardware}. {data.operations.slack}.</p></div></section>
       <section className="steer" aria-labelledby="steer-title"><div><span className="eyebrow">HUMAN STEER</span><h2 id="steer-title">Where your steer<br />moves the work.</h2></div>{data.decisions.map(d => <details key={d.id}><summary><span className="decision-status">{d.state}</span><strong>{d.title}</strong><span aria-hidden="true">+</span></summary><p>{d.recommendation}</p><p><b>Alternative:</b> {d.alternative}</p><p><b>Timing:</b> {d.when}</p><p><b>Delay:</b> {d.consequence}</p><small>{d.owner} · {d.blocks.join(', ')}</small></details>)}</section>
       <section aria-labelledby="graph-title"><div className="section-heading"><div><span className="eyebrow">DELIVERY MAP</span><h2 id="graph-title">What moves next</h2></div><label className="toggle"><input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} /> Show recorded work</label></div>
         <div className="workspace"><div className="graph" ref={graph}><svg className="edges" aria-hidden="true"><defs><marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="currentColor" /></marker></defs>{paths.map((d, i) => <path key={i} d={d} fill="none" stroke="currentColor" strokeWidth="1.5" markerEnd="url(#arrow)" />)}</svg>{data.streams.map((stream, i) => <section className={`lane ${stream.color}`} key={stream.id} aria-label={stream.name}><header><span className="lane-number">0{i + 1}</span><h3>{stream.name}</h3><p>{stream.resource}</p></header><div className="lane-tasks">{data.nodes.filter(n => n.stream === stream.id && (showDone || n.state !== 'Complete')).map(n => card(n))}</div></section>)}</div>

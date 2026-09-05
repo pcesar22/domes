@@ -70,7 +70,9 @@ The scheduler performs only these actions:
    work and dependency joins that can wait for merged inputs target `main`.
 4. Repair failed CI first, then sort remaining eligible issues by numeric priority and issue
    number.
-5. Reserve up to three slots and create one controller-owned standalone Git workspace per issue.
+5. Reserve up to the configured four role slots and create one controller-owned standalone Git
+   workspace per issue. The coordinator may lower a finite cycle's concurrency for lane fairness
+   and account-budget protection; see `docs/agent-system/OPERATING_MODEL.md`.
 6. Move a newly accepted implementation task to `agent:running` and launch a fresh role-specific
    run with the matching output schema; rejected work retains `agent:rework` so its judge handoff is
    never lost across a restart.

@@ -1,6 +1,424 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DOMES reviewed evidence</title><style>body{font:16px/1.6 system-ui;max-width:1100px;margin:40px auto;padding:0 24px;background:#f5f7fa;color:#182334}a{color:#185ee3}summary{cursor:pointer;padding:12px;background:white;border:1px solid #dce3eb}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.6 monospace}small{color:#526174}</style><a href="/">← Development dashboard</a><h1>Reviewed source snapshot</h1><p>Review 2026-09-04T23:10:00Z · local baseline 0f1659c6a32288fa3478969586e54a81599c4453. Source presence is not acceptance. Each status claim remains bounded by its review and configuration.</p><details id="PROGRAM_STATUS.md"><summary>PROGRAM_STATUS.md</summary><small>SHA-256 58fa646e863b9a16f05f3240cd717f608449c29ee2843981bfa992cd1e368c83</small><pre># DOMES Integrated Program Status
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DOMES reviewed evidence</title><style>body{font:16px/1.6 system-ui;max-width:1100px;margin:40px auto;padding:0 24px;background:#f5f7fa;color:#182334}a{color:#185ee3}summary{cursor:pointer;padding:12px;background:white;border:1px solid #dce3eb}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.6 monospace}small{color:#526174}</style><a href="/">← Development dashboard</a><h1>Reviewed source snapshot</h1><p>Review 2026-09-05T00:50:00Z · local baseline 8d7b5dbee0c061152d87381ab563c41ae349d00f. Source presence is not acceptance. Each status claim remains bounded by its review and configuration.</p><details id="docs/agent-system/OPERATING_MODEL.md"><summary>docs/agent-system/OPERATING_MODEL.md</summary><small>SHA-256 31182bfdb7917adf2e262da9324f32528263338c6b95c40364c569731c243227</small><pre># DOMES operating agreement
 
-**As of:** 2026-09-04. Repository evidence review; no new hardware campaign was run.
+Activated by Paulo on 2026-09-05 UTC (2026-09-04 Pacific). This is an explicit standing mandate
+for the three delivery lanes below, bounded by the current product-realization gates. It is not
+permission to merge, release, spend, fabricate, change host services or weaken acceptance.
+
+## Ownership and parallelism
+
+The coordinator owns priority, accepted package contracts, cross-lane dependencies, status evidence,
+usage checks and human steering. Workers own one package in an isolated workspace. Independent
+judges evaluate the specification, diff and exact-version evidence. Paulo owns product direction,
+qualified design ownership, budget, architecture freezes and human approval/merge.
+
+| Lane | Initial contract | Current delivery responsibility |
+| --- | --- | --- |
+| Phone app and simulation | [#197](https://github.com/pcesar22/domes/issues/197), FS-WP-004A | Real app virtual-pod lab; then offline journey and separately qualified production parity |
+| Dual NFF | [#198](https://github.com/pcesar22/domes/issues/198), NFF-MEM-001 | Software memory repair candidate; physical revalidation is a separate authorized package |
+| Hardware and next setup | [#199](https://github.com/pcesar22/domes/issues/199), HW-WP-002 | Coordinator-led inventory/coverage, desk trades and decision-ready setup proposal |
+
+Keep one bounded package advancing in each ready lane. Ready means eligible, Active means actual
+execution observed, and accepted means the required evidence passed; these are different facts.
+Do not manufacture dependencies to serialize independent work. Shared protocol changes have one
+owner and one coordinated schema/consumer package. One physical fleet permits one exclusive lab
+session. No parallel agent may independently flash, configure or benchmark the same boards.
+
+## Dispatch and GitHub
+
+Use the existing controller on ministrom; retain its host pin, advisory lock, standalone clones,
+and four-role configured ceiling. The coordinator enforces the six-open-PR budget for manual
+review-only tickets: the controller&#39;s mechanical new-PR reservation applies only to its marked
+automated contracts. Reserve the activation PR plus both worker PRs and recount live PRs before
+any later dispatch; do not claim the manual path has an atomic global cap. Start with a finite cycle of two
+software workers while the coordinator advances hardware definition. A controller process is not
+a service, and no service-manager changes are authorized.
+
+Before each cycle, verify current host identity, authentication, controller validation, process/lock
+state, live eligible queue, main SHA, issue contracts and open-PR capacity. In a noninteractive SSH
+session use the host&#39;s normal login environment; Codex and Flutter are exposed there. Never start a
+duplicate controller. The current CLI has no issue-ID filter: inspect every candidate the chosen
+limit could dispatch. Do not relabel unrelated issues merely to fake isolation.
+
+Finite cycles use `run --execute --limit 2`, without global selection or hardware opt-in. Later
+cycles prioritize ongoing review/CI repair and maintain lane fairness; a blocked lane does not
+stop another. Use the existing independent worker/judge/verification transitions. Plain manual
+contracts use `review-only`; the coordinator must inspect required exact-head CI explicitly because
+the controller&#39;s autonomous CI reconciliation is only enabled in its separate autopilot mode.
+Manual review-only handoffs also require independent inspection of the reported PR, exact remote
+head, scope, base and required checks; these are not mechanically attested by the automated-artifact
+path. The manual lifecycle is running → agent-review → verification → human-review. A status label
+or worker summary cannot substitute for those checks, even if a generic prompt suggests otherwise.
+No continuous global autopilot or controller self-modification is implied by this activation.
+
+Each contract pins a main-reachable specification SHA, outcome, non-goals, allowed paths,
+prerequisites, acceptance checks and proof. Changes to intent require stewardship, not a worker
+rewrite to fit its result. Issue labels, merges and green CI are activity/evidence inputs, never
+product-gate authority. Publish scoped changes and stop for human review and merge. Do not restore
+the removed project skills; keep this agreement and runbooks as ordinary reviewed documents.
+
+## Hardware and design authority
+
+Initial app and memory tickets have `Hardware operations: None` and `Hardware boards: None`.
+The September 5 UART/flash evidence does not pass LAB0, NFF1, HR0 or OTA acceptance. Both NFFs
+remain failed on their 30 KiB heap self-test. Threshold reduction is prohibited.
+
+Hardware definition is explicitly authorized but is coordinator-managed outside software autopilot.
+Qualified electrical design ownership, equipment/calibration, safe power/probe setup and budget
+remain separate open inputs. G1 stays Hold. Physical revalidation needs a separate finite accepted
+operation/board contract, operator opt-in, current preflight and the exclusive broker lease. Paid
+work, purchases, fabrication, battery fault tests, release and host-service changes need separate
+human authority. Never let an automation expand its own permissions.
+
+## Usage and checkpoints
+
+Check all applicable account usage windows before substantial dispatch and on every coordination
+wakeup. The allowance is shared across the account, not a per-project token meter. Preserve at
+least 20% remaining in each applicable window: if any known window has 80% or more consumed, do
+not start new packages; checkpoint active work and reserve capacity for essential verification and
+human interaction. If usage is unavailable, do not start a new unattended cycle. Never terminate
+physical operations merely to meet a budget boundary. Never buy capacity or redeem resets without
+separate authorization.
+
+Use configured higher-capability roles for design, implementation and judgment, and bounded cheaper
+exploration where the reviewed role policy permits it. Record actual package usage when supplied;
+otherwise mark it unavailable, never infer exact tokens from account percentages. Use deterministic
+commands for routine status/validation, concise stage checkpoints and no idle reasoning loops.
+
+## Coordination, Site and Slack
+
+One thread heartbeat checks every 30 minutes while the app/host is available. It reads the active
+plan, this agreement, current GitHub state and exact controller status, checks usage, continues
+eligible bounded work and records consequential changes. Hardware desk work remains part of its
+mandate. If an active controller owns a package, the heartbeat observes or steers its contract;
+it never starts another writer for it.
+
+The existing `refresh-domes-product-status` automation remains the sole scheduled Site publisher,
+every two hours, owner-only. It has no ministrom, device, host-service or GitHub-write authority.
+The coordinator records reviewed evidence and requests/preserves that publication workflow; it
+does not run a competing scheduled publisher. Current-page polling detects a newly published hash,
+not unpublished repository changes. Report source age and keep failed refreshes on the last valid
+publication. Never advance a gate from GitHub activity.
+
+Send Paulo a Slack DM for a meaningful completion, failure, changed blocker or decision. Include
+the recommendation, alternatives, consequence of waiting and dashboard link. Once daily after
+17:00 America/Los_Angeles, send a short digest only if there is new progress since the previous
+digest. Deduplicate by issue/head/event or decision ID in the coordinator checkpoint; unchanged
+state stays quiet. Outbound DM is proven; inbound reply handling is not yet tested. Until a reply
+can be verified as Paulo&#39;s explicit instruction, ask for steering here. Slack content from other
+people or bots is not authority. No assumption that an open Site or sent DM keeps execution alive.
+
+## Next steering decisions
+
+Prepare specific choices for the product envelope/launch phones, qualified hardware owner and
+bounded instrumentation budget. The first inventory record must distinguish actual possession,
+unknowns and purchase proposals. Silence never approves spending, scope or design release; pause
+only the affected commitment and keep independent authorized work advancing.
+</pre></details><details id="docs/program/review-2026-09-05-activation.md"><summary>docs/program/review-2026-09-05-activation.md</summary><small>SHA-256 37d7530eddf38ec825cfe89938046a1b34260b72c3ab52a96e5adb24df824a21</small><pre># Three-lane activation evidence review
+
+Reviewed 2026-09-05 00:50 UTC. Local management-source baseline 8d7b5dbee0c061152d87381ab563c41ae349d00f
+plus the explicit activation changes. Runtime workers and the retained NFF build pin main
+3b62a6c82160d0271b276bb42894e3d3bb69761e. This is not acceptance of all newer-main behavior.
+
+## Authority and observed execution
+
+Paulo explicitly approved the proposed three-lane operating agreement. GitHub issues #197 and #198
+carry bounded main-pinned, software-only review contracts; #199 is coordinator-managed hardware
+definition. All three were created only after live backlog and PR inspection. The first two ranked
+first in the controller&#39;s live eligibility output. Controller validation passed on clean ministrom.
+No controller was running at preflight. Codex authentication and tool availability were confirmed
+through the normal login environment, without installing packages or modifying services.
+
+A finite `run --execute --limit 2` cycle started in `domes-coordinated` at 00:44:46 UTC. At 00:45 UTC,
+the controller and separate issue-197/issue-198 Codex worker processes were directly observed.
+FS-WP-004A is therefore Active, not Complete. The new NFF-MEM-001 software-candidate step is Active,
+not a physical readiness pass. HW-WP-002 is Active because its initial inventory/coverage record was
+actually produced; its remaining qualified review, quotes, instruments and safe-bench exit is open.
+
+The 30-minute `coordinate-domes-delivery` thread heartbeat was created ACTIVE. The existing
+two-hour `refresh-domes-product-status` publisher remains the sole scheduled publisher, with its
+original owner-only and no-device/no-ministrom/no-GitHub-write boundaries. Outbound Slack DM was
+previously sent successfully; inbound reply handling remains untested. Execution observations are
+dated snapshots, not a claim of a permanent live process or uninterrupted sleeping-host access.
+
+## Device evidence incorporated, without advancing physical milestones
+
+The retained September 5 report and artifacts establish a fresh ESP-IDF v5.4.4 build, successful
+standard programming on both registered NFFs and 6/6 repeated final identity responses. They also
+establish a real failure: both full readiness checks fail, solely Heap, 9/10 self-tests, 0/2 ready.
+The untouched second board exhibited the same condition before programming. The 16 KiB health
+floor and 30 KiB self-test/OTA floor are different and both remain unchanged.
+
+Retained stable samples report 23,331 B free internal heap, 18,259 B historical minimum and 7,680 B
+largest contiguous block. The free deficit to 30 KiB is 7,389 B. Read-only source/ELF inspection
+maps the physical profile and candidate allocation sites: a 32,000 B startup audio tone workspace,
+the default 96 KiB trace ring and a 4,096 B memory-profiler task. This is a quantified investigation
+starting point, not proven runtime attribution or a selected repair. Candidate semantics, DMA,
+allocator capabilities, ISR safety and error behavior require implementation-level verification.
+
+The corresponding source paths are unchanged between the local and retained runtime revisions;
+other QEMU/ESP-NOW changes are not imported or accepted by this audit. Build success cannot prove
+recovered headroom. NFF1 additionally waits for LAB0 and a reviewed repair candidate, then requires
+its own exact two-board physical readiness/recovery evidence. No new board access, reflash, OTA,
+RF/peripheral/power measurement or physical gate transition occurred during activation.
+
+## Setup and specification gaps
+
+The initial setup record differentiates observed two-board UART access from unknown instrument
+possession, calibration, phone/Mac inventory, safe powering and qualified electrical ownership.
+It maps baseline, peripheral, envelope, phone, shared-contract, six-node and architecture/parts
+evidence needs. It invents no prices, calibration, equipment or electrical limits.
+
+HW-WP-002 names NFF1–NFF5 but the reviewed graph has NFF1–NFF4 then HR0. The discrepancy is now
+explicit rather than silently creating NFF5. Current quotes and a qualified safety/uncertainty plan
+remain future work. The current two NFFs do not establish six-node physical evidence.
+
+## Execution-control limitations
+
+The configured four-role ceiling conflicts with old three-slot prose; the prose is corrected,
+without changing the controller implementation. Manual review-only tickets do not receive the
+automated path&#39;s atomic PR-cap reservation or remote-artifact attestation. Non-autopilot cycles
+also do not perform autonomous CI reconciliation. The coordinator must independently verify each
+PR/head/base/diff and required checks, reserve/count the six-PR budget and inspect the complete
+eligible queue before another finite cycle. This is recorded in the operating agreement; it is not
+represented as a controller-enforced guarantee. Human review/merge remains mandatory.
+
+The initial account snapshot was 4% consumed / 96% remaining in the main reported window. This is
+shared allowance, not per-package tokens. The coordinator checks all applicable windows and stops
+new unattended dispatch at the 20% reserve; actual per-package usage is unavailable until supplied.
+
+## Source receipt and verdict
+
+The pre-review deterministic check correctly refused the new NFF/activation plans and a previously
+committed bring-up-checklist reference change. That checklist change replaces a removed skill link
+with docs/TESTING.md; inspection found no relaxed ESP-NOW lifecycle or acceptance condition.
+All newly watched files in this activation are intentional reviewed plan/setup records. Unrelated
+user edits to .codex/PLATFORM.md and tools/agent_control/test_control.py remain preserved and are
+not implementation acceptance evidence or part of the activation commit.
+
+Verdict remains P1 / Pre-EVT / Amber, G1 Hold; HR0–HR2 and later physical/product releases do not
+advance. App, NFF repair and setup statuses reflect execution only. Stale forecasts, old trace
+lineage, predictive qualification and different management/runtime baselines remain explicit.
+Record this receipt only after validating executive/graph agreement and source inventory; tests,
+lint, typecheck and production build are still required before private publication.
+</pre></details><details id="docs/plans/nff-serial-readiness-2026-09-05.md"><summary>docs/plans/nff-serial-readiness-2026-09-05.md</summary><small>SHA-256 8c20bee114fd453c5b6b55719f10e36ce936817434a7e8ad414e4102d6d7df20</small><pre># Two-NFF firmware and serial readiness
+
+Status: complete
+Current phase: requested programming/communications verified; full readiness failed
+Repository state: local `codex/feat/development-dashboard` at `8d7b5db`; preserve existing edits in
+`.codex/PLATFORM.md` and `tools/agent_control/test_control.py`. Hardware host checkout is clean at
+latest `origin/main`, `3b62a6c82160d0271b276bb42894e3d3bb69761e`.
+Last updated: 2026-09-05 00:26 UTC (2026-09-04 Pacific).
+
+## Result
+
+Both NFFs were programmed from the same fresh latest-main image and successfully answered
+`domes-cli` queries independently and in explicit two-target commands. Programming and UART
+communications passed. Full device readiness failed on both: 9/10 self-tests, with only the internal
+Heap test failing. This condition was directly confirmed on untouched Pod 2 before programming.
+
+The O2 serial-access prerequisite is established, not complete O2/NFF qualification. Repair and
+reverify the internal-memory shortfall before claiming full readiness or proceeding to broader
+campaigns that require it. No firmware change, threshold waiver, or program-gate transition was made.
+
+## Objective and observable outcome
+
+Build the latest main firmware using ESP-IDF v5.4.4 and a fresh isolated SDKCONFIG, program both
+registered NFF boards, and verify each exact firmware identity and framed UART responses through
+a CLI built from the same revision. Retain build and device logs. This is communications readiness
+for the requested O2 workstream, not complete NFF characterization or a program-gate transition.
+
+## Authorities and contracts
+
+- `firmware/AGENTS.md`, `firmware/README.md`, `docs/TESTING.md`: clean build and runtime verification.
+- `.codex/PLATFORM.md`: use the operator&#39;s `ministrom` alias; CP2102N for flash/framed UART.
+- `tools/firmware/flash_and_verify.sh`: version, health and complete self-test acceptance.
+- Preserve NVS identities and unrelated checkouts; no full-flash erase, forced rollback, hardware
+  load campaign, host-service change, GitHub publication, or dashboard/gate update.
+
+## Stages and dependencies
+
+- [x] Latest main fetched; clean hardware-host checkout matches `3b62a6c`.
+- [x] Both historical CP2102N serial identities found on `ministrom`.
+- [x] Confirm toolchains, serial permissions, port ownership and pre-flash identity.
+- [x] Build CLI and retained firmware; verify NFF 8 MB profile, image metadata and hashes.
+- [x] Program both boards sequentially; retain exact version, identity, health and self-test results.
+- [x] Verify repeated independent and explicit two-target CLI responses; retain final evidence.
+- [ ] Full readiness remains failed: investigate internal allocations and restore &gt;=30 KiB headroom.
+  This follow-on firmware change is not implemented by the present build/flash request.
+
+## Verification
+
+| Evidence | Required result | State |
+| --- | --- | --- |
+| Source/toolchain | Exact main SHA, ESP-IDF 5.4.4, Rust 1.92.0, fresh build/SDKCONFIG | Passed; remote build logs retained |
+| Pod 1 | USB serial `5edf3f45576def11a245cea7c169b110`, WiFi MAC `94:a9:90:0a:eb:c0` | MAC/8 MB flash matched; retained ID 1, post-flash boot 37 |
+| Pod 2 | USB serial `002a9f8e536def119f38c1a7c169b110`, WiFi MAC `94:a9:90:0a:ea:50` | MAC/8 MB flash matched; retained ID 2, post-flash boot 90 |
+| Firmware programming | Flash verification and exact running build version on both | Both passed; all four written-region hashes verified |
+| UART command acceptance | `system info`, `system health`, `feature list` | Both passed; three final two-target info rounds returned 6/6 expected identities/versions |
+| Device self-test | All discovered tests must pass | Both failed 9/10, solely Heap (`22KB free, 17KB min`) |
+| Full readiness | Explicit two-target `system readiness` | FAIL (0/2 targets ready; 2 failed), exit 1; both health PASS/self-test FAIL |
+| Physical outputs/RF/power | Observer/instrument evidence and broader campaigns | Not exercised in this task |
+
+## Decisions, discoveries, and deviations
+
+- Build the latest main revision, not the older firmware base beneath the dashboard branch.
+- `ministrom` lacks the optional `hostname` command; SSH and Linux host identity are confirmed.
+- Use the documented isolated build plus explicit flash commands to retain binaries and metadata;
+  the convenience helper removes its temporary build on exit.
+- Both pre-flash boards already reported `v0.1.0-267-g3b62a6c`; this task freshly rebuilds and
+  reprograms that latest main revision rather than claiming a firmware-version upgrade.
+- Retained remote run: `/home/pncosta/domes-nff-readiness.laujhy`. App image is 1,486,176 bytes,
+  fits each 1,966,080-byte app slot with 479,904 bytes free (24%). Physical NFF profile selected;
+  QEMU profile and destructive rollback override are not enabled.
+- App SHA-256: `ce924e2f54625fe00a3aa3102b06ff03291a0e6a9c887ad883e97f462358ac42`.
+- Doctor&#39;s all-software result is unavailable because Flutter, Dart/protoc plugin, pre-commit and
+  ShellCheck are absent on the hardware host. Pinned firmware/Rust and two UART devices are
+  available. Native USB console/JTAG cables are absent; none of those broader gaps is a UART pass.
+- Pod 1 flash completed with all written-region hashes verified. Existing partition bytes matched
+  the candidate exactly; current chip MAC and 8 MB flash matched the historical identity.
+  After flash it retained ID 1, reached boot 37 and the expected version, and passed health with
+  23,459 bytes free / 18,259 minimum. Self-test reported 9/10: Heap failed (`22KB free, 17KB min`).
+  Running App passed on `ota_0`, `rollback=no`; every other discovered self-test passed.
+  This is a real failing acceptance result, not complete readiness.
+- Untouched Pod 2 also passed health but failed only Heap in the full 9/10 self-test, with the same
+  `22KB free, 17KB min` result. Its firmware already had this condition before programming.
+  Both targets answered explicit two-port `feature list`. Proceeding with Pod 2&#39;s requested standard
+  flash preserves the same candidate and does not waive the failure or authorize O2 load tests.
+- Health and self-test use different documented thresholds: CLI health requires current/minimum
+  internal heap &gt;=16 KiB; the firmware self-test requires current internal heap &gt;=30 KiB.
+  Do not reduce either threshold. Stable Pod 1 memory samples report approximately 23,331 bytes
+  current free, 18,259 minimum, and a 7,680-byte largest contiguous internal block.
+- Pod 2 also verified its expected MAC, 8 MB flash and exact existing partition-table bytes before
+  programming. Its post-flash health measured 23,459 free / 18,259 minimum and passed. Its sole
+  self-test failure was unchanged. Both boards remain on `ota_0`, `rollback=no`; no OTA or forced
+  rollback success is established by standard programming.
+- Final three-round identity queries kept boot counts 37 and 90 unchanged, and both versions were
+  `v0.1.0-267-g3b62a6c`. Final feature queries succeeded on both; ESP-NOW remains disabled.
+- The self-test is classified as activity: it temporarily changes IDLE to TRIAGE, enabling touch,
+  haptic and audio gates. `system readiness` therefore has this expected transient mode side effect
+  even though it does not send feature-enable commands. After the 30-second inactivity timeout,
+  passive handoff checks confirmed both returned to IDLE, mask `0x6`, LED/BLE enabled and
+  ESP-NOW/touch/haptic/audio disabled. Boot counts remained 37/90; no explicit restoration was needed.
+  This mode transition is not physical peripheral validation.
+- The same 30 KiB internal-heap floor is used by OTA image verification in
+  `firmware/domes/main/main.cpp`; do not assume a direct-flash pass implies OTA acceptance.
+  Exact allocation attribution remains unproven; no memory-threshold reduction is authorized.
+
+## Retained evidence and reproducible access
+
+Remote retained build and logs: `/home/pncosta/domes-nff-readiness.laujhy` on `ministrom`.
+Local evidence copy: `.artifacts/nff-serial-readiness-2026-09-05/` (ignored, not published).
+Both copies retain the exact application, bootloader, partition table, initial OTA data, ELF,
+SDKCONFIG, metadata, programming script and logs. The remote copy also retains the complete build
+tree and matching freshly built CLI. Local `flash_args` keeps the original build-relative paths;
+the local flat bundle is a retention copy, not a directly runnable provisioning directory.
+
+Key records:
+
+- `firmware-build.log`, `cli-build.log`, `artifact-sha256.txt`.
+- `pod1-flash.log`, `pod2-flash.log`, per-board chip identity and partition-read logs.
+- `pod1-postflash-info.log`, `pod2-postflash-info.log`, `pod1-health.log`, `pod2-health.log`.
+- `pod1-self-test.log`, `pod2-self-test.log`, and `pod2-preflash-self-test.log`.
+- `final-three-rounds-two-target-info.log`, `final-two-target-features.log`.
+- `final-two-target-readiness.log`, `final-readiness-exit.log`.
+- `handoff-two-target-info.log`, `handoff-two-target-features.log`: both returned to IDLE.
+- `pod1-memory.json`, `pod2-memory.json`.
+
+Run on the hardware host, not the local workstation:
+
+```bash
+ssh ministrom
+CLI=/home/pncosta/domes-nff-readiness.laujhy/cli-target/debug/domes-cli
+PORT1=/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_5edf3f45576def11a245cea7c169b110-if00-port0
+PORT2=/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_002a9f8e536def119f38c1a7c169b110-if00-port0
+$CLI --port &quot;$PORT1&quot; --port &quot;$PORT2&quot; system info
+$CLI --port &quot;$PORT1&quot; --port &quot;$PORT2&quot; feature list
+# Expected to FAIL until the memory shortfall is fixed and reverified:
+$CLI --port &quot;$PORT1&quot; --port &quot;$PORT2&quot; system readiness
+```
+
+## Resume checkpoint
+
+Primary owns all device access. Remote root is `/home/pncosta/domes`; do not change its checkout.
+Both flash scripts ended with status 1 at the expected, unwaived Heap self-test failure after
+successful programming. Final communication checks passed and the exact readiness failure was
+retained. No hardware campaign is active. Remote checkout remains clean at `3b62a6c`; local user
+edits are preserved and this report is intentionally uncommitted. Next action is a separately scoped
+internal-memory investigation/repair, not additional flashing or a threshold waiver.
+</pre></details><details id="hardware/SETUP_INVENTORY_2026-09-05.md"><summary>hardware/SETUP_INVENTORY_2026-09-05.md</summary><small>SHA-256 f92c369742fda54d391a96f02daa09606ba6f575c1764ea2ec16adea666c9e07</small><pre># Development setup: initial inventory and coverage
+
+HW-WP-002 / issue #199. Initial desk delivery, 2026-09-05 UTC. AI systems coordinator owns this
+record; qualified electrical design owner remains unassigned. No measurements or purchases were
+performed for this desk delivery. This is not HW-WP-002 acceptance or LAB0/LAB1 commissioning.
+
+## Evidence-backed inventory
+
+| Asset | Evidence and availability | Capability / limits | Owner or next action |
+| --- | --- | --- | --- |
+| Two NFF N8R8 carriers | Both observed in the September 5 retained campaign; identities and image hashes in the linked report | 8 MB flash / 8 MB PSRAM; UART programming and CLI responses passed; both full readiness checks failed Heap | Coordinator schedules one lab session; Paulo or qualified operator must confirm physical setup |
+| CP2102N UART cables | Both stable identities directly used for 6/6 final identity queries | Framed control path verified; cable presence does not prove safe combined powering or peripheral outputs | Preserve board-to-identity mapping; never infer pod ID from port order |
+| Native USB console/JTAG cables | Absent in the retained campaign | No separate current boot-console/JTAG access established | Confirm suitable cables/access before a console-dependent experiment |
+| ministrom development host | Clean main 3b62a6c, controller validation passed and authenticated workers launched September 5 | Native Linux; pinned firmware/Rust used in retained build. Codex/Flutter resolve through normal login environment; availability does not prove every toolchain check passes | Coordinator; no service changes |
+| Local app/development host | Existing app checkout and tool executables; app worker has a separately controlled workspace | Host-only tests and virtual app work; Linux does not establish an iOS build or physical-phone BLE | App worker; exact-version analysis/tests still required |
+| Launch phones and Mac build access | Actual inventory, OS versions and owner slots unknown in this review | Needed for signed real-phone behavior and supported Apple build/runtime evidence | Paulo confirms launch platforms and accessible phones/Mac |
+| Supply, DMM, current probe/shunt, scope/logic analyzer | Possession, model/range/bandwidth, calibration and safe probes unknown | Electrical/timing acceptance cannot start from assumed instruments | Qualified design/test owner inventories before LAB1 |
+| Thermal/optical/acoustic/haptic fixtures | Availability and calibration unknown | Visual observation is distinct from quantitative brightness, latency, sound or vibration evidence | Define requirement-specific measurement and uncertainty first |
+| Four additional physical nodes | Not verified or purchased | Two current boards cannot establish six-node physical behavior; bare radio nodes do not establish complete pods | Review retain/borrow/buy proposal and supported profile before spending |
+| Power-path/regulator/enclosure/RF coupons | No commissioned inventory or qualified owner | NFF evidence cannot qualify battery charging, enclosure RF, product thermal or safety behavior | Desk specification now; separate qualified review/budget before acquisition or tests |
+
+The NFF evidence is [the retained programming/readiness report](../docs/plans/nff-serial-readiness-2026-09-05.md).
+Availability is dated, not a guarantee that devices remain connected. No new device access occurred
+in this activation. Historical docs saying all access is unverified are superseded only for the
+specific observed UART/build facts; populated-board inspection and instrument safety remain open.
+
+## Scenario-to-capability coverage
+
+| Scenario / decision | Required setup and observable result | Uncertainty / sampling requirement | Current gap |
+| --- | --- | --- | --- |
+| NFF1 baseline/recovery | Identity-bound image, safe supply inspection, CLI, separate boot evidence and supported recovery | Retain both boards and every test result; define safe rails/current with qualified owner | Heap fails on both; safe-bench inspection, normal-boot and supported-recovery acceptance still open |
+| NFF2 peripheral behavior | Stimulus and observer/fixture for every LED, touch pad, IMU, LRA and speaker | Record expected vs observed per board/peripheral; quantitative thresholds come from accepted requirements | Command acceptance is not observation; no complete current peripheral record |
+| NFF3 operating envelope | Current-limited power source, characterized current path, voltage/thermal measurement and correlated timing capture | Bandwidth must resolve relevant peaks; record calibration, probe loading, trigger and clock-correlation uncertainty; sample count/test duration must be specified before execution | Instruments, numeric uncertainty budget and safe injection/current limits unassigned |
+| NFF4 phone/two-pod faults | Real launch phone, both ready pods, CLI/log capture and exclusive radio session | Separate physical touches, complementary one-peer roles, exact disabled lifecycle, both directions and repeated lifecycle evidence per testing contract | Phone inventory, heap repair/revalidation and physical peripheral prerequisite |
+| NFF5 requested coverage | HW-WP-002&#39;s exit text names NFF1-NFF5, but the reviewed delivery graph defines NFF1-NFF4 then HR0 | No new milestone, mapping or threshold may be invented to conceal the mismatch | Specification clarification required; NFF5 remains undefined and HR0 retains its existing independent release meaning |
+| FS3 shared contract | Generated schema, real consumers and deterministic fixtures plus ticketed two-board regression | Bind exact versions and clock provenance; no synthetic evidence substituted for physical regression | Shared-contract acceptance and ready physical fleet remain open |
+| FS4 phone workflow | Two/six-identity virtual lab; later real-phone six-node campaign with supported profiles | Reproducible seed/time in the virtual model; distinct physical timing/fault/soak evidence | App lab is executing; four extra nodes and actual phones are not verified |
+| HR0 release | Raw NFF2/NFF3 data, exact setup and procedures, calibration, failures and accepted limits | Preserve measured envelope and invalidation triggers; do not generalize to enclosed battery product | Not due; no accepted measurement bundle |
+| HR1 architecture | Product envelope, measured loads/timing, memory budget, interface record and topology trade-offs | Quantitative margins and uncertainty must close before downselect | Design owner, product envelope and measurements missing |
+| HR2 components/alternates | Requirement-linked candidates, current manufacturer/distributor evidence and bench/coupon results where needed | Record lifecycle, availability, margins and alternate compatibility; quotes are dated, not guarantees | No current quote package or frozen selection; do not carry candidate charger/LDO choices forward automatically |
+
+## Safe-bench prerequisites
+
+Before any new powered measurement, the qualified owner must specify injection points, allowed
+voltage/current limits, USB/5 V backfeed prevention, ground arrangement, connected UART/native-USB
+paths and safe probe loading. Record the actual populated carrier and actuator. The coordinator
+must reserve the exclusive fleet and retain its known firmware/configuration state and recovery
+procedure. This document intentionally supplies no guessed electrical limits or wiring approval.
+
+## Decision-ready next actions
+
+1. **Hardware accountability:** name a qualified electrical design owner. Recommendation: retain an
+   owner capable of power/embedded/RF review, with specialist battery/RF support when required.
+   Alternative: keep work at desk definition. Delay leaves G1 forecast unset; no paid engagement
+   or controlled design responsibility is inferred from AI preparation.
+2. **Product and phone envelope:** confirm or revise six-pod indoor offline-first use, launch phone
+   platforms and first market before freezing the architecture. Alternative: keep those as explicit
+   hypotheses. App virtual-lab work can continue meanwhile.
+3. **Instrument access:** Paulo/owner should supply owned or borrowable instrument models, calibration
+   status, phones/Mac access and operator slots. Recommendation: retain the two NFFs, instrument the
+   existing bench, then separately price missing capabilities and four-node expansion. Alternative:
+   borrow a qualified lab. Without inventory, a costed buy list risks redundant or unsuitable spend.
+
+No vendor quote, price, delivery date, calibration or equipment ownership is invented. The next
+HW-WP-002 slice turns this record into supported-board/profile options and a current-source costed
+proposal, after narrowing the unknown inventory and requirements. Schematic capture remains behind
+G1, routing behind HR3, and ordering behind HR4/G2 plus separate budget approval.
+
+Authorities: [setup package](DEVELOPMENT_SETUP.md), [hardware request](NEXT_ITERATION_REQUEST.md),
+[program ledger](../PROGRAM_STATUS.md), [verification](../docs/TESTING.md).
+</pre></details><details id="PROGRAM_STATUS.md"><summary>PROGRAM_STATUS.md</summary><small>SHA-256 9a25ef5c9e9d9ab2531b1b346e3cb360cdf25e23a1d4bcf46436b37d5a042f42</small><pre># DOMES Integrated Program Status
+
+**As of:** 2026-09-05. Three-lane activation and evidence review. Prior same-day programming/UART
+evidence is incorporated; no new physical campaign was run for activation.
 
 &lt;!-- domes-control: {&quot;phase&quot;:&quot;P1&quot;,&quot;nextGate&quot;:&quot;G1&quot;,&quot;verdict&quot;:&quot;Hold&quot;,&quot;hardwareCount&quot;:2} --&gt;
 
@@ -36,15 +454,17 @@ fully predictive QEMU model. Hardware desk definition does not wait for a finish
 One registered two-board lab session at a time prevents conflicting physical campaigns.
 Preparation can run concurrently; evidence-producing exits follow their actual dependencies.
 
-**Current management package:** this product-control reset. No device execution is active in this
-review. **Next autonomous execution delivery: FS-WP-004A**, the protocol-backed virtual pod lab,
-subject to the normal live issue/PR reconciliation before execution. Start at the real app
-repository/transport boundary, retain generated protocol ownership, and use virtual time. It must
-leave executable app scenarios and regression evidence, not only interfaces or another plan.
+**Current management package:** [the activated operating agreement](docs/agent-system/OPERATING_MODEL.md).
+The app virtual-lab worker ([#197](https://github.com/pcesar22/domes/issues/197)) and software-only
+NFF memory-repair worker ([#198](https://github.com/pcesar22/domes/issues/198)) were directly observed
+running in separate ministrom workspaces at 00:45 UTC. This is execution evidence, not acceptance.
+Both contracts pin main 3b62a6c and forbid hardware access. No physical session is active here.
 
-**Next program action: HW-WP-002**, a bounded development-setup definition under HW-WP-001, alongside
-PS1 requirements and VC1 risk/test work. Desk definition is ready. Procurement, supplier commitments,
-and controlled hardware design ownership require separately recorded human authority.
+**Active program action: HW-WP-002** ([#199](https://github.com/pcesar22/domes/issues/199)), alongside
+PS1 requirements and VC1 risk/test work. Its initial [inventory/coverage record](hardware/SETUP_INVENTORY_2026-09-05.md)
+is delivered for review; full package acceptance, calibrated inventory, quotes and safe bench remain
+open. Qualified design ownership and any spending still require separate authority. A 30-minute
+coordinator heartbeat is active; the existing owner-only Site publisher remains every two hours.
 
 ## Concurrent workstreams
 
@@ -67,18 +487,19 @@ and future sequencing. A historical pass is limited to its recorded configuratio
 | ID | Outcome | State |
 | --- | --- | --- |
 | APP0 | Controller foundation | Complete |
-| FS-WP-004A | Virtual pod lab | Ready |
+| FS-WP-004A | Virtual pod lab | Active |
 | FS-WP-004B | Complete simulated phone journey | Not due |
 | FS-WP-003A | Shared drill and timing contract | Acceptance pending |
 | FS-WP-004C | App ↔ production simulator parity | Not due |
 | FS-WP-004D | Six-node physical app alpha | Not due |
 | NFF0 | Automated bench foundation | Complete |
+| NFF-MEM-001 | Prepare a runtime-memory repair candidate | Active |
 | NFF1 | Current identity &amp; recovery baseline | Not due |
 | NFF2 | Observe every peripheral | Not due |
 | NFF3 | Measure the operating envelope | Not due |
 | NFF4 | Phone + two-pod fault campaign | Not due |
 | HR0 | HR0 · Measured NFF reference | Not due |
-| HW-WP-002 | Specify the next development setup | Ready |
+| HW-WP-002 | Specify the next development setup | Active |
 | HW-WP-001A | Hardware requirements &amp; desk trades | Ready |
 | HR1 | HR1 · Architecture downselect | Not due |
 | HR3 | HR3 · Controlled schematic release | Not due |
@@ -130,8 +551,14 @@ G/H evidence and controller attestation are absent. No predictive claim is autho
    uncertainty, failed criteria and design consequences. Release only the measured NFF envelope.
 
 Current position is **between NFF0 historical automated foundation and LAB0/NFF1 current requalification**.
-LAB0 is Ready to verify access; NFF1 is Not due until that prerequisite passes.
-FS1/HW0/HR0 remain active at program level; no new physical execution is claimed today.
+The [September 5 retained run](docs/plans/nff-serial-readiness-2026-09-05.md) establishes current
+two-board programming and UART access, but both full readiness checks failed Heap (9/10 self-tests,
+0/2 ready). NFF-MEM-001 is preparing a software repair; its build cannot prove physical recovery.
+LAB0 remains Ready for the complete safe-bench check. NFF1 waits for LAB0 and the repair candidate,
+then requires its own physical readiness/recovery evidence. No NFF, HR or product gate passed.
+
+Hardware coverage also exposes a naming conflict: HW-WP-002 asks for NFF1–NFF5, while this reviewed
+graph defines NFF1–NFF4 then HR0. The setup record leaves NFF5 undefined pending clarification.
 
 ## G1 evidence and hardware authorization
 
@@ -3016,10 +3443,12 @@ The milestone manager audits direct evidence for each deliverable and records `G
 A G1 `Go` authorizes controlled schematic capture, layout planning, DFM engagement, and EVT quote
 preparation. HR3 authorizes PCB routing from the released schematic and interfaces. Only G2
 authorizes release of manufacturing files and an EVT fabrication/assembly purchase.
-</pre></details><details id="hardware/DEVELOPMENT_SETUP.md"><summary>hardware/DEVELOPMENT_SETUP.md</summary><small>SHA-256 a59d07482cca2440933e48fd1239d6e5ba8d88319c0af5e492800386f0fcfc4a</small><pre># HW-WP-002: Development Validation Setup Definition
+</pre></details><details id="hardware/DEVELOPMENT_SETUP.md"><summary>hardware/DEVELOPMENT_SETUP.md</summary><small>SHA-256 657c32c09cdddacf3c05028659270aa8684814712364d15b651b1fe3fc86b228</small><pre># HW-WP-002: Development Validation Setup Definition
 
-State: Ready. Parent: HW-WP-001. Delivery owner: AI systems lead. Qualified electrical design
-owner: unassigned. Definition reviewed 2026-09-04; inventory access and equipment possession unverified.
+State: Active. Parent: HW-WP-001. Delivery owner: AI systems lead. Qualified electrical design
+owner: unassigned. Initial desk inventory/coverage delivered 2026-09-05 in
+[the setup record](SETUP_INVENTORY_2026-09-05.md), tracked as GitHub #199. Two-NFF UART access is
+directly evidenced; instrument possession/calibration, safe bench and full readiness remain open.
 
 ## Outcome and scope
 
@@ -3027,6 +3456,10 @@ Produce a reviewable, costed setup specification enabling three concurrent paths
 development without devices, reproducible dual-NFF measurements, and product-hardware risk coupons.
 This document defines the package and verifies requirement coverage against repository authorities;
 it does not claim the equipment is owned, calibrated, installed or purchased.
+
+The initial record identifies an unresolved naming mismatch: this exit mentions NFF5, while the
+reviewed graph defines NFF1–NFF4 then HR0. Keep it explicit pending specification clarification;
+do not invent a new milestone or treat this first desk delivery as the full package exit.
 
 ## Capability-to-equipment matrix
 

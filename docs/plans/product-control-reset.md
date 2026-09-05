@@ -51,7 +51,7 @@ Independent test triage confirmed this is an environment prerequisite; no servic
 were changed. It is not a passing full repository gate. Summary: /tmp/domes-dashboard-docs-check.json.
 
 Private publication succeeded 2026-09-04T23:35:27Z at
-https://domes-product-status.pcesar22.chatgpt.site. Site version 5, source commit
+<https://domes-product-status.pcesar22.chatgpt.site>. Site version 5, source commit
 689e6bdf50b21e8d1a4880729d97a2cfbca5076e, deployment
 appgdep_6a9b55a96e3081919fa43e8a56791aa2. The existing Site is verified owner-only, no groups/external
 visitors. Previous versions and the original worktree remain recoverable. No duplicate Site created.

@@ -77,6 +77,13 @@ independent held-out data stay in their owning authorities.
 
 ## Continuous operation
 
+The user-approved coordinate-domes-delivery heartbeat checks execution every 30 minutes and
+advances the three lanes under docs/agent-system/OPERATING_MODEL.md. It owns live queue/usage
+reconciliation and deduplicated Slack decisions, not a second scheduled Site publisher. The top
+execution panel is a dated reviewed snapshot; after two hours it explicitly asks for refresh.
+Manual review-only controller tickets require independent coordinator checks of PR identity,
+required CI and the six-PR budget; status labels are not acceptance.
+
 Existing Codex automation refresh-domes-product-status runs every two hours on this checkout while
 its host is available. It checks the actual source receipt, reviews changes when supported, and
 publishes only a changed, validated owner-only snapshot. A failed review or build leaves the last

@@ -1,6 +1,7 @@
 # DOMES Integrated Program Status
 
-**As of:** 2026-09-04. Repository evidence review; no new hardware campaign was run.
+**As of:** 2026-09-05. Three-lane activation and evidence review. Prior same-day programming/UART
+evidence is incorporated; no new physical campaign was run for activation.
 
 <!-- domes-control: {"phase":"P1","nextGate":"G1","verdict":"Hold","hardwareCount":2} -->
 
@@ -36,15 +37,17 @@ fully predictive QEMU model. Hardware desk definition does not wait for a finish
 One registered two-board lab session at a time prevents conflicting physical campaigns.
 Preparation can run concurrently; evidence-producing exits follow their actual dependencies.
 
-**Current management package:** this product-control reset. No device execution is active in this
-review. **Next autonomous execution delivery: FS-WP-004A**, the protocol-backed virtual pod lab,
-subject to the normal live issue/PR reconciliation before execution. Start at the real app
-repository/transport boundary, retain generated protocol ownership, and use virtual time. It must
-leave executable app scenarios and regression evidence, not only interfaces or another plan.
+**Current management package:** [the activated operating agreement](docs/agent-system/OPERATING_MODEL.md).
+The app virtual-lab worker ([#197](https://github.com/pcesar22/domes/issues/197)) and software-only
+NFF memory-repair worker ([#198](https://github.com/pcesar22/domes/issues/198)) were directly observed
+running in separate ministrom workspaces at 00:45 UTC. This is execution evidence, not acceptance.
+Both contracts pin main 3b62a6c and forbid hardware access. No physical session is active here.
 
-**Next program action: HW-WP-002**, a bounded development-setup definition under HW-WP-001, alongside
-PS1 requirements and VC1 risk/test work. Desk definition is ready. Procurement, supplier commitments,
-and controlled hardware design ownership require separately recorded human authority.
+**Active program action: HW-WP-002** ([#199](https://github.com/pcesar22/domes/issues/199)), alongside
+PS1 requirements and VC1 risk/test work. Its initial [inventory/coverage record](hardware/SETUP_INVENTORY_2026-09-05.md)
+is delivered for review; full package acceptance, calibrated inventory, quotes and safe bench remain
+open. Qualified design ownership and any spending still require separate authority. A 30-minute
+coordinator heartbeat is active; the existing owner-only Site publisher remains every two hours.
 
 ## Concurrent workstreams
 
@@ -67,18 +70,19 @@ and future sequencing. A historical pass is limited to its recorded configuratio
 | ID | Outcome | State |
 | --- | --- | --- |
 | APP0 | Controller foundation | Complete |
-| FS-WP-004A | Virtual pod lab | Ready |
+| FS-WP-004A | Virtual pod lab | Active |
 | FS-WP-004B | Complete simulated phone journey | Not due |
 | FS-WP-003A | Shared drill and timing contract | Acceptance pending |
 | FS-WP-004C | App ↔ production simulator parity | Not due |
 | FS-WP-004D | Six-node physical app alpha | Not due |
 | NFF0 | Automated bench foundation | Complete |
+| NFF-MEM-001 | Prepare a runtime-memory repair candidate | Active |
 | NFF1 | Current identity & recovery baseline | Not due |
 | NFF2 | Observe every peripheral | Not due |
 | NFF3 | Measure the operating envelope | Not due |
 | NFF4 | Phone + two-pod fault campaign | Not due |
 | HR0 | HR0 · Measured NFF reference | Not due |
-| HW-WP-002 | Specify the next development setup | Ready |
+| HW-WP-002 | Specify the next development setup | Active |
 | HW-WP-001A | Hardware requirements & desk trades | Ready |
 | HR1 | HR1 · Architecture downselect | Not due |
 | HR3 | HR3 · Controlled schematic release | Not due |
@@ -130,8 +134,14 @@ G/H evidence and controller attestation are absent. No predictive claim is autho
    uncertainty, failed criteria and design consequences. Release only the measured NFF envelope.
 
 Current position is **between NFF0 historical automated foundation and LAB0/NFF1 current requalification**.
-LAB0 is Ready to verify access; NFF1 is Not due until that prerequisite passes.
-FS1/HW0/HR0 remain active at program level; no new physical execution is claimed today.
+The [September 5 retained run](docs/plans/nff-serial-readiness-2026-09-05.md) establishes current
+two-board programming and UART access, but both full readiness checks failed Heap (9/10 self-tests,
+0/2 ready). NFF-MEM-001 is preparing a software repair; its build cannot prove physical recovery.
+LAB0 remains Ready for the complete safe-bench check. NFF1 waits for LAB0 and the repair candidate,
+then requires its own physical readiness/recovery evidence. No NFF, HR or product gate passed.
+
+Hardware coverage also exposes a naming conflict: HW-WP-002 asks for NFF1–NFF5, while this reviewed
+graph defines NFF1–NFF4 then HR0. The setup record leaves NFF5 undefined pending clarification.
 
 ## G1 evidence and hardware authorization
 

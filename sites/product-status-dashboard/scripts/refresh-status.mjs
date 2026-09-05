@@ -39,6 +39,13 @@ export function validate(model, sources) {
   if (model.phases.length !== 8 || new Set(model.phases.map(p => p.id)).size !== 8) fail('Require all eight unique program phases');
   if (model.phases.filter(p => p.state === 'Active').length !== 1 || model.phases.find(p => p.state === 'Active').id !== model.program.phase) fail('Exactly one phase must match the executive panel');
   if (model.streams.map(s => s.id).join(',') !== 'app,nff,hardware') fail('Three delivery tracks are required');
+  const operations = model.operations;
+  if (!operations || !sources[operations.source] || !Number.isFinite(Date.parse(operations.observedAt))) fail('Operations require dated reviewed evidence');
+  if (Date.parse(operations.observedAt) > Date.parse(model.reviewedAt)) fail('Operations observation postdates its review');
+  if (operations.packages?.map(p=>p.stream).join(',') !== 'app,nff,hardware') fail('Operations require one package per track');
+  for (const pkg of operations.packages) {
+    if (!Number.isSafeInteger(pkg.issue) || pkg.issue < 1 || pkg.url !== `https://github.com/pcesar22/domes/issues/${pkg.issue}` || !pkg.activity) fail('Invalid operating package link');
+  }
   const ids = new Set();
   for (const item of [...model.nodes, ...model.gates]) {
     if (!item.id || ids.has(item.id)) fail(`Duplicate milestone: ${item.id}`);
@@ -53,7 +60,7 @@ export function validate(model, sources) {
     if (!['app','nff','hardware','support','simulation'].includes(node.stream)) fail(`Invalid track: ${node.id}`);
     if (!Array.isArray(node.depends) || new Set(node.depends).size !== node.depends.length) fail(`Invalid dependencies: ${node.id}`);
     for (const dep of node.depends) if (!ids.has(dep)) fail(`Unknown dependency ${dep} on ${node.id}`);
-    if (['Ready','Complete','Acceptance pending'].includes(node.state) && node.depends.some(id => !satisfied(id))) fail(`Unsatisfied prerequisite for ${node.state} node ${node.id}`);
+    if (['Ready','Active','Complete','Acceptance pending'].includes(node.state) && node.depends.some(id => !satisfied(id))) fail(`Unsatisfied prerequisite for ${node.state} node ${node.id}`);
     if (!ledger.includes(`| ${node.id} | ${node.title} | ${node.state} |`)) fail(`Ledger conflicts with milestone ${node.id}`);
     if (node.state === 'Complete' && !/accepted|recorded|historical|passed/i.test(node.evidence)) fail(`Missing completion basis: ${node.id}`);
   }
