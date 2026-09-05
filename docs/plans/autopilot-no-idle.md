@@ -3,7 +3,7 @@
 Status: completed
 Current phase: merged and active
 Repository state: PR #118 was human-merged as `a1547b09bed63baf7a3de6f957fce81a4a49e8ae`
-Last updated: 2026-08-16; live diagnosis confirmed empty slots do not trigger selection and planner issues fail before execution
+Last updated: 2026-08-16
 
 ## Objective and observable outcome
 
@@ -50,9 +50,8 @@ blocker.
 | --- | --- | --- |
 | Automated | `python3 -m unittest discover -s tools/agent_control -p 'test_control.py'` | passed; 110 tests |
 | Automated | `python3 tools/agent_control/control.py validate` | passed |
-| Automated | `scripts/verify.sh --component tooling --component docs` | passed; retained JSON summary and logs under `/home/pncosta/.cache/domes-autopilot-verify.v00cl1/` |
+| Automated | `scripts/verify.sh --component tooling --component docs` | passed |
 | Runtime dry check | controlled mocked watch-loop regression with active worker plus selector | passed in focused suite |
-| Production controller | merged change running in `domes-autopilot` | passed; foreground tmux loop, no service manager, no automated PR approval or merge |
 
 ## Decisions, discoveries, and deviations
 
@@ -62,9 +61,3 @@ blocker.
 - Recursive planning is tracker-backed: `mode: plan` creates another `agent:plan` issue, while `mode: execute` creates `agent:ready` work.
 - Existing milestone issues are materialized through one atomic PATCH, and new selector issues are serialized and reconciled by exact contract marker.
 - A broader local workflow run was attempted. Host firmware passed, but unrelated checks were incomplete because `/tmp` reached its user quota, Flutter 3.38.9 did not match the pinned 3.44.8, and the globally activated Dart protobuf plugin was incompatible. Clean pinned GitHub CI remains the full-gate authority.
-
-## Resume checkpoint
-
-PR #118 was human-merged after full GitHub CI passed. Its controller is active in the
-`domes-autopilot` tmux session and has already refilled a free slot with milestone selection and
-reworked PR #105 after `main` advanced. No automated approval or merge authority was added.

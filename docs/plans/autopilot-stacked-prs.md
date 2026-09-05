@@ -55,7 +55,7 @@ the child and forces a fresh worker, judge, and CI cycle. Main-based work remain
 | Comment-handoff trust boundary | passed; only the pinned `tracker_actor` can supply durable controller handoffs |
 | `python3 tools/agent_control/control.py validate` | passed |
 | `pre-commit run --all-files` | passed with repository-local `TMPDIR` |
-| `scripts/verify.sh --component tooling --component docs` | passed; retained under `/home/pncosta/.cache/domes-stacked-final.fk3hWb/` |
+| `scripts/verify.sh --component tooling --component docs` | passed |
 | GitHub CI for stacked PR | pending |
 
 ## Decisions and deviations
@@ -67,8 +67,3 @@ the child and forces a fresh worker, judge, and CI cycle. Main-based work remain
   the controller does not rewrite the human-authoritative ticket body and continues other work.
 - Durable comment handoffs accept only GitHub comments authored by the version-pinned
   `tracker_actor`; other role-marker lookalikes are ignored.
-
-## Resume checkpoint
-
-Implementation and hostile review are complete on current `origin/main`. Publish the scoped branch,
-monitor required CI, then activate the reviewed-CI controller without approving or merging its PR.

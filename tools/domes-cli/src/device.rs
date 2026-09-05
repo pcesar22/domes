@@ -696,13 +696,13 @@ mod tests {
             &mut selected,
             "ble-registry",
             "ble",
-            "94:A9:90:0A:EB:C2"
+            "02:00:00:00:10:02"
         ));
         assert!(!reserve_device_endpoint(
             &mut selected,
             "ble-direct",
             "ble",
-            "94:a9:90:0a:eb:c2"
+            "02:00:00:00:10:02"
         ));
         assert!(reserve_device_endpoint(
             &mut selected,

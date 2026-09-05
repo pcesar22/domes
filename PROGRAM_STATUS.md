@@ -397,10 +397,10 @@ BLE adapter. Exact artifacts built from `99db4b77cc58a6695b86b7122ea5ee77fa9cbec
 | Accepted serial/BLE OTA and runtime | `v0.0.0-1-g99db4b77cc58` | `cafb9c480f04b8d67f599977f84fd437fb2d0d0786c52a50e1205f4dc26f510b` | `e2fe59021b24c09b4cfc53ca961b5f1389762fd1160a55c96670ff86f0fb1ce7` |
 | Forced rollback | `v0.0.0-2-g99db4b77cc58` | `d065b384e95e06251d48e6e3ee2590af81c6895afd449d39ddac56c78ecc03b8` | `5831c1206a22c4ab9f8264c0c3ac85985e00ea53cadca1a0a42435ad4c03be78` |
 
-| Board | Stable CP2102N identity | Campaign identity |
+| Board | Private lab alias | Campaign identity |
 | --- | --- | --- |
-| Pod 1 | `5edf3f45576def11a245cea7c169b110` | Pod 1; WiFi `94:a9:90:0a:eb:c0`; BLE `94:A9:90:0A:EB:C2` |
-| Pod 2 | `002a9f8e536def119f38c1a7c169b110` | Pod 2; WiFi `94:a9:90:0a:ea:50`; BLE `94:A9:90:0A:EA:52` |
+| Pod 1 | `pod-1` | Physical identifiers retained privately |
+| Pod 2 | `pod-2` | Physical identifiers retained privately |
 
 The campaign verified erase/factory programming, UART/BLE diagnostics, control, registry fan-out,
 serial/BLE OTA and recovery, forced rollback, two-way ESP-NOW, a traced drill, restart-snapshot

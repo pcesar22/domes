@@ -3,7 +3,7 @@
 Status: active
 Current phase: mandatory human-review correction and operator dashboard
 Repository state: `codex/fix/autopilot-human-review` from `origin/main` at `224c229`
-Last updated: 2026-08-15; merge-capable controller paused before correction
+Last updated: 2026-08-15
 
 ## Objective and observable outcome
 
@@ -45,7 +45,6 @@ conversational manager, and waiting human reviews do not occupy execution slots.
 - [x] Pause the controller and remove automatic PR approval/merge authority.
 - [x] Add a live operator dashboard that excludes raw worker transcripts.
 - [ ] **Current:** Verify, publish the mandatory-human-review correction, and monitor required CI.
-- [ ] Restart the non-merging controller on `ministrom` with `--dashboard`.
 
 ## Verification
 
@@ -69,11 +68,3 @@ conversational manager, and waiting human reviews do not occupy execution slots.
 - Independent prepublication review found and drove repairs for handoff binding, planner-restart
   journaling, refreshed-PR race checks, and complete paginated changed-path validation; regression
   tests now cover those paths.
-
-## Resume checkpoint
-
-The merge-capable session was stopped before this correction. Finish verification on
-`codex/fix/autopilot-human-review`, publish the review-ready correction PR, then launch
-`control.py run --execute --watch --autopilot --dashboard`. Resume issue `#101` / PR `#105` through
-worker and judge validation, but stop the PR at `agent:human-review`; issue `#109` remains the
-completed zero-change pilot.

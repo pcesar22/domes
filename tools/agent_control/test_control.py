@@ -11,6 +11,8 @@ from unittest import mock
 
 import control
 
+SYNTHETIC_SERIALS = frozenset({"testboard00000001", "testboard00000002"})
+
 
 def ticket_body(revision: str, dependencies: str = "None") -> str:
     values = {
@@ -177,7 +179,7 @@ class WorkflowTest(unittest.TestCase):
         workflow = control.load_workflow()
         self.assertEqual("pcesar22/domes", workflow.repository)
         self.assertEqual("pcesar22", workflow.tracker_actor)
-        self.assertEqual("ministrom", workflow.scheduler_host)
+        self.assertEqual("private-operator-config", workflow.scheduler_host)
         self.assertEqual(4, workflow.max_concurrent_workers)
         self.assertEqual(6, workflow.max_open_pull_requests)
         self.assertEqual("main", workflow.base_branch)
@@ -277,6 +279,8 @@ class WorkspaceIsolationTest(unittest.TestCase):
                 "codex/issue-42", self.git(workspace, "branch", "--show-current")
             )
             (workspace / "result.txt").write_text("committed\n", encoding="utf-8")
+            self.git(workspace, "config", "user.name", "DOMES Test")
+            self.git(workspace, "config", "user.email", "domes-test@example.invalid")
             self.git(workspace, "add", "result.txt")
             self.git(workspace, "commit", "-m", "test isolated commit")
             self.assertEqual("", self.git(source, "status", "--porcelain"))
@@ -774,10 +778,17 @@ class CommandLineTest(unittest.TestCase):
 
     def test_mutating_run_is_pinned_to_reviewed_host(self) -> None:
         workflow = control.load_workflow()
-        with mock.patch.object(
-            control.socket, "gethostname", return_value="other-host"
+        with (
+            mock.patch.object(control.socket, "gethostname", return_value="other-host"),
+            mock.patch.object(
+                control,
+                "load_operator_config",
+                return_value={"scheduler_host": "domes-runner"},
+            ),
         ):
-            with self.assertRaisesRegex(control.ControlError, "pinned to ministrom"):
+            with self.assertRaisesRegex(
+                control.ControlError, "pinned to the configured operator host"
+            ):
                 control.enforce_scheduler_host(workflow)
 
 
@@ -1114,7 +1125,7 @@ class ResultSemanticsTest(unittest.TestCase):
         sanitized = control.sanitize_public_handoff(
             {
                 "commit": commit,
-                "artifact": "/home/pncosta/private/evidence.json",
+                "artifact": "/workspace/private/evidence.json",
                 "device": "/dev/ttyUSB0 uid=020000000001",
             },
             Path("/work/issue"),
@@ -3816,7 +3827,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
         self,
     ) -> None:
         records = []
-        for serial in sorted(control.REGISTERED_NFF_CP2102N_SERIALS):
+        for serial in sorted(SYNTHETIC_SERIALS):
             records.append(
                 {
                     "path": f"/dev/serial/by-id/usb-Silicon_Labs_CP2102N_{serial}-if00-port0",
@@ -3833,11 +3844,18 @@ class ReviewFixRegressionTest(unittest.TestCase):
             json.dumps({"devices": {"cp2102n": records}}),
             "unrelated tools missing",
         )
-        with mock.patch.object(control.subprocess, "run", return_value=completed):
+        with (
+            mock.patch.object(control.subprocess, "run", return_value=completed),
+            mock.patch.object(
+                control,
+                "load_operator_config",
+                return_value={"registered_cp2102n_serials": sorted(SYNTHETIC_SERIALS)},
+            ),
+        ):
             envelope = control.registered_hardware_preflight()
         self.assertEqual(1, envelope["doctor_exit_code"])
         self.assertEqual(
-            sorted(control.REGISTERED_NFF_CP2102N_SERIALS),
+            sorted(SYNTHETIC_SERIALS),
             envelope["registered_serials"],
         )
 
@@ -3855,7 +3873,14 @@ class ReviewFixRegressionTest(unittest.TestCase):
         completed = subprocess.CompletedProcess(
             ["doctor"], 0, json.dumps({"devices": {"cp2102n": [record]}}), ""
         )
-        with mock.patch.object(control.subprocess, "run", return_value=completed):
+        with (
+            mock.patch.object(control.subprocess, "run", return_value=completed),
+            mock.patch.object(
+                control,
+                "load_operator_config",
+                return_value={"registered_cp2102n_serials": sorted(SYNTHETIC_SERIALS)},
+            ),
+        ):
             with self.assertRaisesRegex(control.ControlError, "exactly the two"):
                 control.registered_hardware_preflight()
 
@@ -4056,7 +4081,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
         }
         envelope = {
             "ports": [
-                "/dev/serial/by-id/usb-Silicon_Labs_CP2102N_5edf3f45576def11a245cea7c169b110-if00-port0"
+                "/dev/serial/by-id/usb-Silicon_Labs_CP2102N_testboard00000002-if00-port0"
             ],
             "restrictions": "no erase",
         }
@@ -4107,7 +4132,7 @@ class ReviewFixRegressionTest(unittest.TestCase):
                         "rdev": 1,
                         "vendor": "10c4",
                         "model": "ea60",
-                        "serial": "5edf3f45576def11a245cea7c169b110",
+                        "serial": "testboard00000002",
                     },
                 ),
             ):
@@ -4144,6 +4169,9 @@ class ReviewFixRegressionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with (
                 mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(
+                    control, "load_open_pull_request_snapshot", return_value=[]
+                ),
                 mock.patch.object(
                     control, "ensure_workspace", return_value=Path(directory)
                 ),
@@ -5010,6 +5038,10 @@ class ReviewFixRegressionTest(unittest.TestCase):
             control.persist_pending_plan(run_root / "pending-plan.json", plan)
             with (
                 mock.patch.dict(os.environ, {"XDG_STATE_HOME": directory}),
+                mock.patch.object(control, "load_live_tickets", return_value=[ticket]),
+                mock.patch.object(
+                    control, "load_open_pull_request_snapshot", return_value=[]
+                ),
                 mock.patch.object(
                     control, "ensure_workspace", return_value=Path(directory)
                 ),

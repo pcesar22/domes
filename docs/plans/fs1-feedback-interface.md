@@ -58,8 +58,8 @@ The prior reviewed head `fa616e9afa765e0f90a509e920fa48837027f915` passed exact-
 CI run [32548799633](https://github.com/pcesar22/domes/actions/runs/32548799633), including the
 macOS iOS no-codesign build. That CI result is historical evidence only and does not verify corrected
 implementation commit `19379f6681336fcaeb6bf6b787a2e4238fc96eab`. Fresh local rework evidence is
-retained under `/tmp/domes-issue138-rework/`; the final pushed-head CI URL and result are recorded in
-PR 145 and the worker handoff because a commit cannot contain the identifier of its own future CI
+retained privately; the final pushed-head CI result is recorded in
+PR 145 because a commit cannot contain the identifier of its own future CI
 run. The rework environment uses Rust 1.92.0, Flutter 3.44.8/Dart 3.12.2, Dart `protoc_plugin`
 25.0.0, and ESP-IDF 5.4.4. The Linux worker cannot execute a macOS iOS build; only the historical
 exact-head result above is recorded as passed.
@@ -81,8 +81,7 @@ flutter analyze --fatal-infos --fatal-warnings
 flutter test
 flutter build linux --release
 python3 tools/docs/check_markdown_links.py
-scripts/verify.sh --json-summary /tmp/domes-issue138-verify/passing-summary.json \
-  --keep-artifacts /tmp/domes-issue138-verify/passing-artifacts
+scripts/verify.sh
 ```
 
 ## FS1 software-path map
@@ -100,7 +99,7 @@ scripts/verify.sh --json-summary /tmp/domes-issue138-verify/passing-summary.json
 All entries below remain **Unverified** for both serialized NFF boards. No software result or
 accepted command upgrades any entry.
 
-| Requirement | Pod 1: CP2102N `5edf3f45576def11a245cea7c169b110` | Pod 2: CP2102N `002a9f8e536def119f38c1a7c169b110` |
+| Requirement | Registered Pod 1 | Registered Pod 2 |
 | --- | --- | --- |
 | Observed LED, touch, IMU, haptic, and audio behavior | Unverified | Unverified |
 | Audio loudness/quality and haptic detectability/quality | Unverified | Unverified |
