@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:domes_app/application/providers/drill_provider.dart';
 import 'package:domes_app/application/providers/multi_pod_provider.dart';
@@ -7,6 +8,7 @@ import 'package:domes_app/data/transport/virtual_pod_transport.dart';
 import 'package:domes_app/domain/models/app_clock.dart';
 import 'package:domes_app/domain/models/drill_config.dart';
 import 'package:domes_app/domain/models/pod_device.dart';
+import 'package:domes_app/domain/repositories/pod_repository_impl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -30,7 +32,155 @@ final class _GatedVirtualMultiPodNotifier extends MultiPodNotifier {
   }
 }
 
+final class _LastTargetRandom implements Random {
+  int calls = 0;
+
+  @override
+  int nextInt(int max) {
+    calls++;
+    return max - 1;
+  }
+
+  @override
+  bool nextBool() => throw UnsupportedError('not used');
+
+  @override
+  double nextDouble() => throw UnsupportedError('not used');
+}
+
+MultiPodNotifier _withPhysicalFixtures(DeterministicAppClock clock) {
+  return MultiPodNotifier(
+    connector: (pod) async {
+      // Inject a software fixture at the physical connector boundary.
+      final transport = VirtualPodTransport(
+        address: pod.address,
+        podId: pod.address.endsWith('01') ? 10 : 11,
+        clock: clock,
+      );
+      return (transport: transport, repository: PodRepositoryImpl(transport));
+    },
+  );
+}
+
 void main() {
+  for (final mixed in [false, true]) {
+    test(
+      '${mixed ? 'mixed' : 'physical-only'} drill keeps default randomness with a running lab',
+      () async {
+        final clock = DeterministicAppClock();
+        final random = _LastTargetRandom();
+        final multiPod = _withPhysicalFixtures(clock);
+        final container = ProviderContainer(
+          overrides: [
+            multiPodProvider.overrideWith((ref) => multiPod),
+            drillProvider.overrideWith(
+              (ref) => DrillNotifier(ref, clock: clock, random: random),
+            ),
+          ],
+        );
+        final lab = container.read(virtualPodLabProvider.notifier);
+        await lab.launch(podCount: 2, seed: 912);
+        for (final address in ['physical-01', 'physical-02']) {
+          await multiPod.connectPod(PodDevice(name: address, address: address));
+        }
+
+        final drill = container.read(drillProvider.notifier);
+        await drill.startDrill(
+          DrillConfig(
+            roundCount: 2,
+            minDelay: Duration.zero,
+            maxDelay: Duration.zero,
+            podAddresses: [
+              mixed ? 'app-virtual-pod-01' : 'physical-01',
+              'physical-02',
+            ],
+          ),
+        );
+        clock.advance(Duration.zero);
+        await _flush();
+
+        expect(random.calls, 1);
+        expect(container.read(drillProvider).activePodAddress, 'physical-02');
+        expect(container.read(drillProvider).phase, DrillPhase.waitingTouch);
+
+        container.dispose();
+        await lab.lifecycleSettled;
+      },
+    );
+  }
+
+  test('virtual-only drills resolve and reuse the running lab seed', () async {
+    final clock = DeterministicAppClock();
+    final random = _LastTargetRandom();
+    final container = ProviderContainer(
+      overrides: [
+        drillProvider.overrideWith(
+          (ref) => DrillNotifier(ref, clock: clock, random: random),
+        ),
+      ],
+    );
+    final lab = container.read(virtualPodLabProvider.notifier);
+    await lab.launch(podCount: 2, seed: 912);
+    final drill = container.read(drillProvider.notifier);
+
+    Future<List<String>> execute() async {
+      await drill.startDrill(
+        DrillConfig(
+          roundCount: 4,
+          minDelay: Duration.zero,
+          maxDelay: Duration.zero,
+          podAddresses: lab.state.pods.map((pod) => pod.address).toList(),
+        ),
+      );
+      final targets = <String>[];
+      for (var round = 0; round < 4; round++) {
+        clock.advance(Duration.zero);
+        await _flush();
+        final target = container.read(drillProvider).activePodAddress!;
+        targets.add(target);
+        lab.emitTouch(target);
+        await _flush();
+      }
+      expect(container.read(drillProvider).phase, DrillPhase.finished);
+      return targets;
+    }
+
+    expect(await execute(), await execute());
+    expect(random.calls, 0);
+    container.dispose();
+    await lab.lifecycleSettled;
+  });
+
+  test('lab lifecycle does not replace an unrelated physical drill', () async {
+    final clock = DeterministicAppClock();
+    final multiPod = _withPhysicalFixtures(clock);
+    final container = ProviderContainer(
+      overrides: [multiPodProvider.overrideWith((ref) => multiPod)],
+    );
+    await multiPod.connectPod(
+      const PodDevice(name: 'Physical', address: 'physical-01'),
+    );
+    final drill = container.read(drillProvider.notifier);
+    await drill.startDrill(
+      DrillConfig(
+        minDelay: const Duration(hours: 1),
+        maxDelay: const Duration(hours: 1),
+        podAddresses: const ['physical-01'],
+      ),
+    );
+    final lab = container.read(virtualPodLabProvider.notifier);
+
+    await lab.launch(podCount: 2);
+    expect(container.read(drillProvider.notifier), same(drill));
+    expect(container.read(drillProvider).phase, DrillPhase.waitingDelay);
+    await lab.stop();
+    expect(container.read(drillProvider.notifier), same(drill));
+    expect(container.read(drillProvider).phase, DrillPhase.waitingDelay);
+
+    container.dispose();
+    await lab.lifecycleSettled;
+  });
+
   test('launches stable distinct two- and six-pod identities', () async {
     final multiPod = MultiPodNotifier();
     final lab = VirtualPodLabNotifier(multiPod, clock: DeterministicAppClock());

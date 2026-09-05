@@ -19,6 +19,9 @@ class DrillActiveScreen extends ConsumerWidget {
     final virtualLab = ref.watch(virtualPodLabProvider);
     final isVirtualDrill =
         drillState.config?.podAddresses.any(virtualLab.ownsAddress) ?? false;
+    final isVirtualTarget =
+        virtualLab.phase == VirtualPodLabPhase.running &&
+        virtualLab.ownsAddress(drillState.activePodAddress);
 
     // Navigate to results when finished
     if (drillState.phase == DrillPhase.finished) {
@@ -105,7 +108,7 @@ class DrillActiveScreen extends ConsumerWidget {
               ),
             ),
 
-            if (drillState.phase == DrillPhase.waitingTouch && isVirtualDrill)
+            if (drillState.phase == DrillPhase.waitingTouch && isVirtualTarget)
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: OutlinedButton.icon(

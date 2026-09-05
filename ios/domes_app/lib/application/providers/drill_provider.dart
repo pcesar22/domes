@@ -86,7 +86,10 @@ class DrillState {
 
 /// Drill orchestrator notifier.
 class DrillNotifier extends StateNotifier<DrillState> {
-  final Random _random;
+  final Ref _ref;
+  final Random _defaultRandom;
+  final int? _seed;
+  late Random _random;
   final AppClock _clock;
   late final MultiPodNotifier _multiPod;
   AppTimer? _delayTimer;
@@ -107,8 +110,12 @@ class DrillNotifier extends StateNotifier<DrillState> {
     MultiPodNotifier? multiPod,
     AppClock clock = const SystemAppClock(),
     int? seed,
-  }) : _clock = clock,
-       _random = seed == null ? Random() : Random(seed),
+    Random? random,
+  }) : assert(seed == null || random == null),
+       _ref = ref,
+       _clock = clock,
+       _seed = seed,
+       _defaultRandom = random ?? (seed == null ? Random() : Random(seed)),
        super(const DrillState()) {
     _multiPod = multiPod ?? ref.read(multiPodProvider.notifier);
     _touchSubscription = _multiPod.touchEvents.listen(
@@ -136,6 +143,16 @@ class DrillNotifier extends StateNotifier<DrillState> {
       );
       return;
     }
+
+    final virtualLab = _ref.read(virtualPodLabProvider);
+    final isVirtualDrill =
+        virtualLab.phase == VirtualPodLabPhase.running &&
+        config.podAddresses.every(virtualLab.ownsAddress);
+    // Explicit test seeds retain priority; physical and mixed drills keep their
+    // default random source even while an unrelated virtual lab is running.
+    _random = _seed == null && isVirtualDrill
+        ? Random(virtualLab.seed)
+        : _defaultRandom;
 
     final generation = ++_generation;
     _participantConnectionGenerations = {
@@ -491,11 +508,5 @@ class DrillNotifier extends StateNotifier<DrillState> {
 }
 
 final drillProvider = StateNotifierProvider<DrillNotifier, DrillState>((ref) {
-  final virtualLab = ref.watch(virtualPodLabProvider);
-  return DrillNotifier(
-    ref,
-    seed: virtualLab.phase == VirtualPodLabPhase.running
-        ? virtualLab.seed
-        : null,
-  );
+  return DrillNotifier(ref);
 });
