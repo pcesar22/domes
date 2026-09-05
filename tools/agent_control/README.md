@@ -100,8 +100,15 @@ displays raw worker transcripts; detailed JSONL remains only in the runtime stat
 
 `run` is deliberately explicit because it creates worktrees, launches mutation-capable workers,
 and changes GitHub issue labels/comments. Mutation-capable runs are pinned to the reviewed
-`scheduler_host` in `WORKFLOW.md`, and a non-blocking advisory file lock prevents two scheduler
+`scheduler_host` in the operator configuration, and a non-blocking advisory file lock prevents two scheduler
 processes there from dispatching concurrently. Multi-host scheduling is intentionally unsupported.
+
+Operator configuration is read from `$HOME/.config/domes/operator.json`, or the absolute path in
+`DOMES_OPERATOR_CONFIG`. The JSON object contains `schema_version: 1`, the permitted
+`scheduler_host`, and `registered_cp2102n_serials` (two distinct registered USB identities, or an
+empty list for software-only operation). The loader requires an owner-only regular file outside
+the checkout; missing or invalid configuration blocks execution before any device probe.
+
 Each launched Codex process is held behind a startup gate until its process-group lease is durable;
 a restarted scheduler terminates any matching orphan before dispatch. Runtime JSONL, leases, and
 final result files live under

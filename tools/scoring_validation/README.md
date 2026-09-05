@@ -51,15 +51,14 @@ fields do not establish physical BLE, ESP-NOW, touch, host-clock capture, or wal
 
 ## Retained verification
 
-`artifacts/verification/` retains the complete output from the software-only acceptance rerun of
-commit `b9ce5be2b1a852bc00a6d20ea4e86222ce0d5483`:
+The historical software-only acceptance rerun reported the following outcomes. Raw execution
+logs are retained privately; they are not source files. Regenerate evidence at the current
+revision with the commands above before making a new acceptance claim:
 
-- `cpp-tests.log` records the exact CMake build and CTest commands and all 321 passing host tests.
-- `flutter-tests.log` records Flutter 3.44.8, locked dependency restore, the exact affected-test
-  command, and all 40 passing affected tests.
-- `campaign-tests.log` records all 22 passing comparator and fail-closed negative tests plus the
-  fixture, normalized-output, and verdict SHA-256 digests.
-- `verify.log` records the no-argument `scripts/verify.sh` full gate from a clean isolated checkout
+- 321 host tests passed.
+- 40 affected Flutter tests passed using the pinned SDK and locked dependencies.
+- 22 comparator and fail-closed negative tests passed.
+- The no-argument `scripts/verify.sh` full check used a clean isolated checkout
   with initialized submodules. Protocol generation, host firmware, the Rust CLI, Flutter, and the
   ESP-IDF firmware build passed; host tooling failed on the supplied base revision because
   `test_materialize_plan_sets_execute_and_plan_child_states` does not mock the newly required

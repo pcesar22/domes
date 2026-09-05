@@ -4,7 +4,7 @@ tracker_kind: github
 repository: pcesar22/domes
 tracker_actor: pcesar22
 state_prefix: agent:
-scheduler_host: ministrom
+scheduler_host: private-operator-config
 max_concurrent_workers: 4
 max_open_pull_requests: 6
 workspace_root: .worktrees/agents

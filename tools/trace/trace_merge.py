@@ -3,8 +3,8 @@
 
 Usage:
     python trace_merge.py \
-        --pod /tmp/trace-pod1.json --pod-name "Pod 1 (EA:52)" \
-        --pod /tmp/trace-pod2.json --pod-name "Pod 2 (EB:C2)" \
+        --pod /tmp/trace-pod1.json --pod-name "Pod 1" \
+        --pod /tmp/trace-pod2.json --pod-name "Pod 2" \
         --names tools/trace/trace_names.json \
         --align zero \
         -o /tmp/merged-trace.json

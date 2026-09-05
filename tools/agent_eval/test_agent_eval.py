@@ -390,7 +390,7 @@ class IsolationTest(unittest.TestCase):
             Path("/tmp/auth-only-codex-home"),
             {
                 "PATH": "/usr/bin",
-                "HOME": "/home/test",
+                "HOME": "/workspace",
                 "CODEX_HOME": "/auth/codex",
                 "HTTPS_PROXY": "https://user:secret@proxy.invalid",
                 "GH_TOKEN": "secret",
