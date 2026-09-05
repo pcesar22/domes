@@ -1,7 +1,7 @@
 # DOMES Integrated Program Status
 
-**As of:** 2026-09-05. Three-lane activation and evidence review. Prior same-day programming/UART
-evidence is incorporated; no new physical campaign was run for activation.
+**As of:** 2026-09-05. Final software-candidate evidence reviewed at 02:30 UTC. Prior same-day
+programming/UART evidence is retained; no new physical campaign was run.
 
 <!-- domes-control: {"phase":"P1","nextGate":"G1","verdict":"Hold","hardwareCount":2} -->
 
@@ -39,12 +39,19 @@ Preparation can run concurrently; evidence-producing exits follow their actual d
 
 **Current management package:** [the activated operating agreement](docs/agent-system/OPERATING_MODEL.md).
 The app virtual-lab ([#197](https://github.com/pcesar22/domes/issues/197)) and software-only NFF
-memory-repair ([#198](https://github.com/pcesar22/domes/issues/198)) candidates reached independent
-review. Both original heads passed software CI, but judges requested app disposal-race repair and
-retained numerical firmware build-size evidence. Existing-PR repair workers were directly observed
-at 01:19 UTC; neither package is accepted. The [first-rework review](docs/program/review-2026-09-05-first-rework.md)
-retains exact heads, judge findings and boundaries. Both contracts pin main 3b62a6c and forbid
-hardware access. No physical session is active here.
+memory-repair ([#198](https://github.com/pcesar22/domes/issues/198)) deliverables passed fresh
+independent judgment and final verification. FS-WP-004A and NFF-MEM-001 are **Complete for their
+bounded software scope**, at PR #201 b698a3f9 and PR #200 876fdd8b respectively. Both remain
+unmerged, absent from this management checkout and uninstalled on the NFFs. Human review/merge is
+separate from objective evidence acceptance. The [final review](docs/program/review-2026-09-05-software-exits.md)
+retains exact artifacts, criterion-level judgment and final checks; it supersedes the
+[first-rework disposition](docs/program/review-2026-09-05-first-rework.md) only for these artifacts.
+Both contracts pin main 3b62a6c and forbid hardware access. No controller or physical session is active.
+
+**Next planned software delivery: FS-WP-004B.** Six open PRs exhaust the configured capacity;
+the accepted app artifact also awaits integration. Do not start a new-PR worker or silently stack
+a dependency. Legacy reworks #166/#193 remain undispatched: their missing prerequisite evidence
+and artifact/integration conflicts were audited, not overridden by their passing CI or queue labels.
 
 **Active program action: HW-WP-002** ([#199](https://github.com/pcesar22/domes/issues/199)), alongside
 PS1 requirements and VC1 risk/test work. Its initial [inventory/coverage record](hardware/SETUP_INVENTORY_2026-09-05.md)
@@ -56,8 +63,8 @@ coordinator heartbeat is active; the existing owner-only Site publisher remains 
 
 | Delivery track | Delivered | Now | Next | Owner / forecast |
 | --- | --- | --- | --- | --- |
-| Phone app and simulation (FS/VC) | BLE controller/drill prototype, host replay and target runtime foundation; historical software tests | Protocol-backed virtual pod lab; reconcile shared drill and trace acceptance | Complete offline simulated journeys, production-backplane parity, then six-node physical alpha | AI app/software lead; forecast after first executable slice, not a fabricated date |
-| Dual-NFF validation (FS1/HW0/VC) | Historical automated serial/BLE/ESP-NOW/OTA/recovery/trace and soak campaigns | Current identity, as-built/safe-power and recovery baseline | Observed peripherals, operating-envelope measurements, phone/two-pod fault campaign, HR0 release | AI verification lead + lab operator; lab slot and instruments unconfirmed |
+| Phone app and simulation (FS/VC) | Historical controller/replay foundation; exact-head virtual-pod lab accepted as software | PR #201 awaits human review/merge; next package waits on PR capacity and an eligible baseline | Complete offline simulated journeys, production-backplane parity, then six-node physical alpha | AI app/software lead; next-package forecast unset |
+| Dual-NFF validation (FS1/HW0/VC) | Historical automated campaigns; exact-head memory-repair candidate accepted as software | PR #200 awaits human review/merge; current physical readiness still 0/2 | Separately authorize safe-bench/readiness revalidation, then peripheral and measured-envelope campaigns | AI verification lead + lab operator; lab slot and instruments unconfirmed |
 | Next setup and hardware (HW/PS/VC) | NFF design sources and candidate product architecture; no product-board release | HW-WP-002 setup spec and parallel requirements/trades | HR1/HR2 package, G1, controlled HR3/HR4, G2, then EVT | AI systems lead; qualified HW design owner unassigned; forecast unset |
 
 PS1 and VC1 remain parallel inputs to G1. FS4/VC2 require **six physical development nodes** for
@@ -73,13 +80,13 @@ and future sequencing. A historical pass is limited to its recorded configuratio
 | ID | Outcome | State |
 | --- | --- | --- |
 | APP0 | Controller foundation | Complete |
-| FS-WP-004A | Virtual pod lab | Active |
-| FS-WP-004B | Complete simulated phone journey | Not due |
+| FS-WP-004A | Virtual pod lab | Complete |
+| FS-WP-004B | Complete simulated phone journey | Blocked |
 | FS-WP-003A | Shared drill and timing contract | Acceptance pending |
 | FS-WP-004C | App ↔ production simulator parity | Not due |
 | FS-WP-004D | Six-node physical app alpha | Not due |
 | NFF0 | Automated bench foundation | Complete |
-| NFF-MEM-001 | Prepare a runtime-memory repair candidate | Active |
+| NFF-MEM-001 | Prepare a runtime-memory repair candidate | Complete |
 | NFF1 | Current identity & recovery baseline | Not due |
 | NFF2 | Observe every peripheral | Not due |
 | NFF3 | Measure the operating envelope | Not due |
@@ -139,7 +146,7 @@ G/H evidence and controller attestation are absent. No predictive claim is autho
 Current position is **between NFF0 historical automated foundation and LAB0/NFF1 current requalification**.
 The [September 5 retained run](docs/plans/nff-serial-readiness-2026-09-05.md) establishes current
 two-board programming and UART access, but both full readiness checks failed Heap (9/10 self-tests,
-0/2 ready). NFF-MEM-001 is preparing a software repair; its build cannot prove physical recovery.
+0/2 ready). NFF-MEM-001 has an accepted, unmerged software repair candidate; its build cannot prove physical recovery.
 LAB0 remains Ready for the complete safe-bench check. NFF1 waits for LAB0 and the repair candidate,
 then requires its own physical readiness/recovery evidence. No NFF, HR or product gate passed.
 
@@ -208,6 +215,9 @@ the same critical risks; unexplained model/hardware divergence remains a design 
   satisfy the whole F/G/H/VC ladder by proximity.
 - Product-definition review remains dated Aug 3 and its requirements are still hypotheses.
   Re-reading it today does not refresh its substantive evidence age.
+- The September 5 final software review accepts only PR #201 b698a3f9 and PR #200 876fdd8b,
+  each against main 3b62a6c. The latest independent judgments, final verifications and exact-head
+  CI agree; human merge, physical readiness and production-simulator parity are not implied.
 - The new graph and executive source must change together. Deterministic refresh validates the
   reviewed source receipt and rejects missing files, hash drift, cycles, invalid dependencies,
   unsupported completion, source/ledger conflicts and gate crossings. It never edits authoritative

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-09-05T01:22:00Z",
-  "review": "docs/program/review-2026-09-05-first-rework.md",
-  "sourceCommit": "cacc1ba5329b30e7b478efd62cb3e4e9dc1869e1",
+  "reviewedAt": "2026-09-05T02:30:00Z",
+  "review": "docs/program/review-2026-09-05-software-exits.md",
+  "sourceCommit": "2f73d135a1cd486736dbec6bdc8cca5f6eb0d3f8",
   "program": {
     "phase": "P1",
     "name": "Definition & feasibility",
@@ -15,7 +15,7 @@
     "forecast": null,
     "confidence": "Low",
     "summary": "Build the phone experience, close the measured NFF reference, and define the next development setup in parallel.",
-    "nextExecution": "FS-WP-004A",
+    "nextExecution": "FS-WP-004B",
     "nextProgram": "HW-WP-002"
   },
   "streams": [
@@ -24,7 +24,7 @@
       "name": "Phone app & simulation",
       "discipline": "FS / VC",
       "color": "blue",
-      "now": "Build a protocol-backed virtual pod lab",
+      "now": "Accepted virtual-lab software awaits human review and merge",
       "next": "Complete offline drills and failure scenarios",
       "owner": "AI app/software lead",
       "resource": "Host-only; no boards required"
@@ -34,8 +34,8 @@
       "name": "Dual-NFF validation",
       "discipline": "FS1 / HW0 / VC",
       "color": "green",
-      "now": "Repair the memory-readiness blocker before baseline acceptance",
-      "next": "Observe peripherals, then measure power and timing",
+      "now": "Accepted software repair candidate; physical readiness still 0/2",
+      "next": "Separately authorize safe-bench and two-board readiness revalidation",
       "owner": "AI verification lead + lab operator",
       "resource": "Two registered NFFs; one exclusive lab session"
     },
@@ -73,20 +73,20 @@
       "id": "FS-WP-004A",
       "stream": "app",
       "title": "Virtual pod lab",
-      "state": "Active",
+      "state": "Complete",
       "depends": [
         "APP0"
       ],
       "summary": "Inject a virtual PodRepository/transport into the real app; use generated messages and deterministic virtual time.",
       "acceptance": "One launch path discovers 2 and 6 virtual identities; real app providers exercise current generated commands, notifications, connection and clock control. Same seed reproduces results. Explicit app virtual model; production drill/timing semantic parity is deferred to FS-WP-004C.",
-      "gap": "Independent review found a disposal/in-flight-connection race and missing direct-disposal tests; repair and fresh judgment required. No RF claim.",
-      "source": "ios/domes_app/lib/application/providers/drill_provider.dart",
+      "gap": "Accepted only at PR #201 b698a3f9; unmerged and not imported into the management checkout. No production-simulator parity, RF, physical or predictive-timing claim.",
+      "source": "docs/program/review-2026-09-05-software-exits.md",
       "refs": [
         "FS3",
         "FS4"
       ],
       "owner": "AI software lead",
-      "evidence": "PR #201 cffa30e3 passed software CI but was rejected for disposal lifecycle; existing-PR repair observed at 01:19 UTC. No acceptance yet.",
+      "evidence": "PR #201 b698a3f9c5bd1fc870bb04052eaf0c1626a08882 passed seven independent criteria, 223 app tests, exact-head CI and final verification at 01:56:56 UTC. Disposal-race repair accepted; human review/merge remains separate.",
       "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
       "forecast": null
     },
@@ -94,13 +94,13 @@
       "id": "FS-WP-004B",
       "stream": "app",
       "title": "Complete simulated phone journey",
-      "state": "Not due",
+      "state": "Blocked",
       "depends": [
         "FS-WP-004A"
       ],
       "summary": "Build discovery → setup → drill → results → reconnect as an offline user journey.",
       "acceptance": "Script happy path, inactive touches, timeout, loss, duplicates, disconnect, restart and OTA failure; reproducible fixtures and CI. Label every modeled behavior. Fixtures declare app virtual model fidelity, not production simulator parity.",
-      "gap": "No new physical claims from six virtual pods.",
+      "gap": "Six open PRs exhaust capacity; the accepted A artifact remains unmerged. Resume only with capacity and a reviewed eligible baseline/contract. No physical claims from six virtual pods.",
       "source": "docs/TESTING.md",
       "refs": [
         "FS4"
@@ -198,18 +198,18 @@
       "id": "NFF-MEM-001",
       "stream": "nff",
       "title": "Prepare a runtime-memory repair candidate",
-      "state": "Active",
+      "state": "Complete",
       "depends": [],
       "summary": "Both boards communicate but fail Heap. Attribute internal allocations and prepare a bounded software repair without weakening thresholds.",
       "acceptance": "Exact-source allocation rationale, regression tests, fresh ESP-IDF 5.4.4 NFF build and independently reviewed candidate. This software exit does not pass physical readiness; NFF1 must revalidate both boards under an authorized lab contract.",
       "gap": "Both full readiness checks failed 9/10 self-tests (0/2 ready). Stable memory samples: 23,331 B free, 18,259 B minimum and 7,680 B largest block; the self-test display rounds free memory to 22 KiB versus the unchanged 30 KiB floor. Actual runtime recovery is unverified.",
-      "source": "docs/plans/nff-serial-readiness-2026-09-05.md",
+      "source": "docs/program/review-2026-09-05-software-exits.md",
       "refs": [
         "NFF1",
         "FS1"
       ],
       "owner": "AI firmware worker; independent firmware review",
-      "evidence": "PR #200 876fdd8b passed software CI; judge requested durable numerical build-size provenance. Evidence repair observed at 01:19 UTC; no candidate or physical acceptance.",
+      "evidence": "PR #200 876fdd8b40f22175341671bff1d303d956376ebf passed seven independent criteria, 339 host tests, fresh isolated ESP-IDF 5.4.4 build/size evidence, exact-head CI and final verification at 01:56:26 UTC. Unmerged, uninstalled candidate only; physical readiness is not accepted.",
       "invalidates": "Source, profile, allocation or readiness-threshold changes invalidate candidate evidence; physical readiness needs its own current test.",
       "forecast": null
     },
@@ -996,14 +996,14 @@
     },
     {
       "id": "GAP-APP",
-      "title": "App simulation bypasses the device contract",
-      "detail": "sim-pod-* and simulateTouch() exercise local drill logic. A virtual repository/transport, virtual clock and repeatable fault scenarios are still missing.",
+      "title": "Accepted virtual lab is not yet integrated; full journey remains open",
+      "detail": "PR #201 b698a3f9 closes the virtual repository/transport and deterministic clock software slice. It remains unmerged; the management checkout still has the old local-touch path. Full offline/fault journey and production parity require their own exits.",
       "owner": "AI app/software lead",
       "closesWith": [
         "FS-WP-004A",
         "FS-WP-004B"
       ],
-      "source": "ios/domes_app/lib/application/providers/drill_provider.dart"
+      "source": "docs/program/review-2026-09-05-software-exits.md"
     },
     {
       "id": "GAP-PHYSICAL",
@@ -1064,6 +1064,12 @@
     }
   ],
   "history": [
+    {
+      "date": "2026-09-05",
+      "title": "Two bounded software exits accepted; human merge remains",
+      "detail": "FS-WP-004A and NFF-MEM-001 passed independent review and final verification at their exact PR heads. Both remain unmerged/uninstalled. The next app package waits at the six-PR cap. Physical readiness stays 0/2; G1 Hold is unchanged.",
+      "source": "docs/program/review-2026-09-05-software-exits.md"
+    },
     {
       "date": "2026-09-05",
       "title": "Independent review triggered bounded repairs",
@@ -1164,6 +1170,7 @@
     }
   ],
   "sources": [
+    "docs/program/review-2026-09-05-software-exits.md",
     "docs/program/review-2026-09-05-first-rework.md",
     "docs/agent-system/OPERATING_MODEL.md",
     "docs/program/review-2026-09-05-activation.md",
@@ -1197,12 +1204,12 @@
   },
   "operations": {
     "state": "Active",
-    "observedAt": "2026-09-05T01:19:00Z",
-    "source": "docs/program/review-2026-09-05-first-rework.md",
+    "observedAt": "2026-09-05T02:16:00Z",
+    "source": "docs/program/review-2026-09-05-software-exits.md",
     "coordination": "Every 30 minutes while the host/app is available",
     "publishing": "Owner-only reviewed snapshot every 2 hours",
-    "execution": "Two existing-PR repair workers observed after independent rejection; hardware profile definition advanced separately",
-    "allowance": "95% remaining at this review; shared account, not project tokens",
+    "execution": "Both software exits accepted and awaiting human review/merge; no controller active. Six-PR cap and unresolved legacy prerequisites prevent another dispatch",
+    "allowance": "94% remaining at this review; shared account, not project tokens",
     "reserve": "Protect 20% remaining; check before every new cycle",
     "hardware": "No active device session; full readiness failed on both NFFs",
     "slack": "Outbound DM verified; inbound steering not yet tested",
@@ -1211,13 +1218,13 @@
         "stream": "app",
         "issue": 197,
         "url": "https://github.com/pcesar22/domes/issues/197",
-        "activity": "Repairing disposal races and adding direct-disposal tests on PR #201"
+        "activity": "PR #201 b698a3f9 passed final verification; bounded software accepted, human review/merge pending"
       },
       {
         "stream": "nff",
         "issue": 198,
         "url": "https://github.com/pcesar22/domes/issues/198",
-        "activity": "Retaining numerical build-size provenance on PR #200; no device access"
+        "activity": "PR #200 876fdd8b passed final verification; software candidate accepted, no installation or physical acceptance"
       },
       {
         "stream": "hardware",
