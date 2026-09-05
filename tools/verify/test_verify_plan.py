@@ -232,6 +232,107 @@ class VerifyPlanTest(unittest.TestCase):
             self.assertTrue(log.is_file())
             self.assertIn("Expected pre-commit 4.6.1", log.read_text(encoding="utf-8"))
 
+    def test_firmware_lock_checks_fail_closed_when_git_status_fails(self) -> None:
+        source = (ROOT / "scripts/verify.sh").read_text(encoding="utf-8")
+        firmware_check = (
+            "check_firmware() {"
+            + source.split("check_firmware() {", 1)[1].split("\nrecord_result() {", 1)[
+                0
+            ]
+        )
+        fake_commands = r"""
+build_count=0
+idf.py() {
+    if [[ "$1" == --version ]]; then
+        echo 'ESP-IDF v5.4.4'
+    else
+        build_count=$((build_count + 1))
+        echo "BUILD:$build_count"
+    fi
+}
+python3() { :; }
+python() {
+    while (($#)); do
+        if [[ "$1" == -o ]]; then
+            printf 'synthetic image\n' > "$2"
+            return 0
+        fi
+        shift
+    done
+}
+git() {
+    if [[ "$1" == diff ]]; then
+        echo 'synthetic dependency diff'
+    elif [[ "$build_count" == "$STATUS_BUILD" ]]; then
+        if [[ "$STATUS_RESULT" == failure ]]; then
+            echo 'synthetic git status failure' >&2
+            return 128
+        fi
+        echo ' M dependencies.lock'
+    fi
+}
+# Conditional invocation deliberately disables inherited errexit in the function.
+if check_firmware; then exit 0; else exit 1; fi
+"""
+        for result, build in (
+            ("clean", 0),
+            ("failure", 1),
+            ("failure", 2),
+            ("changed", 1),
+            ("changed", 2),
+        ):
+            with self.subTest(result=result, build=build):
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    (root / "firmware/domes").mkdir(parents=True)
+                    artifacts = root / "artifacts"
+                    for filename in (
+                        "domes.bin",
+                        "domes-fidelity-manifest.json",
+                        "bootloader/bootloader.bin",
+                        "partition_table/partition-table.bin",
+                        "ota_data_initial.bin",
+                        "flash_args",
+                    ):
+                        path = artifacts / "idf-build" / filename
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text("synthetic build output\n", encoding="utf-8")
+                    export = root / "export.sh"
+                    export.write_text(":\n", encoding="utf-8")
+                    process = subprocess.run(
+                        [
+                            "bash",
+                            "-c",
+                            "set -euo pipefail\n" + firmware_check + fake_commands,
+                        ],
+                        cwd=root,
+                        env={
+                            **os.environ,
+                            "ROOT_DIR": str(root),
+                            "VERIFY_TMP": str(artifacts),
+                            "IDF_EXPORT_SCRIPT": str(export),
+                            "STATUS_RESULT": result,
+                            "STATUS_BUILD": str(build),
+                        },
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(
+                        0 if result == "clean" else 1,
+                        process.returncode,
+                        process.stdout + process.stderr,
+                    )
+                    self.assertEqual(
+                        2 if result == "clean" else build,
+                        process.stdout.count("BUILD:"),
+                    )
+                    if result == "failure":
+                        self.assertIn("synthetic git status failure", process.stderr)
+                    elif result == "changed":
+                        self.assertIn("ESP-IDF rewrote", process.stderr)
+                        self.assertIn("synthetic dependency diff", process.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

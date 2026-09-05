@@ -90,6 +90,12 @@ jobs:
           persist-credentials: false
           submodules: recursive
 
+      - name: Verify firmware checkout
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$IDF_PATH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
       - name: Check generated firmware bindings
         run: |
           . "$IDF_PATH/export.sh"
@@ -127,7 +133,11 @@ jobs:
           config = json.loads(Path("build/config/sdkconfig.json").read_text())
           assert config["BOOTLOADER_APP_ROLLBACK_ENABLE"] is True
           PY
-          if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+          if ! lock_status=$(git status --porcelain -- dependencies.lock); then
+            echo "::error::Could not inspect firmware/domes/dependencies.lock"
+            exit 1
+          fi
+          if [[ -n "$lock_status" ]]; then
             echo "::error::ESP-IDF rewrote firmware/domes/dependencies.lock"
             git diff -- dependencies.lock
             exit 1

@@ -34,6 +34,12 @@ jobs:
           persist-credentials: false
           submodules: recursive
 
+      - name: Verify firmware checkout
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$IDF_PATH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
       - name: Check generated firmware bindings
         run: |
           . "$IDF_PATH/export.sh"
@@ -69,7 +75,11 @@ jobs:
           if config.get("BOOTLOADER_APP_ROLLBACK_ENABLE") is not True:
               raise SystemExit("firmware build does not enable bootloader app rollback")
           PY
-          if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+          if ! lock_status=$(git status --porcelain -- dependencies.lock); then
+            echo "::error::Could not inspect firmware/domes/dependencies.lock"
+            exit 1
+          fi
+          if [[ -n "$lock_status" ]]; then
             echo "::error::ESP-IDF rewrote firmware/domes/dependencies.lock"
             git diff -- dependencies.lock
             exit 1
@@ -87,7 +97,11 @@ jobs:
             -D "SDKCONFIG=$qemu_sdkconfig_path" \
             -D "SDKCONFIG_DEFAULTS=$PWD/sdkconfig.qemu.defaults" \
             build
-          if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+          if ! lock_status=$(git status --porcelain -- dependencies.lock); then
+            echo "::error::Could not inspect firmware/domes/dependencies.lock"
+            exit 1
+          fi
+          if [[ -n "$lock_status" ]]; then
             echo "::error::ESP-IDF rewrote firmware/domes/dependencies.lock"
             git diff -- dependencies.lock
             exit 1
@@ -95,9 +109,15 @@ jobs:
 
       - name: Validate runtime profiles and source closure
         run: |
+          . "$IDF_PATH/export.sh"
           python tools/simulation/qemu_runtime.py validate-builds \
             --physical-build firmware/domes/build \
             --qemu-build firmware/domes/build-qemu
+          python tools/ci/verify_firmware_provenance.py \
+            --repository . \
+            --expected-head "$GITHUB_SHA" \
+            --build firmware/domes/build \
+            --build firmware/domes/build-qemu
 
       - name: Check binary size
         run: |
@@ -163,6 +183,10 @@ jobs:
           if metadata_elf != root / "domes.elf" or not metadata_elf.is_file():
               raise SystemExit(f"project metadata does not resolve to packaged ELF: {metadata_elf}")
           PY
+          python "$GITHUB_WORKSPACE/tools/ci/verify_firmware_provenance.py" \
+            --repository "$GITHUB_WORKSPACE" \
+            --expected-head "$GITHUB_SHA" \
+            --build .
 
       - name: Upload firmware package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
