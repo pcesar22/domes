@@ -1,6 +1,6 @@
 # DOMES coordinator checkpoint
 
-Updated: 2026-09-05 01:26 UTC. This is resumable operational state, not a milestone acceptance record.
+Updated: 2026-09-05 01:56 UTC. This is resumable operational state, not a milestone acceptance record.
 
 - Authority: docs/agent-system/OPERATING_MODEL.md; activation approved by Paulo in this task.
 - Coordinator heartbeat: coordinate-domes-delivery, ACTIVE, every 30 minutes, current task.
@@ -11,8 +11,13 @@ Updated: 2026-09-05 01:26 UTC. This is resumable operational state, not a milest
 - The first finite controller cycle at 00:44:46 UTC completed both workers and ended normally.
   The second finite cycle's independent judges rejected both candidates at 01:12/01:13 UTC.
   A third finite run --execute --limit 2 started around 01:18 UTC in domes-coordinated;
-  both existing-PR repair workers were observed at 01:19 UTC. At 01:24 only the app worker and
-  controller remained active. Do not launch another controller while that cycle still owns work.
+  both existing-PR repair workers were observed at 01:19 UTC; that cycle finished by the 01:47 check.
+  A fourth finite cycle began around 01:49 UTC after clean host/authentication/controller, no-live-
+  process and full queue/cap checks. Both read-only issue-197/198 judges were observed at 01:50 UTC.
+  Both judges returned approve at 01:52 UTC and that cycle exited. A fifth finite cycle of two
+  verification workers started around 01:56 UTC after renewed exact-head/capacity/queue/host checks.
+  Both verification-result-schema worker processes were directly observed at 01:56 UTC.
+  Do not launch another controller while that cycle still owns work.
   No watch, autopilot or hardware opt-in. Inspect live state before any new cycle.
 - App issue #197: virtual lab; NFF issue #198: software memory repair; #199: hardware desk
   definition. Contract specification is current main; management/Site sources remain on
@@ -21,11 +26,14 @@ Updated: 2026-09-05 01:26 UTC. This is resumable operational state, not a milest
   Do not start another new-PR package. Existing-PR repair/review may continue after live checks.
   Initial issue contracts now explicitly bind #197 to PR #201 and #198 to PR #200; no acceptance
   criteria, specification revisions or physical boundaries changed.
-- App PR #201 head cffa30e3fccbfe5558ee4b4e7c3ab862351f3c46 and NFF PR #200 head
+- Repaired app PR #201 head b698a3f9c5bd1fc870bb04052eaf0c1626a08882 and NFF PR #200 head
   876fdd8b40f22175341671bff1d303d956376ebf both target main at the pinned specification.
   All eight checks, including CI Gate, pass on each exact head as independently queried from
-  GitHub's commit check-runs endpoint. Both judges rejected the first artifacts; CI does not
-  override the app disposal-race finding or the firmware size-evidence deficiency.
+  GitHub's commit check-runs endpoint at 01:48 UTC. The app's On-Device Tests was skipped, not a
+  pass. Both new independent verdicts approve the exact repaired artifacts, seven criteria each,
+  no required rework. The app verdict excludes physical/parity evidence; the NFF verdict excludes
+  physical readiness. Final verification and human approval/merge remain. Rejections of the first
+  artifacts remain historical; CI cannot by itself establish that their remedies are acceptable.
 - NFF initially entered rework directly from its worker because of two pending evidence records:
   then-pending CI (now passed) and physical revalidation (explicitly outside this software ticket).
   No failed records, blockers or judge verdict caused that transition. The coordinator preserved
@@ -34,7 +42,7 @@ Updated: 2026-09-05 01:26 UTC. This is resumable operational state, not a milest
   Do not replay it as a worker missing a judge handoff or demand prohibited physical checks.
 - Most older tickets have unmet dependencies; #166/#193 were the other eligible rework packages.
   Never start a cycle without reviewing the complete live candidate set; there is no ID filter.
-- Last account check: main allowance 5% consumed / 95% remaining; spare 20% reserve applies.
+- Last account check: main allowance 6% consumed / 94% remaining; spare 20% reserve applies.
   Per-package tokens are not yet available. Do not redeem either available reset credit.
 - NFF outcome: both programmed and reachable; readiness 0/2 due Heap, unchanged thresholds.
   No physical operations are authorized in initial worker contracts.
@@ -67,6 +75,17 @@ Updated: 2026-09-05 01:26 UTC. This is resumable operational state, not a milest
   publisher must audit these sources, record the matching receipt, refresh, fully validate and
   publish privately. Version 6 remains live in the meantime; this is pending publication, not a
   passed production build. No substantive historical evidence was made fresh merely by this review.
+- Publisher handoff at 01:36 UTC supersedes that earlier source-drift result: its memory records
+  successful substantive review, refresh/check, all 18 tests, lint, typecheck and production build.
+  Its private-source push/deployment was denied by its execution environment, so live version 6
+  remains intact. Exact rejection details were not independently retrieved; do not invent a
+  permission diagnosis or retry through another channel. Obtain permission review for the sole
+  publisher's private push/deploy retry; no audience expansion. Preserve its four unstaged files:
+  sites/product-status-dashboard/{public/evidence.html,public/status.json,status/program-status.json,
+  status/reviewed-sources.json}. Do not stage, overwrite or regenerate another owner's outputs.
+- Activation head bb7421cd5f638fe10a429ada8f695f9e1f650916 has eight successful software checks;
+  On-Device Tests skipped. The unrelated local containment failure remains unresolved and is not
+  overwritten by remote CI. No broad local retest or host-service changes were attempted this wakeup.
 - Slack: activation plus first steering/progress digest sent to Paulo U0BS70FLB3K / self-DM
   D0BRYQMBP5H, message 1788569982.547489. Inbound handling remains unverified; steering stays here.
   [Sent message](https://self-trk7705.slack.com/archives/D0BRYQMBP5H/p1788569982547489).
@@ -78,7 +97,14 @@ Updated: 2026-09-05 01:26 UTC. This is resumable operational state, not a milest
 - Notification key first-judge-rejections-197-cffa-198-876f-repairs-started sent at 01:24 UTC,
   message 1788571469.637529. No duplicate daily digest; prior hardware steering remains open.
   [Rework update](https://self-trk7705.slack.com/archives/D0BRYQMBP5H/p1788571469637529).
-- App next: collect current repair result and exact new head, verify scope/CI, then fresh judge.
+- Notification keys second-judge-pass-197-b698-198-876f and publisher-private-write-denied-bb7421c
+  sent at 01:56 UTC, message 1788573367.571789. Requested direction in this Codex task for the
+  same owner-only publisher retry. Do not repeat the permission request or daily digest on an
+  unchanged wakeup; no retry or alternate publishing route without resolved permission.
+  [Review and publisher update](https://self-trk7705.slack.com/archives/D0BRYQMBP5H/p1788573367571789).
+- App next: final verification on judged head b698a3f9c5bd1fc870bb04052eaf0c1626a08882. The repair handoff retains
+  223 passing app tests, including running-dispose and gated connection races, fatal analysis,
+  formatting and pinned locked restore. Remote head/base, all 13 allowed paths and CI were checked.
   The formal judge accepted injectable deterministic clock/seed; the explorer withdrew its earlier
   stronger clock allegation. Actual required repairs are direct-running and in-flight disposal
   ownership cleanup plus race tests. Do not resurrect the withdrawn concern as an accepted defect.
@@ -91,6 +117,17 @@ Updated: 2026-09-05 01:26 UTC. This is resumable operational state, not a milest
   Pending CI/physical records again mechanically returned it to rework; coordinator documented
   reconciliation and routed it to a fresh judge. Do not rerun another implementation worker for
   those excluded physical checks, erase evidence, or substitute new build hashes in old campaigns.
-- After the active app cycle exits, inspect the complete live queue and PR count before the next
+- Hardware desk audit: the retained size report's 16383/16384 B pure-IRAM row describes the
+  0x40374000-0x40378000 subwindow. Its one spare byte is alignment between vectors and text, not
+  reusable overall firmware margin. IRAM text extends into dual-mapped DIRAM, competing with data
+  and runtime internal heap. DIRAM's 136013 B remainder is static linker accounting, not a measured
+  readiness result. The specialist checked the exact v0.1.0-268-g876fdd8 map, ESP-IDF v5.4.4 linker/
+  heap source and ESP32-S3 size memory-map definition. The temporary build disappeared after the
+  decisive evidence was read; additional configuration cross-checks were unavailable. No build,
+  device test, component choice or new hardware acceptance occurred. Retain this boundary in #199.
+- NFF fresh judge approved retained source/size evidence at 01:52 UTC. The next step is final
+  verification on the same source head; physical checks remain separately unauthorized. Judge
+  approval here is an implementation verdict, not a GitHub approval, human merge or product exit.
+- After the active verification cycle exits, inspect the complete live queue and PR count before the next
   bounded cycle. Continue existing-PR repair/review only at the six-PR cap. Activation #202 remains
   draft due local verification and pending Site refresh. No approval, merge or product acceptance.
