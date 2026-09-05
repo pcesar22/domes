@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:domes_app/application/providers/drill_provider.dart';
 import 'package:domes_app/application/providers/multi_pod_provider.dart';
 import 'package:domes_app/application/providers/virtual_pod_lab_provider.dart';
+import 'package:domes_app/data/transport/virtual_pod_transport.dart';
 import 'package:domes_app/domain/models/app_clock.dart';
 import 'package:domes_app/domain/models/drill_config.dart';
 import 'package:domes_app/domain/models/pod_device.dart';
@@ -10,6 +13,21 @@ import 'package:flutter_test/flutter_test.dart';
 Future<void> _flush() async {
   await Future<void>.delayed(Duration.zero);
   await Future<void>.delayed(Duration.zero);
+}
+
+final class _GatedVirtualMultiPodNotifier extends MultiPodNotifier {
+  final connectStarted = Completer<void>();
+  final connectGate = Completer<void>();
+
+  @override
+  Future<void> connectVirtualPod(
+    PodDevice pod,
+    VirtualPodTransport transport,
+  ) async {
+    if (!connectStarted.isCompleted) connectStarted.complete();
+    await connectGate.future;
+    await super.connectVirtualPod(pod, transport);
+  }
 }
 
 void main() {
@@ -193,6 +211,62 @@ void main() {
       expect(() => transport.emitTouch(), throwsStateError);
     }
     lab.dispose();
+    multiPod.dispose();
+  });
+
+  test('dispose running lab removes connections and touch callbacks', () async {
+    final clock = DeterministicAppClock();
+    final multiPod = MultiPodNotifier();
+    final lab = VirtualPodLabNotifier(multiPod, clock: clock);
+    await lab.launch(podCount: 2);
+    final transports = lab.transports.toList();
+    var touches = 0;
+    final touchesSubscription = multiPod.touchEvents.listen((_) => touches++);
+
+    lab.dispose();
+    await lab.lifecycleSettled;
+
+    expect(lab.transports, isEmpty);
+    expect(multiPod.state, isEmpty);
+    expect(multiPod.connectedAddresses, isEmpty);
+    expect(clock.pendingTimerCount, 0);
+    expect(transports.every((transport) => !transport.isConnected), isTrue);
+    for (final transport in transports) {
+      expect(() => transport.emitTouch(), throwsStateError);
+    }
+    await _flush();
+    expect(touches, 0);
+
+    await touchesSubscription.cancel();
+    multiPod.dispose();
+  });
+
+  test('dispose during gated connect cannot leak late ownership', () async {
+    final clock = DeterministicAppClock();
+    final multiPod = _GatedVirtualMultiPodNotifier();
+    final lab = VirtualPodLabNotifier(multiPod, clock: clock);
+    final launch = lab.launch(podCount: 2);
+    await multiPod.connectStarted.future;
+    final transport = lab.transports.single;
+    var touches = 0;
+    final touchesSubscription = multiPod.touchEvents.listen((_) => touches++);
+
+    lab.dispose();
+    expect(transport.isConnected, isFalse);
+    multiPod.connectGate.complete();
+    await launch;
+    await lab.lifecycleSettled;
+
+    expect(lab.transports, isEmpty);
+    expect(multiPod.state, isEmpty);
+    expect(multiPod.connectedAddresses, isEmpty);
+    expect(multiPod.activeConnectionGeneration(transport.address), isNull);
+    expect(clock.pendingTimerCount, 0);
+    expect(() => transport.emitTouch(), throwsStateError);
+    await _flush();
+    expect(touches, 0);
+
+    await touchesSubscription.cancel();
     multiPod.dispose();
   });
 }

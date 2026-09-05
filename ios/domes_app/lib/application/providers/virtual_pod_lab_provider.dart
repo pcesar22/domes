@@ -45,6 +45,9 @@ final class VirtualPodLabNotifier extends StateNotifier<VirtualPodLabState> {
   List<VirtualPodTransport> get transports =>
       List.unmodifiable(_transports.values);
 
+  /// Completes after all currently queued lifecycle work, including disposal.
+  Future<void> get lifecycleSettled => _operationTail;
+
   Future<void> launch({required int podCount, int seed = 197}) async {
     if (podCount != 2 && podCount != 6) {
       throw ArgumentError.value(podCount, 'podCount', 'must be 2 or 6');
@@ -131,24 +134,26 @@ final class VirtualPodLabNotifier extends StateNotifier<VirtualPodLabState> {
   }
 
   Future<void> _disconnectOwnedPods() async {
-    final addresses = _transports.keys.toList(growable: false);
-    for (final address in addresses) {
-      await _multiPod.disconnectPod(address);
+    final owned = Map<String, VirtualPodTransport>.of(_transports);
+    for (final entry in owned.entries) {
+      if (_multiPod.mounted) {
+        await _multiPod.removePod(entry.key);
+      }
+      await entry.value.disconnect();
+      if (identical(_transports[entry.key], entry.value)) {
+        _transports.remove(entry.key);
+      }
     }
-    _transports.clear();
   }
 
   @override
   void dispose() {
     ++_generation;
-    for (final entry in _transports.entries) {
-      if (_multiPod.mounted) {
-        unawaited(_multiPod.disconnectPod(entry.key));
-      } else {
-        unawaited(entry.value.disconnect());
-      }
+    for (final transport in _transports.values) {
+      unawaited(transport.disconnect());
     }
-    _transports.clear();
+    final cleanup = _operationTail.then((_) => _disconnectOwnedPods());
+    _operationTail = cleanup.catchError((_) {});
     super.dispose();
   }
 }

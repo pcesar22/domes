@@ -125,11 +125,17 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
         'Virtual transport identity must match an app virtual model pod',
       );
     }
-    await _connectPod(
-      pod,
-      (_) async =>
-          (transport: transport, repository: PodRepositoryImpl(transport)),
-    );
+    var handedOff = false;
+    try {
+      await _connectPod(pod, (_) async {
+        handedOff = true;
+        return (transport: transport, repository: PodRepositoryImpl(transport));
+      });
+    } finally {
+      if (!handedOff) {
+        await transport.disconnect();
+      }
+    }
   }
 
   Future<void> _connectPod(PodDevice pod, PodConnector connector) async {
@@ -335,6 +341,26 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
         ),
       ),
     };
+  }
+
+  /// Disconnect and remove a pod whose lifetime is owned by another model.
+  Future<void> removePod(String address) async {
+    final generation = _connectionGenerations[address];
+    final entry = state[address];
+    _connectionGenerations[address] =
+        (_connectionGenerations[address] ?? 0) + 1;
+    if (generation != null && entry?.isConnected == true) {
+      _publishLifecycleFailure(address, generation, 'removePod');
+    }
+
+    await _cancelSubscription(_touchSubscriptions.remove(address));
+    try {
+      await entry?.transport?.disconnect();
+    } catch (_) {
+      // Removal still completes when an already-failed transport rejects close.
+    }
+    if (!mounted) return;
+    state = {...state}..remove(address);
   }
 
   /// Disconnect all pods.
