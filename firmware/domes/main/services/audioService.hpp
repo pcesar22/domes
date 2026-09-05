@@ -9,6 +9,7 @@
  */
 
 #include "config/featureManager.hpp"
+#include "drivers/audioDriver.hpp"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -18,8 +19,8 @@
 #include "interfaces/iAudioDriver.hpp"
 #include "trace/traceApi.hpp"
 
+#include <algorithm>
 #include <atomic>
-#include <cmath>
 #include <cstring>
 
 namespace domes {
@@ -204,9 +205,6 @@ public:
 private:
     static constexpr const char* kTag = "audio_svc";
     static constexpr size_t kQueueDepth = 4;
-    static constexpr uint32_t kSampleRate = 16000;
-    static constexpr size_t kMaxToneSamples = 16000;  // 1 second max
-
     enum class State : uint8_t { kIdle, kPlaying, kError };
 
     enum class RequestType : uint8_t { kNone, kAsset, kTone };
@@ -226,15 +224,6 @@ private:
     void taskLoop() {
         ESP_LOGI(kTag, "Audio task starting");
 
-        // Allocate tone buffer (heap, not stack)
-        int16_t* toneBuffer = static_cast<int16_t*>(
-            heap_caps_malloc(kMaxToneSamples * sizeof(int16_t), MALLOC_CAP_INTERNAL));
-        if (!toneBuffer) {
-            ESP_LOGE(kTag, "Failed to allocate tone buffer");
-            running_ = false;
-            return;
-        }
-
         while (running_) {
             // Check if audio feature is enabled
             if (!features_.isEnabled(config::Feature::kAudio)) {
@@ -252,7 +241,7 @@ private:
             // Wait for request
             PlayRequest req;
             if (xQueueReceive(requestQueue_, &req, pdMS_TO_TICKS(50)) == pdTRUE) {
-                processRequest(req, toneBuffer);
+                processRequest(req);
             }
 
             // Handle stop request
@@ -263,17 +252,16 @@ private:
             }
         }
 
-        heap_caps_free(toneBuffer);
         ESP_LOGI(kTag, "Audio task exiting");
     }
 
-    void processRequest(const PlayRequest& req, int16_t* toneBuffer) {
+    void processRequest(const PlayRequest& req) {
         switch (req.type) {
             case RequestType::kAsset:
                 playAssetInternal(req.assetName);
                 break;
             case RequestType::kTone:
-                playToneInternal(req.toneFrequency, req.toneDuration, toneBuffer);
+                playToneInternal(req.toneFrequency, req.toneDuration);
                 break;
             default:
                 break;
@@ -312,19 +300,15 @@ private:
         state_ = State::kIdle;
     }
 
-    void playToneInternal(uint16_t frequencyHz, uint16_t durationMs, int16_t* buffer) {
+    void playToneInternal(uint16_t frequencyHz, uint16_t durationMs) {
         TRACE_SCOPE(TRACE_ID("Audio.PlayTone"), trace::Category::kAudio);
 
-        // Generate sine wave
-        size_t sampleCount = (static_cast<size_t>(kSampleRate) * durationMs) / 1000;
-        if (sampleCount > kMaxToneSamples) {
-            sampleCount = kMaxToneSamples;
-        }
+        const size_t requestedSamples =
+            (static_cast<size_t>(AudioToneWriter::kSampleRate) * durationMs) / 1000;
+        const size_t sampleCount = std::min(requestedSamples, AudioToneWriter::kMaxSamples);
 
         ESP_LOGI(kTag, "Playing tone: %uHz for %ums (%zu samples)", frequencyHz, durationMs,
                  sampleCount);
-
-        generateSineWave(buffer, sampleCount, frequencyHz);
 
         state_ = State::kPlaying;
 
@@ -335,8 +319,7 @@ private:
             return;
         }
 
-        size_t written = 0;
-        err = driver_.write(buffer, sampleCount, &written);
+        err = toneWriter_.write(driver_, frequencyHz, durationMs);
         if (err != ESP_OK) {
             ESP_LOGE(kTag, "Write failed: %s", esp_err_to_name(err));
         }
@@ -346,38 +329,6 @@ private:
 
         driver_.stop();
         state_ = State::kIdle;
-    }
-
-    void generateSineWave(int16_t* buffer, size_t sampleCount, uint16_t frequencyHz) {
-        constexpr float kTwoPi = 2.0f * 3.14159265358979f;
-        constexpr int16_t kAmplitude = 24000;  // ~75% of max to avoid clipping
-
-        float phaseIncrement = kTwoPi * frequencyHz / kSampleRate;
-        float phase = 0.0f;
-
-        for (size_t i = 0; i < sampleCount; ++i) {
-            buffer[i] = static_cast<int16_t>(kAmplitude * sinf(phase));
-            phase += phaseIncrement;
-            if (phase >= kTwoPi) {
-                phase -= kTwoPi;
-            }
-        }
-
-        // Apply simple fade-in/fade-out to avoid clicks (10ms each)
-        size_t fadeSamples = (kSampleRate * 10) / 1000;  // 10ms
-        if (fadeSamples * 2 < sampleCount) {
-            // Fade in
-            for (size_t i = 0; i < fadeSamples; ++i) {
-                float gain = static_cast<float>(i) / fadeSamples;
-                buffer[i] = static_cast<int16_t>(buffer[i] * gain);
-            }
-            // Fade out
-            for (size_t i = 0; i < fadeSamples; ++i) {
-                float gain = static_cast<float>(fadeSamples - i) / fadeSamples;
-                buffer[sampleCount - 1 - i] =
-                    static_cast<int16_t>(buffer[sampleCount - 1 - i] * gain);
-            }
-        }
     }
 
     /**
@@ -413,6 +364,7 @@ private:
     std::atomic<bool> running_;
     std::atomic<bool> stopRequested_{false};
     std::atomic<State> state_;
+    AudioToneWriter toneWriter_;
 };
 
 }  // namespace domes
