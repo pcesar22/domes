@@ -186,8 +186,8 @@ $CLI --target pod1 --target pod2 feature list
 ```
 
 Multi-device ESP-NOW validation needs at least two pods. Serial-number device links and BLE platform
-requirements are documented in [`.codex/PLATFORM.md`](.codex/PLATFORM.md). Follow the complete
-[`$domes-esp32-firmware` ESP-NOW runbook](.codex/skills/domes-esp32-firmware/references/runbooks.md#esp-now-integration-test);
+requirements are documented in [`docs/PLATFORM.md`](docs/PLATFORM.md). Follow the complete
+[ESP-NOW runbook](docs/FIRMWARE_RUNBOOKS.md#esp-now-integration-test);
 single-status or sleep-based checks are not sufficient evidence.
 
 ## Before Submitting A Change

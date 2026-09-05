@@ -1,7 +1,8 @@
 # DOMES Firmware Runbooks
 
-Use these runbooks when a user asks to flash, monitor, validate, lint, size-check, or run hardware
-tests. They replace the old Claude slash-command markdown with direct Codex shell workflows.
+These procedures complement the verification matrix in [`TESTING.md`](TESTING.md). Start with
+[`PLATFORM.md`](PLATFORM.md) for toolchains, serial permissions, and the two NFF USB interfaces.
+Run commands from the repository root with the selected test hardware available.
 
 ## Shared Setup
 
@@ -37,8 +38,6 @@ Serial/JTAG ports (`/dev/ttyACM*`) are separate console/JTAG interfaces. Set `CO
 
 ## Flash Firmware
 
-Use when the user asks to flash, build-and-flash, or verify firmware on a pod.
-
 ```bash
 tools/firmware/flash_and_verify.sh firmware/domes "$PORT1"
 ```
@@ -64,7 +63,7 @@ sourced.
 
 ## Monitor Serial
 
-Use this instead of `idf.py monitor` in non-TTY Codex sessions:
+The monitor helper supports finite captures without an interactive terminal:
 
 ```bash
 CONSOLE1="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
@@ -81,8 +80,8 @@ python3 tools/firmware/monitor_serial.py "$CONSOLE1" 15
 python3 tools/firmware/monitor_serial.py "$CONSOLE_LIST" 30
 ```
 
-Do not use `cat`, `dd`, `head`, or `tail` on `/dev/ttyACM*` or `/dev/ttyUSB*`. Do not use `stty`
-against serial devices unless the user explicitly asks for low-level port configuration.
+Use the monitor helper for native USB console captures. Framed UART0 traffic must remain under
+the CLI transport owner; concurrent readers can consume protocol responses.
 
 Filtered examples:
 
@@ -93,35 +92,15 @@ python3 tools/firmware/monitor_serial.py "$CONSOLE_LIST" 10 2>&1 | rg -i "touch|
 python3 tools/firmware/monitor_serial.py "$CONSOLE_LIST" 10 2>&1 | rg -i "heap|mem|diag"
 ```
 
-## Erase Flash And Reflash
-
-Use when stale NVS or corrupted state may be causing ESP-NOW, calibration, boot counter, or feature
-state problems.
-
-```bash
-. ~/esp/esp-idf/export.sh
-test "$(idf.py --version)" = "ESP-IDF v5.4.4"
-python -m esptool --chip esp32s3 --port "$PORT1" erase_flash
-tools/firmware/flash_and_verify.sh firmware/domes "$PORT1"
-```
-
-Verify:
-
-```bash
-tools/domes-cli/target/debug/domes-cli --port "$PORT1" feature list
-```
-
-Warn the user that erase-flash clears NVS, pod ID, feature defaults, boot counters, and OTA
-partitions.
-
 ## Size Analysis
 
-Use after adding large features or when the app may approach partition limits.
+Set `IDF_EXPORT_SCRIPT` to the installed ESP-IDF v5.4.4 `export.sh`. Use a fresh build when
+checking the application partition limit after a feature change.
 
 ```bash
 SIZE_ROOT="$(mktemp -d)"
 (cd firmware/domes && \
-  . ~/esp/esp-idf/export.sh && \
+  . "$IDF_EXPORT_SCRIPT" && \
   idf.py -B "$SIZE_ROOT/build" -D "IDF_TARGET=esp32s3" \
     -D "SDKCONFIG=$SIZE_ROOT/sdkconfig" build && \
   idf.py -B "$SIZE_ROOT/build" -D "SDKCONFIG=$SIZE_ROOT/sdkconfig" size && \
@@ -132,88 +111,116 @@ SIZE_ROOT="$(mktemp -d)"
 Report total binary size, IRAM, DRAM, top components by size, and whether the binary fits the app
 partition in `partitions.csv`.
 
-## Firmware Lint Pass
-
-Use when the user asks to lint firmware or review against embedded rules.
-
-Read `firmware/AGENTS.md`, then check the requested scope, defaulting to `firmware/domes/main`.
-
-Critical searches:
-
-```bash
-rg -n "\b(new|malloc|calloc|realloc)\b" firmware/domes/main
-rg -n "#include\s*<(iostream|fstream)>" firmware/domes/main
-rg -n "\b(throw|try|catch|typeid|dynamic_cast)\b" firmware/domes/main
-rg -n "ESP_LOG[EWIDV]?\s*\(" firmware/domes/main
-```
-
-For ISR findings, inspect only functions marked `IRAM_ATTR`; logging and non-`FromISR` FreeRTOS
-APIs are blocking issues.
-
-Standard-library containers are not categorically forbidden. Flag unbounded allocation only in
-ISRs, deterministic loops, and latency-critical tasks. ETL and `tl::expected` are not dependencies.
-
-Report findings as critical violations, warnings, and style issues with file and line references.
-
 ## BLE Transport Test
 
 Prerequisites: native Linux, firmware flashed and booted for at least 8 seconds, Bluetooth powered
-on with `bluetoothctl power on`.
+on with `bluetoothctl power on`. Set `BLE_DEVICE` to the selected scan result.
 
 ```bash
 CLI="tools/domes-cli/target/debug/domes-cli"
 $CLI --scan-ble
-$CLI --ble "DOMES-Pod-XX" feature list
-$CLI --ble "DOMES-Pod-XX" system info
-$CLI --ble "DOMES-Pod-XX" system memory
-$CLI --ble "DOMES-Pod-XX" led solid --color ff0000
+$CLI --ble "$BLE_DEVICE" feature list
+$CLI --ble "$BLE_DEVICE" system info
+$CLI --ble "$BLE_DEVICE" system memory
+$CLI --ble "$BLE_DEVICE" led solid --color ff0000
 sleep 2
-$CLI --ble "DOMES-Pod-XX" led off
-$CLI --ble "DOMES-Pod-XX" feature disable haptic
-$CLI --ble "DOMES-Pod-XX" feature list
-$CLI --ble "DOMES-Pod-XX" feature enable haptic
+$CLI --ble "$BLE_DEVICE" led off
+$CLI --ble "$BLE_DEVICE" feature disable haptic
+$CLI --ble "$BLE_DEVICE" feature list
+$CLI --ble "$BLE_DEVICE" feature enable haptic
 ```
 
 Also test connect-by-MAC if scan output provides the address.
 
 Report devices found, feature list, system info, fragmented memory-response completion, LED command
-acceptance, haptic feature-state round trip, and MAC connect status. Ask for visual confirmation for
+acceptance, haptic feature-state round trip, and MAC connect status. Record visual confirmation for
 LEDs. The toggle verifies BLE config behavior; it does not trigger or prove physical haptic output.
 
 ## ESP-NOW Integration Test
 
-Requires two pods.
+Requires two selected pods and GNU `timeout`. Run the complete block as one Bash command.
+The subshell stops on failed assertions. On success, failure or interruption, bounded cleanup
+requests radio disable, simulation off and trace stop on both selected ports; it does not clear
+stored data or modify other features. Cleanup failures remain visible and produce a nonzero result;
+verify the final device state before another campaign. Evidence files are retained.
 
 ```bash
+(
+set -euo pipefail
+: "${PORT1:?Select the first runtime port}"
+: "${PORT2:?Select the second runtime port}"
+[[ "$PORT1" != "$PORT2" ]] || { echo "Select two distinct ports" >&2; exit 1; }
+command -v timeout >/dev/null || { echo "GNU timeout is required" >&2; exit 1; }
 CLI="tools/domes-cli/target/debug/domes-cli"
 ROUNDS=${ROUNDS:-100}
 SESSIONS=${SESSIONS:-3}
+[[ "$ROUNDS" =~ ^[1-9][0-9]*$ && "$SESSIONS" =~ ^[1-9][0-9]*$ ]] || {
+  echo "ROUNDS and SESSIONS must be positive integers" >&2
+  exit 1
+}
+EVIDENCE_DIR="$(mktemp -d)"
+
+cleanup() {
+  local result=$? failed=0 port action output
+  local -a arguments
+  trap - EXIT INT TERM
+  for port in "$PORT1" "$PORT2"; do
+    for action in radio simulation trace; do
+      case "$action" in
+        radio) arguments=(feature disable esp-now) ;;
+        simulation) arguments=(espnow sim-mode off) ;;
+        trace) arguments=(trace stop) ;;
+      esac
+      if output=$(timeout --kill-after=1s 8s "$CLI" --port "$port" "${arguments[@]}" 2>&1); then
+        :
+      else
+        printf 'Cleanup failed for %s (%s):\n%s\n' "$port" "$action" "$output" >&2
+        failed=1
+      fi
+    done
+  done
+  if (( result == 0 && failed != 0 )); then result=1; fi
+  printf 'Retained evidence: %s\n' "$EVIDENCE_DIR"
+  exit "$result"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+read_status() {
+  local port=$1 output
+  output=$("$CLI" --port "$port" espnow status) || {
+    printf 'Status request failed for %s:\n%s\n' "$port" "$output" >&2
+    return 1
+  }
+  printf '%s\n' "$output"
+}
 
 wait_for_disabled() {
   local phase=$1 status1 status2
   for attempt in {1..20}; do
-    status1=$("$CLI" --port "$PORT1" espnow status)
-    status2=$("$CLI" --port "$PORT2" espnow status)
-    if grep -Eq 'State:[[:space:]]+disabled' <<< "$status1" &&
-       grep -Eq 'State:[[:space:]]+disabled' <<< "$status2"; then
+    status1=$(read_status "$PORT1") || return 1
+    status2=$(read_status "$PORT2") || return 1
+    if grep -Eq 'State:[[:space:]]+disabled[[:space:]]*$' <<< "$status1" &&
+       grep -Eq 'State:[[:space:]]+disabled[[:space:]]*$' <<< "$status2"; then
       return 0
     fi
     sleep 1
   done
-  printf '%s\n%s\n' "$status1" "$status2"
+  printf 'Timed out waiting for %s:\n%s\n%s\n' "$phase" "$status1" "$status2" >&2
   return 1
 }
 
 wait_for_peers() {
   local phase=$1 status1 status2 state1 state2
   for attempt in {1..30}; do
-    status1=$("$CLI" --port "$PORT1" espnow status)
-    status2=$("$CLI" --port "$PORT2" espnow status)
+    status1=$(read_status "$PORT1") || return 1
+    status2=$(read_status "$PORT2") || return 1
     state1=$(awk '/State:/ {print $2; exit}' <<< "$status1")
     state2=$(awk '/State:/ {print $2; exit}' <<< "$status2")
     if [[ "$state1:$state2" == master:slave || "$state1:$state2" == slave:master ]] &&
-       grep -Eq 'Peers:[[:space:]]+1' <<< "$status1" &&
-       grep -Eq 'Peers:[[:space:]]+1' <<< "$status2"; then
+       grep -Eq 'Peers:[[:space:]]+1[[:space:]]*$' <<< "$status1" &&
+       grep -Eq 'Peers:[[:space:]]+1[[:space:]]*$' <<< "$status2"; then
       if [[ "$state1" == master ]]; then
         MASTER_PORT=$PORT1
         SLAVE_PORT=$PORT2
@@ -226,33 +233,39 @@ wait_for_peers() {
     fi
     sleep 1
   done
-  printf '%s\n%s\n' "$status1" "$status2"
+  printf 'Timed out waiting for %s:\n%s\n%s\n' "$phase" "$status1" "$status2" >&2
   return 1
 }
 
 run_benchmark() {
   local port=$1 output
-  output=$("$CLI" --port "$port" espnow bench --rounds "$ROUNDS")
+  output=$("$CLI" --port "$port" espnow bench --rounds "$ROUNDS") || {
+    printf 'Benchmark command failed for %s:\n%s\n' "$port" "$output" >&2
+    return 1
+  }
   printf '%s\n' "$output"
-  grep -Eq "Rounds:[[:space:]]+$ROUNDS/$ROUNDS completed \\(0 failed\\)" <<< "$output"
-  grep -q 'Mean RTT:' <<< "$output"
+  grep -Eq "Rounds:[[:space:]]+$ROUNDS/$ROUNDS completed \\(0 failed\\)[[:space:]]*$" <<< "$output" || {
+    echo "Benchmark did not complete every round without failure" >&2
+    return 1
+  }
+  grep -q 'Mean RTT:' <<< "$output" || { echo "Benchmark omitted RTT results" >&2; return 1; }
 }
 
 "$CLI" --port "$PORT1" feature disable esp-now
 "$CLI" --port "$PORT2" feature disable esp-now
-wait_for_disabled initial
+wait_for_disabled initial || exit 1
 "$CLI" --port "$PORT1" espnow sim-mode off
 "$CLI" --port "$PORT2" espnow sim-mode off
 
 for session in $(seq 1 "$SESSIONS"); do
   "$CLI" --port "$PORT1" feature enable esp-now
   "$CLI" --port "$PORT2" feature enable esp-now
-  wait_for_peers "benchmark session $session"
-  run_benchmark "$SLAVE_PORT"
-  run_benchmark "$MASTER_PORT"
+  wait_for_peers "benchmark session $session" || exit 1
+  run_benchmark "$SLAVE_PORT" || exit 1
+  run_benchmark "$MASTER_PORT" || exit 1
   "$CLI" --port "$PORT1" feature disable esp-now
   "$CLI" --port "$PORT2" feature disable esp-now
-  wait_for_disabled "benchmark session $session"
+  wait_for_disabled "benchmark session $session" || exit 1
 done
 
 # The trace-backed simulated drill is a separate fresh lifecycle.
@@ -264,27 +277,28 @@ for port in "$PORT1" "$PORT2"; do
 done
 "$CLI" --port "$PORT1" feature enable esp-now
 "$CLI" --port "$PORT2" feature enable esp-now
-wait_for_peers "simulated drill"
+wait_for_peers "simulated drill" || exit 1
 sleep 35
 
 for port in "$PORT1" "$PORT2"; do
-  status=$("$CLI" --port "$port" espnow status)
+  status=$(read_status "$port") || exit 1
   printf '%s\n' "$status"
-  grep -Eq 'State:[[:space:]]+disabled' <<< "$status"
-  grep -Eq 'Peers:[[:space:]]+1' <<< "$status"
-  grep -Eq 'TX fails:[[:space:]]+0' <<< "$status"
+  grep -Eq 'State:[[:space:]]+disabled[[:space:]]*$' <<< "$status"
+  grep -Eq 'Peers:[[:space:]]+1[[:space:]]*$' <<< "$status"
+  grep -Eq 'TX fails:[[:space:]]+0[[:space:]]*$' <<< "$status"
 done
 "$CLI" --port "$PORT1" trace stop
 "$CLI" --port "$PORT2" trace stop
-"$CLI" --port "$PORT1" trace dump --output /tmp/domes-pod1.json \
+"$CLI" --port "$PORT1" trace dump --output "$EVIDENCE_DIR/pod1.json" \
   --names tools/trace/trace_names.json
-"$CLI" --port "$PORT2" trace dump --output /tmp/domes-pod2.json \
+"$CLI" --port "$PORT2" trace dump --output "$EVIDENCE_DIR/pod2.json" \
   --names tools/trace/trace_names.json
 python3 tools/trace/trace_merge.py \
-  --pod /tmp/domes-pod1.json --pod-name pod1 \
-  --pod /tmp/domes-pod2.json --pod-name pod2 \
+  --pod "$EVIDENCE_DIR/pod1.json" --pod-name pod1 \
+  --pod "$EVIDENCE_DIR/pod2.json" --pod-name pod2 \
   --names tools/trace/trace_names.json --align zero \
-  --output /tmp/domes-merged.json
+  --output "$EVIDENCE_DIR/merged.json"
+)
 ```
 
 `stopping` is a transitional state: the previous discovery or game loop still owns lifecycle state, so do not
@@ -312,7 +326,7 @@ Expected:
 - Stationary magnitude around 0.95 g to 1.05 g.
 - Flat board Z axis dominates near 1 g.
 
-For tap detection, ask the user to tap the board:
+For tap detection, apply a physical tap while capturing the output:
 
 ```bash
 python3 tools/firmware/monitor_serial.py "$CONSOLE1" 10 2>&1 | rg -i "tap|triage|mode"
@@ -340,7 +354,7 @@ $CLI --port "$PORT" led off
 $CLI --port "$PORT" led get
 ```
 
-Ask the user to confirm all 16 LEDs, correct colors, and no dead or dim LEDs.
+Record whether all 16 LEDs show the correct colors, with no dead or dim LEDs.
 
 ## Touch Test
 
@@ -406,7 +420,7 @@ haptic output, or audio output. Record visual/tactile/audible confirmation separ
 
 ## Full Readiness Evaluation
 
-Use [`hardware/nff-devboard/BRING_UP_CHECKLIST.md`](../../../../hardware/nff-devboard/BRING_UP_CHECKLIST.md)
+Use [`hardware/nff-devboard/BRING_UP_CHECKLIST.md`](../hardware/nff-devboard/BRING_UP_CHECKLIST.md)
 as the per-board evidence record. The checks below select the runbooks; they do not replace the
 checklist's physical observations, programming/OTA acceptance sequence, or explicit unverified rows.
 
@@ -417,40 +431,16 @@ After the baseline passes on each board, run every applicable dedicated workflow
   audio feedback separately.
 - LED Test and Touch Test with physical visual/input confirmation.
 - ESP-NOW Integration Test on two boards, including peer packet evidence and drill execution.
-- Serial and BLE OTA from the root [`AGENTS.md`](../../../../AGENTS.md), followed by reconnect,
+- Serial and BLE OTA from [`TESTING.md`](TESTING.md#hardware-verification), followed by reconnect,
   version, health, self-test, a second reboot, and repeated confirmation. Exercise
   invalid/interrupted recovery and forced failed-self-test rollback separately. The declared
   version must be the parser-valid, at-most-31-byte value embedded in the exact image. Raw TCP OTA
   is not a supported path.
 - ESP-IDF panic-dump retrieval from the
-  [debug skill](../../domes-debug-esp32/SKILL.md) when a controlled crash test is scheduled; a CLI
+  [debugging guide](DEBUGGING.md) when a controlled crash test is scheduled; a CLI
   clean-restart snapshot is not equivalent.
 - Final `system health`, `system memory`, and `feature list` captures on each board after the test
   sequence.
 
 Mark a row unverified rather than passed when the workflow lacks its required physical observation,
 transport, matching firmware image, or second device.
-
-## New Driver Scaffold
-
-Use when the user asks to add a new hardware driver.
-
-Follow existing repo naming rather than the old snake-case templates:
-
-- Interface: `firmware/domes/main/interfaces/i<Name>Driver.hpp`
-- Implementation: `firmware/domes/main/drivers/<name>Driver.hpp` plus `.cpp` if needed
-- Test fake: follow the nearest pattern under `firmware/test_app/`; there is no
-  `firmware/domes/test/mocks/` tree.
-
-Steps:
-
-1. Read nearby interfaces and drivers before creating files.
-2. Add an injectable interface only when service isolation provides meaningful test value.
-3. Keep deterministic and ISR paths allocation-free; bounded startup ownership may follow nearby
-   code.
-4. Use ESP-IDF APIs directly and the existing `esp_err_t` or project-result conventions.
-5. Add a focused fake and host test under `firmware/test_app/` when the boundary is testable there.
-6. Update `firmware/domes/main/CMakeLists.txt` only if adding `.cpp` sources.
-7. Add unit tests in the appropriate firmware test area.
-
-Do not invent a generic driver framework; match the local style.

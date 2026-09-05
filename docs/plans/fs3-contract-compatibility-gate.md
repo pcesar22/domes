@@ -13,9 +13,9 @@ contract tests, 13 mobile scoring/result tests, 22 scoring validation tests, and
 negative-path checks passed. The later artifact-only commit retains this exact run without changing
 the executed runner.
 
-This verdict accepts only the pinned software compatibility baseline. It does not authorize FS3
-convergence work until this artifact is reviewed and merged. PR #107 is excluded as authority.
-The FS-WP-003A physical exit remains unverified.
+This historical verdict accepts only the pinned software compatibility baseline.
+Current convergence and acceptance work is tracked in issues #154 and #155.
+PR #107 is excluded as authority. The FS-WP-003A physical exit remains unverified.
 
 ## Pinned source map
 
@@ -55,19 +55,6 @@ The historical run reported the following result; regenerate it for a current-re
 GATE_VERDICT=ACCEPTED_SOFTWARE_COMPATIBILITY
 PHYSICAL_EVIDENCE=UNVERIFIED
 ```
-
-## Tracker snapshot
-
-Snapshot reconciled from GitHub on 2026-08-22 UTC:
-
-| Item | Observed state | Authority decision |
-| --- | --- | --- |
-| PR #107 | Open, non-draft, `mergeStateStatus=DIRTY`, head `6b2f0427e3e7d13a3821a5487b207c372b20a058` | Dirty and non-authoritative; do not select or resume it |
-| Issue #114 | Closed and labeled `agent:blocked` | Its physical FS-WP-003A acceptance is unverified; closure is not physical evidence |
-| Issue #106 | Open and labeled `agent:blocked` | Blocked; do not resume |
-| Issue #116 | Open and labeled `agent:blocked` | Blocked; do not resume |
-| Issue #141 | Open and labeled `agent:human-review` | Scheduler-owned; this gate neither duplicates nor activates it |
-| Issues #142-143 | Open and labeled `agent:ready` | Scheduler-owned; this gate neither duplicates nor activates them |
 
 ## Fail-closed and evidence boundary
 

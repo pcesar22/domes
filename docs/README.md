@@ -7,10 +7,11 @@ when documents disagree; do not resolve conflicts by copying the same fact into 
 
 | Concern | Authoritative source | Supporting documentation |
 | --- | --- | --- |
-| Product-realization lifecycle and phase transitions | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) and `$domes-milestone-manager` |
+| Product-realization lifecycle and phase transitions | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) |
+| Delivery packages and dependencies | [`PROGRAM_MILESTONES.md`](PROGRAM_MILESTONES.md) | [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) and GitHub milestones |
 | Product vision, customer, and launch hypotheses | [`research/PRODUCT_DEFINITION.md`](../research/PRODUCT_DEFINITION.md) | Accepted requirements and research evidence linked from it |
 | CEO status, phases, gates, workstreams, hardware releases, and decisions | [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) | Pull requests and verification results |
-| Program and gate contract structure | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) | `$domes-milestone-manager` semantic review workflow |
+| Program and gate contract structure | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) |
 | Firmware behavior | Code under [`firmware/domes/main/`](../firmware/domes/main/) | [`firmware/README.md`](../firmware/README.md) |
 | Active compiled board profile and GPIO values | [`firmware/domes/main/config.hpp`](../firmware/domes/main/config.hpp) | [`PIN_REFERENCE.md`](PIN_REFERENCE.md) and board schematic |
 | Config and trace messages | [`firmware/common/proto/`](../firmware/common/proto/) | [`tools/domes-cli/README.md`](../tools/domes-cli/README.md) |
@@ -19,14 +20,13 @@ when documents disagree; do not resolve conflicts by copying the same fact into 
 | Frame encoding and per-message response envelope | [`firmware/common/protocol/frameCodec.hpp`](../firmware/common/protocol/frameCodec.hpp) plus the paired firmware sender/host decoder | [`firmware/common/proto/README.md`](../firmware/common/proto/README.md) and protocol tests |
 | CLI commands and options | `domes-cli --help` from [`tools/domes-cli`](../tools/domes-cli/) | [`tools/domes-cli/README.md`](../tools/domes-cli/README.md) |
 | Automated verification | [`.github/workflows/firmware-ci.yml`](../.github/workflows/firmware-ci.yml) and its `CI Gate` | [`TESTING.md`](TESTING.md) |
-| Hardware verification | [`.github/workflows/firmware-hw-test.yml`](../.github/workflows/firmware-hw-test.yml) plus retained device evidence | [`TESTING.md`](TESTING.md), [`.codex/PLATFORM.md`](../.codex/PLATFORM.md), and [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) |
+| Hardware verification | [`.github/workflows/firmware-hw-test.yml`](../.github/workflows/firmware-hw-test.yml) plus retained device evidence | [`TESTING.md`](TESTING.md), [`PLATFORM.md`](PLATFORM.md), and [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) |
 | Current hardware authorization and next-iteration definition | [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) and [`hardware/NEXT_ITERATION_REQUEST.md`](../hardware/NEXT_ITERATION_REQUEST.md) | [`hardware/README.md`](../hardware/README.md) |
 | Panic coredumps and clean-restart snapshots | `firmware/domes/partitions.csv`, `sdkconfig.defaults`, and the owning firmware implementation | [`firmware/README.md`](../firmware/README.md) and project debug runbooks |
 | System design and hardware targets | [`research/SYSTEM_ARCHITECTURE.md`](../research/SYSTEM_ARCHITECTURE.md) | Hardware files under [`hardware/`](../hardware/) |
 | As-built software boundaries and decisions | [`research/SOFTWARE_ARCHITECTURE.md`](../research/SOFTWARE_ARCHITECTURE.md) | Implementation source and tests |
 | Deterministic firmware virtual-platform target | [`research/architecture/13-deterministic-virtual-platform.md`](../research/architecture/13-deterministic-virtual-platform.md) | Current host boundary in [`research/architecture/10-host-simulation.md`](../research/architecture/10-host-simulation.md) and delivery state in [`PROGRAM_STATUS.md`](../PROGRAM_STATUS.md) |
 | Detailed design-document lifecycle | [`research/architecture/README.md`](../research/architecture/README.md) | [`research/README.md`](../research/README.md) |
-| Agent project brain and role boundaries | [`agent-system/README.md`](agent-system/README.md) | [`WORKFLOW.md`](../WORKFLOW.md) and GitHub task state |
 
 Generated protobuf files are build artifacts derived from `.proto` files. They are never the place
 to introduce a message or enum.
@@ -51,14 +51,15 @@ to introduce a message or enum.
 | Implement or audit deterministic ESP32-S3 simulation | [`research/architecture/13-deterministic-virtual-platform.md`](../research/architecture/13-deterministic-virtual-platform.md) |
 | Use or extend the host CLI | [`tools/domes-cli/README.md`](../tools/domes-cli/README.md) |
 | Build or extend the Flutter app | [`ios/domes_app/README.md`](../ios/domes_app/README.md) |
-| Work with multiple pods, BLE, or Linux device setup | [`.codex/PLATFORM.md`](../.codex/PLATFORM.md) |
+| Work with multiple pods, BLE, or Linux device setup | [`PLATFORM.md`](PLATFORM.md) |
 | Check current GPIO assignments | [`PIN_REFERENCE.md`](PIN_REFERENCE.md) |
+| Diagnose ESP32 crashes or inspect firmware with GDB | [`DEBUGGING.md`](DEBUGGING.md) |
+| Exercise BLE, ESP-NOW, and individual peripherals | [`FIRMWARE_RUNBOOKS.md`](FIRMWARE_RUNBOOKS.md) |
 | Bring up an NFF board | [`hardware/nff-devboard/BRING_UP_CHECKLIST.md`](../hardware/nff-devboard/BRING_UP_CHECKLIST.md) |
 | Start or audit the next hardware iteration | [`hardware/NEXT_ITERATION_REQUEST.md`](../hardware/NEXT_ITERATION_REQUEST.md) |
 | Decide whether a product phase may start or exit | [`PRODUCT_REALIZATION_FRAMEWORK.md`](PRODUCT_REALIZATION_FRAMEWORK.md) |
 | Create or audit phases, gates, work packages, or hardware releases | [`PROGRAM_GATE_TEMPLATE.md`](PROGRAM_GATE_TEMPLATE.md) |
 | Inspect archived plans | [`research/archive/README.md`](../research/archive/README.md) |
-| Create, dispatch, or judge agent work | [`agent-system/README.md`](agent-system/README.md) and [`WORKFLOW.md`](../WORKFLOW.md) |
 
 ## Document Lifecycle
 
@@ -66,8 +67,8 @@ to introduce a message or enum.
 promotion rules, and replacements for detailed design documents. This index only assigns factual
 ownership and navigation.
 
-`AGENTS.md`, `CLAUDE.md`, `.codex/`, and `.claude/` contain tool-specific operating guidance. They
-must point to the sources above rather than becoming independent architecture specifications.
+Component contributor guides point to the sources above rather than defining independent
+architecture specifications.
 
 ## Keeping Documentation Consistent
 

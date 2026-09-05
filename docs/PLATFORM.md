@@ -74,16 +74,17 @@ disable unrelated host services as a default setup step.
 
 ## Host Tools
 
-Run from the repository root:
+Run from the repository root. Set `WIFI_ADDRESS` to the provisioned address and `BLE_DEVICE` to
+the selected scan result when using those transports:
 
 ```bash
 (cd tools/domes-cli && cargo build --locked)
 CLI=tools/domes-cli/target/debug/domes-cli
 
 $CLI --port "$PORT1" feature list
-$CLI --wifi 192.168.1.100:5000 feature list
+$CLI --wifi "$WIFI_ADDRESS" feature list
 $CLI --scan-ble
-$CLI --ble "DOMES-Pod-01" feature list
+$CLI --ble "$BLE_DEVICE" feature list
 ```
 
 WiFi/TCP exists only in a `CONFIG_DOMES_WIFI_AUTO_CONNECT` build. Such builds prefer credentials
@@ -95,10 +96,10 @@ the TCP config server. Serial and BLE are the supported CLI image-transfer paths
 # FIRMWARE_BIN and EXPECTED_VERSION must describe the same retained clean build.
 test -f "$FIRMWARE_BIN"
 $CLI --port "$PORT1" ota flash "$FIRMWARE_BIN" --version "$EXPECTED_VERSION"
-$CLI --ble "DOMES-Pod-01" ota flash "$FIRMWARE_BIN" --version "$EXPECTED_VERSION"
+$CLI --ble "$BLE_DEVICE" ota flash "$FIRMWARE_BIN" --version "$EXPECTED_VERSION"
 ```
 
-Create that retained image with the isolated firmware command in `docs/TESTING.md`; do not reuse an
+Create that retained image with the isolated firmware command in [`TESTING.md`](TESTING.md); do not reuse an
 unverified project-local `build/` directory.
 
 After either transfer, reconnect, verify the expected version plus `system health` and `system
@@ -139,8 +140,6 @@ runner must expose the CP2102N ports to the service account and retain stable de
 `/dev/serial/by-id/`. The repository workflow does not install, register, or power that host.
 
 Manual dispatch accepts a comma-separated `ports` input; pass CP2102N `/dev/serial/by-id/` paths.
-The `hw-test` pull request label uses runner auto-detection and consumes attached lab hardware; ask
-before adding it unless the exact `Continue DOMES.` directive authorized the registered-board
-preflight defined by the milestone-manager skill. Verify a qualifying runner is online first. A
-queued job with no runner is not a test result and should be cancelled rather than left indefinitely
-pending.
+The `hw-test` pull request label uses runner auto-detection and consumes attached lab hardware.
+Verify that a qualifying runner is online and the intended boards are selected before scheduling
+the workflow. A queued job with no runner is not a test result.

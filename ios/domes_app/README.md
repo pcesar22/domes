@@ -40,7 +40,7 @@ flutter run -d <device-id>
 
 BLE validation requires a supported host or mobile target, a working Bluetooth adapter, and a
 physical pod advertising the DOMES GATT service. Native Linux is required for repository
-validation-critical desktop BLE work; see [`../../.codex/PLATFORM.md`](../../.codex/PLATFORM.md).
+validation-critical desktop BLE work; see [`../../docs/PLATFORM.md`](../../docs/PLATFORM.md).
 
 ## Checks
 

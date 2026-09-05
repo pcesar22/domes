@@ -1,18 +1,20 @@
 # ESP32-S3 GDB CLI Workflow
 
-Use this reference when debugging DOMES firmware through shell commands rather than a dedicated
-ESP32 MCP debugger. Use ESP-IDF v5.4.4 and the exact ELF/configuration that produced the running
-image.
+Use ESP-IDF v5.4.4 and the exact ELF/configuration that produced the running image. The NFF
+CP2102N bridge carries programming and framed runtime traffic; separately connected native USB
+provides console logs and built-in JTAG. See [`PLATFORM.md`](PLATFORM.md) for setup.
+
+Run commands from the repository root. Set `IDF_EXPORT_SCRIPT` to the installed ESP-IDF `export.sh`
+before running these commands.
 
 ## Build And Flash Matching Firmware
 
 ```bash
 PORT="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
   -name 'usb-Silicon_Labs_CP2102N*' | sort | sed -n '1p')"
-DEBUG_BUILD="$PWD/firmware/domes/build-debug"
-rm -rf "$DEBUG_BUILD"
+DEBUG_BUILD="$(mktemp -d)"
 (cd firmware/domes && \
-  . ~/esp/esp-idf/export.sh && \
+  . "$IDF_EXPORT_SCRIPT" && \
   idf.py -B "$DEBUG_BUILD" -D "IDF_TARGET=esp32s3" \
     -D "SDKCONFIG=$DEBUG_BUILD/sdkconfig" build && \
   idf.py -B "$DEBUG_BUILD" -D "SDKCONFIG=$DEBUG_BUILD/sdkconfig" -p "$PORT" flash)
@@ -20,30 +22,30 @@ rm -rf "$DEBUG_BUILD"
 
 ## Start OpenOCD
 
-Start OpenOCD in a long-running shell session from `firmware/domes`:
+Start OpenOCD in a long-running shell:
 
 ```bash
-. ~/esp/esp-idf/export.sh
-idf.py -B "$PWD/build-debug" openocd
+(cd firmware/domes && . "$IDF_EXPORT_SCRIPT" && \
+  idf.py -B "$DEBUG_BUILD" -D "SDKCONFIG=$DEBUG_BUILD/sdkconfig" openocd)
 ```
 
 Leave it running while GDB connects.
 
 ## Start GDB
 
-In another shell session:
+In another shell, set `DEBUG_BUILD` to the same retained build directory and set `IDF_EXPORT_SCRIPT`:
 
 ```bash
-cd firmware/domes
-. ~/esp/esp-idf/export.sh
-idf.py -B "$PWD/build-debug" gdb
+(cd firmware/domes && . "$IDF_EXPORT_SCRIPT" && \
+  idf.py -B "$DEBUG_BUILD" -D "SDKCONFIG=$DEBUG_BUILD/sdkconfig" gdb)
 ```
 
 If `idf.py gdb` is not usable in the environment, run the toolchain GDB directly against the same
 fresh-build ELF and connect to OpenOCD:
 
 ```bash
-xtensa-esp32s3-elf-gdb -ex 'target remote :3333' build-debug/domes.elf
+(. "$IDF_EXPORT_SCRIPT" && \
+  xtensa-esp32s3-elf-gdb -ex 'target remote :3333' "$DEBUG_BUILD/domes.elf")
 ```
 
 ## Initial GDB Commands
@@ -89,22 +91,22 @@ x/32xb address
 1. Capture serial logs first, including the panic reason and backtrace addresses.
 2. Check whether `domes-cli --port "$PORT" system crash-dump` returns a stored clean-restart
    snapshot. This command does not retrieve a panic backtrace or ESP-IDF core dump.
-3. Preserve the exact source, configuration, and `build-debug/domes.elf` used for the running image. If
+3. Preserve the exact source, configuration, and `$DEBUG_BUILD/domes.elf` used for the running image. If
    the artifact is missing, rebuild only from that matching commit and configuration.
 4. Read the flash panic dump through the CP2102N programming port:
 
    ```bash
    (cd firmware/domes && \
-     . ~/esp/esp-idf/export.sh && \
-     idf.py -B "$PWD/build-debug" -p "$PORT" coredump-info)
+     . "$IDF_EXPORT_SCRIPT" && \
+     idf.py -B "$DEBUG_BUILD" -D "SDKCONFIG=$DEBUG_BUILD/sdkconfig" -p "$PORT" coredump-info)
    ```
 
 5. Open the decoded dump in GDB when interactive inspection is needed:
 
    ```bash
    (cd firmware/domes && \
-     . ~/esp/esp-idf/export.sh && \
-     idf.py -B "$PWD/build-debug" -p "$PORT" coredump-debug)
+     . "$IDF_EXPORT_SCRIPT" && \
+     idf.py -B "$DEBUG_BUILD" -D "SDKCONFIG=$DEBUG_BUILD/sdkconfig" -p "$PORT" coredump-debug)
    ```
 
 6. Use GDB `info line *0xADDRESS` for log-only backtrace addresses if needed.
@@ -119,7 +121,7 @@ x/32xb address
 | GDB command hangs | Interrupt the target, then retry |
 | OpenOCD cannot connect | Close stale sessions, unplug/replug, retry |
 | Wrong source lines | Rebuild and reflash the exact source tree |
-| Panic loop | Erase flash only if stale NVS is suspected, then reflash |
+| Panic loop | Preserve the panic dump and matching ELF, diagnose the failed stage, and use targeted recovery only after confirming the fault |
 | Console logs disappear | Confirm the separate native USB connection; UART0 carries framed protocol only |
 
 ## Cleanup

@@ -253,7 +253,11 @@ jobs:
           flash_args = Path("build", "flash_args").read_text().splitlines()
           assert "0x20000 domes.bin" in flash_args, flash_args
           PY
-          if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+          if ! lock_status=$(git status --porcelain -- dependencies.lock); then
+            echo "::error::Could not inspect firmware/domes/dependencies.lock"
+            exit 1
+          fi
+          if [[ -n "$lock_status" ]]; then
             echo "::error::ESP-IDF rewrote firmware/domes/dependencies.lock"
             git diff -- dependencies.lock
             exit 1

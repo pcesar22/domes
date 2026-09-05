@@ -197,8 +197,6 @@ check_host_tooling() {
     (
         cd "$ROOT_DIR" &&
             pre-commit run --all-files --show-diff-on-failure &&
-            python3 -m unittest discover -s tools/agent_eval -p 'test_*.py' -v &&
-            python3 -m unittest discover -s tools/agent_control -p 'test_*.py' -v &&
             python3 -m unittest discover -s tools/ci -p 'test_*.py' -v &&
             python3 -m unittest discover -s tools/doctor -p 'test_*.py' -v &&
             python3 -m unittest discover -s tools/docs -p 'test_*.py' -v &&
@@ -241,6 +239,7 @@ check_firmware() {
     local idf_sdkconfig="$VERIFY_TMP/sdkconfig"
     local idf_qemu_sdkconfig="$VERIFY_TMP/sdkconfig-qemu"
     local idf_version
+    local dependency_status
     local size
     local max_size=1966080
 
@@ -271,7 +270,8 @@ with open(sys.argv[1], encoding="utf-8") as config_file:
 if config.get("BOOTLOADER_APP_ROLLBACK_ENABLE") is not True:
     raise SystemExit("firmware build does not enable bootloader app rollback")
 PY
-    if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+    dependency_status=$(git status --porcelain -- dependencies.lock) || return 1
+    if [[ -n "$dependency_status" ]]; then
         echo "ESP-IDF rewrote firmware/domes/dependencies.lock" >&2
         git diff -- dependencies.lock >&2
         return 1
@@ -286,7 +286,8 @@ PY
     python3 "$ROOT_DIR/tools/simulation/qemu_runtime.py" validate-builds \
         --physical-build "$idf_build_dir" \
         --qemu-build "$idf_qemu_build_dir" || return 1
-    if [[ -n "$(git status --porcelain -- dependencies.lock)" ]]; then
+    dependency_status=$(git status --porcelain -- dependencies.lock) || return 1
+    if [[ -n "$dependency_status" ]]; then
         echo "ESP-IDF rewrote firmware/domes/dependencies.lock" >&2
         git diff -- dependencies.lock >&2
         return 1

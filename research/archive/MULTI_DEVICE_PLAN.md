@@ -1,10 +1,10 @@
 # Multi-Device Support Overhaul
 
 > **Archived planning record.** Paths, device naming, discovery claims, and completed checkboxes in
-> this file are historical. Use [`../../.codex/PLATFORM.md`](../../.codex/PLATFORM.md),
+> this file are historical. Tool and guide paths below point to their maintained successors.
+> Use [`../../docs/PLATFORM.md`](../../docs/PLATFORM.md),
 > [`../../tools/domes-cli/README.md`](../../tools/domes-cli/README.md), and current CLI help.
 
-**Branch:** `claude/feat/multi-device-support`
 **Goal:** Scale from single-device to two+ connected devices. Enable full ESP-NOW testing and all multi-pod features.
 **Last audit:** 2026-02-08
 
@@ -142,37 +142,17 @@ Every file below assumed **one ESP32 device** connected to the host. This docume
 
 **Done:** Updated to accept `--ports` (comma-separated).
 
-### 4.2 :white_check_mark: `.claude/skills/esp32-firmware/scripts/flash_and_verify.sh`
+### 4.2 :white_check_mark: `tools/firmware/flash_and_verify.sh`
 
 **Done:** Updated to accept multiple ports.
 
-### 4.3 :white_check_mark: `.claude/skills/esp32-firmware/scripts/monitor_serial.py`
+### 4.3 :white_check_mark: `tools/firmware/monitor_serial.py`
 
 **Done:** Updated to accept multiple ports with colored, labeled output.
 
 ---
 
-## 5. Claude Skills & Commands
-
-### 5.1 :white_check_mark: `/flash` Skill
-
-**Done:** Updated `.claude/commands/flash.md` with multi-device support.
-
-### 5.2 :white_check_mark: `esp32-firmware` Skill
-
-**Done:** Updated `.claude/skills/esp32-firmware/SKILL.md` with multi-device workflows section.
-
-### 5.3 :white_check_mark: `debug-esp32` Skill
-
-**Done:** Updated `.claude/skills/debug-esp32/SKILL.md` with multi-device debugging section.
-
----
-
 ## 6. Documentation
-
-### 6.1 :white_check_mark: `CLAUDE.md`
-
-**Done:** Multi-device testing section added. Examples updated with `--all`, `--target`, multi-port syntax.
 
 ### 6.2 :white_check_mark: `DEVELOPER_QUICKSTART.md`
 
@@ -201,15 +181,9 @@ Every file below assumed **one ESP32 device** connected to the host. This docume
 | `research/architecture/11-system-modes.md` | :white_check_mark: Replaced hardcoded `/dev/ttyACM0`, added "Multi-Device Mode Queries" |
 | `research/architecture/12-multi-pod-orchestration.md` | :white_check_mark: Already multi-pod by design |
 
-### 6.7 :new: :white_check_mark: `.claude/PLATFORM.md`
+### 6.7 :new: :white_check_mark: `docs/PLATFORM.md`
 
 **Done:** Fully rewritten with multi-device setup section: udev rules, device registry, pod identity, discovery, CI multi-device setup.
-
-### 6.8 :new: :white_check_mark: `firmware/CLAUDE.md`
-
-**Done:** Expanded multi-device architecture section explaining per-pod identity (NVS pod_id, BLE naming), mDNS, GameEvent tagging, and what NOT to change.
-
----
 
 ## 7. Firmware: ESP-NOW (Not Yet Implemented)
 
@@ -279,23 +253,20 @@ Every file below assumed **one ESP32 device** connected to the host. This docume
 - [x] 3.3 Per-device concurrency groups (in workflow, needs real testing)
 - [ ] 3.4 ESP-NOW CI test (blocked by ESP-NOW implementation)
 
-### Phase 5: Scripts & Skills (developer workflow)
+### Phase 5: Scripts (developer workflow)
 
 - [x] 4.1 trace_dump.py multi-port
 - [x] 4.2 flash_and_verify.sh multi-port
 - [x] 4.3 monitor_serial.py multi-port with colored output
-- [x] 5.1–5.3 Skill updates (/flash, esp32-firmware, debug-esp32)
 
 ### Phase 6: Documentation (everything updated)
 
-- [x] 6.1 CLAUDE.md
 - [x] 6.2 DEVELOPER_QUICKSTART.md
 - [x] 6.3 README.md
 - [x] 6.4 tools/domes-cli/README.md
 - [x] 6.5 tools/README.md
 - [x] 6.6 Architecture docs (06, 07, 08, 10, 11)
 - [x] 6.7 PLATFORM.md
-- [x] 6.8 firmware/CLAUDE.md (expanded multi-device section)
 
 ### Phase 7: Infrastructure (stable multi-device setup) :new:
 
@@ -318,68 +289,8 @@ Every file below assumed **one ESP32 device** connected to the host. This docume
 
 ---
 
-## Files Changed (Uncommitted in Worktree)
+## Historical Outcome
 
-### 35 files changed, +1764 / -343 lines
-
-| File | What changed |
-|------|-------------|
-| `.claude/PLATFORM.md` | Rewritten with multi-device setup section |
-| `.claude/commands/flash.md` | Multi-port support, `--all` flag |
-| `.claude/skills/debug-esp32/SKILL.md` | Multi-device debugging section |
-| `.claude/skills/esp32-firmware/SKILL.md` | Multi-device workflows section |
-| `.claude/skills/esp32-firmware/scripts/flash_and_verify.sh` | Multi-port loop |
-| `.claude/skills/esp32-firmware/scripts/monitor_serial.py` | Multi-port colored output |
-| `.github/workflows/firmware-hw-test.yml` | Multi-port env, loop-based steps |
-| `CLAUDE.md` | Multi-device testing section, updated examples |
-| `DEVELOPER_QUICKSTART.md` | "Setting Up Multiple Pods" section |
-| `README.md` | Added "Multi-Pod Operations" section |
-| `firmware/CLAUDE.md` | Expanded multi-device architecture section |
-| `firmware/common/proto/config.options` | Comments for new messages |
-| `firmware/common/proto/config.proto` | pod_id fields, SetPodId messages, new msg types |
-| `firmware/domes/main/CMakeLists.txt` | Added `mdns` to REQUIRES |
-| `firmware/domes/main/config/configCommandHandler.cpp` | handleSetPodId, pod_id in responses |
-| `firmware/domes/main/config/configCommandHandler.hpp` | handleSetPodId declaration |
-| `firmware/domes/main/config/configProtocol.hpp` | kSetPodIdReq/Rsp enum values |
-| `firmware/domes/main/game/gameEngine.cpp` | NVS pod_id read, event tagging |
-| `firmware/domes/main/game/gameEngine.hpp` | podId field in GameEvent + GameEngine |
-| `firmware/domes/main/main.cpp` | initMdns(), readPodId() |
-| `firmware/domes/main/transport/bleOtaService.cpp` | Dynamic BLE name from pod_id/MAC |
-| `firmware/domes/sdkconfig.defaults` | Updated BLE name comment |
-| `research/architecture/06-testing.md` | Multi-Device Testing section |
-| `research/architecture/07-debugging.md` | Multi-Device Debugging section |
-| `research/architecture/08-ota-updates.md` | Multi-Device OTA section |
-| `research/architecture/10-host-simulation.md` | Multi-Device Simulation Support section |
-| `research/architecture/11-system-modes.md` | Multi-device examples, mode queries |
-| `tools/README.md` | Multi-device examples |
-| `tools/domes-cli/CLAUDE.md` | Multi-device testing section |
-| `tools/domes-cli/README.md` | Multi-device docs |
-| `tools/domes-cli/src/commands/mod.rs` | system_set_pod_id export |
-| `tools/domes-cli/src/commands/system.rs` | system_set_pod_id function |
-| `tools/domes-cli/src/main.rs` | Vec args, connect-all-ble, set-pod-id, scan probing |
-| `tools/domes-cli/src/protocol/mod.rs` | SetPodId serialize/parse, pod_id in system info |
-| `tools/trace/trace_dump.py` | `--ports` support |
-
-### New files (2)
-
-| File | What |
-|------|------|
-| `tools/domes-cli/src/device.rs` | Device registry, connection resolver |
-| `tools/udev/99-domes-pods.rules` | ESP32-S3 udev rules for stable symlinks |
-
----
-
-## Remaining Work Summary
-
-| Category | Done | Remaining | Notes |
-|----------|------|-----------|-------|
-| Firmware identity | 6/6 | 0 | All done |
-| CLI multi-device | 7/7 | 0 | All done |
-| CI/CD | 3/4 | 1 | ESP-NOW CI test blocked by ESP-NOW impl |
-| Scripts & skills | 6/6 | 0 | All done |
-| Documentation | 10/10 | 0 | All done |
-| Infrastructure | 3/3 | 0 | All done |
-
-**Total: 35/36 items complete (~97%)**
-
-The only remaining item (3.4 ESP-NOW CI test) is blocked by the ESP-NOW firmware implementation, which is a separate large feature tracked independently.
+At the time of this plan, persistent pod identity and CLI multi-device dispatch were implemented;
+the ESP-NOW CI check was still waiting for firmware support. Current implementation and verification
+status are maintained in [`PROGRAM_STATUS.md`](../../PROGRAM_STATUS.md).

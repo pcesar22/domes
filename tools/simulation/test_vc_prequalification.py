@@ -18,7 +18,7 @@ sys.modules[SPEC.name] = gate
 SPEC.loader.exec_module(gate)
 FIXTURE = MODULE.with_name("qualification") / "public-freeze-interface.fixture.json"
 SCHEMA = MODULE.with_name("qualification") / "qualification-manifest.schema.json"
-OPERATIONAL_REPORT = MODULE.with_name("qualification") / "operational-entry-report.json"
+REJECTED_ENTRY = MODULE.with_name("qualification") / "rejected-entry.fixture.json"
 
 
 def fixture() -> dict:
@@ -68,15 +68,44 @@ class PrequalificationTests(unittest.TestCase):
         self.assertFalse(report["held_out_results_accessed"])
         self.assertEqual(report["sensitive_fields_seen"], [])
 
-    def test_operational_entry_stays_fail_closed_without_terminal_evidence(
+    def test_synthetic_entry_stays_fail_closed_without_terminal_evidence(
         self,
     ) -> None:
-        report = json.loads(OPERATIONAL_REPORT.read_text(encoding="utf-8"))
+        report = json.loads(REJECTED_ENTRY.read_text(encoding="utf-8"))
+        self.assertTrue(report["fixture_only"])
         self.assertEqual(report["entry_result"], "rejected")
         self.assertFalse(report["manifest_created"])
         self.assertFalse(report["held_out_results_accessed"])
-        self.assertIsNone(report["terminal_fs_wp_002h"]["terminal_commit"])
-        self.assertIsNone(report["terminal_fs_wp_002g"]["campaign_sha256"])
+        self.assertEqual(
+            report["terminal_fs_wp_002h"]["issue"], gate.TERMINAL_FS2H_ISSUE
+        )
+        self.assertEqual(
+            report["terminal_fs_wp_002g"]["issue"], gate.TERMINAL_FS2G_ISSUE
+        )
+        for terminal, field, attestation_field in (
+            ("terminal_fs_wp_002h", "terminal_commit", "terminal_commit"),
+            (
+                "terminal_fs_wp_002h",
+                "terminal_evidence_sha256",
+                "terminal_evidence_sha256",
+            ),
+            ("terminal_fs_wp_002g", "terminal_commit", "fs_wp_002g_commit"),
+            (
+                "terminal_fs_wp_002g",
+                "terminal_evidence_sha256",
+                "fs_wp_002g_evidence_sha256",
+            ),
+            ("terminal_fs_wp_002g", "campaign_sha256", "fs_wp_002g_campaign_sha256"),
+        ):
+            with self.subTest(missing=attestation_field):
+                self.assertIsNone(report[terminal][field])
+                value = fixture()
+                value["controller_attestation"][attestation_field] = report[terminal][
+                    field
+                ]
+                # Even a matching external pin cannot make absent evidence valid.
+                with self.assertRaises(gate.GateError):
+                    gate.freeze(value, gate.digest(value["controller_attestation"]))
 
     def test_rejects_missing_terminal_child_and_issue_closure_only(self) -> None:
         missing = fixture()

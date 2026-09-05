@@ -3,6 +3,8 @@
 This document defines how DOMES converts development-board learning into controlled product
 hardware, verified software, repeatable manufacturing, and an open product release. Current
 position, evidence, critical path, and decisions live in [`../PROGRAM_STATUS.md`](../PROGRAM_STATUS.md).
+The [program milestone map](PROGRAM_MILESTONES.md) defines the app, NFF, hardware
+and supporting software package dependencies and acceptance boundaries.
 
 ## Tailored Industry Model
 

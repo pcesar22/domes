@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -211,7 +212,6 @@ class ReleaseContractTest(unittest.TestCase):
 
     def test_software_ci_runs_every_host_tool_unit_suite(self) -> None:
         for suite in (
-            "agent_eval",
             "ci",
             "doctor",
             "docs",
@@ -333,6 +333,69 @@ class ReleaseContractTest(unittest.TestCase):
             "Software/release CI uses isolated build directories",
             self.testing_docs,
         )
+
+    def test_container_firmware_builds_verify_checkout_before_building(self) -> None:
+        for workflow in (self.software_workflow, self.workflow):
+            build_job = workflow.split(
+                "      - name: Check generated firmware bindings", 1
+            )[0]
+            self.assertIn(
+                'git config --global --add safe.directory "$GITHUB_WORKSPACE"',
+                build_job,
+            )
+            self.assertIn(
+                'git config --global --add safe.directory "$IDF_PATH"', build_job
+            )
+            self.assertIn('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"', build_job)
+        firmware_job = self.software_workflow.split("  qemu-runtime:\n", 1)[0]
+        self.assertEqual(
+            2, firmware_job.count("tools/ci/verify_firmware_provenance.py")
+        )
+        self.assertIn('--expected-head "$GITHUB_SHA"', firmware_job)
+        self.assertIn("--build firmware/domes/build-qemu", firmware_job)
+
+    def test_workflow_lock_checks_reject_git_failure_and_changes(self) -> None:
+        pattern = re.compile(
+            r"^          if ! lock_status=\$\(git status --porcelain -- dependencies.lock\); then\n"
+            r".*?^          fi\n"
+            r'^          if \[\[ -n "\$lock_status" \]\]; then\n'
+            r".*?^          fi$",
+            re.MULTILINE | re.DOTALL,
+        )
+        for workflow, count in (
+            (self.software_workflow, 2),
+            (self.workflow, 1),
+            (self.hardware_workflow, 1),
+        ):
+            checks = pattern.findall(workflow)
+            self.assertEqual(count, len(checks))
+            for check in checks:
+                for git_status, output, expected in (
+                    (128, "", 1),
+                    (0, "", 0),
+                    (0, " M dependencies.lock", 1),
+                ):
+                    with self.subTest(git_status=git_status, output=output):
+                        script = (
+                            'git() { if [[ "$1" == status ]]; then '
+                            'printf "%s" "$FAKE_STATUS_OUTPUT"; '
+                            'return "$FAKE_STATUS_EXIT"; fi; }\n'
+                            + textwrap.dedent(check)
+                            + '\nprintf "continued\\n"\n'
+                        )
+                        result = subprocess.run(
+                            ["bash", "-e", "-o", "pipefail", "-c", script],
+                            env={
+                                **os.environ,
+                                "FAKE_STATUS_EXIT": str(git_status),
+                                "FAKE_STATUS_OUTPUT": output,
+                            },
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                        self.assertEqual(expected, result.returncode, result.stderr)
+                        self.assertEqual(expected == 0, "continued" in result.stdout)
 
     def test_external_actions_and_idf_images_are_immutably_pinned(self) -> None:
         workflows = "\n".join(

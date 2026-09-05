@@ -9,8 +9,8 @@
 
 | Subject | Current authority |
 | --- | --- |
-| ESP32-S3 GDB and OpenOCD workflow | [`../../.codex/skills/domes-debug-esp32/SKILL.md`](../../.codex/skills/domes-debug-esp32/SKILL.md) |
-| Build, flash, monitor, and hardware validation | [`../../.codex/skills/domes-esp32-firmware/SKILL.md`](../../.codex/skills/domes-esp32-firmware/SKILL.md) |
+| ESP32-S3 GDB and OpenOCD workflow | [`../../docs/DEBUGGING.md`](../../docs/DEBUGGING.md) |
+| Build, flash, monitor, and hardware validation | [`../../docs/FIRMWARE_RUNBOOKS.md`](../../docs/FIRMWARE_RUNBOOKS.md) |
 | Current verification requirements | [`../../docs/TESTING.md`](../../docs/TESTING.md) |
 | Firmware programming and diagnostic boundaries | [`../../firmware/README.md`](../../firmware/README.md) |
 | Trace implementation and workflow | [`trace-overhaul-architecture.md`](trace-overhaul-architecture.md) |

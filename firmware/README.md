@@ -186,6 +186,10 @@ multi-pod simulation, and Perfetto export. See [`test_app/README.md`](test_app/R
 
 ## Contributor Guidance
 
+Use [`../docs/PLATFORM.md`](../docs/PLATFORM.md) for host setup,
+[`../docs/FIRMWARE_RUNBOOKS.md`](../docs/FIRMWARE_RUNBOOKS.md) for hardware procedures, and
+[`../docs/DEBUGGING.md`](../docs/DEBUGGING.md) for GDB and panic-dump inspection.
+
 - [`AGENTS.md`](AGENTS.md): firmware coding, memory, ISR, architecture, and validation rules.
 - [`../docs/TESTING.md`](../docs/TESTING.md): repository verification matrix.
 - [`../research/architecture/README.md`](../research/architecture/README.md): lifecycle and scope of

@@ -1,15 +1,13 @@
 # DOMES Host Tools
 
 This directory contains the supported host CLI and repository-owned protocol generation, firmware
-verification, CI contract, agent-evaluation, trace, visualization, and Linux device tools. Device
-communication belongs in `domes-cli`; do not create one-off protocol clients for serial, TCP, BLE,
-or OTA workflows.
+verification, CI contract, trace, visualization, and Linux device tools. Device communication belongs
+in `domes-cli`; do not create one-off protocol clients for serial, TCP, BLE, or OTA workflows.
 
 ## Tool Index
 
 | Path | Purpose |
 | --- | --- |
-| [`agent_eval/`](agent_eval/) | Contained coding-agent evaluations; structure is checked automatically, while correctness needs an independent semantic audit or hardware evidence |
 | [`domes-cli/`](domes-cli/) | Supported device CLI for discovery, configuration, diagnostics, OTA, tracing, and multi-device operations |
 | [`generate_protocols.sh`](generate_protocols.sh) | Generate or drift-check nanopb and Dart bindings from the authoritative protobuf schemas |
 | [`ci/test_release_contract.py`](ci/test_release_contract.py) | Assert release, CI, programming, OTA, and hardware-workflow contracts |
@@ -64,9 +62,6 @@ The flash helper and `domes-cli` use NFF CP2102N ports (`/dev/ttyUSB*`, preferab
 info` and requires `system health` plus the complete `system self-test` to pass; it does not search
 console text on that protocol port.
 
-Compatibility wrappers under `.codex/` and `.claude/` forward to these files. Update only the
-canonical helpers when changing shared behavior.
-
 ## Merge Pod Traces
 
 First export one trace per pod with `domes-cli trace dump`, then merge them from the repository root:
@@ -107,5 +102,5 @@ Generate the input trace with the host test application's `trace_generator`; see
 ## Platform Setup
 
 BLE, serial permissions, stable `/dev/serial/by-id/` identities, and multi-device host requirements
-are maintained in [`.codex/PLATFORM.md`](../.codex/PLATFORM.md). Repository-wide verification
+are maintained in [`docs/PLATFORM.md`](../docs/PLATFORM.md). Repository-wide verification
 requirements are in [`docs/TESTING.md`](../docs/TESTING.md).
