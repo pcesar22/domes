@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 PATH = Path(__file__).with_name("fault_replay_acceptance.py")
 if str(PATH.parent) not in sys.path:
@@ -261,12 +262,26 @@ class FaultReplayAcceptanceTest(unittest.TestCase):
         self.assertEqual(MODULE.audit_host_time(PATH)["status"], "PASS")
         self.assertEqual(MODULE.patch_budget()["status"], "PASS")
         self.assertEqual(MODULE.physical_image_isolation()["status"], "PASS")
-        path_audit = MODULE.protected_path_audit()
-        self.assertIn(path_audit["status"], {"PASS", "UNAVAILABLE"})
-        if path_audit["status"] == "PASS":
-            self.assertEqual(path_audit["outside_allowed_paths"], [])
-        else:
-            self.assertIn("base revision", path_audit["reason"])
+
+    def test_protected_path_audit_enforces_pinned_scope_and_budget(self):
+        # Later unrelated commits must not determine the unit-test result.
+        cases = (
+            (0, "1\t1\ttools/simulation/example.py\n", "", "PASS"),
+            (0, "1\t1\tREADME.md\n", "", "FAIL"),
+            (0, "2501\t0\ttools/simulation/example.py\n", "", "FAIL"),
+            (0, "", "", "FAIL"),
+            (128, "", "bad object: base", "UNAVAILABLE"),
+            (128, "", "unexpected git failure", "FAIL"),
+        )
+        for code, output, error, expected in cases:
+            with self.subTest(expected=expected, output=output):
+                completed = MODULE.subprocess.CompletedProcess([], code, output, error)
+                with patch.object(
+                    MODULE.subprocess, "run", return_value=completed
+                ) as run:
+                    result = MODULE.protected_path_audit()
+                self.assertEqual(result["status"], expected)
+                self.assertIn(MODULE.REQUIRED_BASE_REVISION, run.call_args.args[0])
 
     def test_retained_real_dut_campaign_closes_roles_and_production_stages(self):
         result = MODULE.validate_real_dut_campaign(self.campaign)

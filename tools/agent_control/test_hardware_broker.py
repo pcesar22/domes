@@ -30,12 +30,12 @@ class HardwareBrokerTest(unittest.TestCase):
         workspace.mkdir(parents=True)
         evidence.mkdir(parents=True)
         snapshot = {
-            "link": "/dev/serial/by-id/usb-Silicon_Labs_CP2102N_5edf3f45576def11a245cea7c169b110-if00-port0",
+            "link": "/dev/serial/by-id/usb-Silicon_Labs_CP2102N_testboard00000002-if00-port0",
             "target": "/dev/ttyUSB0",
             "rdev": 1,
             "vendor": "10c4",
             "model": "ea60",
-            "serial": "5edf3f45576def11a245cea7c169b110",
+            "serial": "testboard00000002",
         }
         with mock.patch.object(broker, "snapshot_port", return_value=snapshot):
             return broker.create_capability(

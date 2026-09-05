@@ -25,6 +25,7 @@ from typing import Any, Iterable, Sequence
 
 from hardware_broker import BrokerError, DeviceLease, create_capability
 from hardware_client import request as hardware_request
+from operator_config import OperatorConfigError, load_operator_config
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = ROOT / "WORKFLOW.md"
@@ -135,12 +136,6 @@ AUTOMATED_REVIEW_POLICY = "software-review-required"
 LEGACY_AUTOMERGE_POLICY = "software-auto-merge"
 AUTOMATED_DELIVERY_POLICIES = frozenset(
     {AUTOMATED_REVIEW_POLICY, LEGACY_AUTOMERGE_POLICY}
-)
-REGISTERED_NFF_CP2102N_SERIALS = frozenset(
-    {
-        "5edf3f45576def11a245cea7c169b110",
-        "002a9f8e536def119f38c1a7c169b110",
-    }
 )
 
 
@@ -1529,6 +1524,18 @@ def registered_hardware_preflight() -> dict[str, Any]:
     Doctor intentionally reports unrelated host-tool failures in its exit code.  Its
     JSON device records remain authoritative for this narrowly scoped preflight.
     """
+    try:
+        registered_serials = frozenset(
+            load_operator_config()["registered_cp2102n_serials"]
+        )
+    except (OperatorConfigError, KeyError) as error:
+        raise ControlError(
+            "private registered-board configuration is required"
+        ) from error
+    if len(registered_serials) != 2:
+        raise ControlError(
+            "private configuration requires exactly the two registered boards"
+        )
     result = subprocess.run(
         [str(ROOT / "scripts" / "doctor.sh"), "--json"],
         cwd=ROOT,
@@ -1553,9 +1560,7 @@ def registered_hardware_preflight() -> dict[str, Any]:
         identity = " ".join(
             str(record.get(name, "")) for name in ("path", "target")
         ).casefold()
-        serials = [
-            serial for serial in REGISTERED_NFF_CP2102N_SERIALS if serial in identity
-        ]
+        serials = [serial for serial in registered_serials if serial in identity]
         if len(serials) != 1:
             unknown.append(str(record.get("path", "unknown")))
             continue
@@ -1565,7 +1570,7 @@ def registered_hardware_preflight() -> dict[str, Any]:
                 "registered hardware preflight found duplicate board identity"
             )
         found[serial] = record
-    if unknown or set(found) != REGISTERED_NFF_CP2102N_SERIALS:
+    if unknown or set(found) != registered_serials:
         raise ControlError(
             "registered hardware preflight requires exactly the two registered CP2102N boards"
         )
@@ -7149,11 +7154,14 @@ def acquire_lock() -> Any:
 
 
 def enforce_scheduler_host(workflow: Workflow) -> None:
+    try:
+        expected = load_operator_config()["scheduler_host"]
+    except OperatorConfigError as error:
+        raise ControlError("private scheduler configuration is required") from error
     actual = socket.gethostname()
-    if actual != workflow.scheduler_host:
+    if actual != expected:
         raise ControlError(
-            "mutation-capable scheduler runs are pinned to "
-            f"{workflow.scheduler_host}; current host is {actual}"
+            "mutation-capable scheduler runs are pinned to the configured operator host"
         )
 
 

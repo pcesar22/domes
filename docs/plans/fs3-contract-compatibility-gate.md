@@ -31,27 +31,25 @@ The FS-WP-003A physical exit remains unverified.
 | Mobile runtime/results | `ios/domes_app/lib/application/providers/drill_provider.dart`, `ios/domes_app/lib/domain/models/drill_result.dart` | `ios/domes_app/test/domain/models/drill_result_test.dart` exercises production result scoring; mobile results intentionally do not retain round tokens |
 | Retained scoring | `tools/scoring_validation/fixtures/fixed_two_pod_v1.json`, `campaign.py`, `test_campaign.py` | `tools/scoring_validation/artifacts/verdict.json` retains status `diverged`: scoring fields match, while absent mobile round tokens are explicit divergences |
 
-The complete pinned/current object map and generated prost SHA-256 are retained in
-`tools/scoring_validation/artifacts/verification/fs3-contract-gate.log`.
+The runner regenerates the pinned/current object map and generated prost SHA-256.
+The historical raw execution log is no longer part of the source snapshot.
 
 ## Executed checks
 
-The exact invocation in the workspace-write worker was:
+Portable reproduction command:
 
 ```bash
-DOMES_FLUTTER_ROOT=/tmp/domes-fs3-flutter-3448-correct \
-DOMES_PUB_CACHE=/tmp/domes-fs3-pub-cache \
+mkdir -p .artifacts
 tools/scoring_validation/run_fs3_contract_gate.sh 2>&1 | \
-  tee tools/scoring_validation/artifacts/verification/fs3-contract-gate.log
+  tee .artifacts/fs3-contract-gate.log
 ```
 
-The two environment overrides point to writable copies of the repository-provisioned Flutter
-3.44.8 SDK and pub cache; they avoid mutating the read-only host installation. The runner records
+Use the pinned Flutter SDK and a writable pub cache. The runner records
 the exact child commands, tool versions, output, per-command zero exit status, generated prost
 digest, start/end timestamps, and final verdict. Key tool versions were Git 2.53.0, Python 3.14.3,
 CMake 3.21.1, GCC 15.2.1, protoc 33.1, Cargo/Rust 1.92.0, Flutter 3.44.8, and Dart 3.12.2.
 
-The retained log ends with:
+The historical run reported the following result; regenerate it for a current-revision claim:
 
 ```text
 GATE_VERDICT=ACCEPTED_SOFTWARE_COMPATIBILITY
