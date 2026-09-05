@@ -2,15 +2,20 @@
 
 `public-freeze-interface.fixture.json`, `frozen-manifest.fixture.json`, and
 `prequalification-report.fixture.json` are blinded synthetic contract fixtures. They are not
-evidence that FS-WP-002H or FS-WP-002G executed. `operational-entry-report.json` is the retained
-fail-closed execution record: terminal FS-WP-002H child #171 and terminal FS-WP-002G child #164
-have no accepted execution evidence, so no operational qualification manifest was created.
+evidence that FS-WP-002H or FS-WP-002G executed. `rejected-entry.fixture.json` is a synthetic
+negative example for missing terminal evidence. It records no live issue state or qualification
+result. Current acceptance evidence is tracked in terminal FS-WP-002H issue #171 and terminal
+FS-WP-002G issue #164.
 
-The controller must pin the topology attestation digest outside the selector input. This prevents
-an issue-closure record, arbitrary issue number, or caller-asserted artifact class from being
-relabeled as accepted terminal evidence. The controller must likewise retain the emitted manifest
-digest outside the manifest; verification always compares against that external pin and applies
-the complete published schema before checking corpus construction.
+Before qualification, an independent review must establish the attestation from accepted terminal
+G/H artifacts and retain its digest outside the candidate input. Preserve the exact terminal issue
+identities, specification revision, commits, evidence hashes, and campaign lineage required by the
+published interface. An issue-closure record, arbitrary issue number, or caller-asserted artifact
+class cannot establish acceptance. The `controller_attestation` field and
+`--controller-attestation-sha256` option retain their legacy names for interface compatibility;
+the validator consumes the pinned record directly without a running controller. Retain the emitted
+manifest digest independently of the manifest as well. Verification always compares against that
+external pin and applies the complete published schema before checking corpus construction.
 
 Generate and verify the example artifacts before any held-out campaign exists:
 

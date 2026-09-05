@@ -46,4 +46,4 @@ Host tests cover adapter and transport lifecycle, peer operations, synchronous a
 send outcomes, receive metadata ownership, every correlation trace boundary, saturation, timeout
 poisoning and lifecycle recovery. The physical-profile image contains `PhysicalEspNowRadio`; there
 is no QEMU radio implementation in this package. Two-board behavior and physical equivalence remain
-deferred to the separately brokered immutable-commit verification worker.
+deferred to the separate verification of the exact reviewed firmware commit.

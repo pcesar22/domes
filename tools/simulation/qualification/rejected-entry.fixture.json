@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "kind": "vc-wp-002a-rejected-entry-fixture",
+  "fixture_only": true,
+  "scenario": "missing-terminal-evidence",
+  "specification_revision": "be347355d3747b849b0521e40c539aae88d33614",
+  "creation_phase": "pre-held-out",
+  "entry_result": "rejected",
+  "manifest_created": false,
+  "held_out_results_accessed": false,
+  "terminal_fs_wp_002h": {
+    "issue": 171,
+    "terminal_commit": null,
+    "terminal_evidence_sha256": null
+  },
+  "terminal_fs_wp_002g": {
+    "issue": 164,
+    "terminal_commit": null,
+    "terminal_evidence_sha256": null,
+    "campaign_sha256": null
+  },
+  "reason_codes": [
+    "terminal-fs-wp-002h-execution-evidence-absent",
+    "terminal-fs-wp-002g-campaign-lineage-absent",
+    "externally-pinned-attestation-absent"
+  ]
+}

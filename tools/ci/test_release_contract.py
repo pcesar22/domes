@@ -211,7 +211,6 @@ class ReleaseContractTest(unittest.TestCase):
 
     def test_software_ci_runs_every_host_tool_unit_suite(self) -> None:
         for suite in (
-            "agent_eval",
             "ci",
             "doctor",
             "docs",

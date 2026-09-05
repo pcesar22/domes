@@ -275,7 +275,7 @@ Use the purpose-built rollback image and assertions in
 the destructive rollback gate. Do not improvise a failing release image.
 
 Use the complete
-[`$domes-esp32-firmware` ESP-NOW integration runbook](../../.codex/skills/domes-esp32-firmware/references/runbooks.md#esp-now-integration-test)
+[ESP-NOW integration runbook](../../docs/FIRMWARE_RUNBOOKS.md#esp-now-integration-test)
 for the two-pod gate. `stopping` is not a ready state; wait for exact `disabled` before every new
 lifecycle.
 

@@ -1,13 +1,9 @@
 # Make Guarded Firmware Updates Reliably Reach A Healthy Runtime
 
-Status: active
-Current phase: reconcile the guarded-update repair on the controller-required `main` base
-Repository state: issue [121](https://github.com/pcesar22/domes/issues/121) inherits the completed
-implementation from required base `8ed71e4a9adadbfddbde1548ef7060bcf79a76e9`; exact-head
-software checks, independent review, and separately brokered registered-pod verification gate
-completion
-Last updated: 2026-08-17; earlier candidate hardware evidence is historical and must not be treated
-as exact-head evidence for this review artifact
+Historical implementation and verification record. The guarded-update software
+repair is merged through PRs #120 and #122. Current readiness and update acceptance
+remain tracked in [issue106](https://github.com/pcesar22/domes/issues/106).
+Historical candidate results below do not establish current-image recovery.
 
 ## Objective and observable outcome
 
@@ -41,7 +37,7 @@ second reset.
 ## Stages and dependencies
 
 - [x] Reproduce the failure with exact image version `v0.1.0-26-gd9a22c6`, binary SHA-256
-  `04321210...2c6`, and ELF SHA-256 `84459e06...bd98` on registered pod 2.
+  `04321210...2c6`, and ELF SHA-256 `84459e06...bd98` on an NFF test device.
 - [x] Verify the retained boot-28 snapshot against the exact ELF; its backtrace resolves through
   `handleOtaVerification()` and `OtaManager::rollback()`, proving deliberate self-test rollback.
 - [x] Persist the exact failed self-test check and replay the guarded update: boot 30 retained
@@ -53,14 +49,11 @@ second reset.
 - [x] Execute that verification on the existing LED task so the active LED-frame check
   is serialized with animation updates instead of racing the same hardware channel.
 - [x] Run 12 focused host tests and a clean isolated ESP-IDF v5.4.4 build.
-- [x] Replay exact serial update on registered pod 2, verify version/health/self-test, reset again,
+- [x] Replay exact serial update on an NFF test device, verify version/health/self-test, reset again,
   and repeat the checks without claiming the separately forced failure path.
-- [x] Reapply the focused change to controller base
-  `d58c1a2df84d8d0a3257ff65057e1a3f32033e2f` without prerequisite history.
-- [x] Reconcile the implementation onto controller base `8ed71e4`, which already contains the
-  merged guarded-update repair from commit `2be8679` without weakening its safety contracts.
-- [ ] **Current:** Pass exact-head software checks and CI, publish one PR against `main`, then stop
-  for independent review and registered-pod verification.
+
+The integrated source includes repair commit `2be8679`. Later changes require
+renewed source-bound verification before current readiness is accepted.
 
 ## Verification
 
@@ -68,14 +61,12 @@ second reset.
 | --- | --- | --- |
 | Automated | focused host tests plus fresh isolated ESP-IDF v5.4.4 build | historical candidate passed; exact review-head rerun pending |
 | Reproduction | exact serial update followed by `system info`, `system self-test`, and SHA-matched restart-snapshot verification | passed: transfer completed; boot count 27 to 29; old `ota_0` image returned with software-restart reason; rollback backtrace verified |
-| Accepted command | serial update of the repaired image, reconnect, version, health, self-test, second reset, repeat | passed on pod 2: boot 36 ran exact `v0.1.0-27-g434d11f` from `ota_1` with 31,575 bytes free and 10/10 self-test; external reset produced boot 37 on the same version/slot with 31,587 bytes free and 10/10 self-test |
-| Physical confirmation | LED/touch/motion/haptic/audio behavior | outside this implementation role; no physical-output claim |
-| Forced rollback | purpose-built failure image selects the previous slot | not scheduled in this package unless separately authorized; remains unverified |
+| Accepted command | serial update of the repaired image, reconnect, version, health, self-test, second reset, repeat | passed on the tested NFF device: boot 36 ran exact `v0.1.0-27-g434d11f` from `ota_1` with 31,575 bytes free and 10/10 self-test; external reset produced boot 37 on the same version/slot with 31,587 bytes free and 10/10 self-test |
+| Physical confirmation | LED/touch/motion/haptic/audio behavior | not observed; no physical-output claim |
+| Forced rollback | purpose-built failure image selects the previous slot | not exercised by this package; remains unverified |
 
 ## Decisions, discoveries, and deviations
 
-- This repair outranks FS-WP-002E because a supported field-update path reproducibly rejects a
-  valid image, while the radio seam is planned work with no current failure.
 - Transfer, embedded-version matching, full-file SHA-256, and image validation all passed. The new
   image booted and invoked explicit rollback rather than crashing, so transport and panic handling
   are outside the repair.
@@ -100,14 +91,13 @@ second reset.
   transfer completed, boot 36 remained on `ota_1`, and a separate CP2102N reset reached boot 37 on
   the same version and slot. This proves image confirmation and second-boot survival; the command
   suite establishes driver readiness, not observed light, touch, motion, vibration, or sound.
-- The deterministic controller supplied reconciled base `8ed71e4`; this issue branch must descend
-  from that exact commit and target `main`. This package also keeps ordinary boot completion on the
-  LED-owner task and makes dispatch failure explicit: a pending image rolls back with retained
-  diagnostics, while an already-valid image remains incomplete without off-owner LED access.
+- Ordinary boot completion remains on the LED-owner task. Dispatch failure is
+  explicit: a pending image rolls back with retained diagnostics, while an already
+  valid image remains incomplete without off-owner LED access.
 
-## Resume checkpoint
+## Remaining acceptance
 
-Run focused host tests, a fresh isolated ESP-IDF v5.4.4 build, and repository verification. Publish
-one PR for issue 121 against `main`, monitor required software CI, and stop at independent review.
-Registered-pod update and second-reset evidence belongs to the separate verification worker
-exercising the immutable reviewed commit.
+Use the current source and issue106 criteria for readiness, supported updates and
+second-boot confirmation. Preserve the unchanged heap floor and distinct forced
+failed-self-test rollback test. Historical candidate results do not substitute for
+current-image evidence.

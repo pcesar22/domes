@@ -44,11 +44,6 @@ When the pinned IDF is installed outside the default path, set
 `IDF_EXPORT_SCRIPT=/path/to/esp-idf/export.sh` for `scripts/verify.sh` and
 `tools/firmware/flash_and_verify.sh`.
 
-The coding-agent evaluation harness is under `tools/agent_eval/`. Its unit tests run as host tooling
-in the aggregate check. Live model evaluations are opt-in because they consume model usage; follow
-its README, retain model and effort metadata, and compare one repository or model variable at a
-time.
-
 ## Verification Matrix
 
 | Change type | Required checks | Hardware expectation |
@@ -240,6 +235,9 @@ stop/disconnect does not advance a stale round. Run those workflows on native Li
 mobile target with real hardware.
 
 ## Hardware Verification
+
+See [`PLATFORM.md`](PLATFORM.md) for host and USB setup, [`FIRMWARE_RUNBOOKS.md`](FIRMWARE_RUNBOOKS.md)
+for peripheral and two-pod procedures, and [`DEBUGGING.md`](DEBUGGING.md) for GDB and panic dumps.
 
 Single-device firmware flash and framed-runtime check:
 

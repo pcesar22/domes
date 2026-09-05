@@ -13,7 +13,6 @@ history, and archived plans. Delivery status and executable workflows live elsew
 | [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md) | Product target | Intended hardware, networking, power, enclosure, and production direction |
 | [`ID_REQUIREMENTS.md`](ID_REQUIREMENTS.md) | Product target | Industrial-design goals and unresolved physical-design inputs |
 | [`architecture/README.md`](architecture/README.md) | Current lifecycle index | Classification and replacements for detailed architecture proposals |
-| [`AI_DEVELOPMENT_RECOMMENDATIONS.md`](AI_DEVELOPMENT_RECOMMENDATIONS.md) | Retired decision record | Adopted agent-workflow decisions and links to current authorities; obsolete commands were removed |
 | [`archive/README.md`](archive/README.md) | Archive index | Superseded roadmaps, implementation plans, and simulation artifacts |
 
 ## Authority Boundaries

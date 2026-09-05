@@ -68,4 +68,4 @@ repos:
       - id: markdownlint
         language_version: 24.18.1
         args: ['--fix', '--disable', 'MD013', 'MD028', 'MD033', 'MD036', 'MD040', 'MD041', 'MD060', '--']
-        exclude: '(^|/)(CHANGELOG\.md|research/(AI_DEVELOPMENT_RECOMMENDATIONS\.md|architecture/.*|archive/.*))$'
+        exclude: '(^|/)(CHANGELOG\.md|research/(architecture/.*|archive/.*))$'

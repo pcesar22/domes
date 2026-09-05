@@ -1,0 +1,35 @@
+name: Product or engineering task
+description: Define an observable outcome and its verification.
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should change, and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Identify the affected components and any important exclusions.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance checks
+      description: List observable results, relevant tests, and any required physical evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link prerequisite issues or state that there are none.
+      value: None
+  - type: textarea
+    id: program
+    attributes:
+      label: Program context
+      description: Link the relevant milestone, requirements, or design decision when applicable.
