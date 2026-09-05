@@ -38,10 +38,13 @@ One registered two-board lab session at a time prevents conflicting physical cam
 Preparation can run concurrently; evidence-producing exits follow their actual dependencies.
 
 **Current management package:** [the activated operating agreement](docs/agent-system/OPERATING_MODEL.md).
-The app virtual-lab worker ([#197](https://github.com/pcesar22/domes/issues/197)) and software-only
-NFF memory-repair worker ([#198](https://github.com/pcesar22/domes/issues/198)) were directly observed
-running in separate ministrom workspaces at 00:45 UTC. This is execution evidence, not acceptance.
-Both contracts pin main 3b62a6c and forbid hardware access. No physical session is active here.
+The app virtual-lab ([#197](https://github.com/pcesar22/domes/issues/197)) and software-only NFF
+memory-repair ([#198](https://github.com/pcesar22/domes/issues/198)) candidates reached independent
+review. Both original heads passed software CI, but judges requested app disposal-race repair and
+retained numerical firmware build-size evidence. Existing-PR repair workers were directly observed
+at 01:19 UTC; neither package is accepted. The [first-rework review](docs/program/review-2026-09-05-first-rework.md)
+retains exact heads, judge findings and boundaries. Both contracts pin main 3b62a6c and forbid
+hardware access. No physical session is active here.
 
 **Active program action: HW-WP-002** ([#199](https://github.com/pcesar22/domes/issues/199)), alongside
 PS1 requirements and VC1 risk/test work. Its initial [inventory/coverage record](hardware/SETUP_INVENTORY_2026-09-05.md)

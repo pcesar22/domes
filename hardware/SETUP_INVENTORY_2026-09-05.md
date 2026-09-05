@@ -66,5 +66,36 @@ HW-WP-002 slice turns this record into supported-board/profile options and a cur
 proposal, after narrowing the unknown inventory and requirements. Schematic capture remains behind
 G1, routing behind HR3, and ordering behind HR4/G2 plus separate budget approval.
 
+## Added-node profile contract: desk refinement at 01:22 UTC
+
+This comparison refines the existing setup package; it selects no board or supplier and authorizes
+no build, purchase or physical test. An independent repository review confirmed that only the NFF
+physical profile is currently supported. Preserve the distinction between proposed capability and
+accepted evidence.
+
+| Path | Prerequisite before counting evidence | Explicit limit |
+| --- | --- | --- |
+| Retain two NFFs | Exact existing profile, LAB0 safe setup, NFF1 readiness/recovery, then applicable campaign prerequisites | Two nodes cannot close six-node evidence; the present heap failure remains open |
+| Four radio-only additions | Complete selected board profile, clean pinned build, identities and authorized physical validation | Can support later radio-scale campaigns; cannot prove six complete interactive pods |
+| Four full-interaction additions | Same profile proof plus per-node LED, touch, IMU, haptic and audio inventory/equivalence | Physical workflow still requires actual launch phones and accepted test prerequisites |
+| Product-risk coupons | Requirement-specific design/measurement plan, qualified owner and separate budget/test authority | Power/charging, enclosure or RF evidence is separate from fleet expansion and is not a product release |
+
+Every added-node proposal must fill these fields before a firmware/profile ticket is accepted:
+
+- Stable board/revision identity and actual MCU, flash and PSRAM geometry.
+- Complete pin/peripheral inventory, with missing or non-equivalent capabilities explicit.
+- Profile-selection mechanism, SDKCONFIG defaults, partition layout and generated-protocol compatibility.
+- Protocol UART versus console/JTAG route, cable/USB state and safe-power review owner; no guessed limits.
+- Exact clean-build source, toolchain/config/image identities and numerical memory/image-size record.
+- Required authorized hardware tests, expected observations, instruments/uncertainty and restoration plan.
+- A per-node radio-only/full-interaction capability statement; no capability inferred from chip family.
+
+The existing NFF defaults specify 8 MB flash, 8 MB octal PSRAM and an NFF-sized partition layout.
+Changing an isolated pin or substituting a generic development board does not establish a supported
+profile. See [physical profile rules](../firmware/AGENTS.md),
+[current defaults](../firmware/domes/sdkconfig.defaults),
+[partition layout](../firmware/domes/partitions.csv) and [pin authority](../docs/PIN_REFERENCE.md).
+Inventory, calibration, numerical electrical limits, quotes and the NFF5 naming conflict remain open.
+
 Authorities: [setup package](DEVELOPMENT_SETUP.md), [hardware request](NEXT_ITERATION_REQUEST.md),
 [program ledger](../PROGRAM_STATUS.md), [verification](../docs/TESTING.md).

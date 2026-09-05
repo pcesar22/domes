@@ -1,8 +1,8 @@
 # Activate three coordinated DOMES delivery lanes
 
 Status: active
-Current phase: coordinated execution active; validate and publish the owner-only status snapshot
-Repository state: codex/feat/development-dashboard at 8d7b5db; runtime source pinned to main
+Current phase: first independent-review repairs active; next reviewed-source publication pending
+Repository state: codex/feat/development-dashboard at cacc1ba; runtime source pinned to main
 3b62a6c82160d0271b276bb42894e3d3bb69761e. Preserve user changes in .codex/PLATFORM.md and
 tools/agent_control/test_control.py. The prior NFF report is intentional evidence for this package.
 Last updated: 2026-09-05 UTC.
@@ -30,8 +30,11 @@ review state. New worker tickets pin current main, not the unmerged dashboard br
 - [x] Start a bounded controller cycle; both isolated worker processes directly observed.
 - [x] Complete the initial hardware inventory/coverage record and evidence reconciliation.
 - [x] Activate coordinate-domes-delivery every 30 minutes; retain the existing sole Site publisher.
-- [ ] Validate and publish the updated owner-only dashboard; send Slack activation/steer.
-- [ ] Commit/push scoped activation work and open a human-review PR; no merge.
+- [x] Validate and privately publish activation version 6; send Slack activation/steer.
+- [x] Commit/push scoped activation work and open draft PR #202; no merge.
+- [x] Receive independent app/firmware rejections and dispatch bounded repairs on existing PRs.
+- [ ] Validate repaired heads and fresh independent judgments; no acceptance inferred from CI.
+- [ ] Sole scheduled publisher reviews the new source update and privately publishes if valid.
 
 ## Execution boundaries
 

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-09-05T00:50:00Z",
-  "review": "docs/program/review-2026-09-05-activation.md",
-  "sourceCommit": "8d7b5dbee0c061152d87381ab563c41ae349d00f",
+  "reviewedAt": "2026-09-05T01:22:00Z",
+  "review": "docs/program/review-2026-09-05-first-rework.md",
+  "sourceCommit": "cacc1ba5329b30e7b478efd62cb3e4e9dc1869e1",
   "program": {
     "phase": "P1",
     "name": "Definition & feasibility",
@@ -79,14 +79,14 @@
       ],
       "summary": "Inject a virtual PodRepository/transport into the real app; use generated messages and deterministic virtual time.",
       "acceptance": "One launch path discovers 2 and 6 virtual identities; real app providers exercise current generated commands, notifications, connection and clock control. Same seed reproduces results. Explicit app virtual model; production drill/timing semantic parity is deferred to FS-WP-004C.",
-      "gap": "Must replace direct-touch shortcuts without pretending to emulate RF.",
+      "gap": "Independent review found a disposal/in-flight-connection race and missing direct-disposal tests; repair and fresh judgment required. No RF claim.",
       "source": "ios/domes_app/lib/application/providers/drill_provider.dart",
       "refs": [
         "FS3",
         "FS4"
       ],
       "owner": "AI software lead",
-      "evidence": "Issue #197 worker directly observed starting on main 3b62a6c at 00:45 UTC; no acceptance evidence yet",
+      "evidence": "PR #201 cffa30e3 passed software CI but was rejected for disposal lifecycle; existing-PR repair observed at 01:19 UTC. No acceptance yet.",
       "invalidates": "Changes to the owning behavior, protocol, configuration or evidence identity reopen acceptance.",
       "forecast": null
     },
@@ -209,7 +209,7 @@
         "FS1"
       ],
       "owner": "AI firmware worker; independent firmware review",
-      "evidence": "Retained two-board failure and allocation audit; issue #198 software worker observed at 00:45 UTC. No repair accepted yet.",
+      "evidence": "PR #200 876fdd8b passed software CI; judge requested durable numerical build-size provenance. Evidence repair observed at 01:19 UTC; no candidate or physical acceptance.",
       "invalidates": "Source, profile, allocation or readiness-threshold changes invalidate candidate evidence; physical readiness needs its own current test.",
       "forecast": null
     },
@@ -1066,6 +1066,12 @@
   "history": [
     {
       "date": "2026-09-05",
+      "title": "Independent review triggered bounded repairs",
+      "detail": "App disposal race and firmware build-size evidence gaps returned to the existing PRs. Added-node profile acceptance fields defined. No milestone or product gate advanced.",
+      "source": "docs/program/review-2026-09-05-first-rework.md"
+    },
+    {
+      "date": "2026-09-05",
       "title": "Parallel delivery activated",
       "detail": "App and software-only NFF workers started in isolated workspaces; initial hardware inventory/coverage delivered. Scheduled coordination is active. No delivery or product gate passed by dispatch.",
       "source": "docs/program/review-2026-09-05-activation.md"
@@ -1158,6 +1164,7 @@
     }
   ],
   "sources": [
+    "docs/program/review-2026-09-05-first-rework.md",
     "docs/agent-system/OPERATING_MODEL.md",
     "docs/program/review-2026-09-05-activation.md",
     "docs/plans/nff-serial-readiness-2026-09-05.md",
@@ -1190,12 +1197,12 @@
   },
   "operations": {
     "state": "Active",
-    "observedAt": "2026-09-05T00:45:00Z",
-    "source": "docs/program/review-2026-09-05-activation.md",
+    "observedAt": "2026-09-05T01:19:00Z",
+    "source": "docs/program/review-2026-09-05-first-rework.md",
     "coordination": "Every 30 minutes while the host/app is available",
     "publishing": "Owner-only reviewed snapshot every 2 hours",
-    "execution": "Two isolated software workers observed; hardware desk definition advancing separately",
-    "allowance": "96% remaining at activation; shared account, not project tokens",
+    "execution": "Two existing-PR repair workers observed after independent rejection; hardware profile definition advanced separately",
+    "allowance": "95% remaining at this review; shared account, not project tokens",
     "reserve": "Protect 20% remaining; check before every new cycle",
     "hardware": "No active device session; full readiness failed on both NFFs",
     "slack": "Outbound DM verified; inbound steering not yet tested",
@@ -1204,19 +1211,19 @@
         "stream": "app",
         "issue": 197,
         "url": "https://github.com/pcesar22/domes/issues/197",
-        "activity": "Virtual-pod implementation worker started"
+        "activity": "Repairing disposal races and adding direct-disposal tests on PR #201"
       },
       {
         "stream": "nff",
         "issue": 198,
         "url": "https://github.com/pcesar22/domes/issues/198",
-        "activity": "Software memory-repair worker started; no device access"
+        "activity": "Retaining numerical build-size provenance on PR #200; no device access"
       },
       {
         "stream": "hardware",
         "issue": 199,
         "url": "https://github.com/pcesar22/domes/issues/199",
-        "activity": "Initial inventory and coverage delivered; package remains open"
+        "activity": "Added-node profile acceptance checklist defined; inventory, owner and quotes remain open"
       }
     ]
   }
