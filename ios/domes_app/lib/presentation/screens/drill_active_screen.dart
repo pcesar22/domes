@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers/drill_provider.dart';
+import '../../application/providers/virtual_pod_lab_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/reaction_time_chart.dart';
 import 'drill_results_screen.dart';
@@ -15,6 +16,9 @@ class DrillActiveScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final drillState = ref.watch(drillProvider);
+    final virtualLab = ref.watch(virtualPodLabProvider);
+    final isVirtualDrill =
+        drillState.config?.podAddresses.any(virtualLab.ownsAddress) ?? false;
 
     // Navigate to results when finished
     if (drillState.phase == DrillPhase.finished) {
@@ -51,6 +55,14 @@ class DrillActiveScreen extends ConsumerWidget {
         ),
         body: Column(
           children: [
+            if (isVirtualDrill)
+              const MaterialBanner(
+                content: Text(
+                  'App virtual model — not hardware, RF, or production '
+                  'simulator parity.',
+                ),
+                actions: [SizedBox.shrink()],
+              ),
             // Phase indicator
             _PhaseBar(phase: drillState.phase),
 
@@ -93,16 +105,15 @@ class DrillActiveScreen extends ConsumerWidget {
               ),
             ),
 
-            // Simulate touch button (for testing)
-            if (drillState.phase == DrillPhase.waitingTouch &&
-                ref.read(drillProvider.notifier).supportsTouchSimulation)
+            if (drillState.phase == DrillPhase.waitingTouch && isVirtualDrill)
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: OutlinedButton.icon(
-                  onPressed: () =>
-                      ref.read(drillProvider.notifier).simulateTouch(),
+                  onPressed: () => ref
+                      .read(virtualPodLabProvider.notifier)
+                      .emitTouch(drillState.activePodAddress!),
                   icon: const Icon(Icons.touch_app),
-                  label: const Text('Simulate Touch'),
+                  label: const Text('Send app-model touch'),
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(double.infinity, 48),
                   ),

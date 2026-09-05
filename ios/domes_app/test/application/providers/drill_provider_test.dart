@@ -182,14 +182,26 @@ final class _LifecycleRepository implements PodRepository {
 void main() {
   late ProviderContainer container;
   late DrillNotifier notifier;
+  late _FakeMultiPodNotifier defaultMultiPod;
 
   setUp(() {
-    container = ProviderContainer();
+    defaultMultiPod = _FakeMultiPodNotifier();
+    container = ProviderContainer(
+      overrides: [
+        drillProvider.overrideWith(
+          (ref) => DrillNotifier(ref, multiPod: defaultMultiPod),
+        ),
+      ],
+    );
     notifier = container.read(drillProvider.notifier);
   });
 
-  tearDown(() {
+  tearDown(() async {
     container.dispose();
+    await defaultMultiPod.events.close();
+    await defaultMultiPod.failures.close();
+    await defaultMultiPod.lifecycleEvents.close();
+    defaultMultiPod.dispose();
   });
 
   group('DrillNotifier initial state', () {
@@ -1063,7 +1075,9 @@ void main() {
         for (var cycle = 0; cycle < lifecycleCycles; cycle++) {
           await stressNotifier.startDrill(config);
           await waitForPhase(DrillPhase.waitingTouch, cycle);
-          stressNotifier.simulateTouch();
+          stressNotifier.recordTouch(
+            stressContainer.read(drillProvider).activePodAddress!,
+          );
           await waitForPhase(DrillPhase.waitingTouch, cycle);
 
           final failedAddress = identities[cycle % identities.length];
@@ -1149,9 +1163,9 @@ void main() {
     );
   });
 
-  group('DrillNotifier.simulateTouch', () {
-    test('does nothing when no active pod', () {
-      notifier.simulateTouch();
+  group('DrillNotifier touch routing', () {
+    test('ignores a touch when no pod is active', () {
+      notifier.recordTouch('sim-pod-1');
       // Should be no-op
       expect(container.read(drillProvider).phase, DrillPhase.idle);
     });
@@ -1222,7 +1236,9 @@ void main() {
         await stressNotifier.startDrill(roundConfig);
         for (var round = 0; round < roundsPerCycle; round++) {
           await waitForPhase(DrillPhase.waitingTouch, cycle);
-          stressNotifier.simulateTouch();
+          stressNotifier.recordTouch(
+            stressContainer.read(drillProvider).activePodAddress!,
+          );
         }
 
         final completed = stressContainer.read(drillProvider);
@@ -1248,7 +1264,9 @@ void main() {
         }
         await stressNotifier.startDrill(lifecycleConfig);
         await waitForPhase(DrillPhase.waitingTouch, cycle);
-        stressNotifier.simulateTouch();
+        stressNotifier.recordTouch(
+          stressContainer.read(drillProvider).activePodAddress!,
+        );
         await waitForPhase(DrillPhase.waitingTouch, cycle);
         final beforeIsolatedFailure = stressContainer.read(drillProvider);
         stressMultiPod.fail('sim-pod-outside');

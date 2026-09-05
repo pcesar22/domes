@@ -1,4 +1,5 @@
 import 'package:domes_app/presentation/screens/drill_setup_screen.dart';
+import 'package:domes_app/application/providers/virtual_pod_lab_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -65,17 +66,34 @@ void main() {
       expect(find.text('Start Drill'), findsOneWidget);
     });
 
-    testWidgets('simulate button shown when no pods connected', (tester) async {
-      await tester.pumpWidget(_wrap(const DrillSetupScreen()));
-      await tester.pumpAndSettle();
+    for (final count in [2, 6]) {
+      testWidgets('launches the explicit $count-pod app virtual lab', (
+        tester,
+      ) async {
+        await tester.pumpWidget(_wrap(const DrillSetupScreen()));
+        await tester.pumpAndSettle();
 
-      await tester.scrollUntilVisible(
-        find.text('Simulate Drill (no pods)'),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(find.text('Simulate Drill (no pods)'), findsOneWidget);
-    });
+        final button = find.text('Launch $count-pod lab');
+        await tester.scrollUntilVisible(
+          button,
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(
+          find.textContaining('Deterministic app model only'),
+          findsOneWidget,
+        );
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+
+        final context = tester.element(find.byType(DrillSetupScreen));
+        final container = ProviderScope.containerOf(context);
+        final lab = container.read(virtualPodLabProvider);
+        expect(lab.phase, VirtualPodLabPhase.running);
+        expect(lab.pods, hasLength(count));
+        expect(lab.pods.map((pod) => pod.address).toSet(), hasLength(count));
+      });
+    }
 
     testWidgets('drill type description updates on selection', (tester) async {
       await tester.pumpWidget(_wrap(const DrillSetupScreen()));

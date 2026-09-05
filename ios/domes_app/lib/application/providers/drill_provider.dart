@@ -16,9 +16,11 @@ import 'package:domes_app/data/proto/generated/config.pbenum.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/protocol/config_protocol.dart';
+import '../../domain/models/app_clock.dart';
 import '../../domain/models/drill_config.dart';
 import '../../domain/models/drill_result.dart';
 import 'multi_pod_provider.dart';
+import 'virtual_pod_lab_provider.dart';
 
 /// Drill execution state.
 enum DrillPhase {
@@ -84,11 +86,12 @@ class DrillState {
 
 /// Drill orchestrator notifier.
 class DrillNotifier extends StateNotifier<DrillState> {
-  final Random _random = Random();
+  final Random _random;
+  final AppClock _clock;
   late final MultiPodNotifier _multiPod;
-  Timer? _delayTimer;
-  Timer? _timeoutTimer;
-  Timer? _ledOffTimer;
+  AppTimer? _delayTimer;
+  AppTimer? _timeoutTimer;
+  AppTimer? _ledOffTimer;
   DateTime? _drillStartTime;
   late final StreamSubscription<PodTouchEvent> _touchSubscription;
   late final StreamSubscription<PodConnectionFailure>
@@ -99,8 +102,14 @@ class DrillNotifier extends StateNotifier<DrillState> {
   int _generation = 0;
   Future<void> _cleanupTail = Future<void>.value();
 
-  DrillNotifier(Ref ref, {MultiPodNotifier? multiPod})
-    : super(const DrillState()) {
+  DrillNotifier(
+    Ref ref, {
+    MultiPodNotifier? multiPod,
+    AppClock clock = const SystemAppClock(),
+    int? seed,
+  }) : _clock = clock,
+       _random = seed == null ? Random() : Random(seed),
+       super(const DrillState()) {
     _multiPod = multiPod ?? ref.read(multiPodProvider.notifier);
     _touchSubscription = _multiPod.touchEvents.listen(
       (event) => recordTouch(event.address),
@@ -112,9 +121,6 @@ class DrillNotifier extends StateNotifier<DrillState> {
       _handleLifecycleFailure,
     );
   }
-
-  bool get supportsTouchSimulation =>
-      state.activePodAddress?.startsWith('sim-pod-') ?? false;
 
   /// Start a drill with the given config.
   Future<void> startDrill(DrillConfig config) async {
@@ -137,7 +143,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
         address: ?_multiPod.activeConnectionGeneration(address),
     };
 
-    _drillStartTime = DateTime.now();
+    _drillStartTime = _clock.now();
 
     state = DrillState(
       phase: DrillPhase.preparing,
@@ -149,27 +155,23 @@ class DrillNotifier extends StateNotifier<DrillState> {
     await _cleanupTail;
     if (!_isCurrent(generation, DrillPhase.preparing)) return;
 
-    // Set all physical pods to GAME mode and start from a dark LED state.
+    // Route every participating pod through the repository boundary.
     for (final addr in config.podAddresses) {
-      if (!_isSimulatedAddress(addr)) {
-        try {
-          await _multiPod.setMode(addr, SystemMode.SYSTEM_MODE_GAME);
-          if (!_isCurrent(generation, DrillPhase.preparing)) return;
-        } catch (e) {
-          _failSession(generation, 'Failed to prepare pod $addr: $e');
-          return;
-        }
+      try {
+        await _multiPod.setMode(addr, SystemMode.SYSTEM_MODE_GAME);
+        if (!_isCurrent(generation, DrillPhase.preparing)) return;
+      } catch (e) {
+        _failSession(generation, 'Failed to prepare pod $addr: $e');
+        return;
       }
     }
     for (final addr in config.podAddresses) {
-      if (!_isSimulatedAddress(addr)) {
-        try {
-          await _multiPod.setLedPattern(addr, AppLedPattern.off());
-          if (!_isCurrent(generation, DrillPhase.preparing)) return;
-        } catch (e) {
-          _failSession(generation, 'Failed to prepare pod $addr: $e');
-          return;
-        }
+      try {
+        await _multiPod.setLedPattern(addr, AppLedPattern.off());
+        if (!_isCurrent(generation, DrillPhase.preparing)) return;
+      } catch (e) {
+        _failSession(generation, 'Failed to prepare pod $addr: $e');
+        return;
       }
     }
 
@@ -201,7 +203,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
     _timeoutTimer?.cancel();
 
     final reactionTime = state.roundStartTime != null
-        ? DateTime.now().difference(state.roundStartTime!)
+        ? _clock.now().difference(state.roundStartTime!)
         : null;
 
     final result = RoundResult(
@@ -209,7 +211,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
       podAddress: podAddress,
       hit: true,
       reactionTime: reactionTime,
-      timestamp: DateTime.now(),
+      timestamp: _clock.now(),
     );
 
     final newResults = [...state.results, result];
@@ -228,21 +230,12 @@ class DrillNotifier extends StateNotifier<DrillState> {
     }
   }
 
-  /// Simulate a touch for testing when real hardware isn't available.
-  void simulateTouch() {
-    if (supportsTouchSimulation && state.activePodAddress != null) {
-      recordTouch(state.activePodAddress!);
-    }
-  }
-
   Future<void> _completeHitRound(int generation, String podAddress) async {
-    if (!_isSimulatedAddress(podAddress)) {
-      try {
-        await _multiPod.setLedPattern(podAddress, AppLedPattern.off());
-      } catch (e) {
-        _failSession(generation, 'Failed to clear pod $podAddress: $e');
-        return;
-      }
+    try {
+      await _multiPod.setLedPattern(podAddress, AppLedPattern.off());
+    } catch (e) {
+      _failSession(generation, 'Failed to clear pod $podAddress: $e');
+      return;
     }
     if (_isCurrent(generation, DrillPhase.roundComplete)) {
       _startNextRound(generation);
@@ -268,7 +261,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
         ? minDelayMs
         : minDelayMs + _random.nextInt(delayRangeMs + 1);
 
-    _delayTimer = Timer(
+    _delayTimer = _clock.schedule(
       Duration(milliseconds: delayMs),
       () => unawaited(_armRound(generation)),
     );
@@ -287,21 +280,19 @@ class DrillNotifier extends StateNotifier<DrillState> {
     final targetPod =
         config.podAddresses[_random.nextInt(config.podAddresses.length)];
 
-    if (!_isSimulatedAddress(targetPod)) {
-      try {
-        await _multiPod.setLedPattern(
-          targetPod,
-          AppLedPattern.solid(0, 255, 0), // Green = go!
-        );
-      } catch (e) {
-        _failSession(generation, 'Failed to arm pod $targetPod: $e');
-        return;
-      }
+    try {
+      await _multiPod.setLedPattern(
+        targetPod,
+        AppLedPattern.solid(0, 255, 0), // Green = go!
+      );
+    } catch (e) {
+      _failSession(generation, 'Failed to arm pod $targetPod: $e');
+      return;
     }
 
     if (!_isCurrent(generation, DrillPhase.waitingDelay)) return;
 
-    final now = DateTime.now();
+    final now = _clock.now();
     state = state.copyWith(
       phase: DrillPhase.waitingTouch,
       activePodAddress: targetPod,
@@ -309,7 +300,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
     );
 
     // Start timeout timer
-    _timeoutTimer = Timer(
+    _timeoutTimer = _clock.schedule(
       config.timeout,
       () => unawaited(_handleTimeout(generation)),
     );
@@ -325,7 +316,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
       roundIndex: state.currentRound,
       podAddress: activePod,
       hit: false,
-      timestamp: DateTime.now(),
+      timestamp: _clock.now(),
     );
 
     final newResults = [...state.results, result];
@@ -337,11 +328,6 @@ class DrillNotifier extends StateNotifier<DrillState> {
 
     if (newResults.length >= (state.config?.roundCount ?? 0)) {
       _finishDrill(generation);
-      return;
-    }
-
-    if (_isSimulatedAddress(activePod)) {
-      _startNextRound(generation);
       return;
     }
 
@@ -357,7 +343,7 @@ class DrillNotifier extends StateNotifier<DrillState> {
 
     if (!_isCurrent(generation, DrillPhase.roundComplete)) return;
     _ledOffTimer?.cancel();
-    _ledOffTimer = Timer(
+    _ledOffTimer = _clock.schedule(
       const Duration(milliseconds: 500),
       () => unawaited(_finishMissFeedback(generation, activePod)),
     );
@@ -391,7 +377,6 @@ class DrillNotifier extends StateNotifier<DrillState> {
     if (config == null) return;
 
     for (final addr in config.podAddresses) {
-      if (_isSimulatedAddress(addr)) continue;
       try {
         await _multiPod.setLedPattern(addr, AppLedPattern.off());
       } catch (_) {
@@ -418,8 +403,8 @@ class DrillNotifier extends StateNotifier<DrillState> {
     return DrillResult(
       config: state.config!,
       rounds: state.results,
-      startTime: _drillStartTime ?? DateTime.now(),
-      endTime: DateTime.now(),
+      startTime: _drillStartTime ?? _clock.now(),
+      endTime: _clock.now(),
     );
   }
 
@@ -493,9 +478,6 @@ class DrillNotifier extends StateNotifier<DrillState> {
     return null;
   }
 
-  static bool _isSimulatedAddress(String address) =>
-      address.startsWith('sim-pod-');
-
   @override
   void dispose() {
     final config = state.config;
@@ -509,5 +491,11 @@ class DrillNotifier extends StateNotifier<DrillState> {
 }
 
 final drillProvider = StateNotifierProvider<DrillNotifier, DrillState>((ref) {
-  return DrillNotifier(ref);
+  final virtualLab = ref.watch(virtualPodLabProvider);
+  return DrillNotifier(
+    ref,
+    seed: virtualLab.phase == VirtualPodLabPhase.running
+        ? virtualLab.seed
+        : null,
+  );
 });

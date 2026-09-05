@@ -11,6 +11,7 @@ import '../../data/proto/generated/config.pbenum.dart';
 import '../../data/protocol/config_protocol.dart';
 import '../../data/transport/ble_transport.dart';
 import '../../data/transport/transport.dart';
+import '../../data/transport/virtual_pod_transport.dart';
 import '../../domain/models/pod_device.dart';
 import '../../domain/repositories/pod_repository.dart';
 import '../../domain/repositories/pod_repository_impl.dart';
@@ -108,6 +109,30 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
 
   /// Connect to a pod by address.
   Future<void> connectPod(PodDevice pod) async {
+    if (pod.isAppVirtualModel) {
+      throw ArgumentError('Virtual pods require connectVirtualPod');
+    }
+    await _connectPod(pod, _connector);
+  }
+
+  /// Connect an explicitly labelled app-model pod through its virtual transport.
+  Future<void> connectVirtualPod(
+    PodDevice pod,
+    VirtualPodTransport transport,
+  ) async {
+    if (!pod.isAppVirtualModel || transport.address != pod.address) {
+      throw ArgumentError(
+        'Virtual transport identity must match an app virtual model pod',
+      );
+    }
+    await _connectPod(
+      pod,
+      (_) async =>
+          (transport: transport, repository: PodRepositoryImpl(transport)),
+    );
+  }
+
+  Future<void> _connectPod(PodDevice pod, PodConnector connector) async {
     await _connectionCleanupTails[pod.address];
     if (!mounted) return;
 
@@ -135,7 +160,7 @@ class MultiPodNotifier extends StateNotifier<Map<String, PodConnectionEntry>> {
       await previous?.transport?.disconnect();
       if (!mounted || _connectionGenerations[pod.address] != generation) return;
 
-      final connected = await _connector(pod);
+      final connected = await connector(pod);
       final transport = connected.transport;
       pendingTransport = transport;
       final repository = connected.repository;

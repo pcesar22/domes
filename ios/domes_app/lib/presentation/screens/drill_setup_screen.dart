@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/providers/drill_provider.dart';
 import '../../application/providers/multi_pod_provider.dart';
+import '../../application/providers/virtual_pod_lab_provider.dart';
 import '../../domain/models/drill_config.dart';
 import '../theme/app_theme.dart';
 import 'drill_active_screen.dart';
@@ -28,6 +29,7 @@ class _DrillSetupScreenState extends ConsumerState<DrillSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final multiPod = ref.watch(multiPodProvider);
+    final virtualLab = ref.watch(virtualPodLabProvider);
     final connectedAddresses = multiPod.entries
         .where((e) => e.value.isConnected)
         .map((e) => e.key)
@@ -185,6 +187,60 @@ class _DrillSetupScreenState extends ConsumerState<DrillSetupScreen> {
           ),
           const SizedBox(height: 24),
 
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'App Virtual Pod Lab',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Deterministic app model only — not hardware, RF, or '
+                    'production simulator parity.',
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed:
+                            virtualLab.phase == VirtualPodLabPhase.starting
+                            ? null
+                            : () => _launchVirtualLab(2),
+                        icon: const Icon(Icons.science),
+                        label: const Text('Launch 2-pod lab'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed:
+                            virtualLab.phase == VirtualPodLabPhase.starting
+                            ? null
+                            : () => _launchVirtualLab(6),
+                        icon: const Icon(Icons.science),
+                        label: const Text('Launch 6-pod lab'),
+                      ),
+                      if (virtualLab.phase == VirtualPodLabPhase.running)
+                        TextButton(
+                          onPressed: _stopVirtualLab,
+                          child: const Text('Stop virtual lab'),
+                        ),
+                    ],
+                  ),
+                  if (virtualLab.error != null)
+                    Text(
+                      virtualLab.error!,
+                      style: const TextStyle(color: AppTheme.errorColor),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
           // Start button
           FilledButton.icon(
             onPressed: _selectedPods.isEmpty ? null : _startDrill,
@@ -194,19 +250,6 @@ class _DrillSetupScreenState extends ConsumerState<DrillSetupScreen> {
               minimumSize: const Size(double.infinity, 56),
             ),
           ),
-
-          // Simulate button (for testing without pods)
-          if (connectedAddresses.isEmpty) ...[
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _startSimulatedDrill,
-              icon: const Icon(Icons.science),
-              label: const Text('Simulate Drill (no pods)'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 48),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -257,19 +300,26 @@ class _DrillSetupScreenState extends ConsumerState<DrillSetupScreen> {
     );
   }
 
-  void _startSimulatedDrill() {
-    final config = DrillConfig(
-      type: _drillType,
-      roundCount: _roundCount,
-      timeout: Duration(milliseconds: (_timeoutSec * 1000).round()),
-      minDelay: Duration(milliseconds: (_minDelaySec * 1000).round()),
-      maxDelay: Duration(milliseconds: (_maxDelaySec * 1000).round()),
-      podAddresses: ['sim-pod-1', 'sim-pod-2', 'sim-pod-3'],
-    );
+  Future<void> _launchVirtualLab(int podCount) async {
+    await ref.read(virtualPodLabProvider.notifier).launch(podCount: podCount);
+    if (!mounted) return;
+    final lab = ref.read(virtualPodLabProvider);
+    if (lab.phase != VirtualPodLabPhase.running) return;
+    setState(() {
+      _selectedPods
+        ..clear()
+        ..addAll(lab.pods.map((pod) => pod.address));
+    });
+  }
 
-    ref.read(drillProvider.notifier).startDrill(config);
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const DrillActiveScreen()),
-    );
+  Future<void> _stopVirtualLab() async {
+    final addresses = ref
+        .read(virtualPodLabProvider)
+        .pods
+        .map((pod) => pod.address)
+        .toSet();
+    await ref.read(virtualPodLabProvider.notifier).stop();
+    if (!mounted) return;
+    setState(() => _selectedPods.removeAll(addresses));
   }
 }
