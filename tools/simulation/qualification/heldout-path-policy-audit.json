@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "issue": 166,
+  "base_revision": "0f1659c6a32288fa3478969586e54a81599c4453",
+  "allowed_surface": "tools/simulation/**",
+  "changed_paths": [
+    "tools/simulation/qualification/README.md",
+    "tools/simulation/qualification/heldout-campaign-report.json",
+    "tools/simulation/qualification/heldout-path-policy-audit.json",
+    "tools/simulation/test_vc_heldout_campaign.py",
+    "tools/simulation/vc_heldout_campaign.py"
+  ],
+  "outside_allowed_surface": [],
+  "protected_mutations": {
+    "autonomous_control": false,
+    "hardware": false,
+    "ci_policy": false,
+    "dependencies": false,
+    "release": false,
+    "purchase": false,
+    "vendor": false,
+    "fabrication": false,
+    "program_authority": false
+  },
+  "result": "passed"
+}
